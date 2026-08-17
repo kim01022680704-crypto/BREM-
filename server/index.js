@@ -16,6 +16,7 @@ const missionsAdmin = require('./missions-admin');
 const noticesAdmin = require('./notices-admin');
 const urgentMissions = require('./urgent-missions');
 const riderPush = require('./rider-push');
+const adminAppPush = require('./admin-app-push');
 const adminRiderPush = require('./admin-rider-push');
 const leaseErpAdmin = require('./lease-erp-admin');
 const payrollProductionRiders = require('./payroll-production-riders');
@@ -323,6 +324,18 @@ app.post('/api/rider/push-token', async (req, res) => {
   }
 });
 
+app.post('/api/admin/push-token', async (req, res) => {
+  try {
+    const result = await adminAppPush.saveAdminToken(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, adminId: result.adminId });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '관리자 푸시 토큰 저장에 실패했습니다.' });
+  }
+});
+
 app.post('/api/rider/urgent-missions/:missionId/accept', async (req, res) => {
   try {
     const result = await urgentMissions.acceptMission(getBearerToken(req), req.params.missionId);
@@ -505,6 +518,7 @@ app.post('/api/rider/inquiries', async (req, res) => {
     if (!result.ok) {
       return res.status(result.status || 400).json({ error: result.error });
     }
+    adminAppPush.notifyInquiryLater(result.inquiry);
     res.status(201).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '문의 접수에 실패했습니다.' });
@@ -1995,12 +2009,11 @@ app.post('/api/rider-inquiries', async (req, res) => {
       return res.status(400).json({ error: '이름, 연락처, 문의 내용은 필수입니다.' });
     }
     const payload = { name, phone, area, inquiryType, message };
-    if (useSupabaseInquiries()) {
-      const record = await riderInquiriesSupabase.createInquiry(payload);
-      return res.status(201).json(record);
-    }
-    const record = riderInquiriesStore.createInquiry(payload);
-    res.status(201).json(record);
+    const record = useSupabaseInquiries()
+      ? await riderInquiriesSupabase.createInquiry(payload)
+      : riderInquiriesStore.createInquiry(payload);
+    adminAppPush.notifyInquiryLater(record);
+    return res.status(201).json(record);
   } catch (error) {
     res.status(500).json({ error: error.message || '문의 접수에 실패했습니다.' });
   }

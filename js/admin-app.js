@@ -526,6 +526,11 @@
     showLogin();
   }
 
+  window.BremAdminAppNav = {
+    setTab,
+    openInquiry
+  };
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => void boot());
   } else {

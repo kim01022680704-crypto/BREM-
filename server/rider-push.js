@@ -205,20 +205,35 @@ async function sendToRiders(riderIds, payload = {}) {
     return { ok: true, sent: 0, reason: 'no-tokens', riders: ids.length, missing };
   }
 
+  const sent = await sendToTokens(tokens, payload);
+  return { ...sent, riders: ids.length, missing };
+}
+
+async function sendToTokens(tokens, payload = {}) {
+  const list = [...new Set((Array.isArray(tokens) ? tokens : []).map(item => String(item || '').trim()).filter(Boolean))];
+  if (!list.length) {
+    return { ok: true, sent: 0, reason: 'no-tokens' };
+  }
+  if (!ensureFirebase()) {
+    return { ok: true, skipped: true, reason: 'no-firebase' };
+  }
+
   const title = String(payload.title || 'BREM').trim() || 'BREM';
   const body = String(payload.body || '').trim();
   const data = payload.data && typeof payload.data === 'object'
     ? Object.fromEntries(Object.entries(payload.data).map(([key, value]) => [key, String(value ?? '')]))
     : {};
+  const channelId = String(payload.channelId || '').trim();
 
   const result = await getMessaging().sendEachForMulticast({
-    tokens,
+    tokens: list,
     notification: { title, body },
     data,
     android: {
       priority: 'high',
       notification: {
-        sound: 'default'
+        sound: 'default',
+        ...(channelId ? { channelId } : {})
       }
     }
   });
@@ -226,7 +241,7 @@ async function sendToRiders(riderIds, payload = {}) {
   if (failed) {
     console.warn('[BREM] push failures:', failed, result.responses?.filter(item => !item.success).map(item => item.error?.message));
   }
-  return { ok: true, sent: result.successCount || 0, failed, riders: ids.length, missing };
+  return { ok: true, sent: result.successCount || 0, failed };
 }
 
 async function notifyUrgentMission(mission) {
@@ -249,5 +264,6 @@ async function notifyUrgentMission(mission) {
 module.exports = {
   saveRiderToken,
   sendToRiders,
+  sendToTokens,
   notifyUrgentMission
 };

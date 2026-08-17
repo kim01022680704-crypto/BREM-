@@ -48,8 +48,24 @@
     }
   }
 
+  function isAdminAppScope() {
+    return String(window.BREM_AUTH_SCOPE || '') === 'admin';
+  }
+
   function persistNativeRiderSession() {
     if (!window.BREM_IS_NATIVE_APP) return;
+    if (isAdminAppScope()) {
+      try {
+        window.BremLoginPrefs?.setKeepLoggedIn?.('admin', true);
+      } catch {
+        /* ignore */
+      }
+      var adminKeep = document.getElementById('adminKeepLoggedIn');
+      var adminKeepLabel = adminKeep && adminKeep.closest ? adminKeep.closest('.login-option') : null;
+      if (adminKeep) adminKeep.checked = true;
+      if (adminKeepLabel) adminKeepLabel.hidden = true;
+      return;
+    }
     try {
       window.BremLoginPrefs?.setKeepLoggedIn?.('rider', true);
     } catch {
@@ -151,6 +167,13 @@
       banner.addEventListener('click', function () {
         banner.hidden = true;
         var type = banner.dataset.pushType || '';
+        if (type === 'admin-inquiry' && window.BremAdminAppNav && window.BremAdminAppNav.setTab) {
+          window.BremAdminAppNav.setTab('inquiry');
+          if (banner.dataset.inquiryId && window.BremAdminAppNav.openInquiry) {
+            window.BremAdminAppNav.openInquiry(banner.dataset.inquiryId);
+          }
+          return;
+        }
         if (type === 'urgent-mission' && window.BremDriverAppNav && window.BremDriverAppNav.setTab) {
           window.BremDriverAppNav.setTab('mission');
         }
@@ -160,6 +183,7 @@
     banner.querySelector('strong').textContent = title || 'BREM';
     banner.querySelector('span').textContent = body || '';
     banner.dataset.pushType = data && data.type ? String(data.type) : '';
+    banner.dataset.inquiryId = data && data.inquiryId ? String(data.inquiryId) : '';
     banner.hidden = false;
     window.clearTimeout(showInAppPushBanner.timer);
     showInAppPushBanner.timer = window.setTimeout(function () {
@@ -171,8 +195,16 @@
   var pushListenersBound = false;
 
   function savePendingPushToken() {
-    if (!pendingPushToken || !window.BremStorage || !window.BremStorage.registerRiderPushTokenOnServer) return;
-    void window.BremStorage.registerRiderPushTokenOnServer(pendingPushToken);
+    if (!pendingPushToken || !window.BremStorage) return;
+    if (isAdminAppScope()) {
+      if (window.BremStorage.registerAdminPushTokenOnServer) {
+        void window.BremStorage.registerAdminPushTokenOnServer(pendingPushToken);
+      }
+      return;
+    }
+    if (window.BremStorage.registerRiderPushTokenOnServer) {
+      void window.BremStorage.registerRiderPushTokenOnServer(pendingPushToken);
+    }
   }
 
   function bindPushListeners() {
@@ -184,6 +216,13 @@
       Push.createChannel({
         id: 'brem_urgent',
         name: '긴급미션',
+        importance: 5,
+        visibility: 1,
+        sound: 'default'
+      }).catch(function () { /* ignore */ });
+      Push.createChannel({
+        id: 'brem_inquiry',
+        name: '라이더 문의',
         importance: 5,
         visibility: 1,
         sound: 'default'
@@ -205,6 +244,13 @@
 
     Push.addListener('pushNotificationActionPerformed', function (action) {
       var data = action && action.notification && action.notification.data;
+      if (data && data.type === 'admin-inquiry' && window.BremAdminAppNav && window.BremAdminAppNav.setTab) {
+        window.BremAdminAppNav.setTab('inquiry');
+        if (data.inquiryId && window.BremAdminAppNav.openInquiry) {
+          window.BremAdminAppNav.openInquiry(data.inquiryId);
+        }
+        return;
+      }
       if (data && data.type === 'urgent-mission' && window.BremDriverAppNav && window.BremDriverAppNav.setTab) {
         window.BremDriverAppNav.setTab('mission');
       }
@@ -285,6 +331,10 @@
     bindExternalLinks();
     startPush();
     document.addEventListener('brem-rider-session-ready', function () {
+      savePendingPushToken();
+      window.setTimeout(savePendingPushToken, 1500);
+    });
+    document.addEventListener('brem-admin-session-ready', function () {
       savePendingPushToken();
       window.setTimeout(savePendingPushToken, 1500);
     });

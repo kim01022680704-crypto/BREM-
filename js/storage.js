@@ -3194,6 +3194,15 @@ const BremStorage = (function () {
     return result;
   }
 
+  async function registerAdminPushTokenOnServer(token) {
+    const value = String(token || '').trim();
+    if (!value) return { ok: false, message: '푸시 토큰이 없습니다.' };
+    return adminRidersApi('/api/admin/push-token', {
+      method: 'POST',
+      body: JSON.stringify({ token: value })
+    });
+  }
+
   async function registerRiderPushTokenOnServer(token) {
     const value = String(token || '').trim();
     if (!value) return { ok: false, message: '푸시 토큰이 없습니다.' };
@@ -14202,6 +14211,7 @@ const BremStorage = (function () {
     fetchRiderAssignedMissionsFromServer,
     fetchRiderDashboardFromServer,
     fetchRiderUrgentMissionsFromServer,
+    registerAdminPushTokenOnServer,
     registerRiderPushTokenOnServer,
     acceptRiderUrgentMissionOnServer,
     fetchAdminUrgentMissionsFromServer,
