@@ -47,10 +47,23 @@
     return hour;
   }
 
+  function isKstWeekday(now = new Date()) {
+    const dow = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Seoul',
+      weekday: 'short'
+    }).format(now);
+    return dow !== 'Sat' && dow !== 'Sun';
+  }
+
+  function baeminAfternoonStartHour(now = new Date()) {
+    return isKstWeekday(now) ? 13 : 14;
+  }
+
   function currentBaeminSlotKey(now = new Date()) {
     const hour = kstHour(now);
-    if (hour >= 7 && hour < 14) return 'morning';
-    if (hour >= 14 && hour < 17) return 'afternoon';
+    const afternoonStart = baeminAfternoonStartHour(now);
+    if (hour >= 7 && hour < afternoonStart) return 'morning';
+    if (hour >= afternoonStart && hour < 17) return 'afternoon';
     if (hour >= 17 && hour < 20) return 'evening';
     return 'midnight';
   }
@@ -76,7 +89,7 @@
       if (part.type !== 'literal') map[part.type] = part.value;
     });
     const hour = Number(map.hour);
-    const starts = [7, 14, 17, 20];
+    const starts = [7, baeminAfternoonStartHour(now), 17, 20];
     let nextHour = starts.find((item) => item > hour);
     let addDays = 0;
     if (nextHour == null) {

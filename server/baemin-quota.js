@@ -115,11 +115,25 @@ function kstHour(now = new Date()) {
   return hour;
 }
 
+/** 평일(월~금) 오후 할당은 13시, 주말은 14시 */
+function isKstWeekday(now = new Date()) {
+  const dow = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    weekday: 'short'
+  }).format(now);
+  return dow !== 'Sat' && dow !== 'Sun';
+}
+
+function baeminAfternoonStartHour(now = new Date()) {
+  return isKstWeekday(now) ? 13 : 14;
+}
+
 /** KST 기준 현재 배민 시간대. 심야=20:00~06:59 */
 function currentBaeminSlotKey(now = new Date()) {
   const hour = kstHour(now);
-  if (hour >= 7 && hour < 14) return 'morning';
-  if (hour >= 14 && hour < 17) return 'afternoon';
+  const afternoonStart = baeminAfternoonStartHour(now);
+  if (hour >= 7 && hour < afternoonStart) return 'morning';
+  if (hour >= afternoonStart && hour < 17) return 'afternoon';
   if (hour >= 17 && hour < 20) return 'evening';
   return 'midnight';
 }
@@ -153,5 +167,7 @@ module.exports = {
   computeSlotTargets,
   formatProgress,
   kstHour,
+  isKstWeekday,
+  baeminAfternoonStartHour,
   currentBaeminSlotKey
 };
