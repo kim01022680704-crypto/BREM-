@@ -672,30 +672,46 @@ async function getDashboardLive(accessToken, options = {}) {
   const partnerIds = (requested.length ? requested : [...allowed])
     .filter(id => !allowed.size || allowed.has(id));
 
-  const results = await Promise.all(partnerIds.map(async pid => {
-    const r = await getCollectItemsForAdmin(options.collectDate, 'delivery_status', {
-      partnerId: pid,
-      appliedOnly: true,
-      actorScope: viewScope
-    });
-    return { partnerId: pid, r: r || {} };
-  }));
+  async function fetchPartners(appliedOnly) {
+    return Promise.all(partnerIds.map(async pid => {
+      const r = await getCollectItemsForAdmin(options.collectDate, 'delivery_status', {
+        partnerId: pid,
+        appliedOnly,
+        actorScope: viewScope
+      });
+      return { partnerId: pid, r: r || {} };
+    }));
+  }
+
+  let results = await fetchPartners(false);
+  let source = 'collect';
+  const collectCount = results.reduce((sum, entry) => sum + (Array.isArray(entry.r.items) ? entry.r.items.length : 0), 0);
+  if (collectCount <= 0) {
+    results = await fetchPartners(true);
+    source = 'applied';
+  }
 
   const byPartner = {};
   let notApplied = false;
   let collectDate = '';
+  let collectedAt = '';
   for (const { partnerId, r } of results) {
+    const items = r.items || [];
     byPartner[partnerId] = {
       ok: r.ok !== false,
-      items: r.items || [],
+      items,
       notApplied: Boolean(r.notApplied),
       collectDate: r.collectDate || '',
       message: r.message || ''
     };
     if (r.notApplied) notApplied = true;
     if (r.collectDate) collectDate = r.collectDate;
+    for (const row of items) {
+      const at = String(row.collected_at || row.collectedAt || '').trim();
+      if (at && at > collectedAt) collectedAt = at;
+    }
   }
-  return { ok: true, collectDate, notApplied, partnerIds, byPartner };
+  return { ok: true, collectDate, collectedAt, source, notApplied, partnerIds, byPartner };
 }
 
 async function getPartnerList(accessToken, options = {}) {

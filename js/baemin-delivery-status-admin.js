@@ -5956,6 +5956,7 @@
   /** 자동갱신 중 빈·불완전 응답으로 표를 지우지 않음 — 이전 숫자 유지 후 준비되면 한 번에 교체 */
   function shouldKeepPreviousDashboardPaint({
     silent,
+    resume,
     hadTable,
     prevActivity,
     itemCount,
@@ -5963,6 +5964,7 @@
     expectedRegions
   }) {
     if (!silent || !hadTable) return false;
+    if (resume === true && Number(itemCount || 0) > 0) return false;
     // 아이템 0건(빈 스냅샷/일시 실패)이면 기존 유지. 실제 0콜(아이템은 있음)은 정상 반영.
     if (prevActivity > 0 && Number(itemCount || 0) <= 0) return true;
     if (
@@ -6459,10 +6461,7 @@
         state.weekdayQuotaMatrix ? Promise.resolve() : ensureWeekdayQuotaLoaded()
       ]).catch(() => {});
 
-      const captureDate = state.appliedCollectDate
-        || state.config?.applied?.collectDate
-        || today;
-      const appliedAt = state.config?.applied?.appliedAt || state.config?.applied?.updatedAt || '';
+      const captureDate = today;
       const queriedAt = new Date();
 
       const regionRows = [];
@@ -6577,6 +6576,7 @@
       const prevActivity = Number(state.dashboardLastActivity || 0);
       if (shouldKeepPreviousDashboardPaint({
         silent,
+        resume: options.resume === true,
         hadTable,
         prevActivity,
         itemCount,
@@ -6600,10 +6600,15 @@
       });
       // 적용시각·표는 새 결과가 준비된 뒤에만 교체 (중간 0 깜빡임 방지)
       if (appliedEl) {
-        const appliedLabel = appliedAt
-          ? `적용시간 ${formatDateTime(appliedAt)}`
-          : '적용시간 — (스냅샷 미확인)';
-        appliedEl.innerHTML = `${escapeHtml(appliedLabel)}<span class="dashboard-baemin-queried-at"> · 자동조회 ${escapeHtml(formatDateTime(queriedAt.toISOString()))}</span>`;
+        const dataAt = dash.collectedAt
+          || dash.appliedAt
+          || state.config?.applied?.appliedAt
+          || state.config?.applied?.updatedAt
+          || '';
+        const dataLabel = dataAt
+          ? `${dash.source === 'applied' ? '적용시간' : '수집시간'} ${formatDateTime(dataAt)}`
+          : '수집시간 — (크롤 미확인)';
+        appliedEl.innerHTML = `${escapeHtml(dataLabel)}<span class="dashboard-baemin-queried-at"> · 자동조회 ${escapeHtml(formatDateTime(queriedAt.toISOString()))}</span>`;
       }
       panelsEl.innerHTML = nextHtml;
 
