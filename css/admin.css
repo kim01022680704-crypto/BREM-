@@ -4098,6 +4098,28 @@ textarea {
   color: #94a3b8;
 }
 
+.baemin-slot-schedule {
+  margin: 0 0 14px;
+}
+
+.baemin-slot-schedule-table {
+  width: 100%;
+  max-width: 560px;
+  font-size: 13px;
+}
+
+.baemin-slot-schedule-table th,
+.baemin-slot-schedule-table td {
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.baemin-slot-schedule-table th[scope="row"] {
+  font-weight: 700;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.55);
+}
+
 .baemin-weekday-quota-toolbar {
   display: flex;
   flex-wrap: wrap;

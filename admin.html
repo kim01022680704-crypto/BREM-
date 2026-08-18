@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260817pay5">
+  <link rel="stylesheet" href="css/admin.css?v=20260818slotsch1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -203,6 +203,26 @@
             </div>
           </div>
           <p class="dashboard-baemin-applied-time" id="dashboardBaeminAppliedTime" aria-live="polite">적용시간 —</p>
+          <div class="baemin-slot-schedule">
+            <p class="form-help"><b>할당 시작 시간대</b> · 주말 = 토·일</p>
+            <div class="table-scroll">
+              <table class="admin-table baemin-slot-schedule-table">
+                <thead>
+                  <tr>
+                    <th>시간대</th>
+                    <th>평일 (월~금)</th>
+                    <th>주말 (토·일)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><th scope="row">아침점심</th><td>06:00 ~ 12:59</td><td>06:00 ~ 13:59</td></tr>
+                  <tr><th scope="row">오후</th><td>13:00 ~ 16:59</td><td>14:00 ~ 16:59</td></tr>
+                  <tr><th scope="row">저녁</th><td>17:00 ~ 19:59</td><td>17:00 ~ 19:59</td></tr>
+                  <tr><th scope="row">심야</th><td>20:00 ~ 05:59</td><td>20:00 ~ 05:59</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
           <p class="admin-table-summary" id="dashboardBaeminLiveSummary" aria-live="polite">마지막 현황 불러오는 중…</p>
           <div id="dashboardBaeminLivePanels" class="dashboard-baemin-live-panels">
             <p class="form-help">마지막 현황 불러오는 중…</p>
@@ -1241,6 +1261,26 @@
               <div>
                 <h2>요일별할당입력</h2>
                 <p class="form-help">1세트 기준 월~일 × 시간대 목표 · 저장 후 지역별 할당 달성·배달현황 진행률에 즉시 반영</p>
+                <div class="baemin-slot-schedule">
+                  <p class="form-help"><b>할당 시작 시간대</b> · 주말 = 토·일</p>
+                  <div class="table-scroll">
+                    <table class="admin-table baemin-slot-schedule-table">
+                      <thead>
+                        <tr>
+                          <th>시간대</th>
+                          <th>평일 (월~금)</th>
+                          <th>주말 (토·일)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr><th scope="row">아침점심</th><td>06:00 ~ 12:59</td><td>06:00 ~ 13:59</td></tr>
+                        <tr><th scope="row">오후</th><td>13:00 ~ 16:59</td><td>14:00 ~ 16:59</td></tr>
+                        <tr><th scope="row">저녁</th><td>17:00 ~ 19:59</td><td>17:00 ~ 19:59</td></tr>
+                        <tr><th scope="row">심야</th><td>20:00 ~ 05:59</td><td>20:00 ~ 05:59</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
               <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusWeekdayQuotaSummary">할당표를 불러오는 중…</p>
             </div>

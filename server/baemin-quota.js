@@ -128,11 +128,11 @@ function baeminAfternoonStartHour(now = new Date()) {
   return isKstWeekday(now) ? 13 : 14;
 }
 
-/** KST 기준 현재 배민 시간대. 심야=20:00~06:59 */
+/** KST 기준 현재 배민 시간대. 심야=20:00~05:59, 아침점심=06:00~ */
 function currentBaeminSlotKey(now = new Date()) {
   const hour = kstHour(now);
   const afternoonStart = baeminAfternoonStartHour(now);
-  if (hour >= 7 && hour < afternoonStart) return 'morning';
+  if (hour >= 6 && hour < afternoonStart) return 'morning';
   if (hour >= afternoonStart && hour < 17) return 'afternoon';
   if (hour >= 17 && hour < 20) return 'evening';
   return 'midnight';

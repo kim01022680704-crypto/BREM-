@@ -62,7 +62,7 @@
   function currentBaeminSlotKey(now = new Date()) {
     const hour = kstHour(now);
     const afternoonStart = baeminAfternoonStartHour(now);
-    if (hour >= 7 && hour < afternoonStart) return 'morning';
+    if (hour >= 6 && hour < afternoonStart) return 'morning';
     if (hour >= afternoonStart && hour < 17) return 'afternoon';
     if (hour >= 17 && hour < 20) return 'evening';
     return 'midnight';
@@ -89,11 +89,11 @@
       if (part.type !== 'literal') map[part.type] = part.value;
     });
     const hour = Number(map.hour);
-    const starts = [7, baeminAfternoonStartHour(now), 17, 20];
+    const starts = [6, baeminAfternoonStartHour(now), 17, 20];
     let nextHour = starts.find((item) => item > hour);
     let addDays = 0;
     if (nextHour == null) {
-      nextHour = 7;
+      nextHour = 6;
       addDays = 1;
     }
     const target = Date.UTC(
