@@ -230,8 +230,7 @@ async function runMorningCrawlPipeline(options = {}) {
     if (!first.ok) throw new Error(first.message || '쿠팡 1회차 실패');
 
     const coupangSync = await syncCoupangRejections({
-      weekStart: weekRange.fromDate,
-      weekEnd: weekRange.toDate
+      weekStart: weekRange.weekStart || weekRange.fromDate
     });
     push('coupang_erp_sync', coupangSync);
     if (!coupangSync.ok) throw new Error(coupangSync.message || '쿠팡 거절율 동기화 실패');

@@ -1,5 +1,5 @@
 const { getServiceClient } = require('./admin-bootstrap');
-const { addDays, todayKST, latestQueryableDate, buildDateList, computeSettlementWeekCollectRange } = require('./baemin-settlement-week');
+const { addDays, todayKST, latestQueryableDate, buildDateList, computeSettlementWeekCollectRange, computeHistoryLookbackRange } = require('./baemin-settlement-week');
 
 const RIDER_COLLECT_RANGE_KEY = 'baemin_rider_collect_range';
 
@@ -9,10 +9,8 @@ function normalizeDateKey(value) {
 }
 
 function defaultRiderCollectRange(referenceDate = todayKST(), now = new Date()) {
-  const today = todayKST(now);
-  const latest = latestQueryableDate(today, now);
-  const fromDate = addDays(today, -30);
-  if (!latest || latest < fromDate) {
+  const lookback = computeHistoryLookbackRange(referenceDate, now);
+  if (lookback.skipped || !lookback.fromDate || !lookback.toDate) {
     return {
       fromDate: null,
       toDate: null,
@@ -23,15 +21,14 @@ function defaultRiderCollectRange(referenceDate = todayKST(), now = new Date()) 
       label: '수집 없음'
     };
   }
-  const dates = buildDateList(fromDate, latest);
   return {
-    fromDate,
-    toDate: latest,
-    dates,
-    dayCount: dates.length,
+    fromDate: lookback.fromDate,
+    toDate: lookback.toDate,
+    dates: lookback.dates,
+    dayCount: lookback.dayCount,
     mode: 'rider_per_day',
     skipped: false,
-    label: `${fromDate} ~ ${latest} (일별 수집 ${dates.length}일)`
+    label: lookback.label
   };
 }
 
@@ -42,6 +39,14 @@ function normalizeRiderCollectRange(raw = {}, referenceDate = todayKST(), now = 
   const latest = latestQueryableDate(referenceDate, now);
   if (latest && toDate && toDate > latest) {
     toDate = latest;
+  }
+  // 저장된 기간이 어제보다 이전이면 전날 포함 8일로 굴린다 (수요일 주차 전환·지난주 고정 방지)
+  if (latest && toDate && toDate < latest) {
+    return {
+      ...fallback,
+      updatedAt: String(raw.updatedAt || '').trim() || null,
+      updatedBy: String(raw.updatedBy || '').trim() || ''
+    };
   }
   if (!fromDate || !toDate || toDate < fromDate) {
     return { ...fallback };

@@ -79,21 +79,25 @@ function authStateLabel(authState) {
 }
 
 /**
- * 수~화 정산주: “조회 가능 최신일(보통 어제)”이 속한 주.
- * 수요일에 전주 화요일이 빠지지 않도록 today가 아니라 latest 기준으로 잡는다.
+ * 주기 수집(라이더앱 반영 30분 전 등): 전날(latest) 포함 8일.
+ * weekStart 는 거절율 등 정산주 동기화용(어제가 속한 수요일).
  */
 function computeCrawlWeekRangeFromLatest(latestDate, settlementWeekStartFn) {
   const latest = String(latestDate || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(latest)) {
-    return { fromDate: '', toDate: '', label: '' };
+    return { fromDate: '', toDate: '', weekStart: '', label: '' };
   }
-  const fromDate = typeof settlementWeekStartFn === 'function'
-    ? settlementWeekStartFn(latest)
+  const { addDays, HISTORY_LOOKBACK_DAYS } = require('./baemin-settlement-week');
+  const days = Math.max(1, Number(HISTORY_LOOKBACK_DAYS) || 8);
+  const fromDate = addDays(latest, -(days - 1));
+  const weekStart = typeof settlementWeekStartFn === 'function'
+    ? String(settlementWeekStartFn(latest) || latest).slice(0, 10)
     : latest;
   return {
-    fromDate: String(fromDate || latest).slice(0, 10),
+    fromDate,
     toDate: latest,
-    label: `${String(fromDate || latest).slice(0, 10)} ~ ${latest}`
+    weekStart,
+    label: `${fromDate} ~ ${latest} (전날 포함 ${days}일)`
   };
 }
 

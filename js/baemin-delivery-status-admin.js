@@ -587,12 +587,12 @@
   }
 
   function defaultRiderViewDateRange() {
+    const lookback = computeHistoryLookbackRange(8);
     const saved = state.config?.riderCollectRange;
-    if (saved?.fromDate && saved?.toDate && saved.toDate >= saved.fromDate) {
+    if (saved?.fromDate && saved?.toDate && saved.toDate >= lookback.toDate) {
       return { fromDate: saved.fromDate, toDate: saved.toDate };
     }
-    const toDate = addDaysDate(todayKstDate(), -1);
-    return { fromDate: addDaysDate(toDate, -6), toDate };
+    return { fromDate: lookback.fromDate, toDate: lookback.toDate };
   }
 
   function syncViewWeekPicker() {
@@ -835,6 +835,28 @@
     showToast('일별 수집기간이 저장되었습니다.');
   }
 
+  function kstHourNow() {
+    const hourText = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      hour: 'numeric',
+      hour12: false
+    }).format(new Date());
+    return Number(hourText);
+  }
+
+  /** 배민 일별/라이더 조회 가능 최신일(보통 어제). 06시 전이면 그제. */
+  function latestQueryableDateKey(today = todayKstDate()) {
+    return addDaysDate(today, kstHourNow() < 6 ? -2 : -1);
+  }
+
+  /** 전날 포함 8일 — 수요일에 주가 바뀌어도 어제(화)가 빠지지 않게 */
+  function computeHistoryLookbackRange(days = 8) {
+    const latest = latestQueryableDateKey();
+    const count = Math.max(1, Number(days) || 8);
+    const fromDate = addDaysDate(latest, -(count - 1));
+    return { fromDate, toDate: latest, weekStart: fromDate };
+  }
+
   /** 이번주 정산주: 수요일 ~ 오늘 */
   function settlementWednesdayOf(dateKey = todayKstDate()) {
     const ref = String(dateKey || todayKstDate()).slice(0, 10);
@@ -852,10 +874,7 @@
   }
 
   function computeThisWeekCollectRange() {
-    const today = todayKstDate();
-    const fromDate = settlementWednesdayOf(today);
-    const toDate = today < fromDate ? fromDate : today;
-    return { fromDate, toDate, weekStart: fromDate };
+    return computeHistoryLookbackRange(8);
   }
 
   function applyThisWeekCollectRangeToInputs(kind) {
@@ -881,7 +900,7 @@
       syncViewWeekPicker();
       const metaEl = $('baeminStatusRiderRangeMeta');
       if (metaEl) {
-        metaEl.textContent = `이번주 ${range.fromDate} ~ ${range.toDate}`;
+        metaEl.textContent = `전날포함 8일 ${range.fromDate} ~ ${range.toDate}`;
       }
     }
     return range;
@@ -894,7 +913,7 @@
       return;
     }
     if (kind === 'status') {
-      showToast(`이번주 ${range.fromDate} ~ ${range.toDate}`);
+      showToast(`전날포함 8일 ${range.fromDate} ~ ${range.toDate}`);
       return;
     }
     if (kind === 'daily') {
@@ -1563,7 +1582,7 @@
     syncSyncDateInputs(range.fromDate, range.toDate);
     const metaEl = $('baeminStatusSyncMeta');
     if (metaEl) {
-      metaEl.textContent = `전지역 · 이번주 ${range.fromDate} ~ ${range.toDate} · 콜수=일별 · 거절율=주별`;
+      metaEl.textContent = `전지역 · 전날포함 8일 ${range.fromDate} ~ ${range.toDate} · 콜수=일별 · 거절율=주별`;
     }
     showToast(`동기화 기간: ${range.fromDate} ~ ${range.toDate}`);
     return range;
@@ -3726,7 +3745,7 @@
     el.innerHTML = `
       <strong>메뉴별 수집 상태</strong>
       ${renderMenuDatePlan(menuDatePlan)}
-      <p class="form-help">배달현황=오늘 기준 · 일별/라이더=어제가 속한 정산주 수요일~어제 (오늘 데이터 미제공 · 수요일엔 지난 정산주 7일 마감)</p>
+      <p class="form-help">배달현황=오늘 기준 · 일별/라이더=전날 포함 8일 (오늘 데이터 미제공 · 수요일에도 어제 화요일이 빠지지 않음)</p>
       <table class="baemin-menu-collect-table">
         <thead>
           <tr>
@@ -5563,7 +5582,7 @@
     }
     const busy = $('crawlMorningStartBtn')?.disabled || $('baeminMorningRunBtn')?.disabled;
     if (busy) return;
-    if (!window.confirm('크롤링을 시작할까요?\n배민+쿠팡 최초 1회차: 수집 → 콜수/거절율 → 라이더앱 반영\n이후 스케줄(배민·쿠팡 동일)\n· 주단위 수집 06:30·11:00·13:30·21:30\n· 확인사살(콜수/거절율/라이더앱) 07:00·11:30·14:00·22:00')) {
+    if (!window.confirm('크롤링을 시작할까요?\n배민+쿠팡 최초 1회차: 8일 수집 → 콜수/거절율 → 라이더앱 반영\n이후 스케줄(배민·쿠팡 동일)\n· 8일 재수집 06:30·11:00·13:30·21:30 (라이더앱 반영 30분 전)\n· 확인사살(콜수/거절율/라이더앱) 07:00·11:30·14:00·22:00')) {
       return;
     }
     setMorningRunButtonsBusy(true);
@@ -6294,7 +6313,7 @@
     }).join('');
 
     if (summaryEl) {
-      summaryEl.textContent = `${regionName} · ${weekRange.fromDate} ~ ${weekRange.toDate} · 데이터 ${formatNumber(filledDays)}/${formatNumber(dates.length)}일 · 이번주 수~오늘`;
+      summaryEl.textContent = `${regionName} · ${weekRange.fromDate} ~ ${weekRange.toDate} · 데이터 ${formatNumber(filledDays)}/${formatNumber(dates.length)}일 · 전날 포함 8일`;
     }
     persistWeekDashboardCache();
   }
@@ -6315,7 +6334,7 @@
       return;
     }
 
-    // 배민현황 지역별 할당 달성과 동일: 이번주 수~오늘
+    // 배민현황 지역별 할당 달성과 동일: 전날 포함 8일
     const thisWeek = computeThisWeekCollectRange();
     const weekRange = {
       fromDate: thisWeek.fromDate,

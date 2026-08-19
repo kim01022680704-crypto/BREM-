@@ -143,6 +143,35 @@ function weekStartForDate(dateStr) {
   d.setUTCDate(d.getUTCDate() - diff);
   return d.toISOString().slice(0, 10);
 }
+function addDaysKeyUtc(dateStr, days) {
+  const cur = new Date(`${String(dateStr).slice(0, 10)}T00:00:00Z`);
+  cur.setUTCDate(cur.getUTCDate() + Number(days || 0));
+  return cur.toISOString().slice(0, 10);
+}
+
+function datesFromTo(fromDate, toDate) {
+  const today = businessDateKst();
+  const from = String(fromDate || '').slice(0, 10);
+  const to = String(toDate || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) {
+    return [];
+  }
+  const dates = [];
+  let cursor = from;
+  while (cursor <= to && cursor <= today) {
+    dates.push(cursor);
+    cursor = addDaysKeyUtc(cursor, 1);
+  }
+  return dates;
+}
+
+/** 오늘(영업일)을 끝으로 하는 연속 일수. 전날 포함, 수요일에도 어제 누락 없음. */
+function lookbackDates(dayCount = 8) {
+  const today = businessDateKst();
+  const days = Math.max(1, Number(dayCount) || 8);
+  return datesFromTo(addDaysKeyUtc(today, -(days - 1)), today);
+}
+
 /** 주 시작(수)~화 7일 중 오늘(영업일) 이하의 날짜 배열 (미래 제외) */
 function weekDatesFrom(weekStart) {
   const today = businessDateKst();
@@ -391,7 +420,9 @@ async function collectVendorInfoForDate(seed, dateStr, summary, pushErr, httpInf
  * options:
  *   date          기준 수집일 (기본 오늘)
  *   weekStartDate 정산주 시작(수). 미지정 시 date 기준 계산
- *   fullWeek      true면 정산주(수~화, 오늘 이하) 전체 날짜의 vendor_info/rider 수집
+ *   fullWeek      true면 정산주(수~화) 또는 lookbackDays. weekStartDate 있으면 그 주만
+ *   lookbackDays  오늘 포함 N일 (기본 주기 수집 8일). fullWeek보다 우선
+ *   fromDate/toDate 직접 기간
  *   riderDates    추가로 수집할 라이더 날짜 배열
  *   includeRider  false면 라이더 생략 (대시보드만)
  *   skipWeekly    true면 주간 생략
@@ -426,8 +457,15 @@ async function runCollect(options = {}) {
 
     // 수집 대상 날짜(vendor_info + rider). 미래 제외.
     let dates;
-    if (options.fullWeek) {
-      dates = weekDatesFrom(weekStart);
+    const lookbackDays = Number(options.lookbackDays || 0);
+    if (options.fromDate && options.toDate) {
+      dates = datesFromTo(options.fromDate, options.toDate);
+    } else if (lookbackDays > 0) {
+      dates = lookbackDates(lookbackDays);
+    } else if (options.fullWeek) {
+      dates = options.weekStartDate
+        ? weekDatesFrom(weekStart)
+        : lookbackDates(8);
     } else {
       dates = Array.from(new Set([collectDate, ...((Array.isArray(options.riderDates) ? options.riderDates : []))]));
     }
@@ -767,13 +805,13 @@ async function runStatusAutoLoopInner(generation) {
     statusLoop.waitEndsAt = 0;
     // 자동순회: 매 회차 라이더 퍼포먼스(rider_daily) 포함 — 기여도(0.8/1 단위 콜) 연속 반영
     statusLoop.message = doFullWeek
-      ? '첫 회차: 대시보드 + 라이더 퍼포먼스(정산주 전체) 수집 중…'
+      ? '첫 회차: 대시보드 + 라이더 퍼포먼스(전날 포함 8일) 수집 중…'
       : `대시보드 + 라이더 퍼포먼스(오늘) 수집 중… (${statusLoop.round}회차)`;
     statusLoop.updatedAt = nowKstIsoOffset();
     try {
-      // 1회차: 정산주 수~오늘 전체 / 2회차+: 주간 생략·오늘은 라이더까지 계속
+      // 1회차: 오늘 포함 8일 / 2회차+: 주간 생략·오늘은 라이더까지 계속
       const result = doFullWeek
-        ? await runCollect({ fullWeek: true, includeRider: true })
+        ? await runCollect({ lookbackDays: 8, includeRider: true })
         : await runCollect({ skipWeekly: true, includeRider: true });
       if (statusLoop.generation !== generation) break;
       if (!result?.ok) {

@@ -87,22 +87,17 @@ function latestQueryableDate(dateKey = todayKST(), now = new Date()) {
   return addDays(refKey, -1);
 }
 
-function computeHistoryCollectRange(dateKey = todayKST(), now = new Date()) {
-  const referenceDate = String(dateKey || todayKST(now)).slice(0, 10);
-  const today = todayKST(now);
-  const latest = latestQueryableDate(today, now);
+/** 일별/라이더: 전날(조회 가능 최신일)을 끝으로 하는 연속 일수. 수~화 주차와 무관. */
+const HISTORY_LOOKBACK_DAYS = 8;
 
-  // 배민은 오늘 데이터를 주지 않으므로 기준은 조회 가능 최신일(보통 어제)이다.
-  // 수요일에는 어제가 지난 정산주의 마지막 날(화)이라, 오늘 기준 정산주로 잡으면
-  // 범위가 오늘 하루로 접혀 지난주 마감이 통째로 빠진다.
-  // 그래서 어제가 속한 정산주를 기준으로 삼는다.
+function computeHistoryLookbackRange(dateKey = todayKST(), now = new Date(), dayCount = HISTORY_LOOKBACK_DAYS) {
+  const referenceDate = String(dateKey || todayKST()).slice(0, 10);
+  const latest = latestQueryableDate(referenceDate, now);
+  const days = Math.max(1, Number(dayCount) || HISTORY_LOOKBACK_DAYS);
   const weekStart = settlementWeekStart(latest || today);
   const weekEnd = settlementWeekEnd(weekStart);
 
-  const fromDate = weekStart;
-  const toDate = latest;
-
-  if (!fromDate || !toDate || toDate < fromDate) {
+  if (!latest) {
     return {
       referenceDate,
       weekStart,
@@ -119,26 +114,25 @@ function computeHistoryCollectRange(dateKey = todayKST(), now = new Date()) {
     };
   }
 
-  const dates = [];
-  let cursor = fromDate;
-  while (cursor <= toDate) {
-    dates.push(cursor);
-    cursor = addDays(cursor, 1);
-  }
-
+  const fromDate = addDays(latest, -(days - 1));
+  const dates = buildDateList(fromDate, latest);
   return {
     referenceDate,
     weekStart,
     weekEnd,
     latestQueryableDate: latest,
     fromDate,
-    toDate,
+    toDate: latest,
     dates,
     dayCount: dates.length,
-    mode: 'history',
+    mode: 'history_lookback',
     skipped: false,
-    label: `${fromDate} ~ ${toDate}`
+    label: `${fromDate} ~ ${latest} (전날 포함 ${dates.length}일)`
   };
+}
+
+function computeHistoryCollectRange(dateKey = todayKST(), now = new Date()) {
+  return computeHistoryLookbackRange(dateKey, now, HISTORY_LOOKBACK_DAYS);
 }
 
 function computeDeliveryStatusCollectContext(dateKey = todayKST(), now = new Date()) {
@@ -502,6 +496,8 @@ module.exports = {
   settlementWeekStart,
   settlementWeekEnd,
   latestQueryableDate,
+  HISTORY_LOOKBACK_DAYS,
+  computeHistoryLookbackRange,
   computeHistoryCollectRange,
   computeBizHistoryCollectRange,
   computeDeliveryStatusCollectContext,

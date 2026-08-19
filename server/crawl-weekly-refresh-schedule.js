@@ -1,7 +1,7 @@
 /**
- * 라이더앱 반영(ERP publish) 30분 전 주단위 재수집
- * - 배민: 배달현황 + 일별 + 라이더별(하루씩) 정산주 범위
- * - 쿠팡: fullWeek + 라이더
+ * 라이더앱 반영(ERP publish) 30분 전 재수집
+ * - 배민: 배달현황 + 일별 + 라이더별(하루씩) 전날 포함 8일
+ * - 쿠팡: 오늘 포함 8일 + 라이더
  * - ERP 콜수/거절율 동기화까지 (라이더앱 반영은 기존 4회 스케줄)
  *
  * 기본 슬롯 = CRAWL_ERP_PUBLISH_SLOTS − 30분
@@ -214,8 +214,7 @@ async function runWeeklyRefreshPipeline(options = {}) {
         await sleep(800);
 
         const collect = await localPost(COUPANG_PORT, '/collect', {
-          weekStartDate: weekRange.fromDate,
-          fullWeek: true,
+          lookbackDays: 8,
           includeRider: true
         }, 25 * 60 * 1000);
         push('coupang_week_collect', {
@@ -254,7 +253,7 @@ async function runWeeklyRefreshPipeline(options = {}) {
       if (!coupangCollect || coupangCollect.ok !== false) {
         try {
           const sync = await syncCoupangRejections({
-            weekStart: weekRange.fromDate
+            weekStart: weekRange.weekStart || weekRange.fromDate
           });
           push('coupang_erp_sync', sync);
         } catch (error) {
@@ -298,7 +297,7 @@ function startWeeklyRefreshScheduler(options = {}) {
     };
   }
 
-  log(`[WEEKLY-REFRESH] 스케줄 시작 — KST ${slots.join(', ')} (라이더반영 30분 전 주단위·라이더별)`);
+  log(`[WEEKLY-REFRESH] 스케줄 시작 — KST ${slots.join(', ')} (라이더반영 30분 전 8일·라이더별)`);
 
   const timer = setInterval(async () => {
     const slot = matchCurrentSlot(slots);
@@ -307,7 +306,7 @@ function startWeeklyRefreshScheduler(options = {}) {
     if (key === lastSlotKey) return;
     lastSlotKey = key;
     running = true;
-    log(`[WEEKLY-REFRESH] ▶ ${key} 주단위 재수집 시작 (배민 일별/라이더별 + 쿠팡 fullWeek)`);
+    log(`[WEEKLY-REFRESH] ▶ ${key} 8일 재수집 시작 (배민 일별/라이더별 + 쿠팡 라이더)`);
     try {
       lastResult = await runWeeklyRefreshPipeline({
         slot,

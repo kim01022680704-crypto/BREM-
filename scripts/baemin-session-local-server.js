@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260811f';
+const SERVER_VERSION = '20260819look8';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -297,8 +297,12 @@ function safePageUrlSync(page) {
 }
 
 function isLoginLikeUrl(url) {
-  const value = String(url || '').toLowerCase();
-  return /login|signin|sign-in|auth|oauth|member\.baemin|bizmember|passport/.test(value);
+  const auth = require('../server/crawl-session-auth');
+  return auth.isBaeminLoginLikeUrl(url) || auth.isBaeminPhoneAuthLikeUrl(url);
+}
+
+function isRealBaeminLogoutUrl(url) {
+  return isLoginLikeUrl(url);
 }
 
 /** 문자열 기반 — URL 파싱 실패·SPA 대비 (구/신 배민Biz 경로 모두) */
@@ -1051,21 +1055,16 @@ function setStatusLoopPhase(phase, message = '') {
 }
 
 function computeThisWeekRangeForLoop() {
-  const { todayKST, settlementWeekStart, latestQueryableDate } = require('../server/baemin-settlement-week');
-  const today = todayKST();
-  // 일별/라이더는 배민에서 오늘 데이터가 없음 → 조회 가능 최신일(보통 전일)이 기준.
-  const latest = latestQueryableDate(today);
-  if (!latest) {
-    const fallback = settlementWeekStart(today);
+  const { computeHistoryLookbackRange, settlementWeekStart, todayKST } = require('../server/baemin-settlement-week');
+  const range = computeHistoryLookbackRange();
+  if (range.skipped || !range.fromDate || !range.toDate) {
+    const fallback = settlementWeekStart(todayKST());
     return { fromDate: fallback, toDate: fallback, label: `${fallback} ~ ${fallback}` };
   }
-  // 어제가 속한 정산주를 기준으로 돈다. 오늘 기준으로 잡으면 수요일마다
-  // 어제(지난 정산주 화요일)가 범위 밖으로 밀려나 지난주 마감이 빠진다.
-  const fromDate = settlementWeekStart(latest);
   return {
-    fromDate,
-    toDate: latest,
-    label: `${fromDate} ~ ${latest}`
+    fromDate: range.fromDate,
+    toDate: range.toDate,
+    label: range.label
   };
 }
 
@@ -1200,9 +1199,8 @@ async function keepAliveDuringStatusWait(ms) {
   const pages = getKeepAlivePages();
   if (!statusLoop.active || statusLoop.stopping) return false;
 
-  // 대기당 keep-alive 1회. 세션 만료/오류/5회차마다만 SPA 이동, 아니면 쿠키 동기화만.
-  const needHop = Boolean(sessionPaused || statusLoop.lastError)
-    || (statusLoop.round > 0 && statusLoop.round % 5 === 0);
+  // 페이지를 자주 바꾸면 배민이 로그아웃시킨다. 쿠키 동기화만 하고, 진짜 로그인 화면일 때만 hop.
+  const needHop = Boolean(sessionPaused || statusLoop.lastError);
   const target = pages[statusLoop.round % pages.length] || pages[0];
   setStatusLoopPhase(
     'waiting',
@@ -1224,7 +1222,7 @@ async function keepAliveDuringStatusWait(ms) {
       await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await require('../server/baemin-page-capture').dismissBaeminBlockingModals(page).catch(() => {});
       const landed = safePageUrlSync(page);
-      if (isLoginLikeUrl(landed) || !isLoggedInDeliveryPage(landed)) {
+      if (isRealBaeminLogoutUrl(landed)) {
         sessionPaused = true;
         statusLoop.lastError = `세션 만료 감지 · ${landed}`;
         console.warn(`[BREM] [세션유지] 로그인 페이지로 이동됨 — ${landed}`);
@@ -1239,7 +1237,7 @@ async function keepAliveDuringStatusWait(ms) {
       }
     } else if (page) {
       const landed = safePageUrlSync(page);
-      if (isLoginLikeUrl(landed) || !isLoggedInDeliveryPage(landed)) {
+      if (isRealBaeminLogoutUrl(landed)) {
         sessionPaused = true;
         statusLoop.lastError = `세션 만료 감지 · ${landed}`;
         console.warn(`[BREM] [세션유지] 현재 탭이 로그인 페이지 — ${landed}`);
@@ -3057,7 +3055,7 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  // 라이더반영 30분 전 주단위 재수집 (배민 일별/라이더별 + 쿠팡 fullWeek)
+  // 라이더반영 30분 전 8일 재수집 (배민 일별/라이더별 + 쿠팡 라이더)
   if (url.pathname === '/weekly-refresh/run' && req.method === 'POST') {
     try {
       if (!weeklyRefreshScheduler?.runNow) {

@@ -1,5 +1,5 @@
 /**
- * 수요일 전주 수~화 크롤 범위 회귀
+ * 전날 포함 8일 크롤 범위 회귀
  * Run: node scripts/test-crawl-week-range.js
  */
 const assert = require('assert');
@@ -18,9 +18,10 @@ function testWednesdayKeepsPrevWeekTuesday() {
   // 수요일 낮 → 조회 가능 최신일은 보통 화요일
   assert.strictEqual(latest, '2026-08-11');
   const range = computeCrawlWeekRangeFromLatest(latest, settlementWeekStart);
-  assert.strictEqual(range.fromDate, '2026-08-05'); // 전주 수
-  assert.strictEqual(range.toDate, '2026-08-11'); // 전주 화
-  console.log('✓ Wednesday keeps previous Wed~Tue', range.label);
+  assert.strictEqual(range.fromDate, '2026-08-04'); // 어제 포함 8일
+  assert.strictEqual(range.toDate, '2026-08-11');
+  assert.strictEqual(range.weekStart, '2026-08-05'); // 거절율용 정산주
+  console.log('✓ Wednesday keeps yesterday in 8-day lookback', range.label);
 }
 
 function testThursdayUsesCurrentWeek() {
@@ -30,9 +31,10 @@ function testThursdayUsesCurrentWeek() {
   const latest = latestQueryableDate(today, now);
   assert.strictEqual(latest, '2026-08-12');
   const range = computeCrawlWeekRangeFromLatest(latest, settlementWeekStart);
-  assert.strictEqual(range.fromDate, '2026-08-12');
+  assert.strictEqual(range.fromDate, '2026-08-05');
   assert.strictEqual(range.toDate, '2026-08-12');
-  console.log('✓ Thursday uses new week start', range.label);
+  assert.strictEqual(range.weekStart, '2026-08-12');
+  console.log('✓ Thursday 8-day lookback includes new Wednesday', range.label);
 }
 
 function testAuthLabels() {

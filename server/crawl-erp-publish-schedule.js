@@ -98,7 +98,7 @@ async function runErpAndPublishPipeline(options = {}) {
     if (!options.skipCoupang) {
       try {
         const coupangSync = await syncCoupangRejections({
-          weekStart: weekRange.fromDate
+          weekStart: weekRange.weekStart || weekRange.fromDate
         });
         push('coupang_erp_sync', coupangSync);
       } catch (error) {
