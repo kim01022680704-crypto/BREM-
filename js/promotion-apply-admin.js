@@ -13,7 +13,8 @@ const BremPromotionApplyAdmin = (function () {
     settlementWeekByKey: {},
     savedWeekFilter: '',
     // 수락/거절율 미등록 기사를 막고 계산하지 않도록 기본 false. 패널 버튼으로 켠다.
-    ignoreMissingRates: false
+    ignoreMissingRates: false,
+    rainApply: false
   };
   const $ = selector => document.querySelector(selector);
   const $$ = selector => Array.from(document.querySelectorAll(selector));
@@ -421,8 +422,8 @@ const BremPromotionApplyAdmin = (function () {
 
     if (!file) {
       hintEl.innerHTML = platformKey === 'combined'
-        ? '단가보장 조건이 있으면 <strong>쿠팡 주정산서(배달현황)</strong>·<strong>배민 배달처리비</strong>를 모두 업로드하세요. 합산 콜수로 구간을 고르고, 쿠팡은 3시트 <strong>B열·Y열</strong>, 배민은 <strong>K열·AH열</strong>로 보장액을 각각 계산합니다.'
-        : '단가보장(미션 배정) 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 파일을 업로드하세요. <strong>K열 User ID</strong> 매칭 · <strong>U·V·AH 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 집계';
+        ? '단가보장 조건이 있으면 <strong>쿠팡 주정산서(배달현황)</strong>·<strong>배민 배달처리비</strong>를 모두 업로드하세요. 합산 콜수로 구간을 고르고, 쿠팡은 3시트 <strong>B열·Y열</strong>, 배민은 <strong>K열·AH열</strong>로 보장액을 각각 계산합니다. 배민 단가보장 우천은 <strong>우천적용</strong>으로 계산하세요. AC(기상할증)가 있는 건은 AH-500원으로 보장합니다.'
+        : '단가보장(미션 배정) 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 파일을 업로드하세요. <strong>K열 User ID</strong> 매칭 · <strong>U·V·AH 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 집계. 단가보장 우천은 <strong>우천적용</strong>으로 계산하세요. AC(기상할증)가 있는 건은 AH-500원으로 보장합니다.';
       return;
     }
 
@@ -697,6 +698,7 @@ const BremPromotionApplyAdmin = (function () {
       <p>적용 조건: <strong>${escapeHtml(result.appliedRuleLabel || (result.selectedPromotionRuleNames || []).join(', ') || '-')}</strong>${result.unassignedRiderCount ? ` · 미배정 <strong>${formatNumber(result.unassignedRiderCount)}</strong>명` : ''}</p>
       <p>기사 <strong>${formatNumber(result.summary.riderCount)}</strong>명 · 총 프로모션 <strong>${formatMoney(result.summary.totalPromotionAmount)}</strong>${rateMissingSummary}</p>
       ${deliveryFeeSummary}
+      ${result.rainApply ? '<p>우천적용: <strong>기상할증(AC) 건은 AH-500원 후 단가보장</strong></p>' : ''}
       ${combinedSummary}
       ${savedBadge}
     `;
@@ -869,6 +871,8 @@ const BremPromotionApplyAdmin = (function () {
       : [];
     const ignoreMissingRates = options.ignoreMissingRates === true
       || state.ignoreMissingRates === true;
+    const rainApply = (platform === 'baemin' || platform === 'combined')
+      && options.rainApply === true;
 
     if (platform === 'combined' && !ruleIds.length) {
       showToast('적용할 합산 프로모션 조건을 선택하세요.');
@@ -928,9 +932,10 @@ const BremPromotionApplyAdmin = (function () {
             coupangDeliveryFeeIndex: deliveryFeeParsed.coupang?.index || null,
             coupangDeliveryFeeMeta: deliveryFeeParsed.coupang || null,
             ignoreMissingRates,
+            rainApply,
             ...combinedMeta
           }
-          : { ignoreMissingRates, ...combinedMeta };
+          : { ignoreMissingRates, rainApply, ...combinedMeta };
 
         state.lastResult = BremPromotionApply.applyPromotionToCombinedSettlements(
           coupangSettlement,
@@ -959,7 +964,7 @@ const BremPromotionApplyAdmin = (function () {
 
         await BremStorage.ensurePromotionCalculationCalls?.(settlement.startDate, settlement.endDate);
 
-        let applyOptions = { assignmentMode, channel: state.channel, ignoreMissingRates };
+        let applyOptions = { assignmentMode, channel: state.channel, ignoreMissingRates, rainApply };
         if (platform === 'baemin') {
           const deliveryFeeParsed = await resolveDeliveryFeeForCalculation('baemin', settlement);
           if (deliveryFeeParsed) {
@@ -981,10 +986,13 @@ const BremPromotionApplyAdmin = (function () {
 
       state.savedResultId = '';
       state.ignoreMissingRates = ignoreMissingRates;
+      state.rainApply = rainApply;
       renderResult(state.lastResult);
       showToast(ignoreMissingRates
         ? '수락/거절율 미등록을 무시하고 프로모션을 다시 계산했습니다.'
-        : '프로모션 계산이 완료되었습니다.');
+        : rainApply
+          ? '우천적용으로 프로모션을 계산했습니다. (기상할증 건 AH-500원 후 단가보장)'
+          : '프로모션 계산이 완료되었습니다.');
     } catch (error) {
       showToast(error.message || '프로모션 계산 중 오류가 발생했습니다.');
     }
@@ -1001,7 +1009,10 @@ const BremPromotionApplyAdmin = (function () {
     );
     if (!ok) return;
     state.ignoreMissingRates = true;
-    await runCalculation({ ignoreMissingRates: true });
+    await runCalculation({
+      ignoreMissingRates: true,
+      rainApply: state.lastResult?.rainApply === true || state.rainApply === true
+    });
   }
 
   function saveCurrentResult() {
@@ -1164,12 +1175,22 @@ const BremPromotionApplyAdmin = (function () {
       renderPromotionRulePickersForPlatform('combined');
     }
 
+    updateRainButtonVisibility(p);
+
     if (!options.keepResult) {
       const card = $('#promotionApplyResultCard');
       if (card) card.hidden = true;
       state.lastResult = null;
       state.savedResultId = '';
+      state.rainApply = false;
     }
+  }
+
+  function updateRainButtonVisibility(platform = state.platform) {
+    const btn = $('#promotionApplyRainBtn');
+    if (!btn) return;
+    const show = platform === 'baemin' || platform === 'combined';
+    btn.hidden = !show;
   }
 
   function bindEvents() {
@@ -1200,7 +1221,12 @@ const BremPromotionApplyAdmin = (function () {
       // 일반 계산은 무시 옵션을 끈다. 패널 버튼으로만 켠다.
       state.ignoreMissingRates = false;
       event.preventDefault();
-      runCalculation();
+      runCalculation({ rainApply: false });
+    });
+
+    $('#promotionApplyRainBtn')?.addEventListener('click', () => {
+      state.ignoreMissingRates = false;
+      runCalculation({ rainApply: true });
     });
 
     $('#promotionApplyDeliveryFeeFile-baemin')?.addEventListener('change', event => {

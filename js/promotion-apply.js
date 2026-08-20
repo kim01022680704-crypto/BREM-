@@ -232,7 +232,7 @@ const BremPromotionApply = (function () {
     const unit = Number(unitPrice || 0);
     if (unit <= 0) return 0;
     const list = Array.isArray(fees)
-      ? fees.map(fee => Number(fee || 0)).filter(fee => fee > 0)
+      ? fees.map(fee => Number(fee || 0)).filter(fee => Number.isFinite(fee))
       : [];
     if (list.length) {
       return list.reduce((sum, fee) => sum + Math.max(0, unit - fee), 0);
@@ -241,6 +241,25 @@ const BremPromotionApply = (function () {
     const deliveryAmount = Number(amount || 0);
     if (orderCount <= 0) return 0;
     return Math.max(0, unit * orderCount - deliveryAmount);
+  }
+
+  // 기상할증(AC)이 붙은 건은 AH에 500원이 이미 포함되어 있다.
+  // 우천적용 시 비교 금액을 AH-500으로 두고 단가보장을 계산한다. (보장액이 500원 오르는 것과 같음)
+  const WEATHER_SURCHARGE_WON = 500;
+
+  function adjustBaeminFeesForRain(fees, weatherFlags, rainApply) {
+    const list = Array.isArray(fees) ? fees.map(fee => Number(fee || 0)) : [];
+    const flags = Array.isArray(weatherFlags) ? weatherFlags : [];
+    if (!rainApply) {
+      return { fees: list, weatherCount: flags.filter(Boolean).length };
+    }
+    let weatherCount = 0;
+    const adjusted = list.map((fee, i) => {
+      if (!flags[i]) return fee;
+      weatherCount += 1;
+      return Math.max(0, fee - WEATHER_SURCHARGE_WON);
+    });
+    return { fees: adjusted, weatherCount };
   }
 
   function combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, selectedRuleIds = []) {
@@ -306,7 +325,8 @@ const BremPromotionApply = (function () {
       feeData: {
         ...feeData,
         callCount,
-        deliveryFees: Array.isArray(feeData.deliveryFees) ? feeData.deliveryFees : []
+        deliveryFees: Array.isArray(feeData.deliveryFees) ? feeData.deliveryFees : [],
+        weatherFlags: Array.isArray(feeData.weatherFlags) ? feeData.weatherFlags : []
       }
     };
   }
@@ -373,7 +393,8 @@ const BremPromotionApply = (function () {
     assignmentMode = 'per_driver',
     deliveryFeeIndex = null,
     requireDeliveryFee = false,
-    ignoreMissingRates = false
+    ignoreMissingRates = false,
+    rainApply = false
   }) {
     const statsPlatform = normalizePlatform(appliedPlatform);
     const ruleP = normalizePlatform(rulePlatform);
@@ -469,6 +490,11 @@ const BremPromotionApply = (function () {
     }
 
     const platformRate = BremStorage.rejections.getRateForWeek(driver.id, settlement.startDate, statsPlatform);
+    const rainAdjusted = adjustBaeminFeesForRain(
+      feeData?.deliveryFees,
+      feeData?.weatherFlags,
+      rainApply === true
+    );
 
     const riderData = {
       driverId: driver.id,
@@ -479,7 +505,7 @@ const BremPromotionApply = (function () {
       rateLabel: BremPlatforms.rateLabel(statsPlatform),
       dailyOrders: stats.byDay,
       deliveryAmount: stats.deliveryAmount,
-      deliveryFees: Array.isArray(feeData?.deliveryFees) ? feeData.deliveryFees : [],
+      deliveryFees: rainAdjusted.fees,
       selectedPromotionRuleId: rule.id,
       selectedPromotionName: rule.name,
       uploadDays: stats.uploadDays,
@@ -558,7 +584,8 @@ const BremPromotionApply = (function () {
         assignmentMode,
         deliveryFeeIndex: platform === 'baemin' ? deliveryFeeIndex : null,
         requireDeliveryFee,
-        ignoreMissingRates: options.ignoreMissingRates === true
+        ignoreMissingRates: options.ignoreMissingRates === true,
+        rainApply: options.rainApply === true
       });
     });
 
@@ -593,6 +620,7 @@ const BremPromotionApply = (function () {
       deliveryFeeLabel: options.deliveryFeeMeta
         ? BremBaeminDeliveryFee.formatMetaLabel(options.deliveryFeeMeta)
         : '',
+      rainApply: options.rainApply === true,
       results,
       summary: {
         riderCount: results.length,
@@ -610,7 +638,8 @@ const BremPromotionApply = (function () {
     promotionSettings,
     deliveryFeeIndex = null,
     coupangDeliveryFeeIndex = null,
-    ignoreMissingRates = false
+    ignoreMissingRates = false,
+    rainApply = false
   }) {
     const ratePlatform = normalizePlatform(assignment.ratePlatform || 'coupang');
     const displayRider = assignment.baeminRider || assignment.coupangRider || assignment.rider;
@@ -766,9 +795,15 @@ const BremPromotionApply = (function () {
     const coupangFees = hasCoupangFee && Array.isArray(coupangFeeData.deliveryFees)
       ? coupangFeeData.deliveryFees
       : [];
-    const baeminFees = hasBaeminFee && Array.isArray(baeminFeeData.deliveryFees)
+    const baeminFeesRaw = hasBaeminFee && Array.isArray(baeminFeeData.deliveryFees)
       ? baeminFeeData.deliveryFees
       : [];
+    const baeminRain = adjustBaeminFeesForRain(
+      baeminFeesRaw,
+      baeminFeeData?.weatherFlags,
+      rainApply === true
+    );
+    const baeminFees = baeminRain.fees;
     const coupangDeliveryAmount = hasCoupangFee
       ? Number(coupangFeeData.deliveryAmount || 0)
       : 0;
@@ -896,7 +931,8 @@ const BremPromotionApply = (function () {
         promotionSettings,
         deliveryFeeIndex,
         coupangDeliveryFeeIndex,
-        ignoreMissingRates: options.ignoreMissingRates === true
+        ignoreMissingRates: options.ignoreMissingRates === true,
+        rainApply: options.rainApply === true
       });
     });
 
@@ -930,6 +966,7 @@ const BremPromotionApply = (function () {
       selectedPromotionRuleNames: selected.map(id => BremStorage.promotionRules.getById(id)?.name || id).filter(Boolean),
       deliveryFeeFileName: feeFiles.join(' / '),
       deliveryFeeLabel: feeLabels.join(' / '),
+      rainApply: options.rainApply === true,
       results,
       summary: {
         riderCount: results.length,

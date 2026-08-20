@@ -35,6 +35,7 @@ const SettlementFormats = (function () {
         name: 'L',
         storeArrival: 'U',
         columnV: 'V',
+        weatherSurcharge: 'AC',
         deliveryAmount: 'AH'
       },
       cleanName(rawName) {

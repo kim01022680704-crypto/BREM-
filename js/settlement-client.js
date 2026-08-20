@@ -209,6 +209,7 @@ const BremSettlementParser = (function () {
     const storeArrivalCol = SettlementFormats.columnToIndex(format.columns.storeArrival || 'U');
     const columnVCol = SettlementFormats.columnToIndex(format.columns.columnV || 'V');
     const amountCol = SettlementFormats.columnToIndex(format.columns.deliveryAmount);
+    const weatherCol = SettlementFormats.columnToIndex(format.columns.weatherSurcharge || 'AC');
     const startIndex = Math.max(0, Number(format.startRow || 1) - 1);
     const groups = new Map();
     let totalDeliveries = 0;
@@ -241,6 +242,8 @@ const BremSettlementParser = (function () {
         continue;
       }
       const amount = parseNumber(amountCell);
+      const weatherCell = readCell(row, weatherCol);
+      const hasWeather = parseNumber(weatherCell) > 0 || !isBlankBaeminCell(weatherCell);
 
       totalDeliveries += 1;
       totalDeliveryAmount += amount;
@@ -254,7 +257,8 @@ const BremSettlementParser = (function () {
           orderCount: 0,
           deliveryAmount: 0,
           settlementAmount: 0,
-          deliveryFees: []
+          deliveryFees: [],
+          weatherFlags: []
         });
       }
 
@@ -267,6 +271,7 @@ const BremSettlementParser = (function () {
       entry.deliveryAmount += amount;
       entry.settlementAmount += amount;
       entry.deliveryFees.push(amount);
+      entry.weatherFlags.push(hasWeather);
     }
 
     const parsedRows = Array.from(groups.values());

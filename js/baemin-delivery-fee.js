@@ -83,6 +83,12 @@ const BremBaeminDeliveryFee = (function () {
       if (!key) return;
       if (Number(row.orderCount || 0) <= 0 || Number(row.deliveryAmount || 0) <= 0) return;
 
+      const feePairs = Array.isArray(row.deliveryFees)
+        ? row.deliveryFees.map((fee, i) => ({
+          fee: Number(fee || 0),
+          weather: Boolean(row.weatherFlags?.[i])
+        })).filter(item => item.fee > 0)
+        : [];
       const entry = {
         rawName: row.rawName,
         name: row.name,
@@ -90,9 +96,8 @@ const BremBaeminDeliveryFee = (function () {
         riderId: String(riderId).startsWith('0') ? riderId : (index.get(`id:${key}`)?.riderId || riderId),
         orderCount: Number(row.orderCount || 0),
         deliveryAmount: Number(row.deliveryAmount || 0),
-        deliveryFees: Array.isArray(row.deliveryFees)
-          ? row.deliveryFees.map(fee => Number(fee || 0)).filter(fee => fee > 0)
-          : [],
+        deliveryFees: feePairs.map(item => item.fee),
+        weatherFlags: feePairs.map(item => item.weather),
         avgUnitPrice: 0
       };
       // 같은 매칭키로 이미 있으면 합산
@@ -101,6 +106,7 @@ const BremBaeminDeliveryFee = (function () {
         entry.orderCount += Number(prev.orderCount || 0);
         entry.deliveryAmount += Number(prev.deliveryAmount || 0);
         entry.deliveryFees = [...(prev.deliveryFees || []), ...entry.deliveryFees];
+        entry.weatherFlags = [...(prev.weatherFlags || []), ...entry.weatherFlags];
         if (String(prev.riderId || '').startsWith('0')) entry.riderId = prev.riderId;
       }
       entry.avgUnitPrice = entry.orderCount > 0

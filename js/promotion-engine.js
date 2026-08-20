@@ -594,7 +594,7 @@ const BremPromotionEngine = (function () {
     if (unit <= 0) return 0;
 
     const fees = Array.isArray(riderData?.deliveryFees)
-      ? riderData.deliveryFees.map(fee => Number(fee || 0)).filter(fee => fee > 0)
+      ? riderData.deliveryFees.map(fee => Number(fee || 0)).filter(fee => Number.isFinite(fee))
       : [];
 
     if (fees.length) {
