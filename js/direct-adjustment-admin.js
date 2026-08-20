@@ -428,7 +428,9 @@ const BremDirectAdjustmentAdmin = (function () {
         source: 'excel'
       };
     });
-    window.BremStorage.directSettlementAdjustments.applyEntries(kind, settlement.id, entries);
+    const already = window.BremStorage.directSettlementAdjustments.getSettlement(kind, settlement.id);
+    const addedToExisting = toApply.filter(row => already[String(row.driverId || '').trim()]).length;
+    window.BremStorage.directSettlementAdjustments.applyEntries(kind, settlement.id, entries, { add: true });
     void window.BremStorage.flushStorage?.();
     state.pending[kind] = null;
     const fileInput = $(cfg.file);
@@ -439,6 +441,7 @@ const BremDirectAdjustmentAdmin = (function () {
     renderAppliedSummary();
     renderRegistry();
     let message = `${cfg.label} ${toApply.length}명 적용 완료`;
+    if (addedToExisting) message += ` · 기존 ${addedToExisting}명 금액에 합산`;
     if (mergedDrivers) message += ` · 중복 ${mergedDrivers}명(${mergedRows + mergedDrivers}행) 합산`;
     if (skippedNoAmount) message += ` · 금액 없음 ${skippedNoAmount} 제외`;
     showToast(message);

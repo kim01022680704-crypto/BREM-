@@ -529,6 +529,15 @@ function check(label, actual, expected) {
   // 3행이 10,000 을 덮어써 23,000 만 남는 예전 동작이 아님을 못박는다.
   check('마지막 값으로 덮어쓰지 않음', adjustments.other['weekly_direct_baemin_seoul_20260722']?.d1?.amount === 23000, 'false');
 
+  console.log('\n[25b] 이미 적용된 금액에 두 번째 엑셀 적용은 합산');
+  Adj.state.pending.other = {
+    rows: bulk.parseSheetRows([['BC000001', 7000]], DRIVERS, 'baemin').rows,
+    issues: []
+  };
+  window.document.getElementById('directOtherBulkApplyBtn').click();
+  check('두 번째 적용 후 33,000+7,000', adjustments.other['weekly_direct_baemin_seoul_20260722']?.d1?.amount, 40000);
+  check('다른 기사는 그대로', adjustments.other['weekly_direct_baemin_seoul_20260722']?.d2?.amount, 5000);
+
   // 등록 후 되돌리려면 한 명씩 지우는 것 말고 한 번에 비우는 길이 있어야 한다.
   console.log('\n[26] 전체 삭제');
   adjustments.promotion = {};
@@ -541,7 +550,7 @@ function check(label, actual, expected) {
 
   confirmText = '';
   clearAllBtn.click();
-  check('confirm 에 건수·합계 안내', /2명 · 38,000원/.test(confirmText), 'true');
+  check('confirm 에 건수·합계 안내', /2명 · 45,000원/.test(confirmText), 'true');
   check('기타지급이 모두 비워짐', Object.keys(adjustments.other['weekly_direct_baemin_seoul_20260722'] || {}).length, 0);
   check('BREM프로모션은 남아 있음', adjustments.promotion['weekly_direct_baemin_seoul_20260722']?.d1?.amount, 70000);
   check('전체 삭제 후 버튼 비활성', clearAllBtn.disabled, 'true');

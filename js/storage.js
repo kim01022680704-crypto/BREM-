@@ -11974,12 +11974,17 @@ const BremStorage = (function () {
       (Array.isArray(entries) ? entries : []).forEach(entry => {
         const driverId = String(entry.driverId || '').trim();
         if (!driverId) return;
+        const prev = existing[driverId];
+        const incoming = Math.round(Number(entry.amount || 0));
+        const amount = options.add
+          ? Math.round(Number(prev?.amount || 0)) + incoming
+          : incoming;
         existing[driverId] = {
-          amount: Math.round(Number(entry.amount || 0)),
-          baeminId: String(entry.baeminId || '').trim(),
-          coupangId: String(entry.coupangId || '').trim(),
-          driverName: String(entry.driverName || '').trim(),
-          source: this.normalizeSource(entry.source),
+          amount,
+          baeminId: String(entry.baeminId || prev?.baeminId || '').trim(),
+          coupangId: String(entry.coupangId || prev?.coupangId || '').trim(),
+          driverName: String(entry.driverName || prev?.driverName || '').trim(),
+          source: this.normalizeSource(entry.source || prev?.source),
           updatedAt: now
         };
       });
