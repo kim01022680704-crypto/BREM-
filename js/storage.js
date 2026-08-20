@@ -1843,7 +1843,9 @@ const BremStorage = (function () {
         || sectionId === 'mission-management'
         || sectionId === 'lease-management'
         || sectionId === 'coupang-rider-status'
-        || sectionId === 'rejections';
+        || sectionId === 'rejections'
+        || sectionId === 'weekly-settlement'
+        || sectionId === 'weekly-settlement-direct';
       const hasDrivers = drivers.getAll().length > 0 && window.BremDataCache?.isValid?.(KEYS.drivers);
       const fetchInFlight = Boolean(driversFetchAllPromise || driversBackgroundFetchPromise || driversFullFetchInProgress);
       const knownTotal = Number(driversLoadMeta.supabaseTotal || 0);

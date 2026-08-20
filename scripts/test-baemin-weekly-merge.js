@@ -35,7 +35,16 @@ const sandbox = {
     },
     settlements: { getAll: () => [] },
     calls: { getAll: () => [] },
-    drivers: { getAll: () => [], getById: () => null }
+    drivers: {
+      list: [
+        { id: 'd-bc', name: '박건', baeminId: 'BC740647' },
+        { id: 'd-raw', name: '장정민', baeminId: '', raw_data: { baeminId: 'a700825' } },
+        { id: 'd-name', name: '유일한이름', baeminId: '' }
+      ],
+      getAll() { return this.list; },
+      getById(id) { return this.list.find(d => d.id === id) || null; }
+    },
+    manualNameMappings: { getAll: () => [] }
   },
   BremDatePicker: {
     weekStartKey(dateValue) {
@@ -220,6 +229,17 @@ check('within-file one rider', withinFile.length, 1);
 check('within-file orders', withinFile[0].weeklyOrderCount, 5);
 check('within-file fee', withinFile[0].amounts.deliveryFee, 100000);
 check('within-file tax', withinFile[0].amounts.withholdingTax, 3000);
+
+// 8) B열 배민 ID(영문+숫자) · raw_data · 유일 이름 매칭
+const matchedIds = WS.matchSettlementRidersWithExistingData([
+  { originalName: '박건', riderName: '박건', baeminUserId: 'BC740647', weeklyOrderCount: 10 },
+  { originalName: '장정민', riderName: '장정민', baeminUserId: 'a700825', weeklyOrderCount: 4 },
+  { originalName: '유일한이름', riderName: '유일한이름', baeminUserId: 'unknown-id', weeklyOrderCount: 1 }
+], 'baemin', { skipCallAudit: true });
+check('alphanumeric baemin id', matchedIds[0]?.matchedRiderId, 'd-bc');
+check('raw_data baemin id', matchedIds[1]?.matchedRiderId, 'd-raw');
+check('unique name fallback', matchedIds[2]?.matchedRiderId, 'd-name');
+check('all three matched', matchedIds.every(item => item.matched), true);
 
 if (failures.length) {
   failures.forEach(msg => console.log('FAIL:', msg));

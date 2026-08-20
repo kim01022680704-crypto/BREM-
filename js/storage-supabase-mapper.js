@@ -97,7 +97,7 @@ window.BremSupabaseMapper = (function () {
       bankName: row.bank_name || raw.bankName || '',
       accountHolder: row.account_holder || raw.accountHolder || '',
       accountNumber: row.account_number || raw.accountNumber || '',
-      baeminId: row.baemin_id || '',
+      baeminId: String(row.baemin_id || raw.baeminId || raw.baemin_id || '').trim(),
       platformCoupang: row.platform_coupang !== false,
       platformBaemin: Boolean(row.platform_baemin),
       regionBaemin: String(raw.regionBaemin || '').trim(),

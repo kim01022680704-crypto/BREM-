@@ -1235,11 +1235,28 @@ const BremWeeklySettlement = (function () {
     return resolveCoupangDriverFromLookup(rider, index);
   }
 
+  function collectDriverBaeminKeys(driver) {
+    const keys = [];
+    const push = (value) => {
+      const key = baeminIdMatchKey(value);
+      if (key && !keys.includes(key)) keys.push(key);
+    };
+    push(driver?.baeminId);
+    push(driver?.raw_data?.baeminId);
+    push(driver?.raw_data?.baemin_id);
+    push(driver?.coupangId);
+    push(driver?.coupangLoginId);
+    push(driver?.loginId);
+    push(driver?.coupangLoginKey);
+    return keys;
+  }
+
   function buildBaeminDriverLookup(driverList) {
     const byId = new Map();
     (Array.isArray(driverList) ? driverList : (BremStorage.drivers.getAll() || [])).forEach(driver => {
-      const key = baeminIdMatchKey(driver?.baeminId);
-      if (key && !byId.has(key)) byId.set(key, driver);
+      collectDriverBaeminKeys(driver).forEach(key => {
+        if (!byId.has(key)) byId.set(key, driver);
+      });
     });
     return byId;
   }
@@ -1252,12 +1269,17 @@ const BremWeeklySettlement = (function () {
     }
 
     const userId = baeminIdMatchKey(rider.baeminUserId);
-    if (!userId) return null;
-    if (lookup) return lookup.get(userId) || null;
+    const index = lookup || buildBaeminDriverLookup();
+    if (userId && index.has(userId)) return index.get(userId);
 
-    return BremStorage.drivers.getAll().find(
-      driver => baeminIdMatchKey(driver.baeminId) === userId
-    ) || null;
+    if (userId) {
+      const scanned = (BremStorage.drivers.getAll() || []).find(
+        driver => collectDriverBaeminKeys(driver).includes(userId)
+      );
+      if (scanned) return scanned;
+    }
+
+    return resolveDriverByUniqueName(rider, 'baemin');
   }
 
   // 정산 라이더 목록의 배민 ID 를 기사 등록값(앞 0 포함)으로 맞춘다.
