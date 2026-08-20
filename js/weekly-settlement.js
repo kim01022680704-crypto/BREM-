@@ -503,12 +503,40 @@ const BremWeeklySettlement = (function () {
     };
   }
 
+  function resolveDriverByUniqueName(rider, platform) {
+    const p = normalizePlatform(platform);
+    const name = normalizeName(rider?.riderName || rider?.originalName, p);
+    if (!name) return null;
+    const hits = (BremStorage.drivers.getAll() || []).filter(driver => (
+      normalizeName(driver?.name, p) === name
+    ));
+    return hits.length === 1 ? hits[0] : null;
+  }
+
+  function attachDriverIfMissing(rider, platform) {
+    if (!rider || rider.matchedRiderId) return rider;
+    const p = normalizePlatform(platform);
+    const driver = p === 'baemin'
+      ? (resolveBaeminDriver(rider) || resolveDriverByUniqueName(rider, p))
+      : (resolveCoupangDriver(rider) || resolveDriverByUniqueName(rider, p));
+    if (!driver) return rider;
+    return {
+      ...rider,
+      matched: true,
+      matchedRiderId: driver.id,
+      driverName: driver.name || rider.driverName || rider.riderName,
+      baeminUserId: p === 'baemin'
+        ? (preferRegisteredBaeminId(rider.baeminUserId, driver) || rider.baeminUserId)
+        : rider.baeminUserId
+    };
+  }
+
   // 관리자가 고른 소급 기사만 Z열 지급액을 총지급 목표로 표시한다. 계산식은 건드리지 않는다.
-  function applySheetPayoutOverride(rider) {
+  function applySheetPayoutOverride(rider, platform = 'baemin') {
     if (!rider || !rider.amounts) return rider;
     const z = Math.abs(Number(rider.amounts.sheetPayout || 0));
     if (!z) return rider;
-    return {
+    const withPay = {
       ...rider,
       amounts: {
         ...rider.amounts,
@@ -516,6 +544,7 @@ const BremWeeklySettlement = (function () {
         payoutOverride: z
       }
     };
+    return attachDriverIfMissing(withPay, platform);
   }
 
   function riderPayoutSelectKey(rider, platform) {
@@ -523,6 +552,35 @@ const BremWeeklySettlement = (function () {
       return String(rider?.baeminUserId || rider?.originalName || '').trim();
     }
     return String(rider?.coupangLoginKey || rider?.originalName || '').trim();
+  }
+
+  // Z열 지급액을 맞춘 미매칭 기사도 저장 대상에 넣어 정산결과에 총지급액이 보이게 한다.
+  function includeSheetPayoutRiders(record) {
+    if (!record) return record;
+    const platform = normalizePlatform(record.platform);
+    const unmatched = Array.isArray(record.previewUnmatched) ? record.previewUnmatched : [];
+    const keep = [];
+    const promote = [];
+    unmatched.forEach(rider => {
+      if (rider?.amounts?.useSheetPayout) {
+        promote.push(attachDriverIfMissing({ ...rider, forceIncluded: true }, platform));
+      } else {
+        keep.push(rider);
+      }
+    });
+    if (!promote.length) return record;
+    const existingKeys = new Set(
+      (record.riders || []).map(rider => riderPayoutSelectKey(rider, platform)).filter(Boolean)
+    );
+    const extra = promote.filter(rider => {
+      const key = riderPayoutSelectKey(rider, platform);
+      return key ? !existingKeys.has(key) : true;
+    });
+    return {
+      ...record,
+      riders: [...(record.riders || []), ...extra],
+      previewUnmatched: keep
+    };
   }
 
   function normalizeName(rawName, platform) {
@@ -1827,6 +1885,7 @@ const BremWeeklySettlement = (function () {
     extractCoupangWeeklyRiders,
     extractBaeminWeeklyRiders,
     applySheetPayoutOverride,
+    includeSheetPayoutRiders,
     riderPayoutSelectKey,
     buildDriversInPeriod,
     buildDriverCallStatsForPeriod,

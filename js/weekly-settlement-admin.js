@@ -538,11 +538,12 @@ const BremWeeklySettlementAdmin = (function () {
       showToast('먼저 업로드 및 매칭을 실행하세요.');
       return;
     }
-    if (!record.riders?.length) {
+    const toSavePreview = BremWeeklySettlement.includeSheetPayoutRiders?.(record) || record;
+    if (!toSavePreview.riders?.length) {
       showToast('매칭된 기사가 없어 저장할 수 없습니다.');
       return;
     }
-    const { previewUnmatched, ...saveRecord } = record;
+    const { previewUnmatched, ...saveRecord } = toSavePreview;
     saveRecord.channel = ch;
     const refreshedRecord = BremWeeklySettlement.refreshWeeklySettlementRiders(saveRecord);
     refreshedRecord.channel = ch;
@@ -587,7 +588,12 @@ const BremWeeklySettlementAdmin = (function () {
     renderSavedList(ch, platform);
     renderWeeklyUnmatched(ch, platform);
     if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
-    showToast(`${record.region} · 매칭 ${record.riders.length}명 저장 완료`);
+    const zSaved = (toSavePreview.riders || []).filter(r => r.amounts?.useSheetPayout).length;
+    showToast(
+      zSaved
+        ? `${toSavePreview.region} · ${toSavePreview.riders.length}명 저장 (Z지급 ${zSaved}명 포함)`
+        : `${toSavePreview.region} · 매칭 ${toSavePreview.riders.length}명 저장 완료`
+    );
   }
 
   function formatCallMismatchWarnings(rider) {
@@ -894,7 +900,7 @@ const BremWeeklySettlementAdmin = (function () {
       <p>매칭 <strong>${formatNumber(record.summary.matchedRiders)}</strong>명 (${matchBasisLabel})</p>
       <p>미매칭 <strong>${formatNumber(record.summary.unmatchedRiders)}</strong>명</p>
       <p>콜수 불일치 <strong>${formatNumber(mismatchCount)}</strong>명</p>
-      <p>저장 대상 <strong>${formatNumber(record.riders.length)}</strong>명 (매칭된 기사만)</p>
+      <p>저장 대상 <strong>${formatNumber(record.riders.length + (record.previewUnmatched || []).filter(r => r.amounts?.useSheetPayout).length)}</strong>명 (매칭 + Z지급 맞춤)</p>
       ${summaryExtra}
     `;
     }
@@ -1006,7 +1012,7 @@ const BremWeeklySettlementAdmin = (function () {
     const applyOne = rider => {
       const key = BremWeeklySettlement.riderPayoutSelectKey(rider, platform);
       if (!keys.has(key)) return rider;
-      return BremWeeklySettlement.applySheetPayoutOverride(rider);
+      return BremWeeklySettlement.applySheetPayoutOverride(rider, platform);
     };
     const nextRiders = (record.riders || []).map(applyOne);
     const nextUnmatched = (record.previewUnmatched || []).map(applyOne);
@@ -1028,23 +1034,24 @@ const BremWeeklySettlementAdmin = (function () {
       .map(r => `· ${r.driverName || r.riderName || r.originalName} ${formatNumber(r.amounts.payoutOverride)}원`)
       .join('\n');
     const more = applied.length > 12 ? `\n외 ${applied.length - 12}명` : '';
-    const unmatchedCount = applied.filter(r => !r.matchedRiderId).length;
+    const stillUnmatched = applied.filter(r => !r.matchedRiderId).length;
     const ok = window.confirm(
       [
         `선택한 ${applied.length}명의 총지급액을 Z열 금액으로 맞춥니다.`,
-        '저장하면 정산결과 총지급액에 그대로 들어갑니다.',
-        unmatchedCount ? `미매칭 ${unmatchedCount}명은 저장·정산결과에 안 들어갑니다. 기사 등록 후 다시 매칭하세요.` : '',
+        '저장하면 정산결과 총지급액에 그대로 들어갑니다. 미매칭이어도 Z지급 기사는 저장됩니다.',
+        stillUnmatched ? `기사 미등록 ${stillUnmatched}명은 정산결과에는 들어가지만, 출금·최종입금 매칭을 위해 기사 관리에 등록하세요.` : '',
         '',
         preview
       ].filter(Boolean).join('\n') + more + '\n\n적용할까요?'
     );
     if (!ok) return;
 
-    setPreview(ch, platform, {
+    const nextRecord = BremWeeklySettlement.includeSheetPayoutRiders({
       ...record,
       riders: nextRiders,
       previewUnmatched: nextUnmatched
     });
+    setPreview(ch, platform, nextRecord);
     renderPreview(ch, platform);
     showToast(
       skipped.length

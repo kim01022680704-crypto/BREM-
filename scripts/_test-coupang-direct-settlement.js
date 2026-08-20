@@ -380,6 +380,36 @@ const TAX = base => Math.floor(base * 0.033);
     .find(tr => tr.textContent.includes('정지용')).querySelectorAll('td')].map(td => td.textContent.trim());
   check('선택 적용 후 실지급 = Z 4,000', retroCells.includes('4,000'), 'true');
 
+  console.log('\n[12] 미매칭 Z지급 기사도 저장 대상에 넣어 정산결과에 총지급액이 들어간다');
+  const unmatchedZ = {
+    originalName: '소급미매칭',
+    riderName: '소급미매칭',
+    coupangLoginKey: '소급미매칭',
+    matched: false,
+    matchedRiderId: '',
+    weeklyOrderCount: 0,
+    amounts: { deliveryFee: 0, sheetPayout: 2400, employmentInsurance: 2410, accidentInsurance: 2540 }
+  };
+  const appliedUnmatched = WS.applySheetPayoutOverride(unmatchedZ, 'coupang');
+  const bundled = WS.includeSheetPayoutRiders({
+    platform: 'coupang',
+    riders: [{ matchedRiderId: 'd1', coupangLoginKey: '박쿠팡', weeklyOrderCount: 120, amounts: direct[0].amounts }],
+    previewUnmatched: [appliedUnmatched]
+  });
+  check('미매칭 Z기사가 riders로 승격', bundled.riders.some(r => r.coupangLoginKey === '소급미매칭'), 'true');
+  check('승격 후 previewUnmatched에서 빠짐', bundled.previewUnmatched.some(r => r.coupangLoginKey === '소급미매칭'), 'false');
+  SETTLEMENTS.length = 0;
+  SETTLEMENTS.push({
+    id: 'weekly_direct_coupang_seoul_20260722',
+    platform: 'coupang', channel: 'direct', region: '서울',
+    fileName: '쿠팡_직계약_0722.xlsx', startDate: '2026-07-22', endDate: '2026-07-28',
+    riders: bundled.riders
+  });
+  await Result.refresh('coupang');
+  const unmatchedCells = [...[...window.document.querySelectorAll('#settlementResultRows tr')]
+    .find(tr => tr.textContent.includes('소급미매칭')).querySelectorAll('td')].map(td => td.textContent.trim());
+  check('미매칭 Z기사 정산결과 총지급액 2,400', unmatchedCells.includes('2,400'), 'true');
+
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);
 })().catch(e => { console.error('\n예외:', e.stack || e.message); process.exit(2); });
