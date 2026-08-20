@@ -10437,7 +10437,11 @@ const BremStorage = (function () {
             hourlyInsurance: Number(a.hourlyInsurance || 0),
             employmentInsurance: Number(a.employmentInsurance || 0),
             accidentInsurance: Number(a.accidentInsurance || 0),
-            withholdingTax: Number(a.withholdingTax || 0)
+            withholdingTax: Number(a.withholdingTax || 0),
+            deliveryFeeAm: Number(a.deliveryFeeAm || 0),
+            sheetPayout: Number(a.sheetPayout || 0),
+            payoutOverride: Number(a.payoutOverride || 0),
+            useSheetPayout: a.useSheetPayout === true || a.useSheetPayout === 1 || a.useSheetPayout === 'true'
           };
         }
         return normalized;

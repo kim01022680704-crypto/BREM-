@@ -822,9 +822,13 @@ const BremDirectSettlementCalc = (function () {
       const deductTotal = base.baseDeduct + dailySettlementFee + prepaid + leaseFee + loanFee;
       const computedNet = base.grossPay - deductTotal;
       // 주정산 미리보기에서 「Z열 기준으로 지급액 맞추기」한 기사만 총지급액을 시트 Z로 둔다.
-      // 배달비·공제 계산식은 그대로다.
-      const useSheetPayout = rider.amounts?.useSheetPayout === true;
-      const sheetPayout = Math.round(Number(rider.amounts?.payoutOverride || rider.amounts?.sheetPayout || 0));
+      // 배달비·공제 계산식은 그대로다. (저장 JSON 에서 true 가 1 로 올 수 있다)
+      const payoutOverride = Math.round(Number(rider.amounts?.payoutOverride || 0));
+      const useSheetPayout = rider.amounts?.useSheetPayout === true
+        || rider.amounts?.useSheetPayout === 1
+        || rider.amounts?.useSheetPayout === 'true'
+        || payoutOverride > 0;
+      const sheetPayout = payoutOverride || Math.round(Number(rider.amounts?.sheetPayout || 0));
       const netPay = useSheetPayout ? sheetPayout : computedNet;
 
       rows.push({
