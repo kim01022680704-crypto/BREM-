@@ -384,16 +384,20 @@ const BremWeeklySettlementAdmin = (function () {
     });
     record.uploadLogId = uploadLog.id;
     if (record.previewUnmatched?.length) {
-      BremStorage.settlementUnmatched.saveWeeklyBatch({
-        weekStart: weekStartKey(record.startDate),
-        startDate: record.startDate,
-        endDate: record.endDate,
-        records: record.previewUnmatched,
-        sourceFileName: record.fileName || sourceFileName || '',
-        platform,
-        region: record.region,
-        channel: ch
-      });
+      try {
+        BremStorage.settlementUnmatched.saveWeeklyBatch({
+          weekStart: weekStartKey(record.startDate),
+          startDate: record.startDate,
+          endDate: record.endDate,
+          records: record.previewUnmatched,
+          sourceFileName: record.fileName || sourceFileName || '',
+          platform,
+          region: record.region,
+          channel: ch
+        });
+      } catch (error) {
+        console.warn('[BREM] weekly unmatched save skipped:', error);
+      }
     }
     return record;
   }
@@ -401,8 +405,7 @@ const BremWeeklySettlementAdmin = (function () {
   async function ensureWeeklyMatchDataReady(channel) {
     const ch = normChannel(channel);
     await BremStorage.ensureSectionLoaded?.(sectionIdFor(ch));
-    await BremStorage.ensureSectionLoaded?.('settlements');
-    await BremStorage.ensureSectionLoaded?.('calls');
+    // 일정산·콜 전체 로드는 타임아웃 난다. 업로드 매칭은 기사 목록만 있으면 된다.
 
     const driverLoad = BremStorage.awaitDriversFullyLoaded
       ? await BremStorage.awaitDriversFullyLoaded()

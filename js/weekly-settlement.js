@@ -1443,25 +1443,28 @@ const BremWeeklySettlement = (function () {
     const p = normalizePlatform(platform);
     const startDate = options.startDate || '';
     const endDate = options.endDate || '';
-    const driverIdsInPeriod = buildDriversInPeriod(startDate, endDate, p);
+    const skipCallAudit = options.skipCallAudit !== false;
     const allDrivers = BremStorage.drivers.getAll();
     const coupangLookup = p === 'coupang'
       ? buildCoupangDriverLookup(allDrivers)
       : null;
     const baeminLookup = p === 'baemin' ? buildBaeminDriverLookup(allDrivers) : null;
+    const driverIdsInPeriod = skipCallAudit
+      ? new Set()
+      : buildDriversInPeriod(startDate, endDate, p);
 
     return riders.map(rider => {
       const driver = resolveDriverFromPeriodData(rider, p, driverIdsInPeriod, coupangLookup, baeminLookup);
       const hasSystemData = Boolean(driver && driverIdsInPeriod.has(driver.id));
       const weeklyFromSheet = Number(rider.weeklyOrderCount || 0);
-      const stats = driver && hasSystemData && weeklyFromSheet > 0
+      const stats = !skipCallAudit && driver && hasSystemData && weeklyFromSheet > 0
         ? buildDriverCallStatsForPeriod(driver.id, startDate, endDate, p)
         : { callCount: 0, hasData: Boolean(driver && hasSystemData) };
 
-      const callMatch = weeklyFromSheet > 0
+      const callMatch = !skipCallAudit && weeklyFromSheet > 0
         ? evaluateCallCountMatch(rider, stats, startDate, endDate)
         : {
-          weeklyOrderCount: 0,
+          weeklyOrderCount: weeklyFromSheet,
           systemCallCount: 0,
           callCountMatched: true,
           warnings: [],
@@ -1469,10 +1472,10 @@ const BremWeeklySettlement = (function () {
         };
       const matched = p === 'baemin'
         ? Boolean(driver && normalizeBaeminUserId(rider.baeminUserId))
-        : hasSystemData && Boolean(driver);
+        : Boolean(driver);
 
       const warnings = matched ? [...callMatch.warnings] : [];
-      if (matched && !hasSystemData && weeklyFromSheet > 0) {
+      if (!skipCallAudit && matched && !hasSystemData && weeklyFromSheet > 0) {
         warnings.push('시스템 콜수/정산표 데이터 없음');
       }
 
@@ -1489,7 +1492,7 @@ const BremWeeklySettlement = (function () {
         matched,
         weeklyOrderCount: callMatch.weeklyOrderCount,
         systemCallCount: callMatch.systemCallCount,
-        callCountMatched: weeklyFromSheet <= 0
+        callCountMatched: skipCallAudit || weeklyFromSheet <= 0
           ? Boolean(matched)
           : (matched && hasSystemData ? callMatch.callCountMatched : false),
         callStatsByDay: callMatch.callStatsByDay || {},
@@ -1581,17 +1584,9 @@ const BremWeeklySettlement = (function () {
 
   function refreshWeeklySettlementRiders(record) {
     if (!record) return record;
-    const platform = normalizePlatform(record.platform);
-    const period = resolveWeeklyComparePeriod(record);
-    const riders = (record.riders || []).map(rider => (
-      rider?.matchedRiderId
-        ? refreshRiderCallMatch(rider, {
-          platform,
-          startDate: period.startDate,
-          endDate: period.endDate
-        })
-        : rider
-    ));
+    // 업로드·저장 때 일정산/콜 전체를 기사마다 스캔하면 타임아웃 난다.
+    // 콜수 대조는 「분석」 버튼에서만 한다.
+    const riders = record.riders || [];
     const matchedRiders = riders.filter(rider => rider.matched !== false && rider.matchedRiderId);
     return {
       ...record,

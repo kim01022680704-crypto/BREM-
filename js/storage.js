@@ -1491,8 +1491,8 @@ const BremStorage = (function () {
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.payrollDailyExcludedSettlements],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.settlements],
     // 직계약 정산서·업로드로그·미매칭은 settings 기반이라 부트스트랩에서 일괄 로드된다.
-    // 쿠팡 주정산 매칭은 일정산·콜수 period 데이터가 필요하므로 settlements/calls 를 포함한다.
-    'weekly-settlement-direct': [KEYS.drivers, KEYS.calls, KEYS.settlements],
+    // 일정산·콜 전체는 여기서 빼 둔다. 불러오면 업로드 매칭이 타임아웃 난다.
+    'weekly-settlement-direct': [KEYS.drivers],
     'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
     'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.deductionLedger, KEYS.leaseLoans],
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
