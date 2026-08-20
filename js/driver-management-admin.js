@@ -3011,35 +3011,49 @@ const BremDriverManagementAdmin = (function () {
       return;
     }
 
-    const duplicate = window.BremDriverUtils?.findDuplicateDriver?.({ name, phone, baeminId });
-    if (duplicate?.driver) {
-      if (fromCrawl) {
+    const hits = window.BremDriverUtils?.findDuplicateDrivers?.({ name, phone, baeminId }) || [];
+    if (hits.length) {
+      const hard = hits.some(item => item.hard);
+      const decided = await new Promise(resolve => {
+        if (typeof BremDriverDuplicateDialog?.open !== 'function') {
+          resolve(hard ? 'cancel' : 'create');
+          return;
+        }
+        BremDriverDuplicateDialog.open({
+          hits,
+          onEdit(driver) {
+            window.open(`rider-manage.html?edit=${encodeURIComponent(driver.id)}`, '_blank', 'noopener');
+            resolve({ action: 'edit', driver });
+          },
+          onCreateAnyway() { resolve({ action: 'create' }); },
+          onCancel() { resolve({ action: 'cancel' }); }
+        });
+      });
+      const action = decided?.action || decided;
+      if (action === 'edit' && fromCrawl) {
+        const driver = decided.driver;
         const region = selectedRegion();
-        if (region) {
+        if (region && driver?.id) {
           try {
-            const existingBaemin = String(duplicate.driver.baeminId || '').trim();
+            const existingBaemin = String(driver.baeminId || '').trim();
             const matchKey = window.BremDriverUtils?.baeminIdMatchKey;
             const sameBaemin = existingBaemin && baeminId && matchKey
               ? matchKey(existingBaemin) === matchKey(baeminId)
               : (existingBaemin && baeminId && existingBaemin === baeminId);
             const patch = {};
-            // 기존 기사에 배민ID가 비어 있으면 크롤/폼 값으로 채운다. (공성호 케이스)
             if (baeminId && !existingBaemin) {
               patch.baeminId = baeminId;
               patch.platformBaemin = true;
             } else if (baeminId && existingBaemin && !sameBaemin) {
-              showToast(`기존 «${duplicate.driver.name}»에 다른 배민ID(${existingBaemin})가 있습니다. 수동으로 확인하세요.`);
+              showToast(`기존 «${driver.name}»에 다른 배민ID(${existingBaemin})가 있습니다. 수정 화면에서 확인하세요.`);
               return;
             }
-            if (platformBaemin && !duplicate.driver.platformBaemin) {
-              patch.platformBaemin = true;
-            }
+            if (platformBaemin && !driver.platformBaemin) patch.platformBaemin = true;
             if (Object.keys(patch).length) {
-              await window.BremStorage.drivers.update(duplicate.driver.id, patch);
+              await window.BremStorage.drivers.update(driver.id, patch);
             }
-            await assignDriverToRegion(duplicate.driver.id, region);
-            const filled = patch.baeminId ? ' · 배민ID 반영' : '';
-            showToast(`기존 «${duplicate.driver.name}»을 이 지역에 반영했습니다.${filled}`);
+            await assignDriverToRegion(driver.id, region);
+            showToast(`기존 «${driver.name}»을 이 지역에 반영했습니다. 수정 화면을 확인하세요.`);
             closeBulkCreateModal();
             void openCrawlMatchModal();
             renderRegionCatalog();
@@ -3047,19 +3061,21 @@ const BremDriverManagementAdmin = (function () {
           } catch (error) {
             showToast(error.message || '지역 반영에 실패했습니다.');
           }
-          return;
         }
+        return;
       }
-      showToast(`${duplicate.reason}: 이미 «${duplicate.driver.name}» 기사가 있습니다. ID를 맞춘 뒤 다시매칭하세요.`);
-      if (row) {
-        row.idValue = platform === 'baemin'
-          ? (duplicate.driver.baeminId || baeminId || row.idValue)
-          : (makeDriverLoginId(duplicate.driver) || row.idValue);
-        recheckBulkRow(row, platform);
-        renderBulkPreview();
+      if (action === 'edit') {
+        if (row) {
+          row.idValue = platform === 'baemin'
+            ? (decided.driver?.baeminId || baeminId || row.idValue)
+            : (makeDriverLoginId(decided.driver) || row.idValue);
+          recheckBulkRow(row, platform);
+          renderBulkPreview();
+        }
+        closeBulkCreateModal();
+        return;
       }
-      closeBulkCreateModal();
-      return;
+      if (action !== 'create') return;
     }
 
     state.bulkCreateBusy = true;

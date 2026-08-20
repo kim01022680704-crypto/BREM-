@@ -9,7 +9,7 @@
     isDriverFieldHidden,
     updateDriverTotal,
     showToast: showToastUtil,
-    findDuplicateDriver
+    findDuplicateDrivers
   } = window.BremDriverUtils;
 
   const form = document.getElementById('driverForm');
@@ -451,21 +451,36 @@
       return false;
     }
 
-    if (!driverIdInput.value) {
-      const duplicate = findDuplicateDriver(data);
-      if (duplicate) {
-        showToast(`중복 기사입니다. ${duplicate.reason} (${duplicate.driver.name})`);
-        return false;
-      }
-    } else {
-      const duplicate = findDuplicateDriver(data, driverIdInput.value);
-      if (duplicate) {
-        showToast(`다른 기사와 중복됩니다. ${duplicate.reason} (${duplicate.driver.name})`);
-        return false;
-      }
-    }
-
     return true;
+  }
+
+  function askDuplicateDecision(data, excludeId) {
+    const hits = typeof findDuplicateDrivers === 'function'
+      ? findDuplicateDrivers(data, excludeId)
+      : [];
+    if (!hits.length) return Promise.resolve({ proceed: true });
+    if (excludeId && !hits.some(item => item.hard)) {
+      return Promise.resolve({ proceed: true });
+    }
+    if (typeof BremDriverDuplicateDialog?.open !== 'function') {
+      showToast(`중복 기사가 있습니다. ${hits[0].reasons.join(' · ')} (${hits[0].driver?.name || ''})`);
+      return Promise.resolve({ proceed: false });
+    }
+    return new Promise(resolve => {
+      BremDriverDuplicateDialog.open({
+        hits,
+        onEdit(driver) {
+          if (driver?.id) editDriver(driver.id);
+          resolve({ proceed: false });
+        },
+        onCreateAnyway() {
+          resolve({ proceed: true });
+        },
+        onCancel() {
+          resolve({ proceed: false });
+        }
+      });
+    });
   }
 
   async function ensureStorageReadyForSave() {
@@ -482,6 +497,8 @@
     if (!validateFormData(data)) return;
 
     const editingId = driverIdInput.value;
+    const decision = await askDuplicateDecision(data, editingId);
+    if (!decision.proceed) return;
     const previousLabel = submitBtn.textContent;
     submitBtn.disabled = true;
     submitBtn.textContent = editingId ? '수정 중…' : '등록 중…';

@@ -5542,18 +5542,32 @@
       return;
     }
 
-    const duplicate = window.BremDriverUtils?.findDuplicateDriver?.({ name, phone, baeminId });
-    if (duplicate?.driver) {
-      // 이미 등록된 기사면 새로 만들지 말고 그 기사로 연결하게 유도한다.
-      settlementMatchState.selectedDriverId = duplicate.driver.id;
-      const search = $('#settlementMatchSearch');
-      if (search) search.value = duplicate.driver.name || '';
-      setSettlementMatchTab('link');
-      renderSettlementMatchCandidates(record);
-      const hint = $('#settlementMatchLinkHint');
-      if (hint) hint.textContent = `${duplicate.reason}: 이미 등록된 «${duplicate.driver.name}» 기사입니다. 「이 기사로 매칭」을 눌러 연결하세요.`;
-      showToast(`${duplicate.reason} — 기존 기사로 연결하세요.`);
-      return;
+    const hits = window.BremDriverUtils?.findDuplicateDrivers?.({ name, phone, baeminId }) || [];
+    if (hits.length) {
+      const hard = hits.some(item => item.hard);
+      const decided = await new Promise(resolve => {
+        if (typeof BremDriverDuplicateDialog?.open !== 'function') {
+          resolve(hard ? 'cancel' : 'create');
+          return;
+        }
+        BremDriverDuplicateDialog.open({
+          hits,
+          onEdit(driver) {
+            settlementMatchState.selectedDriverId = driver.id;
+            const search = $('#settlementMatchSearch');
+            if (search) search.value = driver.name || '';
+            setSettlementMatchTab('link');
+            renderSettlementMatchCandidates(record);
+            const hint = $('#settlementMatchLinkHint');
+            if (hint) hint.textContent = `기존 «${driver.name}» 기사입니다. 「이 기사로 매칭」을 누르거나 수정 화면에서 고치세요.`;
+            window.open(`rider-manage.html?edit=${encodeURIComponent(driver.id)}`, '_blank', 'noopener');
+            resolve('edit');
+          },
+          onCreateAnyway() { resolve('create'); },
+          onCancel() { resolve('cancel'); }
+        });
+      });
+      if (decided !== 'create') return;
     }
 
     const previousIndex = settlementMatchQueue().findIndex(item => item.id === record.id);

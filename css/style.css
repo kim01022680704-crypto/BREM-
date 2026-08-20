@@ -2750,3 +2750,106 @@ textarea:focus,
     max-height: min(58vh, calc(100dvh - 196px));
   }
 }
+
+.driver-dup-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.driver-dup-dialog[hidden] {
+  display: none;
+}
+
+.driver-dup-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.driver-dup-dialog__panel {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid #2a2a2a;
+  border-radius: 18px;
+  background: #121212;
+  color: #f3f3f3;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.driver-dup-dialog__eyebrow {
+  margin: 0 0 6px;
+  color: #ffd400;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.driver-dup-dialog__head h3 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+
+.driver-dup-dialog__lead,
+.driver-dup-dialog__note {
+  margin: 0;
+  color: #c8c8c8;
+  line-height: 1.45;
+}
+
+.driver-dup-dialog__list {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.driver-dup-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  background: #1a1a1a;
+}
+
+.driver-dup-card p {
+  margin: 4px 0 0;
+  color: #bdbdbd;
+  font-size: 0.86rem;
+}
+
+.driver-dup-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.driver-dup-dialog__btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid #3a3a3a;
+  background: #1f1f1f;
+  color: #f3f3f3;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.driver-dup-dialog__btn--primary {
+  border-color: #ffd400;
+  background: #ffd400;
+  color: #111;
+}
+
+.driver-dup-dialog__btn--ghost {
+  background: transparent;
+}

@@ -756,38 +756,60 @@ window.BremDriverUtils = (function () {
     return { byLoginId, byPhone, byBaeminId };
   }
 
+  function driverListForDuplicateScan() {
+    if (typeof BremStorage === 'undefined') return [];
+    if (typeof BremStorage.drivers.getAllKnownById === 'function') {
+      return BremStorage.drivers.getAllKnownById();
+    }
+    return BremStorage.drivers.getAll();
+  }
+
+  function findDuplicateDrivers(driverInput, excludeId) {
+    const nameKey = normalizeDuplicateName(driverInput?.name);
+    const phone = normalizePhone(driverInput?.phone);
+    const baeminId = baeminIdMatchKey(driverInput?.baeminId);
+    const loginId = makeDriverLoginId({
+      name: String(driverInput?.name || '').trim(),
+      phone
+    });
+    const exclude = String(excludeId || '').trim();
+    const hits = [];
+
+    driverListForDuplicateScan().forEach(driver => {
+      if (exclude && String(driver.id || '').trim() === exclude) return;
+      const reasons = [];
+      if (nameKey && normalizeDuplicateName(driver.name) === nameKey) reasons.push('동명이인');
+      if (phone && normalizePhone(driver.phone) === phone) reasons.push('같은 연락처');
+      if (baeminId && baeminIdMatchKey(driver.baeminId) === baeminId) reasons.push('같은 배민아이디');
+      const existingLogin = makeDriverLoginId(driver);
+      if (loginId && existingLogin && existingLogin === loginId) reasons.push('같은 쿠팡아이디');
+      if (!reasons.length) return;
+      hits.push({
+        driver,
+        reasons,
+        hard: reasons.some(reason => reason !== '동명이인')
+      });
+    });
+
+    hits.sort((a, b) => Number(b.hard) - Number(a.hard)
+      || String(a.driver?.name || '').localeCompare(String(b.driver?.name || ''), 'ko'));
+    return hits;
+  }
+
   function findDuplicateDriver(driverInput, excludeId) {
     const name = String(driverInput?.name || '').trim();
     const phone = normalizePhone(driverInput?.phone);
     const baeminId = baeminIdMatchKey(driverInput?.baeminId);
     const loginId = makeDriverLoginId({ name, phone });
-    const lookup = buildDriverDuplicateLookup(excludeId);
-
-    if (loginId && lookup.byLoginId.has(loginId)) {
-      return {
-        driver: lookup.byLoginId.get(loginId),
-        reason: '쿠팡아이디(이름+연락처 뒤4자리) 중복',
-        loginId
-      };
-    }
-
-    if (phone && lookup.byPhone.has(phone)) {
-      return {
-        driver: lookup.byPhone.get(phone),
-        reason: '연락처 중복',
-        loginId
-      };
-    }
-
-    if (baeminId && lookup.byBaeminId.has(baeminId)) {
-      return {
-        driver: lookup.byBaeminId.get(baeminId),
-        reason: '배민아이디 중복',
-        loginId
-      };
-    }
-
-    return null;
+    const hits = findDuplicateDrivers(driverInput, excludeId);
+    const hard = hits.find(item => item.hard);
+    if (!hard) return null;
+    return {
+      driver: hard.driver,
+      reason: hard.reasons.filter(reason => reason !== '동명이인').join(' · ') || hard.reasons.join(' · '),
+      loginId,
+      hits
+    };
   }
 
   function isDuplicateErrorMessage(errors) {
@@ -978,6 +1000,7 @@ window.BremDriverUtils = (function () {
     prepareBulkRiderRecord,
     matchDriverForPlatformImport,
     buildDriverDuplicateLookup,
+    findDuplicateDrivers,
     findDuplicateDriver,
     isDuplicateErrorMessage,
     formatDate,
