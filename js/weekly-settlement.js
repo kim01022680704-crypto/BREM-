@@ -426,6 +426,17 @@ const BremWeeklySettlement = (function () {
     ].some(v => Number(v || 0) !== 0);
   }
 
+  // 콜 0 / '-' 행은 고용·산재 소급이나 Z 지급액이 있을 때만 넣는다.
+  // 잔여 숫자만 있는 빈 행까지 읽으면 업로드 매칭이 타임아웃 난다.
+  function hasRetroPayoutSignal(amounts) {
+    if (!amounts) return false;
+    return [
+      amounts.sheetPayout,
+      amounts.employmentInsurance,
+      amounts.accidentInsurance
+    ].some(v => Number(v || 0) !== 0);
+  }
+
   // 직계약 배민 정산서 금액/공제 열 기본값 (사용자 지정: E/F/G, 공제 H/L/N/Y)
   const DIRECT_BAEMIN_AMOUNT_COLUMNS = Object.freeze({
     deliveryFee: 'E',           // 배달료
@@ -1103,7 +1114,7 @@ const BremWeeklySettlement = (function () {
       }
       const weeklyOrderCount = Number(String(orderRaw ?? '').replace(/[^\d.-]/g, '')) || 0;
       const amounts = extractCoupangAmounts(rows[i] || [], amountColumns);
-      if (amountColumns && !weeklyOrderCount && !hasDirectPayoutSignal(amounts)) continue;
+      if (amountColumns && !weeklyOrderCount && !hasRetroPayoutSignal(amounts)) continue;
       const loginKey = normalizeCoupangLoginKey(rawName);
       const rider = {
         originalName: rawName,
@@ -1139,7 +1150,7 @@ const BremWeeklySettlement = (function () {
       }
       const weeklyOrderCount = Number(String(orderRaw ?? '').replace(/[^\d.-]/g, '')) || 0;
       const amounts = extractBaeminAmounts(rows[i] || [], amountColumns);
-      if (amountColumns && !weeklyOrderCount && !hasDirectPayoutSignal(amounts)) continue;
+      if (amountColumns && !weeklyOrderCount && !hasRetroPayoutSignal(amounts)) continue;
       const rider = {
         originalName: rawName,
         riderName: normalizeBaeminName(rawName),
@@ -1224,7 +1235,16 @@ const BremWeeklySettlement = (function () {
     return resolveCoupangDriverFromLookup(rider, index);
   }
 
-  function resolveBaeminDriver(rider) {
+  function buildBaeminDriverLookup(driverList) {
+    const byId = new Map();
+    (Array.isArray(driverList) ? driverList : (BremStorage.drivers.getAll() || [])).forEach(driver => {
+      const key = baeminIdMatchKey(driver?.baeminId);
+      if (key && !byId.has(key)) byId.set(key, driver);
+    });
+    return byId;
+  }
+
+  function resolveBaeminDriver(rider, lookup) {
     const manual = resolveDriverByManualMapping(rider.originalName, rider.riderName, 'baemin', rider.baeminUserId);
     if (manual) {
       // 호출측 rider.baeminUserId 를 등록 ID 로 복원할 수 있게 참조만 돌려준다.
@@ -1233,6 +1253,7 @@ const BremWeeklySettlement = (function () {
 
     const userId = baeminIdMatchKey(rider.baeminUserId);
     if (!userId) return null;
+    if (lookup) return lookup.get(userId) || null;
 
     return BremStorage.drivers.getAll().find(
       driver => baeminIdMatchKey(driver.baeminId) === userId
@@ -1241,8 +1262,9 @@ const BremWeeklySettlement = (function () {
 
   // 정산 라이더 목록의 배민 ID 를 기사 등록값(앞 0 포함)으로 맞춘다.
   function canonicalizeBaeminRiderIds(riders) {
+    const lookup = buildBaeminDriverLookup();
     return (Array.isArray(riders) ? riders : []).map(rider => {
-      const driver = resolveBaeminDriver(rider);
+      const driver = resolveBaeminDriver(rider, lookup);
       if (!driver?.baeminId) return rider;
       const fixed = preferRegisteredBaeminId(rider.baeminUserId, driver);
       if (!fixed || fixed === rider.baeminUserId) {
@@ -1303,10 +1325,10 @@ const BremWeeklySettlement = (function () {
     return null;
   }
 
-  function resolveDriverFromPeriodData(rider, platform, driverIdsInPeriod, lookup) {
+  function resolveDriverFromPeriodData(rider, platform, driverIdsInPeriod, lookup, baeminLookup) {
     const p = normalizePlatform(platform);
     if (p === 'baemin') {
-      return resolveBaeminDriver(rider);
+      return resolveBaeminDriver(rider, baeminLookup);
     }
 
     const inPeriod = findDriverInPeriodByWeeklyRider(rider, platform, driverIdsInPeriod, lookup);
@@ -1376,6 +1398,17 @@ const BremWeeklySettlement = (function () {
   function refreshRiderCallMatch(rider, { platform, startDate, endDate } = {}) {
     const driverId = rider?.matchedRiderId || '';
     if (!driverId) return rider;
+    // 콜 0 소급 행은 일정산/콜입력이 없어서 전체 스캔하면 업로드가 멈춘다.
+    if (Number(rider.weeklyOrderCount || 0) <= 0) {
+      return {
+        ...rider,
+        systemCallCount: Number(rider.systemCallCount || 0),
+        callCountMatched: true,
+        callCountIgnored: isCallCountIgnored(rider),
+        callStatsByDay: rider.callStatsByDay || {},
+        warnings: (rider.warnings || []).filter(item => !/콜수|시스템 콜수/.test(String(item || '')))
+      };
+    }
 
     const stats = buildDriverCallStatsForPeriod(driverId, startDate, endDate, platform);
     const callMatch = evaluateCallCountMatch(rider, stats, startDate, endDate);
@@ -1411,24 +1444,35 @@ const BremWeeklySettlement = (function () {
     const startDate = options.startDate || '';
     const endDate = options.endDate || '';
     const driverIdsInPeriod = buildDriversInPeriod(startDate, endDate, p);
+    const allDrivers = BremStorage.drivers.getAll();
     const coupangLookup = p === 'coupang'
-      ? buildCoupangDriverLookup(BremStorage.drivers.getAll())
+      ? buildCoupangDriverLookup(allDrivers)
       : null;
+    const baeminLookup = p === 'baemin' ? buildBaeminDriverLookup(allDrivers) : null;
 
     return riders.map(rider => {
-      const driver = resolveDriverFromPeriodData(rider, p, driverIdsInPeriod, coupangLookup);
+      const driver = resolveDriverFromPeriodData(rider, p, driverIdsInPeriod, coupangLookup, baeminLookup);
       const hasSystemData = Boolean(driver && driverIdsInPeriod.has(driver.id));
-      const stats = driver && hasSystemData
+      const weeklyFromSheet = Number(rider.weeklyOrderCount || 0);
+      const stats = driver && hasSystemData && weeklyFromSheet > 0
         ? buildDriverCallStatsForPeriod(driver.id, startDate, endDate, p)
-        : { callCount: 0, hasData: false };
+        : { callCount: 0, hasData: Boolean(driver && hasSystemData) };
 
-      const callMatch = evaluateCallCountMatch(rider, stats, startDate, endDate);
+      const callMatch = weeklyFromSheet > 0
+        ? evaluateCallCountMatch(rider, stats, startDate, endDate)
+        : {
+          weeklyOrderCount: 0,
+          systemCallCount: 0,
+          callCountMatched: true,
+          warnings: [],
+          callStatsByDay: {}
+        };
       const matched = p === 'baemin'
         ? Boolean(driver && normalizeBaeminUserId(rider.baeminUserId))
         : hasSystemData && Boolean(driver);
 
       const warnings = matched ? [...callMatch.warnings] : [];
-      if (matched && !hasSystemData) {
+      if (matched && !hasSystemData && weeklyFromSheet > 0) {
         warnings.push('시스템 콜수/정산표 데이터 없음');
       }
 
@@ -1445,7 +1489,9 @@ const BremWeeklySettlement = (function () {
         matched,
         weeklyOrderCount: callMatch.weeklyOrderCount,
         systemCallCount: callMatch.systemCallCount,
-        callCountMatched: matched && hasSystemData ? callMatch.callCountMatched : false,
+        callCountMatched: weeklyFromSheet <= 0
+          ? Boolean(matched)
+          : (matched && hasSystemData ? callMatch.callCountMatched : false),
         callStatsByDay: callMatch.callStatsByDay || {},
         // 직계약 금액/공제(있으면) 보존
         ...(rider.amounts ? { amounts: rider.amounts } : {}),
