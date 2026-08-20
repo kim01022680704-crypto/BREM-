@@ -1288,7 +1288,11 @@
     if (!result) return;
 
     if (!query) {
-      result.textContent = `전체 기사 ${drivers().length}명 표시 중`;
+      const loaded = drivers().length;
+      const dbTotal = Number(window.BremStorage?.getCacheStatus?.()?.driversSupabaseTotal || 0);
+      result.textContent = dbTotal && loaded + 2 < dbTotal
+        ? `전체 기사 ${loaded}명 표시 중 · DB ${dbTotal}명 불러오는 중`
+        : `전체 기사 ${loaded}명 표시 중`;
       return;
     }
 

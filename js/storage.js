@@ -396,8 +396,11 @@ const BremStorage = (function () {
     KEYS.weeklyTargets,
     KEYS.settlements,
     KEYS.settlementUnmatched,
+    KEYS.settlementUnmatchedDirect,
     KEYS.settlementUploadLogs,
+    KEYS.settlementUploadLogsDirect,
     KEYS.weeklySettlements,
+    KEYS.weeklySettlementsDirect,
     KEYS.promotionSettings,
     KEYS.promotionSelectorOptions,
     KEYS.promotionApplyResults,
@@ -1490,9 +1493,14 @@ const BremStorage = (function () {
     'mission-results': [KEYS.drivers, KEYS.calls],
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.payrollDailyExcludedSettlements],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.settlements],
-    // 직계약 정산서·업로드로그·미매칭은 settings 기반이라 부트스트랩에서 일괄 로드된다.
-    // 일정산·콜 전체는 여기서 빼 둔다. 불러오면 업로드 매칭이 타임아웃 난다.
-    'weekly-settlement-direct': [KEYS.drivers],
+    // 직계약 정산서·업로드로그·미매칭은 settings JSON이라 콜/일정산처럼 무겁지 않다.
+    // 기사 전체 + 이 키들을 같이 읽어야 매칭 저장 기록이 화면에 남는다.
+    'weekly-settlement-direct': [
+      KEYS.drivers,
+      KEYS.weeklySettlementsDirect,
+      KEYS.settlementUploadLogsDirect,
+      KEYS.settlementUnmatchedDirect
+    ],
     'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
     'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.deductionLedger, KEYS.leaseLoans],
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
@@ -1845,7 +1853,10 @@ const BremStorage = (function () {
         || sectionId === 'coupang-rider-status'
         || sectionId === 'rejections'
         || sectionId === 'weekly-settlement'
-        || sectionId === 'weekly-settlement-direct';
+        || sectionId === 'weekly-settlement-direct'
+        || sectionId === 'settlements'
+        || sectionId === 'promotion-apply'
+        || sectionId === 'promotion-settlement';
       const hasDrivers = drivers.getAll().length > 0 && window.BremDataCache?.isValid?.(KEYS.drivers);
       const fetchInFlight = Boolean(driversFetchAllPromise || driversBackgroundFetchPromise || driversFullFetchInProgress);
       const knownTotal = Number(driversLoadMeta.supabaseTotal || 0);
@@ -1878,6 +1889,21 @@ const BremStorage = (function () {
       tasks.push(payrollDailySettlement.reloadFromServer());
     } else if (sectionKeys.includes(KEYS.payrollDailySettlementRegions)) {
       tasks.push(Promise.resolve(payrollDailySettlement.getRegions()));
+    }
+
+    if (activeStorageAdapter.reloadSettingKey) {
+      const settingKeys = sectionKeys.filter(key => (
+        key
+        && key !== KEYS.drivers
+        && !TABLE_STORAGE_KEYS.has(key)
+        && !isPayrollStorageKey(key)
+      ));
+      settingKeys.forEach(key => {
+        if (!force && activeStorageAdapter.read?.(key, null) != null) return;
+        tasks.push(activeStorageAdapter.reloadSettingKey(key).catch(error => {
+          console.warn('[BREM] setting reload skipped:', key, error?.message || error);
+        }));
+      });
     }
 
     if (tasks.length) {
@@ -2124,36 +2150,37 @@ const BremStorage = (function () {
     return refetchDataKey(key, options);
   }
 
+  function scoreDriverRecord(driver) {
+    let score = 0;
+    if (String(driver?.baeminId || '').trim()) score += 4;
+    if (String(driver?.bankName || '').trim()) score += 2;
+    if (String(driver?.accountNumber || '').trim()) score += 1;
+    const updatedAt = Date.parse(driver?.updatedAt || driver?.createdAt || 0);
+    if (!Number.isNaN(updatedAt)) score += updatedAt / 1e12;
+    return score;
+  }
+
+  // 같은 id 만 합친다. 이름+전화 병합은 배민 ID 가 다른 기사를 지워 정산 미매칭이 난다.
   function dedupeDriversList(list) {
     const byId = new Map();
     (list || []).forEach(driver => {
       if (!driver?.id) return;
-      byId.set(driver.id, driver);
-    });
-
-    const scoreOf = (driver) => {
-      let score = 0;
-      if (String(driver?.baeminId || '').trim()) score += 4;
-      if (String(driver?.bankName || '').trim()) score += 2;
-      if (String(driver?.accountNumber || '').trim()) score += 1;
-      const updatedAt = Date.parse(driver?.updatedAt || driver?.createdAt || 0);
-      if (!Number.isNaN(updatedAt)) score += updatedAt / 1e12;
-      return score;
-    };
-
-    const byMatchKey = new Map();
-    Array.from(byId.values()).forEach(driver => {
-      const key = window.BremDriverUtils?.makeDriverMatchKey?.(driver.name, driver.phone) || '';
-      const mapKey = key || `id:${driver.id}`;
-      const existing = byMatchKey.get(mapKey);
-      if (!existing || scoreOf(driver) > scoreOf(existing)) {
-        byMatchKey.set(mapKey, driver);
+      const existing = byId.get(driver.id);
+      if (!existing || scoreDriverRecord(driver) > scoreDriverRecord(existing)) {
+        byId.set(driver.id, driver);
       }
     });
-
-    return Array.from(byMatchKey.values()).sort((a, b) => (
+    return Array.from(byId.values()).sort((a, b) => (
       String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
     ));
+  }
+
+  function isDriversCountShort(count, serverTotal) {
+    const loaded = Number(count) || 0;
+    const total = Number(serverTotal) || 0;
+    if (!loaded) return true;
+    if (!total) return false;
+    return loaded + 2 < total;
   }
 
   function clearDriversCacheHard() {
@@ -2166,9 +2193,10 @@ const BremStorage = (function () {
   }
 
   function markDriversLoadComplete(count, supabaseTotal) {
+    const total = Number.isFinite(Number(supabaseTotal)) ? Number(supabaseTotal) : count;
     driversLoadMeta = {
-      complete: true,
-      supabaseTotal: Number.isFinite(Number(supabaseTotal)) ? Number(supabaseTotal) : count
+      complete: !isDriversCountShort(count, total),
+      supabaseTotal: total
     };
   }
 
@@ -2201,9 +2229,7 @@ const BremStorage = (function () {
 
         const deduped = dedupeDriversList(drivers.getAll());
         const total = Number(supabaseTotal ?? deduped.length);
-        // 서버 total 은 DB 행 수, 로컬은 name+phone 중복제거 후라 적을 수 있다.
-        // 페이지를 끝까지 받았으면(!hasMore) 전체 로드로 본다.
-        const fullyLoaded = !failed && !hasMore;
+        const fullyLoaded = !failed && !hasMore && !isDriversCountShort(deduped.length, total);
         if (fullyLoaded) {
           markDriversLoadComplete(deduped.length, total);
           markDriversCache(deduped, { source: 'network', complete: true, supabaseTotal: total });
@@ -2267,8 +2293,7 @@ const BremStorage = (function () {
     }
 
     const count = drivers.getAll().length;
-    // 중복제거로 count < serverTotal 인 것은 정상. complete 플래그만 본다.
-    if (driversLoadMeta.complete && count > 0) {
+    if (driversLoadMeta.complete && count > 0 && !isDriversCountShort(count, serverTotal)) {
       return { ok: true, count, supabaseTotal: serverTotal || count, complete: true };
     }
 
@@ -2278,14 +2303,21 @@ const BremStorage = (function () {
     });
     if (driversBackgroundFetchPromise) await driversBackgroundFetchPromise;
     const loaded = drivers.getAll().length;
-    const complete = Boolean(driversLoadMeta.complete);
+    const knownTotal = Number(driversLoadMeta.supabaseTotal || serverTotal || 0);
+    const short = isDriversCountShort(loaded, knownTotal);
+    if (short) {
+      driversLoadMeta = { complete: false, supabaseTotal: knownTotal || loaded };
+    }
+    const complete = Boolean(driversLoadMeta.complete) && !short;
     return {
-      ok: result?.ok !== false && loaded > 0,
+      ok: result?.ok !== false && loaded > 0 && !short,
       count: loaded,
-      supabaseTotal: driversLoadMeta.supabaseTotal || loaded,
+      supabaseTotal: knownTotal || loaded,
       complete,
       partial: !complete,
-      message: result?.message || (!complete ? '기사 목록을 끝까지 불러오지 못했습니다.' : undefined)
+      message: result?.message || (short
+        ? `기사 목록이 ${loaded}명만 로드됐습니다. DB ${knownTotal}명을 끝까지 다시 불러오세요.`
+        : (!complete ? '기사 목록을 끝까지 불러오지 못했습니다.' : undefined))
     };
   }
 
@@ -2409,12 +2441,12 @@ const BremStorage = (function () {
           if (!result.count) break;
 
           const dedupedAfterPage = dedupeDriversList(drivers.getAll());
-          // 페이지를 다 받았으면 전체 로드. (중복제거로 로컬 수 < DB total 이어도 OK)
-          const pageComplete = !hasMore;
+          const knownTotal = supabaseTotal ?? dedupedAfterPage.length;
+          const pageComplete = !hasMore && !isDriversCountShort(dedupedAfterPage.length, knownTotal);
           markDriversCache(dedupedAfterPage, {
             source: 'network',
             complete: pageComplete,
-            supabaseTotal: supabaseTotal ?? dedupedAfterPage.length
+            supabaseTotal: knownTotal
           });
           document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
 
@@ -2440,7 +2472,7 @@ const BremStorage = (function () {
 
         const deduped = dedupeDriversList(drivers.getAll());
         const total = Number(supabaseTotal ?? deduped.length);
-        const fullyLoaded = !failed && !hasMore;
+        const fullyLoaded = !failed && !hasMore && !isDriversCountShort(deduped.length, total);
         if (fullyLoaded) {
           markDriversLoadComplete(deduped.length, total);
           markDriversCache(deduped, { source: 'network', complete: true, supabaseTotal: total });

@@ -418,17 +418,20 @@ const BremWeeklySettlementAdmin = (function () {
     const driverCount = Array.isArray(driverLoad)
       ? driverLoad.length
       : (Number(driverLoad?.count) || BremStorage.drivers?.getAll?.()?.length || 0);
+    const serverTotal = Array.isArray(driverLoad)
+      ? 0
+      : Number(driverLoad?.supabaseTotal || 0);
 
     if (!driverCount) {
       return { ok: false, message: '등록된 기사가 없습니다. 기사 목록을 확인하세요.' };
     }
 
-    // 부분 로드로 매칭하면 등록 기사도 미매칭으로 뜸 — 완료될 때까지 막는다.
+    // 부분 로드로 매칭하면 등록 기사도 미매칭으로 뜸 — 전체가 올 때까지 막는다.
     if (driverLoad && !Array.isArray(driverLoad)
-      && (driverLoad.complete === false || driverLoad.partial)) {
+      && (driverLoad.complete === false || driverLoad.partial || (serverTotal && driverCount + 2 < serverTotal))) {
       return {
         ok: false,
-        message: `기사 목록이 아직 ${driverCount}명만 로드됐습니다. 잠시 후 다시 업로드하세요.`
+        message: `기사 목록이 아직 ${driverCount}명만 로드됐습니다. DB ${serverTotal || '?'}명이 끝날 때까지 기다렸다가 다시 업로드하세요.`
       };
     }
 
@@ -456,6 +459,7 @@ const BremWeeklySettlementAdmin = (function () {
       return;
     }
     try {
+      showToast('기사 전체를 불러오는 중입니다. 끝날 때까지 기다려 주세요.');
       const ready = await ensureWeeklyMatchDataReady(ch);
       if (!ready.ok) {
         showToast(ready.message);
@@ -559,11 +563,13 @@ const BremWeeklySettlementAdmin = (function () {
       channel: ch
     };
     const saved = BremWeeklySettlement.saveWeeklySettlement(refreshedRecord);
+    const savedWeek = weekStartKey(saved.startDate || saveRecord.startDate || record.startDate);
     if (record.uploadLogId) {
       BremStorage.settlementUploadLogs.update(record.uploadLogId, {
         status: 'saved',
         channel: ch,
         linkedRecordId: saved.id,
+        weekStart: savedWeek,
         matchedCount: saveRecord.riders.length,
         fileName: saveRecord.fileName || record.fileName || ''
       });
@@ -574,7 +580,7 @@ const BremWeeklySettlementAdmin = (function () {
         platform,
         fileName: saveRecord.fileName || record.fileName || '',
         period: saveRecord.startDate,
-        weekStart: weekStartKey(saveRecord.startDate),
+        weekStart: savedWeek,
         region: saveRecord.region,
         startDate: saveRecord.startDate,
         endDate: saveRecord.endDate,
@@ -584,10 +590,25 @@ const BremWeeklySettlementAdmin = (function () {
         uploadedAt: saveRecord.uploadedAt
       });
     }
-    void BremStorage.flushStorage?.();
+    state.weeklyLogWeekByChannel[ch][platform] = savedWeek;
+    const logWeekInput = q(ch, 'LogWeek', platform);
+    if (logWeekInput) logWeekInput.value = savedWeek;
     setPreview(ch, platform, null);
     const card = q(ch, 'PreviewCard', platform);
     if (card) card.hidden = true;
+    const finishSave = async () => {
+      try {
+        if (typeof BremStorage.flushStorage === 'function') {
+          await BremStorage.flushStorage();
+        }
+      } catch (error) {
+        showToast(error.message || '주정산 저장은 됐지만 업로드 기록 반영에 실패했습니다. 다시 저장하세요.');
+        renderSavedList(ch, platform);
+        return;
+      }
+      renderSavedList(ch, platform);
+    };
+    void finishSave();
     renderSavedList(ch, platform);
     renderWeeklyUnmatched(ch, platform);
     if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
@@ -1132,6 +1153,7 @@ const BremWeeklySettlementAdmin = (function () {
 
     void (async () => {
       try {
+        showToast('기사 전체를 불러오는 중입니다. 끝날 때까지 기다려 주세요.');
         const ready = await ensureWeeklyMatchDataReady(ch);
         if (!ready.ok) {
           showToast(ready.message);
