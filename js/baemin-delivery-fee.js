@@ -2,7 +2,10 @@ const BremBaeminDeliveryFee = (function () {
   const FORMAT_ID = 'brem-baemin';
 
   function normalizeName(value) {
-    return String(value || '').trim().replace(/\s+/g, '');
+    return String(value || '')
+      .replace(/[\u200b\u200c\u200d\ufeff\u00a0]/g, '')
+      .trim()
+      .replace(/\s+/g, '');
   }
 
   function parseDateToken(token) {
@@ -54,11 +57,12 @@ const BremBaeminDeliveryFee = (function () {
   }
 
   function normalizeId(value) {
+    const cleaned = String(value || '').replace(/[\u200b\u200c\u200d\ufeff\u00a0]/g, '');
     if (typeof BremWeeklySettlement !== 'undefined'
       && typeof BremWeeklySettlement.normalizeBaeminUserId === 'function') {
-      return BremWeeklySettlement.normalizeBaeminUserId(value);
+      return BremWeeklySettlement.normalizeBaeminUserId(cleaned);
     }
-    return String(value || '').trim();
+    return cleaned.trim();
   }
 
   // 앞 0 유무·원문·매칭키를 모두 인덱스에 넣어 어떤 형태로 와도 찾는다.
@@ -75,13 +79,22 @@ const BremBaeminDeliveryFee = (function () {
     return [...keys];
   }
 
+  function resolveIndex(index) {
+    if (!index) return null;
+    if (typeof index.get === 'function' && Number(index.size) > 0) return index;
+    if (index.index && typeof index.index.get === 'function' && Number(index.index.size) > 0) {
+      return index.index;
+    }
+    return null;
+  }
+
   function buildIndex(parsedRows) {
     const index = new Map();
     (parsedRows || []).forEach(row => {
-      const riderId = normalizeId(row.riderId);
+      const riderId = normalizeId(row.riderId || row.baeminUserId);
       const key = baeminMatchKey(riderId);
-      if (!key) return;
       if (Number(row.orderCount || 0) <= 0 || Number(row.deliveryAmount || 0) <= 0) return;
+      if (!key && !normalizeName(row.name || row.rawName)) return;
 
       const feePairs = Array.isArray(row.deliveryFees)
         ? row.deliveryFees.map((fee, i) => ({
@@ -89,11 +102,14 @@ const BremBaeminDeliveryFee = (function () {
           weather: Boolean(row.weatherFlags?.[i])
         })).filter(item => item.fee > 0)
         : [];
+      const prevById = key ? index.get(`id:${key}`) : null;
       const entry = {
         rawName: row.rawName,
         name: row.name,
         // 앞 0 이 있는 원문을 우선 보존
-        riderId: String(riderId).startsWith('0') ? riderId : (index.get(`id:${key}`)?.riderId || riderId),
+        riderId: riderId && String(riderId).startsWith('0')
+          ? riderId
+          : (prevById?.riderId || riderId),
         orderCount: Number(row.orderCount || 0),
         deliveryAmount: Number(row.deliveryAmount || 0),
         deliveryFees: feePairs.map(item => item.fee),
@@ -101,13 +117,12 @@ const BremBaeminDeliveryFee = (function () {
         avgUnitPrice: 0
       };
       // 같은 매칭키로 이미 있으면 합산
-      const prev = index.get(`id:${key}`);
-      if (prev) {
-        entry.orderCount += Number(prev.orderCount || 0);
-        entry.deliveryAmount += Number(prev.deliveryAmount || 0);
-        entry.deliveryFees = [...(prev.deliveryFees || []), ...entry.deliveryFees];
-        entry.weatherFlags = [...(prev.weatherFlags || []), ...entry.weatherFlags];
-        if (String(prev.riderId || '').startsWith('0')) entry.riderId = prev.riderId;
+      if (prevById) {
+        entry.orderCount += Number(prevById.orderCount || 0);
+        entry.deliveryAmount += Number(prevById.deliveryAmount || 0);
+        entry.deliveryFees = [...(prevById.deliveryFees || []), ...entry.deliveryFees];
+        entry.weatherFlags = [...(prevById.weatherFlags || []), ...entry.weatherFlags];
+        if (String(prevById.riderId || '').startsWith('0')) entry.riderId = prevById.riderId;
       }
       entry.avgUnitPrice = entry.orderCount > 0
         ? Math.round(entry.deliveryAmount / entry.orderCount)
@@ -116,33 +131,57 @@ const BremBaeminDeliveryFee = (function () {
       indexKeysForBaeminId(entry.riderId).forEach(idKey => {
         index.set(`id:${idKey}`, entry);
       });
+      const nameKey = normalizeName(entry.name || entry.rawName);
+      if (nameKey && !index.has(`name:${nameKey}`)) {
+        index.set(`name:${nameKey}`, entry);
+      }
     });
     return index;
   }
 
   function lookup(index, rider, driver) {
-    if (!index || !index.size) return null;
+    const map = resolveIndex(index);
+    if (!map) return null;
 
     const candidates = [
       rider?.baeminUserId,
-      driver?.baeminId,
-      driver?.raw_data?.baeminId,
+      rider?.baeminId,
       rider?.riderId,
+      driver?.baeminId,
+      driver?.baeminUserId,
+      driver?.raw_data?.baeminId,
+      driver?.raw_data?.baeminUserId,
       rider?.originalName
     ];
     for (const candidate of candidates) {
       for (const idKey of indexKeysForBaeminId(candidate)) {
-        const hit = index.get(`id:${idKey}`);
+        const hit = map.get(`id:${idKey}`);
         if (hit) return hit;
       }
     }
 
-    // 최후: 전체 인덱스에서 매칭키로 재검색
     const want = candidates.map(baeminMatchKey).filter(Boolean);
-    if (!want.length) return null;
-    for (const [mapKey, entry] of index.entries()) {
-      const entryKey = baeminMatchKey(String(mapKey).replace(/^id:/, ''));
-      if (want.includes(entryKey)) return entry;
+    if (want.length) {
+      for (const [mapKey, entry] of map.entries()) {
+        if (!String(mapKey).startsWith('id:')) continue;
+        const entryKey = baeminMatchKey(String(mapKey).slice(3));
+        if (want.includes(entryKey)) return entry;
+      }
+    }
+
+    // K열 ID가 기사 배민 ID와 달라도 L열 라이더명으로 찾는다.
+    const nameCandidates = [
+      driver?.name,
+      rider?.driverName,
+      rider?.riderName,
+      rider?.originalName,
+      rider?.name
+    ];
+    for (const candidate of nameCandidates) {
+      const nameKey = normalizeName(candidate);
+      if (!nameKey) continue;
+      const hit = map.get(`name:${nameKey}`);
+      if (hit) return hit;
     }
     return null;
   }
@@ -182,6 +221,12 @@ const BremBaeminDeliveryFee = (function () {
     }
 
     const index = buildIndex(parsed.parsedRows);
+    if (!index.size) {
+      const sample = (parsed.parsedRows || []).slice(0, 3)
+        .map(row => row.riderId || row.name || '-')
+        .join(', ');
+      throw new Error(`배달처리비에서 ${parsed.parsedRows.length}명을 읽었지만 User ID 인덱스를 만들지 못했습니다. 예시: ${sample}`);
+    }
     return {
       fileName: file.name,
       teamName: meta.teamName,

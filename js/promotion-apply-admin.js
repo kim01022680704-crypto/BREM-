@@ -927,7 +927,10 @@ const BremPromotionApplyAdmin = (function () {
         const combinedMeta = { channel: coupangChannel, coupangChannel, baeminChannel };
         const applyOptions = deliveryFeeParsed
           ? {
-            deliveryFeeIndex: deliveryFeeParsed.baemin?.index || deliveryFeeParsed.index,
+            deliveryFeeIndex: deliveryFeeParsed.baemin?.index
+              || deliveryFeeParsed.index
+              || deliveryFeeParsed.baemin
+              || deliveryFeeParsed,
             deliveryFeeMeta: deliveryFeeParsed.baemin || deliveryFeeParsed,
             coupangDeliveryFeeIndex: deliveryFeeParsed.coupang?.index || null,
             coupangDeliveryFeeMeta: deliveryFeeParsed.coupang || null,
@@ -970,7 +973,7 @@ const BremPromotionApplyAdmin = (function () {
           if (deliveryFeeParsed) {
             applyOptions = {
               ...applyOptions,
-              deliveryFeeIndex: deliveryFeeParsed.index,
+              deliveryFeeIndex: deliveryFeeParsed.index || deliveryFeeParsed,
               deliveryFeeMeta: deliveryFeeParsed
             };
           }

@@ -310,8 +310,8 @@ const BremPromotionApply = (function () {
     }
 
     const feeData = BremBaeminDeliveryFee.lookup(deliveryFeeIndex, rider, driver);
-    if (!feeData || !hasValidDeliveryFeeData(feeData)) {
-      return { stats, feeData: null };
+    if (!hasValidDeliveryFeeData(feeData)) {
+      return { stats, feeData: feeData || null };
     }
 
     const callCount = feeData.orderCount;
