@@ -10420,6 +10420,29 @@ const BremStorage = (function () {
         if (key && !driverByBaeminId.has(key)) driverByBaeminId.set(key, item);
       });
     }
+    let driverByCoupangId = null;
+    if (platform === 'coupang' && driverList.length) {
+      driverByCoupangId = new Map();
+      const coupangKeysOf = (item) => {
+        const keys = [];
+        const custom = String(item.coupangLoginKey || item.coupangId || '').replace(/\s/g, '');
+        if (custom) keys.push(custom);
+        const name = String(item.name || '').replace(/\s/g, '');
+        const phone4 = String(item.phone || '').replace(/[^0-9]/g, '').slice(-4);
+        if (name && phone4.length === 4) keys.push(`${name}${phone4}`);
+        return keys;
+      };
+      driverList.forEach(item => {
+        coupangKeysOf(item).forEach(key => {
+          if (!key) return;
+          const prev = driverByCoupangId.get(key);
+          if (!prev) driverByCoupangId.set(key, item);
+          else if (prev !== 'ambiguous' && String(prev.id) !== String(item.id)) {
+            driverByCoupangId.set(key, 'ambiguous');
+          }
+        });
+      });
+    }
     const riders = Array.isArray(record.riders)
       ? record.riders.map(rider => {
         let matchedRiderId = String(rider.matchedRiderId || '').trim();
@@ -10430,6 +10453,11 @@ const BremStorage = (function () {
             const resolved = driverByBaeminId.get(matchBaemin(baeminUserId));
             if (resolved) matchedRiderId = resolved.id;
           }
+        }
+        if (platform === 'coupang' && driverByCoupangId) {
+          const key = String(rider.coupangLoginKey || rider.originalName || '').replace(/\s+/g, '');
+          const resolved = key ? driverByCoupangId.get(key) : null;
+          if (resolved && resolved !== 'ambiguous') matchedRiderId = resolved.id;
         }
         const driver = matchedRiderId ? (driverById.get(matchedRiderId) || null) : null;
         if (platform === 'baemin' && driver?.baeminId) {

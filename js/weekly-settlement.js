@@ -516,6 +516,10 @@ const BremWeeklySettlement = (function () {
 
   function resolveDriverByUniqueName(rider, platform) {
     const p = normalizePlatform(platform);
+    if (p !== 'baemin') {
+      const login = normalizeCoupangLoginKey(rider?.coupangLoginKey || rider?.originalName);
+      if (/\d{4}$/.test(login)) return null;
+    }
     const name = normalizeName(rider?.riderName || rider?.originalName, p);
     if (!name) return null;
     const hits = (BremStorage.drivers.getAll() || []).filter(driver => (
@@ -687,6 +691,8 @@ const BremWeeklySettlement = (function () {
     if (loginKey && lookup?.byKey) {
       const hit = lookup.byKey.get(loginKey);
       if (hit && hit !== 'ambiguous') return hit;
+      // 이름+뒤4 쿠팡ID 가 있는데 목록에 없으면, 이름만으로 동명이인에게 붙이지 않는다.
+      if (/\d{4}$/.test(loginKey)) return null;
     }
 
     // 이름-only는 동명이인 1명일 때만 (쿠팡 본키는 이름+뒤4)
@@ -1334,6 +1340,8 @@ const BremWeeklySettlement = (function () {
         if (makeCoupangLoginKeyForDriver(driver) === loginKey) return driver;
         if (makeCoupangNamePhoneKey(driver) === loginKey) return driver;
       }
+      // 쿠팡ID(이름+뒤4)가 있는데 기간 데이터에 없으면 이름만으로 동명이인에게 붙이지 않는다.
+      if (/\d{4}$/.test(loginKey)) return null;
     }
     const normalizedTarget = normalizeCoupangName(rider.riderName || rider.originalName);
     if (normalizedTarget) {
