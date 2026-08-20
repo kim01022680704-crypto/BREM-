@@ -32,7 +32,8 @@
     enrolledPlatforms: { coupang: false, baemin: false },
     feesByPlatform: { coupang: null, baemin: null },
     requestSeq: 0,
-    confirmed: false
+    confirmed: false,
+    submitting: false
   };
 
   function showToast(message) {
@@ -556,6 +557,7 @@
 
   form?.addEventListener('submit', event => {
     event.preventDefault();
+    if (state.submitting) return;
     const amount = Math.max(0, Math.round(Number(amountInput?.value || 0)));
     const platform = selectedPlatform();
     if (!state.confirmed) {
@@ -592,37 +594,43 @@
         : `${platformLabel(platform)} 출금가능금액(${formatMoney(platformPool)})을 초과할 수 없습니다.`);
       return;
     }
+    state.submitting = true;
     void (async () => {
       if (submitBtn) submitBtn.disabled = true;
-      await loadWithdrawal();
-      if (!state.confirmed) {
-        showToast('출금가능금액을 다시 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-        return;
-      }
-      const freshPool = platformAvailableAmount(platform);
-      const freshFee = estimateFeeForAmount(amount);
-      if (freshPool < 0 || amount + freshFee > Math.max(0, freshPool)) {
-        showToast('출금가능금액이 방금 바뀌었습니다. 금액을 다시 확인해 주세요.');
+      try {
+        await loadWithdrawal();
+        if (!state.confirmed) {
+          showToast('출금가능금액을 다시 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+          return;
+        }
+        const freshPool = platformAvailableAmount(platform);
+        const freshFee = estimateFeeForAmount(amount);
+        if (freshPool <= 0 || amount + freshFee > freshPool) {
+          showToast(freshPool <= 0
+            ? '출금가능금액이 0원 이하입니다. 신청할 수 없습니다.'
+            : '출금가능금액이 방금 바뀌었습니다. 금액을 다시 확인해 주세요.');
+          return;
+        }
+        const result = await window.BremStorage?.submitRiderWithdrawalToServer?.({
+          weekStart: state.weekStart,
+          amount,
+          platform
+        });
+        if (!result?.ok) {
+          showToast(result?.message || '출금신청에 실패했습니다.');
+          void loadWithdrawal();
+          return;
+        }
+        const appliedFee = Math.max(0, Number(result.feeAmount ?? feeAmount));
+        showToast(appliedFee > 0
+          ? `출금신청 완료 · ${platformLabel(platform)} · ${formatMoney(amount)} (일정산수수료 ${formatMoney(appliedFee)})`
+          : `출금신청 완료 · ${platformLabel(platform)} · ${formatMoney(amount)}`);
+        if (amountInput) amountInput.value = '';
+        await loadWithdrawal();
+      } finally {
+        state.submitting = false;
         if (submitBtn) submitBtn.disabled = false;
-        return;
       }
-      const result = await window.BremStorage?.submitRiderWithdrawalToServer?.({
-        weekStart: state.weekStart,
-        amount,
-        platform
-      });
-      if (submitBtn) submitBtn.disabled = false;
-      if (!result?.ok) {
-        showToast(result?.message || '출금신청에 실패했습니다.');
-        void loadWithdrawal();
-        return;
-      }
-      const appliedFee = Math.max(0, Number(result.feeAmount ?? feeAmount));
-      showToast(appliedFee > 0
-        ? `출금신청 완료 · ${platformLabel(platform)} · ${formatMoney(amount)} (일정산수수료 ${formatMoney(appliedFee)})`
-        : `출금신청 완료 · ${platformLabel(platform)} · ${formatMoney(amount)}`);
-      if (amountInput) amountInput.value = '';
-      await loadWithdrawal();
     })();
   });
 

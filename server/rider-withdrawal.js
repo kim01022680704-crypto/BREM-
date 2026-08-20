@@ -776,6 +776,108 @@ function totalAvailableFromPlatforms(availableByPlatform) {
   return Number(availableByPlatform?.coupang || 0) + Number(availableByPlatform?.baemin || 0);
 }
 
+function livePlatformAvailable(summary, requests, platform, feesByPlatform) {
+  const driverId = String(summary?.driverId || '');
+  const weekStart = String(summary?.weekStart || '');
+  const mine = (Array.isArray(requests) ? requests : []).filter(item => (
+    item.driverId === driverId && item.weekStart === weekStart
+  ));
+  const buckets = accumulateRequestBuckets(mine, feesByPlatform);
+  const available = computeAvailableByPlatform(
+    summary?.netPayByPlatform,
+    buckets,
+    summary?.weekFinalized
+  );
+  return Number(available[platform] || 0);
+}
+
+function findRecentDuplicateRequest(requests, request, windowMs = 120000) {
+  const created = Date.parse(request?.createdAt || '') || Date.now();
+  return (Array.isArray(requests) ? requests : []).find(item => (
+    item.status === 'pending'
+    && item.id !== request.id
+    && item.driverId === request.driverId
+    && item.weekStart === request.weekStart
+    && (item.platform || '') === (request.platform || '')
+    && item.amount === request.amount
+    && Math.abs(created - (Date.parse(item.createdAt) || 0)) <= windowMs
+  )) || null;
+}
+
+async function readRequestsSnapshot(supabase) {
+  const { data, error } = await supabase
+    .from('settings')
+    .select('value, updated_at')
+    .eq('key', REQUESTS_KEY)
+    .maybeSingle();
+  if (error) throw error;
+  return {
+    list: normalizeRequestList(data?.value || []),
+    updatedAt: data?.updated_at || null
+  };
+}
+
+async function commitRequestsSnapshot(supabase, list, expectedUpdatedAt) {
+  const nextUpdatedAt = new Date().toISOString();
+  if (!expectedUpdatedAt) {
+    await writeSettingValue(supabase, REQUESTS_KEY, list);
+    return true;
+  }
+  const { data, error } = await supabase
+    .from('settings')
+    .update({ value: list, updated_at: nextUpdatedAt })
+    .eq('key', REQUESTS_KEY)
+    .eq('updated_at', expectedUpdatedAt)
+    .select('key');
+  if (error) throw error;
+  return Array.isArray(data) && data.length > 0;
+}
+
+async function appendWithdrawalRequestAtomic(supabase, {
+  summary,
+  request,
+  consumeAmount,
+  feesByPlatform,
+  platform,
+  allowExceed = false
+}) {
+  let lastError = '';
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const snapshot = await readRequestsSnapshot(supabase);
+    const existing = snapshot.list;
+    if (findRecentDuplicateRequest(existing, request)) {
+      return { ok: false, status: 409, error: '같은 출금신청이 이미 접수되었습니다. 목록을 확인하세요.' };
+    }
+    const platformAvailable = livePlatformAvailable(summary, existing, platform, feesByPlatform);
+    if (!allowExceed) {
+      if (platformAvailable <= 0) {
+        return { ok: false, status: 400, error: '출금가능금액이 0원 이하입니다. 신청할 수 없습니다.' };
+      }
+      if (consumeAmount > platformAvailable) {
+        const platformLabel = platform === 'baemin' ? '배민' : '쿠팡';
+        return {
+          ok: false,
+          status: 400,
+          error: `${platformLabel} 출금가능금액(${platformAvailable.toLocaleString('ko-KR')}원)을 초과할 수 없습니다.`
+        };
+      }
+    }
+    const next = [request, ...existing.filter(item => item.id !== request.id)];
+    const saved = await commitRequestsSnapshot(supabase, next, snapshot.updatedAt);
+    if (saved) {
+      return {
+        ok: true,
+        request,
+        platformAvailable,
+        nextPlatformAvailable: platformAvailable - consumeAmount
+      };
+    }
+    lastError = '출금신청이 동시에 처리 중입니다. 다시 시도하세요.';
+    await new Promise(resolve => setTimeout(resolve, 40 * (attempt + 1)));
+  }
+  return { ok: false, status: 409, error: lastError || '출금신청을 저장하지 못했습니다. 다시 시도하세요.' };
+}
+
 function normalizeRequest(item = {}) {
   const amount = Math.max(0, Math.round(Number(item.amount || 0)));
   const weekStart = normalizeSettlementWeekStart(item.weekStart || item.settlementWeekStart);
@@ -1078,6 +1180,9 @@ async function createWithdrawalRequest(accessToken, body = {}) {
   const platformAvailable = Number(summary.availableByPlatform?.[platform] ?? summary.availableAmount ?? 0);
   const platformLabel = platform === 'baemin' ? '배민' : '쿠팡';
 
+  if (platformAvailable <= 0) {
+    return { ok: false, status: 400, error: '출금가능금액이 0원 이하입니다. 신청할 수 없습니다.' };
+  }
   if (consumeAmount > platformAvailable) {
     return {
       ok: false,
@@ -1102,13 +1207,16 @@ async function createWithdrawalRequest(accessToken, body = {}) {
     updatedAt: new Date().toISOString()
   });
 
-  await withRequestsLock(async () => {
-    const existing = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
-    existing.unshift(request);
-    await writeSettingValue(supabase, REQUESTS_KEY, existing);
-  });
+  const appended = await withRequestsLock(() => appendWithdrawalRequestAtomic(supabase, {
+    summary,
+    request,
+    consumeAmount,
+    feesByPlatform,
+    platform
+  }));
+  if (!appended.ok) return appended;
 
-  const nextPlatformAvailable = Math.max(0, platformAvailable - consumeAmount);
+  const nextPlatformAvailable = Math.max(0, Number(appended.nextPlatformAvailable || 0));
   const nextAvailable = Math.max(0, Number(summary.availableAmount || 0) - consumeAmount);
   return {
     ok: true,
@@ -1928,11 +2036,15 @@ async function adminCreateWithdrawalForDriver(accessToken, body = {}) {
     completedAt: mode === 'complete' ? now : null
   });
 
-  await withRequestsLock(async () => {
-    const existing = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
-    existing.unshift(request);
-    await writeSettingValue(supabase, REQUESTS_KEY, existing);
-  });
+  const appended = await withRequestsLock(() => appendWithdrawalRequestAtomic(supabase, {
+    summary,
+    request,
+    consumeAmount,
+    feesByPlatform: summary.feesByPlatform,
+    platform,
+    allowExceed
+  }));
+  if (!appended.ok) return appended;
 
   const nextAvailable = Math.max(0, Number(summary.availableAmount || 0) - consumeAmount);
   return {
@@ -1944,7 +2056,7 @@ async function adminCreateWithdrawalForDriver(accessToken, body = {}) {
     availableAmount: nextAvailable,
     availableByPlatform: {
       ...(summary.availableByPlatform || { coupang: 0, baemin: 0 }),
-      [platform]: Math.max(0, platformAvailable - consumeAmount)
+      [platform]: Math.max(0, Number(appended.nextPlatformAvailable ?? (platformAvailable - consumeAmount)))
     },
     message: mode === 'complete'
       ? `강제출금 완료 · ${request.driverName} · ${platformLabel} ${amount.toLocaleString('ko-KR')}원`
