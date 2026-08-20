@@ -6,6 +6,8 @@
  *  - 배달료 = AM+AB (AM은 AB 차감 후) / AB·AE·AG·AH(공제) / 원천세만 AC×3.3%
  *  - 일정산서 서식은 배달료 AL (주정산 AM과 다름)
  *  - 헤더·설명·합계 행을 건너뛰는지 (직계약만 해당)
+ *  - 콜·배달료 0 / 오더수 '-' 인 고용·산재 소급 행도 포함하고 Z열을 읽는다
+ *  - Z열 지급액 맞추기는 선택한 기사만 총지급액에 반영한다
  *  - 브로 채널 업로드는 금액 열 없이 기존 동작을 유지하는지
  *  - 콜수수료 = 오더수 × 콜수수료 단가 로 정산결과 공제에 들어가는지
  */
@@ -75,12 +77,17 @@ const COUPANG_ROWS = [
   sheetRow({ C: '박쿠팡', F: 120, AB: 5000, AC: 1212000, AE: -9000, AG: -8000, AH: -3000, AM: 1200000 }),
   sheetRow({ C: '최쿠팡', F: 80, AB: '-1,500', AC: '808,000', AE: '-6,000', AG: '-5,000', AH: '-2,000', AM: '800,000' }),
   sheetRow({ C: '없는기사', F: 40, AB: '', AC: 404000, AE: 3000, AG: 2500, AH: 1000, AM: 400000 }),
+  // 콜·배달료 0인 고용/산재 소급. 오더수가 '-' 이거나 0 이어도 Z 지급액을 읽어야 한다.
+  sheetRow({ C: '정지용', F: '-', AB: '-', AC: '-', AE: -6600, AG: -3750, AH: '-', AM: '-', Z: 4000 }),
+  sheetRow({ C: '김규래', F: 0, AB: 0, AC: 0, AE: -2410, AG: -2540, AH: 0, AM: 0, Z: 2400 }),
+  sheetRow({ C: '빈칸기사', F: '-', AM: '-', AB: '-', AE: '-', AG: '-', AH: '-', Z: '-' }),
   sheetRow({ C: '합계', F: '', AB: 6500, AC: 2424000, AE: -18000, AG: -15500, AH: -6000, AM: 2400000 })
 ];
 
 const DRIVERS = [
   { id: 'd1', name: '박쿠팡', baeminId: '', coupangId: '박쿠팡' },
-  { id: 'd2', name: '최쿠팡', baeminId: '', coupangId: '최쿠팡' }
+  { id: 'd2', name: '최쿠팡', baeminId: '', coupangId: '최쿠팡' },
+  { id: 'd3', name: '정지용', baeminId: '', coupangId: '정지용' }
 ];
 
 let FEES = { coupang: { callFee: 300, dailySettlementFee: 0.02, dailySettlementFeeMode: 'percent' } };
@@ -109,7 +116,7 @@ window.BremStorage = {
   },
   manualNameMappings: { getAll: () => [], save: () => {} },
   directSettlementAdjustments: {
-    getSettlement: (kind, id) => adjustments[kind][id] || {}
+    getSettlement: (kind, id) => (adjustments[kind] || {})[id] || {}
   },
   payrollDailySettlement: {
     getFees: platform => FEES[platform] || { callFee: 0 },
@@ -159,7 +166,8 @@ const DIRECT_COLS = {
   deductionBase: 'AC',
   employmentInsurance: 'AE',
   accidentInsurance: 'AG',
-  hourlyInsurance: 'AH'
+  hourlyInsurance: 'AH',
+  riderPayout: 'Z'
 };
 
 const TAX = base => Math.floor(base * 0.033);
@@ -172,12 +180,13 @@ const TAX = base => Math.floor(base * 0.033);
     startRow: 10,
     amountColumns: DIRECT_COLS
   });
-  // 시작행을 10으로 앞당겼지만 헤더(11행)와 합계(오더수 비어있음) 행은 걸러져야 한다.
-  check('데이터 3명만 추출', direct.length, 3);
+  // 시작행을 10으로 앞당겼지만 헤더(11행)와 합계(오더수 비어있음)·빈 '-' 행은 걸러져야 한다.
+  check('데이터 5명만 추출(소급 2명 포함)', direct.length, 5);
   check('첫 기사 쿠팡ID', direct[0]?.coupangLoginKey, '박쿠팡');
   check('첫 기사 오더수', direct[0]?.weeklyOrderCount, 120);
   check('헤더 행 제외', direct.some(r => r.coupangLoginKey === '성함'), 'false');
   check('합계 행 제외', direct.some(r => r.coupangLoginKey === '합계'), 'false');
+  check('빈칸 - 행 제외', direct.some(r => r.coupangLoginKey === '빈칸기사'), 'false');
 
   console.log('\n[2] 배달료(AM+AB) + 공제 시트값(AB/AE/AG/AH) + 원천세만 AC×3.3%');
   check('배달료(AM+AB)', direct[0]?.amounts?.deliveryFee, 1205000);
@@ -338,6 +347,38 @@ const TAX = base => Math.floor(base * 0.033);
   check('쿠팡·배민 열 구성 동일', JSON.stringify(headBaemin), JSON.stringify(headCoupang));
   const bodyBaemin = [...window.document.querySelectorAll('#settlementResultRows tr')][0].querySelectorAll('td').length;
   check('배민도 헤더와 본문 열 수 일치', bodyBaemin, headBaemin.length);
+
+  console.log('\n[11] 콜 0 소급 행은 Z열을 읽고, 선택 적용 시에만 총지급액이 Z');
+  const retroDash = direct.find(r => r.coupangLoginKey === '정지용');
+  const retroZero = direct.find(r => r.coupangLoginKey === '김규래');
+  check('오더수 - 행 포함', Boolean(retroDash), 'true');
+  check('오더수 0 행 포함', Boolean(retroZero), 'true');
+  check('정지용 오더수 0', retroDash?.weeklyOrderCount, 0);
+  check('정지용 Z 지급액', retroDash?.amounts?.sheetPayout, 4000);
+  check('정지용 고용보험', retroDash?.amounts?.employmentInsurance, 6600);
+  check('정지용 산재보험', retroDash?.amounts?.accidentInsurance, 3750);
+  check('김규래 Z 지급액', retroZero?.amounts?.sheetPayout, 2400);
+  check('자동으로 배달료를 부풀리지 않음', retroDash?.amounts?.deliveryFee, 0);
+  check('자동 useSheetPayout 아님', Boolean(retroDash?.amounts?.useSheetPayout), 'false');
+
+  const applied = WS.applySheetPayoutOverride(retroDash);
+  check('선택 적용 후 useSheetPayout', applied.amounts.useSheetPayout, 'true');
+  check('선택 적용 후 payoutOverride', applied.amounts.payoutOverride, 4000);
+
+  SETTLEMENTS.length = 0;
+  SETTLEMENTS.push({
+    id: 'weekly_direct_coupang_seoul_20260722',
+    platform: 'coupang', channel: 'direct', region: '서울',
+    fileName: '쿠팡_직계약_0722.xlsx', startDate: '2026-07-22', endDate: '2026-07-28',
+    riders: [
+      { matchedRiderId: 'd3', coupangLoginKey: '정지용', weeklyOrderCount: 0, amounts: applied.amounts }
+    ]
+  });
+  FEES = { coupang: { callFee: 300, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' } };
+  await Result.refresh('coupang');
+  const retroCells = [...[...window.document.querySelectorAll('#settlementResultRows tr')]
+    .find(tr => tr.textContent.includes('정지용')).querySelectorAll('td')].map(td => td.textContent.trim());
+  check('선택 적용 후 실지급 = Z 4,000', retroCells.includes('4,000'), 'true');
 
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);

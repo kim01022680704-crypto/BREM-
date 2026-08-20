@@ -179,12 +179,25 @@ const BremWeeklySettlement = (function () {
   }
 
   function sumAmountMaps(a = {}, b = {}) {
-    const out = { ...(a && typeof a === 'object' ? a : {}) };
-    Object.entries(b && typeof b === 'object' ? b : {}).forEach(([key, value]) => {
+    const leftObj = a && typeof a === 'object' ? a : {};
+    const rightObj = b && typeof b === 'object' ? b : {};
+    const out = { ...leftObj };
+    Object.entries(rightObj).forEach(([key, value]) => {
+      if (key === 'useSheetPayout') return;
       const left = Number(out[key] || 0);
       const right = Number(value || 0);
       out[key] = Math.round((Number.isFinite(left) ? left : 0) + (Number.isFinite(right) ? right : 0));
     });
+    if (leftObj.useSheetPayout || rightObj.useSheetPayout) {
+      out.useSheetPayout = true;
+      out.payoutOverride = Math.max(
+        Math.abs(Number(leftObj.payoutOverride || 0)),
+        Math.abs(Number(rightObj.payoutOverride || 0)),
+        Math.abs(Number(out.sheetPayout || 0))
+      );
+    } else {
+      delete out.useSheetPayout;
+    }
     return out;
   }
 
@@ -383,6 +396,36 @@ const BremWeeklySettlement = (function () {
     return Number.isFinite(num) ? num : 0;
   }
 
+  function isDirectSummaryName(name) {
+    const n = String(name || '').replace(/\s+/g, '');
+    return /^(합계|총계|소계|총합계)/.test(n);
+  }
+
+  // 직계약: 헤더 문구는 건너뛰고, 숫자(0 포함)와 '-' 는 데이터 행으로 본다.
+  // 고용·산재 소급만 있는 기사는 오더수 칸이 '-' 라서 예전엔 통째로 빠졌다.
+  function isDirectDataOrderCell(orderRaw) {
+    const text = String(orderRaw ?? '').trim();
+    if (/^[\d,]+(\.\d+)?$/.test(text)) return true;
+    return text === '-' || text === '–' || text === '—' || text === '－';
+  }
+
+  function hasDirectPayoutSignal(amounts) {
+    if (!amounts) return false;
+    return [
+      amounts.deliveryFeeAm,
+      amounts.sheetPayout,
+      amounts.deductionDetail,
+      amounts.employmentInsurance,
+      amounts.accidentInsurance,
+      amounts.hourlyInsurance,
+      amounts.deductionBase,
+      amounts.deliveryFee,
+      amounts.missionPay,
+      amounts.totalDeliveryPay,
+      amounts.withholdingTax
+    ].some(v => Number(v || 0) !== 0);
+  }
+
   // 직계약 배민 정산서 금액/공제 열 기본값 (사용자 지정: E/F/G, 공제 H/L/N/Y)
   const DIRECT_BAEMIN_AMOUNT_COLUMNS = Object.freeze({
     deliveryFee: 'E',           // 배달료
@@ -391,7 +434,8 @@ const BremWeeklySettlement = (function () {
     hourlyInsurance: 'H',       // 시간제보험(공제)
     employmentInsurance: 'L',   // 고용보험(공제)
     accidentInsurance: 'N',     // 산재보험(공제)
-    withholdingTax: 'Y'         // 원천세(공제)
+    withholdingTax: 'Y',        // 원천세(공제)
+    riderPayout: 'Z'            // 라이더별 지급금액. 고용/산재 소급 행에서 선택 적용
   });
 
   // 직계약 쿠팡 정산서 금액/공제 열 기본값.
@@ -406,7 +450,8 @@ const BremWeeklySettlement = (function () {
     deductionBase: 'AC',        // 원천세 기준 금액
     employmentInsurance: 'AE',  // 고용보험(공제)
     accidentInsurance: 'AG',    // 산재보험(공제)
-    hourlyInsurance: 'AH'       // 시간제보험(공제)
+    hourlyInsurance: 'AH',      // 시간제보험(공제)
+    riderPayout: 'Z'            // 라이더별 지급금액. 콜·배달료 0인 고용/산재 소급 행
   });
 
   const COUPANG_WITHHOLDING_RATE = 0.033;
@@ -423,16 +468,21 @@ const BremWeeklySettlement = (function () {
     // AC가 비어 있으면 시트 AM(원본)으로 대체 — 세금 기준은 시트 값을 우선.
     const deductionBase = Math.abs(parseAmount(readCell(row, cols.deductionBase)))
       || Math.abs(amDeliveryFee);
+    const employmentInsurance = Math.abs(parseAmount(readCell(row, cols.employmentInsurance)));
+    const accidentInsurance = Math.abs(parseAmount(readCell(row, cols.accidentInsurance)));
+    const hourlyInsurance = Math.abs(parseAmount(readCell(row, cols.hourlyInsurance)));
+    const withholdingTax = Math.floor(deductionBase * COUPANG_WITHHOLDING_RATE);
+    const sheetPayout = Math.abs(parseAmount(readCell(row, cols.riderPayout || 'Z')));
     return {
       deliveryFee,
       deliveryFeeAm: amDeliveryFee,
       deductionDetail,
       deductionBase,
-      // 원천세만 우리가 AC×3.3% 로 계산한다. 나머지는 정산서 수치 그대로.
-      withholdingTax: Math.floor(deductionBase * COUPANG_WITHHOLDING_RATE),
-      employmentInsurance: Math.abs(parseAmount(readCell(row, cols.employmentInsurance))),
-      accidentInsurance: Math.abs(parseAmount(readCell(row, cols.accidentInsurance))),
-      hourlyInsurance: Math.abs(parseAmount(readCell(row, cols.hourlyInsurance)))
+      withholdingTax,
+      employmentInsurance,
+      accidentInsurance,
+      hourlyInsurance,
+      sheetPayout
     };
   }
 
@@ -448,8 +498,31 @@ const BremWeeklySettlement = (function () {
       hourlyInsurance: Math.abs(parseAmount(readCell(row, cols.hourlyInsurance))),
       employmentInsurance: Math.abs(parseAmount(readCell(row, cols.employmentInsurance))),
       accidentInsurance: Math.abs(parseAmount(readCell(row, cols.accidentInsurance))),
-      withholdingTax: Math.abs(parseAmount(readCell(row, cols.withholdingTax)))
+      withholdingTax: Math.abs(parseAmount(readCell(row, cols.withholdingTax))),
+      sheetPayout: Math.abs(parseAmount(readCell(row, cols.riderPayout || 'Z')))
     };
+  }
+
+  // 관리자가 고른 소급 기사만 Z열 지급액을 총지급 목표로 표시한다. 계산식은 건드리지 않는다.
+  function applySheetPayoutOverride(rider) {
+    if (!rider || !rider.amounts) return rider;
+    const z = Math.abs(Number(rider.amounts.sheetPayout || 0));
+    if (!z) return rider;
+    return {
+      ...rider,
+      amounts: {
+        ...rider.amounts,
+        useSheetPayout: true,
+        payoutOverride: z
+      }
+    };
+  }
+
+  function riderPayoutSelectKey(rider, platform) {
+    if (normalizePlatform(platform) === 'baemin') {
+      return String(rider?.baeminUserId || rider?.originalName || '').trim();
+    }
+    return String(rider?.coupangLoginKey || rider?.originalName || '').trim();
   }
 
   function normalizeName(rawName, platform) {
@@ -964,10 +1037,15 @@ const BremWeeklySettlement = (function () {
       const rawName = cellText(readCell(rows[i] || [], nameColumn));
       if (!rawName) continue;
       const orderRaw = readCell(rows[i] || [], orderCountColumn);
-      // 직계약: 시작행을 여유있게 앞에 둬도 헤더·설명·합계 행이 섞이지 않도록
-      // 오더수가 숫자인 실제 데이터 행만 읽는다. 브로 업로드는 기존 동작을 그대로 둔다.
-      if (amountColumns && !/^[\d,]+(\.\d+)?$/.test(String(orderRaw ?? '').trim())) continue;
+      // 직계약: 헤더·합계는 건너뛰고, 오더수 숫자 또는 '-' 행만 읽는다.
+      // '-' 는 콜 0인 고용/산재 소급 행이다. 브로 업로드는 기존 동작을 그대로 둔다.
+      if (amountColumns) {
+        if (isDirectSummaryName(rawName)) continue;
+        if (!isDirectDataOrderCell(orderRaw)) continue;
+      }
       const weeklyOrderCount = Number(String(orderRaw ?? '').replace(/[^\d.-]/g, '')) || 0;
+      const amounts = extractCoupangAmounts(rows[i] || [], amountColumns);
+      if (amountColumns && !weeklyOrderCount && !hasDirectPayoutSignal(amounts)) continue;
       const loginKey = normalizeCoupangLoginKey(rawName);
       const rider = {
         originalName: rawName,
@@ -975,7 +1053,6 @@ const BremWeeklySettlement = (function () {
         coupangLoginKey: loginKey,
         weeklyOrderCount
       };
-      const amounts = extractCoupangAmounts(rows[i] || [], amountColumns);
       if (amounts) rider.amounts = amounts;
       pushUniqueRider(riders, seen, loginKey, rider);
     }
@@ -997,10 +1074,14 @@ const BremWeeklySettlement = (function () {
       const normalizedUserId = normalizeBaeminUserId(baeminUserId);
       if (!normalizedUserId) continue;
       const orderRaw = readCell(rows[i] || [], orderCountColumn);
-      // 직계약: User ID가 영문+숫자 로그인 ID(BC063824 등)라 숫자 필터를 못 쓴다.
-      // 대신 시작행을 여유있게 앞에 둬도 헤더/설명/합계 행이 섞이지 않도록 처리건수(콜수)가 숫자인 실제 데이터 행만 읽는다.
-      if (amountColumns && !/^[\d,]+(\.\d+)?$/.test(String(orderRaw ?? '').trim())) continue;
+      // 직계약: 처리건수가 숫자이거나 '-' 인 데이터 행만 읽는다. 소급(콜 0) 행이 빠지지 않게.
+      if (amountColumns) {
+        if (isDirectSummaryName(rawName)) continue;
+        if (!isDirectDataOrderCell(orderRaw)) continue;
+      }
       const weeklyOrderCount = Number(String(orderRaw ?? '').replace(/[^\d.-]/g, '')) || 0;
+      const amounts = extractBaeminAmounts(rows[i] || [], amountColumns);
+      if (amountColumns && !weeklyOrderCount && !hasDirectPayoutSignal(amounts)) continue;
       const rider = {
         originalName: rawName,
         riderName: normalizeBaeminName(rawName),
@@ -1008,7 +1089,6 @@ const BremWeeklySettlement = (function () {
         baeminUserId: normalizedUserId,
         weeklyOrderCount
       };
-      const amounts = extractBaeminAmounts(rows[i] || [], amountColumns);
       if (amounts) rider.amounts = amounts;
       pushOrSumBaeminRider(riders, byKey, rider);
     }
@@ -1746,6 +1826,8 @@ const BremWeeklySettlement = (function () {
     findBaeminSettlementSheet,
     extractCoupangWeeklyRiders,
     extractBaeminWeeklyRiders,
+    applySheetPayoutOverride,
+    riderPayoutSelectKey,
     buildDriversInPeriod,
     buildDriverCallStatsForPeriod,
     buildDriverCallAudit,

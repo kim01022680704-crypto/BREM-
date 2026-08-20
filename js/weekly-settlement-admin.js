@@ -63,11 +63,13 @@ const BremWeeklySettlementAdmin = (function () {
     { key: 'hourlyInsurance', label: '시간제보험(H)' },
     { key: 'employmentInsurance', label: '고용보험(L)' },
     { key: 'accidentInsurance', label: '산재보험(N)' },
-    { key: 'withholdingTax', label: '원천세(Y)' }
+    { key: 'withholdingTax', label: '원천세(Y)' },
+    { key: 'sheetPayout', label: '라이더별 지급(Z)' }
   ];
 
   const DIRECT_AMOUNT_FIELDS_COUPANG = [
     { key: 'deliveryFee', label: '배달료(AM+AB)' },
+    { key: 'sheetPayout', label: '라이더별 지급(Z)' },
     { key: 'deductionDetail', label: '차감내역(AB)' },
     { key: 'deductionBase', label: '원천세기준(AC)' },
     { key: 'withholdingTax', label: '원천세(AC×3.3%)' },
@@ -286,7 +288,8 @@ const BremWeeklySettlementAdmin = (function () {
       hourlyInsurance: q(channel, 'HourlyInsCol', 'baemin')?.value?.trim() || 'H',
       employmentInsurance: q(channel, 'EmploymentInsCol', 'baemin')?.value?.trim() || 'L',
       accidentInsurance: q(channel, 'AccidentInsCol', 'baemin')?.value?.trim() || 'N',
-      withholdingTax: q(channel, 'WithholdingTaxCol', 'baemin')?.value?.trim() || 'Y'
+      withholdingTax: q(channel, 'WithholdingTaxCol', 'baemin')?.value?.trim() || 'Y',
+      riderPayout: q(channel, 'RiderPayoutCol', 'baemin')?.value?.trim() || 'Z'
     };
   }
 
@@ -297,13 +300,14 @@ const BremWeeklySettlementAdmin = (function () {
       deductionBase: q(channel, 'DeductionBaseCol', 'coupang')?.value?.trim() || 'AC',
       employmentInsurance: q(channel, 'EmploymentInsCol', 'coupang')?.value?.trim() || 'AE',
       accidentInsurance: q(channel, 'AccidentInsCol', 'coupang')?.value?.trim() || 'AG',
-      hourlyInsurance: q(channel, 'HourlyInsCol', 'coupang')?.value?.trim() || 'AH'
+      hourlyInsurance: q(channel, 'HourlyInsCol', 'coupang')?.value?.trim() || 'AH',
+      riderPayout: q(channel, 'RiderPayoutCol', 'coupang')?.value?.trim() || 'Z'
     };
   }
 
   function readUploadForm(channel, platform) {
     if (platform === 'coupang') fillCoupangDatesFromBase(channel);
-    // 직계약은 시작행을 여유있게 앞으로 두고, 오더수(콜수)가 숫자인 행만 읽어 헤더행을 건너뛴다.
+    // 직계약은 시작행을 여유있게 앞으로 두고, 오더수(콜수)가 숫자이거나 '-' 인 행만 읽어 헤더행을 건너뛴다.
     const startRowDefault = isDirectBaemin(channel, platform)
       ? 15
       : (platform === 'coupang' ? 12 : 2);
@@ -903,6 +907,20 @@ const BremWeeklySettlementAdmin = (function () {
       settlementId: record.id || ''
     };
 
+    const showPayoutSelect = ch === 'direct' && platform === 'baemin';
+    const selectCell = rider => {
+      if (!showPayoutSelect) return '';
+      const key = BremWeeklySettlement.riderPayoutSelectKey(rider, platform);
+      const applied = rider.amounts?.useSheetPayout === true;
+      return `<td><input type="checkbox" data-weekly-payout-key="${escapeHtml(key)}" ${applied ? 'data-z-applied="1"' : ''}></td>`;
+    };
+    const matchLabel = (ok, rider) => {
+      const zMark = rider?.amounts?.useSheetPayout ? ' · Z지급' : '';
+      return ok
+        ? `<td class="promotion-status-ok">매칭${zMark}</td>`
+        : `<td class="promotion-status-no">미매칭${zMark}</td>`;
+    };
+
     // 저장 순서를 바꾸지 않으려고 원본 배열은 그대로 두고 사본을 정렬한다.
     const matchedRows = [...(record.riders || [])]
       .sort(byDriverName(r => r.driverName || r.riderName))
@@ -911,6 +929,7 @@ const BremWeeklySettlementAdmin = (function () {
       const rowClass = isMismatchRider(rider) ? 'promotion-row-unpaid' : '';
       return `
       <tr class="${rowClass}">
+        ${selectCell(rider)}
         <td><strong>${escapeHtml(rider.driverName || rider.riderName)}</strong></td>
         <td>${escapeHtml(rider.originalName)}</td>
         <td>${riderMatchIdTag(rider, platform)}</td>
@@ -918,7 +937,7 @@ const BremWeeklySettlementAdmin = (function () {
         ${directAmountBodyCells(rider, ch, platform)}
         <td>${formatNumber(rider.systemCallCount)}</td>
         <td>${callCountStatusHtml(rider)}</td>
-        <td class="promotion-status-ok">매칭</td>
+        ${matchLabel(true, rider)}
         <td class="weekly-warning-cell weekly-mismatch-detail">${warningText}</td>
         <td>${renderCallAuditButton(rider, auditContext)}</td>
       </tr>
@@ -931,6 +950,7 @@ const BremWeeklySettlementAdmin = (function () {
       const warningText = (rider.warnings || []).join(', ') || unmatchedDefaultWarning(platform);
       return `
       <tr class="promotion-row-unpaid">
+        ${selectCell(rider)}
         <td><strong>${escapeHtml(rider.riderName)}</strong></td>
         <td>${escapeHtml(rider.originalName)}</td>
         <td>${riderMatchIdTag(rider, platform)}</td>
@@ -938,17 +958,99 @@ const BremWeeklySettlementAdmin = (function () {
         ${directAmountBodyCells(rider, ch, platform)}
         <td>-</td>
         <td class="promotion-status-no">-</td>
-        <td class="promotion-status-no">미매칭</td>
+        ${matchLabel(false, rider)}
         <td class="weekly-warning-cell">${escapeHtml(warningText)}</td>
         <td>-</td>
       </tr>
     `;
     }).join('');
 
-    const emptyColspan = isDirectAmountView(ch, platform)
+    const emptyColspan = (isDirectAmountView(ch, platform)
       ? 9 + directAmountFields(platform).length
-      : 9;
+      : 9) + (showPayoutSelect ? 1 : 0);
     rowsEl.innerHTML = matchedRows + unmatchedRows || `<tr><td colspan="${emptyColspan}" class="empty">데이터 없음</td></tr>`;
+    syncBaeminPayoutSelectAll(ch);
+  }
+
+  function collectPreviewRiders(record) {
+    return [...(record?.riders || []), ...(record?.previewUnmatched || [])];
+  }
+
+  function syncBaeminPayoutSelectAll(channel) {
+    const box = q(channel, 'SelectAll', 'baemin');
+    const rowsEl = q(channel, 'PreviewRows', 'baemin');
+    if (!box || !rowsEl) return;
+    const boxes = [...rowsEl.querySelectorAll('input[data-weekly-payout-key]')];
+    box.checked = boxes.length > 0 && boxes.every(el => el.checked);
+  }
+
+  function applySelectedSheetPayout(channel, platform) {
+    const ch = normChannel(channel);
+    if (ch !== 'direct' || platform !== 'baemin') return;
+    const record = getPreview(ch, platform);
+    if (!record) {
+      showToast('먼저 업로드 및 매칭을 실행하세요.');
+      return;
+    }
+    const rowsEl = q(ch, 'PreviewRows', platform);
+    const keys = new Set(
+      [...(rowsEl?.querySelectorAll('input[data-weekly-payout-key]:checked') || [])]
+        .map(el => el.dataset.weeklyPayoutKey)
+        .filter(Boolean)
+    );
+    if (!keys.size) {
+      showToast('Z열 지급액을 맞출 기사를 선택하세요.');
+      return;
+    }
+
+    const applyOne = rider => {
+      const key = BremWeeklySettlement.riderPayoutSelectKey(rider, platform);
+      if (!keys.has(key)) return rider;
+      return BremWeeklySettlement.applySheetPayoutOverride(rider);
+    };
+    const nextRiders = (record.riders || []).map(applyOne);
+    const nextUnmatched = (record.previewUnmatched || []).map(applyOne);
+    const applied = collectPreviewRiders({ riders: nextRiders, previewUnmatched: nextUnmatched })
+      .filter(rider => {
+        const key = BremWeeklySettlement.riderPayoutSelectKey(rider, platform);
+        return keys.has(key) && rider.amounts?.useSheetPayout;
+      });
+    const skipped = [...keys].filter(key => !applied.some(rider => (
+      BremWeeklySettlement.riderPayoutSelectKey(rider, platform) === key
+    )));
+
+    if (!applied.length) {
+      showToast('선택한 기사에 Z열 지급액이 없습니다. 열 설정의 Z를 확인하세요.');
+      return;
+    }
+
+    const preview = applied.slice(0, 12)
+      .map(r => `· ${r.driverName || r.riderName || r.originalName} ${formatNumber(r.amounts.payoutOverride)}원`)
+      .join('\n');
+    const more = applied.length > 12 ? `\n외 ${applied.length - 12}명` : '';
+    const unmatchedCount = applied.filter(r => !r.matchedRiderId).length;
+    const ok = window.confirm(
+      [
+        `선택한 ${applied.length}명의 총지급액을 Z열 금액으로 맞춥니다.`,
+        '저장하면 정산결과 총지급액에 그대로 들어갑니다.',
+        unmatchedCount ? `미매칭 ${unmatchedCount}명은 저장·정산결과에 안 들어갑니다. 기사 등록 후 다시 매칭하세요.` : '',
+        '',
+        preview
+      ].filter(Boolean).join('\n') + more + '\n\n적용할까요?'
+    );
+    if (!ok) return;
+
+    setPreview(ch, platform, {
+      ...record,
+      riders: nextRiders,
+      previewUnmatched: nextUnmatched
+    });
+    renderPreview(ch, platform);
+    showToast(
+      skipped.length
+        ? `${applied.length}명 Z열 지급액 맞춤 · Z 없는 선택 ${skipped.length}명은 건너뜀`
+        : `${applied.length}명 Z열 지급액 맞춤 · 저장하면 정산결과에 반영`
+    );
   }
 
   function unmatchedDefaultWarning(platform) {
@@ -1309,6 +1411,21 @@ const BremWeeklySettlementAdmin = (function () {
     q(ch, 'UnmatchedRetryBtn', platform)?.addEventListener('click', () => {
       retryWeeklyUnmatched(ch, platform);
     });
+    if (ch === 'direct' && platform === 'baemin') {
+      q(ch, 'ApplySheetPayoutBtn', platform)?.addEventListener('click', () => {
+        applySelectedSheetPayout(ch, platform);
+      });
+      q(ch, 'SelectAll', platform)?.addEventListener('change', event => {
+        const rowsEl = q(ch, 'PreviewRows', platform);
+        [...(rowsEl?.querySelectorAll('input[data-weekly-payout-key]') || [])]
+          .forEach(box => { box.checked = event.target.checked; });
+      });
+      q(ch, 'PreviewRows', platform)?.addEventListener('change', event => {
+        if (event.target?.matches?.('input[data-weekly-payout-key]')) {
+          syncBaeminPayoutSelectAll(ch);
+        }
+      });
+    }
   }
 
   // 주정산서 삭제는 정산서 자체 + 업로드 로그 + 그 정산서에 붙은 프로모션/기타지급까지
