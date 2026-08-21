@@ -10485,6 +10485,26 @@ const BremStorage = (function () {
           baeminUserId,
           warnings: Array.isArray(rider.warnings) ? rider.warnings.map(String) : []
         };
+        if (rider.manualAdjustments && typeof rider.manualAdjustments === 'object') {
+          const m = rider.manualAdjustments;
+          const manual = {};
+          if (Object.prototype.hasOwnProperty.call(m, 'missionPay')) {
+            manual.missionPay = Math.max(0, Math.round(Number(m.missionPay || 0)));
+          }
+          if (Object.prototype.hasOwnProperty.call(m, 'other')) {
+            manual.other = Math.max(0, Math.round(Number(m.other || 0)));
+          }
+          if (Object.prototype.hasOwnProperty.call(m, 'leaseFee')) {
+            manual.leaseFee = Math.max(0, Math.round(Number(m.leaseFee || 0)));
+          }
+          if (Object.prototype.hasOwnProperty.call(m, 'loanFee')) {
+            manual.loanFee = Math.max(0, Math.round(Number(m.loanFee || 0)));
+          }
+          if (Object.keys(manual).length) {
+            if (m.updatedAt) manual.updatedAt = String(m.updatedAt);
+            normalized.manualAdjustments = manual;
+          }
+        }
         // 직계약 금액/공제(배달료·추가지급·총배달료·고용/산재보험·원천세) 보존
         if (rider.amounts && typeof rider.amounts === 'object') {
           const a = rider.amounts;
@@ -12059,6 +12079,13 @@ const BremStorage = (function () {
         loanFeeCount: Object.keys(loan).length,
         loanFeeTotal: sum(loan)
       };
+    },
+    async reloadFromServer() {
+      if (typeof activeStorageAdapter.reloadSettingKey === 'function') {
+        await activeStorageAdapter.reloadSettingKey(KEYS.directSettlementAdjustments);
+        return;
+      }
+      await refetchDataKey(KEYS.directSettlementAdjustments);
     }
   };
 

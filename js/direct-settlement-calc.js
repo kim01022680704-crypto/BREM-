@@ -130,23 +130,38 @@ const BremDirectSettlementCalc = (function () {
     return `id:${id}`;
   }
 
+  function riderManualAdjustments(rider) {
+    return (rider?.manualAdjustments && typeof rider.manualAdjustments === 'object')
+      ? rider.manualAdjustments
+      : {};
+  }
+
+  function pickOverrideAmount(map, driverId, manual, key) {
+    if (driverId && map && Object.prototype.hasOwnProperty.call(map, driverId)) {
+      return Math.max(0, Math.round(Number(map[driverId]?.amount || 0)));
+    }
+    if (manual && Object.prototype.hasOwnProperty.call(manual, key)) {
+      return Math.max(0, Math.round(Number(manual[key] || 0)));
+    }
+    return null;
+  }
+
   function riderRowBase(rider, settlement, platform, unitCallFee, adj) {
     const driverId = String(rider.matchedRiderId || '').trim();
     const amounts = rider.amounts || {};
+    const manual = riderManualAdjustments(rider);
     const idLabel = platform === 'coupang'
       ? (rider.coupangLoginKey || '-')
       : (rider.baeminUserId || '-');
     const promo = driverId ? Number(adj.promoMap[driverId]?.amount || 0) : 0;
-    const other = driverId ? Number(adj.otherMap[driverId]?.amount || 0) : 0;
+    const otherOverride = pickOverrideAmount(adj.otherMap, driverId, manual, 'other');
+    const other = otherOverride == null ? 0 : otherOverride;
     const deliveryFee = Number(amounts.deliveryFee || 0);
-    // 추가지급: 주정산서 금액이 기본. 수동 override(missionPay 맵)가 있으면 그 값(0 포함).
+    // 추가지급: 주정산서 금액이 기본. 수동 override(missionPay 맵/정산서)가 있으면 그 값(0 포함).
     const missionPayExcel = Number(amounts.missionPay || 0);
-    const missionPayManual = Boolean(
-      driverId && Object.prototype.hasOwnProperty.call(adj.missionMap || {}, driverId)
-    );
-    const missionPay = missionPayManual
-      ? Math.max(0, Math.round(Number(adj.missionMap[driverId]?.amount || 0)))
-      : missionPayExcel;
+    const missionPayOverride = pickOverrideAmount(adj.missionMap, driverId, manual, 'missionPay');
+    const missionPayManual = missionPayOverride != null;
+    const missionPay = missionPayManual ? missionPayOverride : missionPayExcel;
     const deductionDetail = Number(amounts.deductionDetail || 0);
     const grossPay = deliveryFee + missionPay + other + promo;
 
@@ -802,8 +817,10 @@ const BremDirectSettlementCalc = (function () {
         leaseConsumed.add(leaseDedupe);
       }
       // 정산결과 수동 override: 해당 정산서·기사만 (자동 스필오버 이후)
-      if (base.driverId && Object.prototype.hasOwnProperty.call(adj.leaseMap || {}, base.driverId)) {
-        leaseFee = Math.max(0, Math.round(Number(adj.leaseMap[base.driverId]?.amount || 0)));
+      const manual = riderManualAdjustments(rider);
+      const leaseOverride = pickOverrideAmount(adj.leaseMap, base.driverId, manual, 'leaseFee');
+      if (leaseOverride != null) {
+        leaseFee = leaseOverride;
         leaseFeeManual = true;
       }
 
@@ -814,8 +831,9 @@ const BremDirectSettlementCalc = (function () {
         loanFee = resolveSpilloverFeeForRow(base, spill.loanAlloc, spill.loanIndex);
         loanConsumed.add(loanDedupe);
       }
-      if (base.driverId && Object.prototype.hasOwnProperty.call(adj.loanMap || {}, base.driverId)) {
-        loanFee = Math.max(0, Math.round(Number(adj.loanMap[base.driverId]?.amount || 0)));
+      const loanOverride = pickOverrideAmount(adj.loanMap, base.driverId, manual, 'loanFee');
+      if (loanOverride != null) {
+        loanFee = loanOverride;
         loanFeeManual = true;
       }
 
