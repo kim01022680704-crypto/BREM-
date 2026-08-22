@@ -104,7 +104,9 @@
       name: rider.name,
       phone: rider.phone,
       employeeNo: rider.employeeNo || '',
-      baeminId: rider.baeminId || '',
+      baeminId: rider.baeminId || rider.baeminUserId || rider.raw_data?.baeminId || '',
+      baeminUserId: rider.baeminUserId || '',
+      raw_data: rider.raw_data,
       coupangId: rider.coupangId || '',
       coupangLoginKey: rider.coupangLoginKey || rider.coupangId || ''
     };
@@ -2120,13 +2122,14 @@
   }
 
   function downloadOtherPaymentBulkTemplate() {
+    const bulkUtils = window.BremPayrollPromotionBulk;
     if (!window.XLSX) {
       showToast('엑셀 모듈을 불러오지 못했습니다.');
       return;
     }
-    const rows = [
-      ['배민ID', '쿠팡ID', '', '기타지급'],
-      ['baemin01', '홍길동1234', '', 30000]
+    const rows = bulkUtils?.otherPaymentTemplateRows?.() || [
+      ['A 배민ID', 'B 기타지급'],
+      ['w0w0ex', 15000]
     ];
     const worksheet = window.XLSX.utils.aoa_to_sheet(rows);
     const workbook = window.XLSX.utils.book_new();
@@ -2211,17 +2214,15 @@
     showToast(`기타지급 적용 ${toApply.length}명 ${totalAmount.toLocaleString('ko-KR')}원`);
   }
 
-  async function parseOtherPaymentBulkBuffer(buffer) {
+  async function ingestOtherPaymentRows(rows, sourceLabel) {
     const bulkUtils = window.BremPayrollPromotionBulk;
-    if (!bulkUtils || !window.XLSX) {
+    if (!bulkUtils) {
       showToast('기타지급 일괄등록 모듈을 불러오지 못했습니다.');
       return;
     }
     await ensurePayrollDataLoaded();
-    const workbook = window.XLSX.read(buffer, { type: 'array' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
-    const parsed = bulkUtils.parseSheetRows(rows, getMatchingDrivers());
+    const parseFn = bulkUtils.parseOtherPaymentSheetRows || bulkUtils.parseSheetRows;
+    const parsed = parseFn(rows, getMatchingDrivers());
     state.otherPaymentPendingRows = mapPromotionRowsToOtherPayment(parsed.rows);
     renderOtherPaymentBulkPreview();
     if (state.parsedLines.length) {
@@ -2236,7 +2237,116 @@
     const matched = state.otherPaymentPendingRows.filter(row =>
       row.matchStatus === 'matched' || row.matchStatus === 'manual'
     ).length;
-    showToast(`미리보기 · 매칭 ${matched}/${state.otherPaymentPendingRows.length}건 · ${total.toLocaleString('ko-KR')}원 · 「적용하기」를 누르세요`);
+    const source = sourceLabel ? ` (${sourceLabel})` : '';
+    showToast(`미리보기${source} · 매칭 ${matched}/${state.otherPaymentPendingRows.length}건 · ${total.toLocaleString('ko-KR')}원 · 「적용하기」를 누르세요`);
+  }
+
+  async function parseOtherPaymentBulkBuffer(buffer) {
+    if (!window.XLSX) {
+      showToast('엑셀 모듈을 불러오지 못했습니다.');
+      return;
+    }
+    const workbook = window.XLSX.read(buffer, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+    await ingestOtherPaymentRows(rows, '파일');
+  }
+
+  function otherPaymentPasteEls() {
+    return {
+      dialog: $('payrollOtherPaymentPasteDialog'),
+      input: $('payrollOtherPaymentPasteInput'),
+      hint: $('payrollOtherPaymentPasteHint')
+    };
+  }
+
+  function openOtherPaymentPasteDialog() {
+    const els = otherPaymentPasteEls();
+    if (!els.dialog) {
+      showToast('붙여넣기 창을 열 수 없습니다.');
+      return;
+    }
+    if (els.input) els.input.value = '';
+    if (els.hint) els.hint.textContent = '';
+    if (typeof els.dialog.showModal === 'function') els.dialog.showModal();
+    else els.dialog.setAttribute('open', '');
+    queueMicrotask(() => els.input?.focus());
+  }
+
+  function closeOtherPaymentPasteDialog() {
+    const els = otherPaymentPasteEls();
+    if (!els.dialog) return;
+    if (typeof els.dialog.close === 'function') els.dialog.close();
+    else els.dialog.removeAttribute('open');
+  }
+
+  async function handleOtherPaymentPasteSubmit() {
+    const bulkUtils = window.BremPayrollPromotionBulk;
+    const els = otherPaymentPasteEls();
+    const text = String(els.input?.value || '');
+    if (!text.trim()) {
+      showToast('붙여넣을 내용을 입력하세요.');
+      return;
+    }
+    try {
+      const parseText = bulkUtils?.sheetRowsFromPasteText
+        || window.BremDirectAdjustmentBulk?.sheetRowsFromPasteText;
+      const rows = parseText ? parseText(text) : [];
+      if (els.hint) {
+        els.hint.textContent = rows.length
+          ? `${rows.length}행 인식됨 · 미리보기로 이동합니다.`
+          : '행을 인식하지 못했습니다.';
+      }
+      if (!rows.length) {
+        showToast('배민ID·금액 행을 인식하지 못했습니다.');
+        return;
+      }
+      state.otherPaymentPendingFileName = '엑셀 붙여넣기';
+      await ingestOtherPaymentRows(rows, '붙여넣기');
+      closeOtherPaymentPasteDialog();
+    } catch (error) {
+      console.error('[payroll otherPayment paste]', error);
+      showToast(error.message || '기타지급 붙여넣기를 처리하지 못했습니다.');
+    }
+  }
+
+  async function retryOtherPaymentBulkMatching() {
+    const bulkUtils = window.BremPayrollPromotionBulk;
+    if (!bulkUtils || !state.otherPaymentPendingRows.length) {
+      showToast('기타지급 미리보기가 없습니다.');
+      return;
+    }
+    await ensurePayrollDataLoaded();
+    const before = bulkUtils.getUnmatchedLines(state.otherPaymentPendingRows).length
+      + bulkUtils.getDuplicateLines(state.otherPaymentPendingRows).length;
+    state.otherPaymentPendingRows = mapPromotionRowsToOtherPayment(
+      bulkUtils.rematchRows(state.otherPaymentPendingRows, getMatchingDrivers())
+    );
+    const after = bulkUtils.getUnmatchedLines(state.otherPaymentPendingRows).length
+      + bulkUtils.getDuplicateLines(state.otherPaymentPendingRows).length;
+    renderOtherPaymentBulkPreview();
+    showToast(after < before
+      ? `기타지급 매칭 재시도 · ${before - after}건 해결 (미해결 ${after}건)`
+      : `기타지급 매칭 재시도 · 미해결 ${after}건`);
+  }
+
+  function updateOtherPaymentPendingDriver(rowKey, driverId) {
+    const bulkUtils = window.BremPayrollPromotionBulk;
+    if (!bulkUtils) return;
+    const index = state.otherPaymentPendingRows.findIndex(row => row.rowKey === rowKey);
+    if (index < 0) return;
+    state.otherPaymentPendingRows[index] = mapPromotionRowsToOtherPayment([
+      bulkUtils.applyManualDriverToRow(
+        state.otherPaymentPendingRows[index],
+        driverId,
+        getMatchingDrivers()
+      )
+    ])[0];
+    renderOtherPaymentBulkPreview();
+    if (state.parsedLines.length) {
+      refreshParsedLineMatches();
+      renderPreview();
+    }
   }
 
   async function handleOtherPaymentBulkFileChange(event) {
@@ -2300,7 +2410,7 @@
     if (!state.otherPaymentPendingRows.length) {
       pendingBody.innerHTML = '';
       if (summaryEl && !state.otherPaymentAppliedBatches.length) {
-        summaryEl.textContent = '기타지급 엑셀 업로드 → 미리보기 → 적용하기 → (저장된 명세서면) 합산 반영';
+        summaryEl.textContent = '기타지급 엑셀 업로드 또는 붙여넣기 → 미리보기 → 적용하기 → (저장된 명세서면) 합산 반영';
       }
     } else {
       const applyRows = mapPromotionRowsToOtherPayment(pendingFiltered.toApply || []);
@@ -2326,15 +2436,27 @@
           <tr>
             <td>${escapeHtml(String(row.rowNumber || ''))}</td>
             <td>${escapeHtml(row.baeminId || '-')}</td>
-            <td>${escapeHtml(row.coupangId || '-')}</td>
             <td>${formatMoney(amount)}</td>
             <td>${escapeHtml(row.driverName || '-')}</td>
-            <td class="${statusCls}">${escapeHtml(row.matchPlatformLabel || '-')}</td>
-            <td>${escapeHtml(row.matchedPlatformId || '-')}</td>
+            <td>${escapeHtml(row.matchedPlatformId || row.baeminId || '-')}</td>
             <td class="${statusCls}">${escapeHtml(statusLabel)}</td>
           </tr>`;
       }).join('');
     }
+
+    renderBulkMatchIssuePanels({
+      rows: state.otherPaymentPendingRows,
+      bulkUtils,
+      issuesBoxId: 'payrollOtherPaymentMatchIssuesBox',
+      unmatchedBoxId: 'payrollOtherPaymentUnmatchedBox',
+      duplicateBoxId: 'payrollOtherPaymentDuplicateBox',
+      unmatchedBodyId: 'payrollOtherPaymentUnmatchedBody',
+      duplicateBodyId: 'payrollOtherPaymentDuplicateBody',
+      unmatchedCountId: 'payrollOtherPaymentUnmatchedCount',
+      duplicateCountId: 'payrollOtherPaymentDuplicateCount',
+      driverSelectAttr: 'other-payment-bulk-driver-select',
+      rowLabelFn: row => `${row.baeminId || '-'} · ${formatMoney(row.otherPayment || row.bremPromotion)}`
+    });
 
     if (summaryEl && state.otherPaymentAppliedBatches.length && !state.otherPaymentPendingRows.length) {
       const total = state.otherPaymentAppliedBatches.reduce((sum, batch) => sum + Number(batch.totalAmount || 0), 0);
@@ -3299,6 +3421,20 @@
     $('payrollPromotionRetryMatchBtn')?.addEventListener('click', retryPromotionBulkMatching);
     $('payrollOtherPaymentBulkTemplateBtn')?.addEventListener('click', downloadOtherPaymentBulkTemplate);
     $('payrollOtherPaymentBulkFile')?.addEventListener('change', event => { void handleOtherPaymentBulkFileChange(event); });
+    $('payrollOtherPaymentBulkPasteBtn')?.addEventListener('click', openOtherPaymentPasteDialog);
+    $('payrollOtherPaymentPasteSubmitBtn')?.addEventListener('click', () => { void handleOtherPaymentPasteSubmit(); });
+    $('payrollOtherPaymentPasteCancelBtn')?.addEventListener('click', closeOtherPaymentPasteDialog);
+    $('payrollOtherPaymentPasteDialog')?.addEventListener('cancel', event => {
+      event.preventDefault();
+      closeOtherPaymentPasteDialog();
+    });
+    $('payrollOtherPaymentPasteInput')?.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        void handleOtherPaymentPasteSubmit();
+      }
+    });
+    $('payrollOtherPaymentRetryMatchBtn')?.addEventListener('click', () => { void retryOtherPaymentBulkMatching(); });
     $('payrollOtherPaymentBulkApplyBtn')?.addEventListener('click', applyOtherPaymentPending);
     $('payrollOtherPaymentBulkMergeSavedBtn')?.addEventListener('click', event => {
       event.preventDefault();
@@ -3341,6 +3477,11 @@
       const promoSelect = event.target.closest('[data-promotion-bulk-driver-select]');
       if (promoSelect) {
         updatePromotionPendingDriver(promoSelect.dataset.promotionBulkDriverSelect, promoSelect.value);
+        return;
+      }
+      const otherSelect = event.target.closest('[data-other-payment-bulk-driver-select]');
+      if (otherSelect) {
+        updateOtherPaymentPendingDriver(otherSelect.dataset.otherPaymentBulkDriverSelect, otherSelect.value);
         return;
       }
       const hourlySelect = event.target.closest('[data-hourly-insurance-bulk-driver-select]');

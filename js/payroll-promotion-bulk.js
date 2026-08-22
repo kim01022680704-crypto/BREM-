@@ -71,7 +71,12 @@
       ).replace(/\s/g, '');
     }
     if (platform === 'baemin') {
-      return String(driver.baeminId || '').trim();
+      return String(
+        driver.baeminId
+        || driver.baeminUserId
+        || driver.raw_data?.baeminId
+        || ''
+      ).trim();
     }
     return '';
   }
@@ -494,9 +499,112 @@
     ];
   }
 
+  function looksLikeMoneyCell(raw) {
+    const text = String(raw ?? '').trim();
+    if (!text) return false;
+    if (/[가-힣]/.test(text)) return false;
+    if (!/\d/.test(text)) return false;
+    return /^[\d,.\s원₩+-]+$/.test(text.replace(/\s/g, ''));
+  }
+
+  function pickOtherPaymentAmount(row) {
+    const list = Array.isArray(row) ? row : [];
+    const b = cellValue(list, 1);
+    if (looksLikeMoneyCell(b)) return parseMoney(b);
+    const d = cellValue(list, 3);
+    if (looksLikeMoneyCell(d)) return parseMoney(d);
+    for (let i = 1; i < list.length; i += 1) {
+      if (looksLikeMoneyCell(list[i])) return parseMoney(list[i]);
+    }
+    return 0;
+  }
+
+  function isOtherPaymentHeaderRow(row) {
+    const idText = String(cellValue(row, 0) || '').trim().toLowerCase();
+    if (!idText) return false;
+    if (looksLikeMoneyCell(cellValue(row, 1)) || looksLikeMoneyCell(cellValue(row, 3))) return false;
+    return HEADER_MARKERS.some(marker => idText.includes(marker.toLowerCase()))
+      || /금액|기타지급|other/.test(idText);
+  }
+
+  function parseOtherPaymentSheetRows(rows, drivers) {
+    if (!Array.isArray(rows) || !rows.length) {
+      return { rows: [], issues: ['시트에 데이터가 없습니다.'] };
+    }
+    const parsedRows = [];
+    const issues = [];
+    rows.forEach((row, index) => {
+      if (isOtherPaymentHeaderRow(row)) return;
+      const baeminId = normalizeExcelPlatformId(cellValue(row, 0));
+      const amount = pickOtherPaymentAmount(row);
+      if (!baeminId && !amount) return;
+      const match = matchPromotionBulkRow(baeminId, '', drivers);
+      const preferredBaemin = match.driver
+        ? (resolveDriverPlatformId(match.driver, 'baemin') || baeminId)
+        : baeminId;
+      const item = rowFromMatch({
+        rowNumber: index + 1,
+        rowKey: `other-bulk-${index + 1}`,
+        baeminId: preferredBaemin,
+        coupangId: '',
+        bremPromotion: amount,
+        otherPayment: amount
+      }, match);
+      parsedRows.push(item);
+      if (match.status !== 'matched' && match.status !== 'manual') {
+        issues.push(`${item.rowNumber}행: ${match.error || matchStatusLabel(match.status)}`);
+      } else if (!amount) {
+        issues.push(`${item.rowNumber}행: B열 금액 없음`);
+      }
+    });
+    return { rows: parsedRows, issues };
+  }
+
+  function sheetRowsFromPasteText(text) {
+    if (window.BremDirectAdjustmentBulk?.sheetRowsFromPasteText) {
+      return window.BremDirectAdjustmentBulk.sheetRowsFromPasteText(text);
+    }
+    const normalized = String(text || '')
+      .replace(/^\uFEFF/, '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n');
+    if (!normalized.trim()) return [];
+    const rows = [];
+    normalized.split('\n').forEach(line => {
+      if (!String(line || '').trim()) return;
+      const cells = line.includes('\t')
+        ? line.split('\t')
+        : line.split(/ {2,}/);
+      let idCell = '';
+      let amountCell = '';
+      cells.forEach(cell => {
+        const raw = String(cell ?? '').trim();
+        if (!raw) return;
+        if (!idCell) {
+          idCell = raw;
+          return;
+        }
+        if (!amountCell && looksLikeMoneyCell(raw)) amountCell = raw;
+      });
+      if (idCell || amountCell) rows.push([idCell, amountCell]);
+    });
+    return rows;
+  }
+
+  function otherPaymentTemplateRows() {
+    return [
+      ['A 배민ID', 'B 기타지급'],
+      ['w0w0ex', 15000],
+      ['k1sharr', 15000]
+    ];
+  }
+
   window.BremPayrollPromotionBulk = Object.freeze({
     COL,
     parseSheetRows,
+    parseOtherPaymentSheetRows,
+    sheetRowsFromPasteText,
+    otherPaymentTemplateRows,
     summarizeRows,
     buildPromotionBulkMap,
     collectAppliedDriverIds,
