@@ -9866,6 +9866,61 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   margin-bottom: 16px;
 }
 
+.revenue-region-upload {
+  margin: 12px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.revenue-region-upload-head {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.revenue-region-upload-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 10px;
+}
+
+.revenue-region-upload-controls .file-btn {
+  margin: 0;
+  cursor: pointer;
+}
+
+.revenue-region-upload-pass {
+  display: grid;
+  gap: 6px;
+  min-width: 15rem;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.revenue-region-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.revenue-region-preview-wrap {
+  margin-top: 10px;
+}
+
+.revenue-region-preview-table select {
+  min-width: 11rem;
+}
+
+.revenue-region-preview-unmatched td {
+  background: rgba(245, 185, 66, 0.08);
+}
+
 .revenue-panel {
   margin-bottom: 18px;
 }

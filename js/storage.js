@@ -8873,6 +8873,7 @@ const BremStorage = (function () {
       WEEKLY_FINAL: 'weeklyFinalSettlement',
       MONTHLY_SETTLEMENT: 'monthlySettlements',
       REGION_SETTLEMENT: 'regionSettlement',
+      REGION_ALIAS: 'regionAliases',
       DEBT_BAEMIN: 'debtBaemin',
       DEBT_COUPANG: 'debtCoupang'
     }),
@@ -8960,6 +8961,7 @@ const BremStorage = (function () {
         weeklyFinalSettlement: [],
         monthlySettlements: [],
         regionSettlement: [],
+        regionAliases: [],
         debtBaemin: [],
         debtCoupang: []
       };
@@ -9348,6 +9350,33 @@ const BremStorage = (function () {
       list.push(record);
       revenue.setCollection(revenue.COLLECTIONS.REGION_SETTLEMENT, list);
       return record;
+    },
+
+    // 정산서 파일의 지역 표기(예: 울산_남구중앙)를 ERP 지역명에 붙여 기억한다.
+    getRegionAliasMap() {
+      const map = {};
+      revenue.getCollection(revenue.COLLECTIONS.REGION_ALIAS).forEach(item => {
+        const source = String(item?.source || '').trim();
+        const region = String(item?.region || '').trim();
+        if (source && region) map[source] = region;
+      });
+      return map;
+    },
+
+    saveRegionAliases(entries = {}) {
+      const current = revenue.getRegionAliasMap();
+      Object.entries(entries).forEach(([source, region]) => {
+        const key = String(source || '').trim();
+        if (!key) return;
+        const value = String(region || '').trim();
+        if (value) current[key] = value;
+        else delete current[key];
+      });
+      revenue.setCollection(
+        revenue.COLLECTIONS.REGION_ALIAS,
+        Object.entries(current).map(([source, region]) => ({ source, region }))
+      );
+      return current;
     },
 
     listOfficeExpenses(monthKey) {
