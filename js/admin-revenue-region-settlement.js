@@ -186,27 +186,31 @@
         const supplyPaid = draft.supplyPaid;
         const vat = draft.vat;
         const taxFee = Math.round(vat * (state.taxFeePercent / 100));
-        // 원천세는 회사 수익이라 사용 가능한 재원에 더해 사용률을 다시 본다.
-        const payWithTax = payAmount + withholdingTaxTotal;
+        // 원천세까지 우리가 쓴 몫으로 보고 (공급대가+원천세)를 입급가액과 견준다.
+        const supplyWithTax = supplyPaid + withholdingTaxTotal;
         const usageRate = payAmount > 0 && supplyPaid > 0
           ? (supplyPaid / payAmount) * 100
           : null;
-        const usageRateWithTax = payWithTax > 0 && supplyPaid > 0
-          ? (supplyPaid / payWithTax) * 100
+        const usageRateWithTax = payAmount > 0 && supplyPaid > 0
+          ? (supplyWithTax / payAmount) * 100
           : null;
         const overrun = supplyPaid > payAmount ? supplyPaid - payAmount : 0;
+        const overrunWithTax = supplyPaid > 0 && supplyWithTax > payAmount
+          ? supplyWithTax - payAmount
+          : 0;
         return {
           ...bucket,
           generalDeduct,
           payAmount,
-          payWithTax,
+          supplyWithTax,
           withholdingTaxTotal,
           supplyPaid,
           vat,
           taxFee,
           usageRate,
           usageRateWithTax,
-          overrun
+          overrun,
+          overrunWithTax
         };
       })
       .sort((a, b) => String(a.region).localeCompare(String(b.region), 'ko-KR'));
@@ -272,7 +276,7 @@
         <td class="weekly-amount-cell">${formatMoney(row.withholdingTaxTotal)}</td>
         <td class="weekly-amount-cell${row.usageRate != null && row.usageRate > 100 ? ' revenue-region-overrun' : ''}">${formatPercent(row.usageRate)}</td>
         <td class="weekly-amount-cell${row.usageRateWithTax != null && row.usageRateWithTax > 100 ? ' revenue-region-overrun' : ''}">${formatPercent(row.usageRateWithTax)}</td>
-        <td class="weekly-amount-cell${row.overrun > 0 ? ' revenue-region-overrun' : ''}">${row.overrun > 0 ? formatMoney(row.overrun) : '-'}</td>
+        <td class="weekly-amount-cell${row.overrun > 0 ? ' revenue-region-overrun' : ''}">${row.overrun > 0 ? formatMoney(row.overrun) : '-'}${row.overrunWithTax > 0 ? `<br><span class="muted-inline">원천세 포함 ${formatMoney(row.overrunWithTax)}</span>` : ''}</td>
       </tr>
     `).join('');
 
@@ -284,6 +288,7 @@
       acc.vat += row.vat;
       acc.taxFee += row.taxFee;
       acc.overrun += row.overrun;
+      acc.overrunWithTax += row.overrunWithTax;
       return acc;
     }, {
       grossPay: 0,
@@ -292,14 +297,15 @@
       withholdingTaxTotal: 0,
       vat: 0,
       taxFee: 0,
-      overrun: 0
+      overrun: 0,
+      overrunWithTax: 0
     });
-    totals.payWithTax = totals.payAmount + totals.withholdingTaxTotal;
+    totals.supplyWithTax = totals.supplyPaid + totals.withholdingTaxTotal;
     totals.usageRate = totals.payAmount > 0 && totals.supplyPaid > 0
       ? (totals.supplyPaid / totals.payAmount) * 100
       : null;
-    totals.usageRateWithTax = totals.payWithTax > 0 && totals.supplyPaid > 0
-      ? (totals.supplyPaid / totals.payWithTax) * 100
+    totals.usageRateWithTax = totals.payAmount > 0 && totals.supplyPaid > 0
+      ? (totals.supplyWithTax / totals.payAmount) * 100
       : null;
 
     if (foot) {
@@ -314,7 +320,7 @@
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.withholdingTaxTotal)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatPercent(totals.usageRate)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatPercent(totals.usageRateWithTax)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${totals.overrun > 0 ? formatMoney(totals.overrun) : '-'}</strong></td>
+          <td class="weekly-amount-cell"><strong>${totals.overrun > 0 ? formatMoney(totals.overrun) : '-'}</strong>${totals.overrunWithTax > 0 ? `<br><span class="muted-inline">원천세 포함 ${formatMoney(totals.overrunWithTax)}</span>` : ''}</td>
         </tr>`;
     }
 
@@ -807,7 +813,8 @@
       [],
       [
         '지역', '기사수', '공급대가(실지급액)', '부가세', '세무처리비',
-        '지급합계', '입급가액', '원천세합', '사용률(%)', '원천세포함 사용률(%)', '초과지급'
+        '지급합계', '입급가액', '원천세합', '사용률(%)', '원천세포함 사용률(%)',
+        '초과지급', '초과지급(원천세 포함)'
       ]
     ];
     regions.forEach(row => {
@@ -822,7 +829,8 @@
         row.withholdingTaxTotal,
         row.usageRate != null ? Number(row.usageRate.toFixed(2)) : '',
         row.usageRateWithTax != null ? Number(row.usageRateWithTax.toFixed(2)) : '',
-        row.overrun
+        row.overrun,
+        row.overrunWithTax
       ]);
     });
 
