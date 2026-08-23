@@ -1,10 +1,10 @@
-// 수익 관리 · 지역별 정산 — 월별 직계약 정산서를 지역 단위로 합산하고
+// 수익 관리 · 지역별 정산 — 정산주(수~화) 단위로 직계약 정산서를 지역별 합산하고
 // 공급대가·부가세 입력과 부가세 세무처리비(조절 가능 %)를 비교한다.
 (function () {
-  const STORE_KEY = 'brem_revenue_region_settlement_v1';
+  const STORE_KEY = 'brem_revenue_region_settlement_v2';
 
   const state = {
-    monthKey: '',
+    weekStart: '',
     taxFeePercent: 20,
     rows: []
   };
@@ -17,15 +17,49 @@
     return window.BremDirectSettlementCalc;
   }
 
-  function todayMonthKey() {
+  function today() {
     const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0')
+    ].join('-');
   }
 
-  function formatMonthLabel(monthKey) {
-    if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return '월을 선택하세요';
-    const [year, month] = monthKey.split('-');
-    return `${year}년 ${month}월`;
+  function weekStartKey(dateValue = today()) {
+    const calc = Calc();
+    if (calc?.weekStartKey) return calc.weekStartKey(dateValue);
+    const date = new Date(`${String(dateValue).slice(0, 10)}T00:00:00`);
+    const diff = (date.getDay() - 3 + 7) % 7;
+    date.setDate(date.getDate() - diff);
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-');
+  }
+
+  function weekEndKey(weekStart) {
+    const picker = window.BremDatePicker;
+    if (picker?.weekEndKey) return picker.weekEndKey(weekStart);
+    const end = new Date(`${weekStart}T00:00:00`);
+    end.setDate(end.getDate() + 6);
+    return [
+      end.getFullYear(),
+      String(end.getMonth() + 1).padStart(2, '0'),
+      String(end.getDate()).padStart(2, '0')
+    ].join('-');
+  }
+
+  function formatDate(value) {
+    if (!value) return '-';
+    if (window.BremDatePicker?.formatDate) return window.BremDatePicker.formatDate(value);
+    return String(value).slice(0, 10);
+  }
+
+  function formatWeekRange(weekStart) {
+    if (!weekStart) return '정산주를 선택하세요';
+    return `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))}`;
   }
 
   function formatMoney(value) {
@@ -49,33 +83,17 @@
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
 
-  function weekEndKey(weekStart) {
-    const calc = Calc();
-    if (calc?.weekEndKey) return calc.weekEndKey(weekStart);
-    const end = new Date(`${weekStart}T00:00:00`);
-    end.setDate(end.getDate() + 6);
-    return [
-      end.getFullYear(),
-      String(end.getMonth() + 1).padStart(2, '0'),
-      String(end.getDate()).padStart(2, '0')
-    ].join('-');
-  }
-
-  function weekInMonth(weekStart, monthKey) {
-    return weekEndKey(String(weekStart || '').slice(0, 10)).slice(0, 7) === monthKey;
-  }
-
   function readStore() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
-      if (!raw) return { taxFeePercent: 20, months: {} };
+      if (!raw) return { taxFeePercent: 20, weeks: {} };
       const parsed = JSON.parse(raw);
       return {
         taxFeePercent: Number(parsed?.taxFeePercent) || 20,
-        months: parsed?.months && typeof parsed.months === 'object' ? parsed.months : {}
+        weeks: parsed?.weeks && typeof parsed.weeks === 'object' ? parsed.weeks : {}
       };
     } catch (_) {
-      return { taxFeePercent: 20, months: {} };
+      return { taxFeePercent: 20, weeks: {} };
     }
   }
 
@@ -83,16 +101,16 @@
     localStorage.setItem(STORE_KEY, JSON.stringify(store));
   }
 
-  function monthDraft(monthKey) {
+  function weekDraft(weekStart) {
     const store = readStore();
-    if (!store.months[monthKey]) store.months[monthKey] = { regions: {} };
-    return store.months[monthKey];
+    if (!store.weeks[weekStart]) store.weeks[weekStart] = { regions: {} };
+    return store.weeks[weekStart];
   }
 
-  function saveRegionInput(monthKey, region, patch) {
+  function saveRegionInput(weekStart, region, patch) {
     const store = readStore();
-    if (!store.months[monthKey]) store.months[monthKey] = { regions: {} };
-    const regions = store.months[monthKey].regions;
+    if (!store.weeks[weekStart]) store.weeks[weekStart] = { regions: {} };
+    const regions = store.weeks[weekStart].regions;
     regions[region] = { ...(regions[region] || {}), ...patch };
     writeStore(store);
   }
@@ -103,19 +121,20 @@
     writeStore(store);
   }
 
-  function settlementsForMonth(monthKey) {
+  function settlementsForWeek(weekStart) {
     const calc = Calc();
     if (!calc) return [];
+    const normalized = weekStartKey(weekStart);
     return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
-      .filter(record => weekInMonth(calc.settlementWeek(record), monthKey));
+      .filter(record => calc.settlementWeek(record) === normalized);
   }
 
-  function aggregateRegions(monthKey) {
+  function aggregateRegions(weekStart) {
     const calc = Calc();
-    if (!calc) return { weeks: [], regions: [] };
+    const normalized = weekStartKey(weekStart);
+    if (!calc || !normalized) return { settlements: [], regions: [] };
 
-    const settlements = settlementsForMonth(monthKey);
-    const weekSet = new Set(settlements.map(record => calc.settlementWeek(record)));
+    const settlements = settlementsForWeek(normalized);
     const byRegion = new Map();
 
     settlements.forEach(settlement => {
@@ -136,7 +155,7 @@
       });
     });
 
-    const draft = monthDraft(monthKey);
+    const draft = weekDraft(normalized);
     const regions = [...byRegion.values()]
       .map(bucket => {
         const generalDeduct = calc.generalDeductTotal(bucket);
@@ -164,10 +183,18 @@
       })
       .sort((a, b) => String(a.region).localeCompare(String(b.region), 'ko-KR'));
 
-    return {
-      weeks: [...weekSet].sort(),
-      regions
-    };
+    return { settlements, regions };
+  }
+
+  function updateWeekUi() {
+    const hidden = $('revenueRegionWeekDate');
+    if (hidden) hidden.value = state.weekStart || '';
+    const preview = $('revenueRegionWeekRangePreview');
+    if (preview) preview.textContent = formatWeekRange(state.weekStart);
+    const label = $('revenueRegionWeekLabel');
+    if (label && state.weekStart) {
+      label.textContent = formatDate(state.weekStart);
+    }
   }
 
   function render() {
@@ -175,18 +202,18 @@
     const foot = $('revenueRegionFoot');
     if (!body) return;
 
-    const monthKey = state.monthKey || todayMonthKey();
-    const { weeks, regions } = aggregateRegions(monthKey);
-    state.rows = regions;
+    const weekStart = state.weekStart || weekStartKey();
+    state.weekStart = weekStartKey(weekStart);
+    updateWeekUi();
 
-    const monthLabel = $('revenueRegionMonthLabel');
-    if (monthLabel) monthLabel.textContent = formatMonthLabel(monthKey);
+    const { settlements, regions } = aggregateRegions(state.weekStart);
+    state.rows = regions;
 
     const weekHint = $('revenueRegionWeekHint');
     if (weekHint) {
-      weekHint.textContent = weeks.length
-        ? `포함 정산주 ${weeks.length}개 · ${weeks.join(', ')} (화요일 종료 기준)`
-        : '이 달에 해당하는 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요.';
+      weekHint.textContent = settlements.length
+        ? `${formatWeekRange(state.weekStart)} · 직계약 정산서 ${settlements.length}건`
+        : `${formatWeekRange(state.weekStart)} · 저장된 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요.`;
     }
 
     if (!regions.length) {
@@ -276,15 +303,15 @@
       showToast('엑셀 라이브러리를 불러오지 못했습니다.');
       return;
     }
-    const monthKey = state.monthKey || todayMonthKey();
-    const { regions } = aggregateRegions(monthKey);
+    const weekStart = state.weekStart || weekStartKey();
+    const { regions } = aggregateRegions(weekStart);
     if (!regions.length) {
       showToast('다운로드할 지역별 정산 데이터가 없습니다.');
       return;
     }
 
     const rows = [
-      ['지역별 정산', formatMonthLabel(monthKey)],
+      ['지역별 정산', formatWeekRange(weekStart)],
       ['세무처리비율(%)', state.taxFeePercent],
       [],
       ['지역', '기사수', '공급대가(실지급액)', '입급가액', '원천세합', '부가세', '세무처리비', '사용률(%)', '초과지급']
@@ -305,18 +332,13 @@
 
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(rows), '지역별정산');
-    window.XLSX.writeFile(wb, `지역별정산_${monthKey}.xlsx`);
+    window.XLSX.writeFile(wb, `지역별정산_${weekStartKey(weekStart)}.xlsx`);
     showToast('지역별 정산 엑셀을 저장했습니다.');
   }
 
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
-
-    $('revenueRegionMonthInput')?.addEventListener('change', event => {
-      state.monthKey = event.target.value || todayMonthKey();
-      render();
-    });
 
     $('revenueRegionTaxFeePercent')?.addEventListener('change', event => {
       const value = Math.max(0, Math.min(100, Number(event.target.value) || 0));
@@ -337,16 +359,16 @@
     $('revenueRegionBody')?.addEventListener('change', event => {
       const supplyInput = event.target.closest('[data-region-supply]');
       const vatInput = event.target.closest('[data-region-vat]');
-      const monthKey = state.monthKey || todayMonthKey();
+      const weekStart = weekStartKey(state.weekStart || weekStartKey());
       if (supplyInput) {
-        saveRegionInput(monthKey, supplyInput.dataset.regionSupply, {
+        saveRegionInput(weekStart, supplyInput.dataset.regionSupply, {
           supplyPaid: Math.round(Number(supplyInput.value || 0))
         });
         render();
         return;
       }
       if (vatInput) {
-        saveRegionInput(monthKey, vatInput.dataset.regionVat, {
+        saveRegionInput(weekStart, vatInput.dataset.regionVat, {
           vat: Math.round(Number(vatInput.value || 0))
         });
         render();
@@ -360,10 +382,7 @@
 
     const store = readStore();
     state.taxFeePercent = Number(store.taxFeePercent) || 20;
-
-    if (!state.monthKey) state.monthKey = todayMonthKey();
-    const monthInput = $('revenueRegionMonthInput');
-    if (monthInput) monthInput.value = state.monthKey;
+    if (!state.weekStart) state.weekStart = weekStartKey();
 
     const taxInput = $('revenueRegionTaxFeePercent');
     if (taxInput) taxInput.value = String(state.taxFeePercent);
@@ -372,13 +391,11 @@
     render();
   }
 
-  function setMonthKey(value) {
-    state.monthKey = String(value || '').slice(0, 7) || todayMonthKey();
-    const monthInput = $('revenueRegionMonthInput');
-    if (monthInput) monthInput.value = state.monthKey;
+  function setWeekStart(value) {
+    state.weekStart = weekStartKey(value || today());
     void refresh();
   }
 
   bindEvents();
-  window.BremRevenueRegionSettlement = { refresh, setMonthKey, render };
+  window.BremRevenueRegionSettlement = { refresh, setWeekStart, render, weekStartKey };
 })();

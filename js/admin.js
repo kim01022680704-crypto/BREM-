@@ -1918,6 +1918,20 @@
           };
         }
 
+        if (triggerId === 'revenue-region') {
+          return {
+            hiddenInput: $('#revenueRegionWeekDate'),
+            labelEl: $('#revenueRegionWeekLabel'),
+            onSelect(value) {
+              const preview = $('#revenueRegionWeekRangePreview');
+              if (preview) {
+                preview.textContent = `${formatDate(value)} ~ ${formatDate(weekEndKey(value))}`;
+              }
+              window.BremRevenueRegionSettlement?.setWeekStart?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'dashboard') {
           return {
             hiddenInput: $('#dashboardWeekBasisDate'),

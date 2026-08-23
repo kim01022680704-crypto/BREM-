@@ -736,8 +736,8 @@
         state.periodTab = button.dataset.revenuePeriod;
         updatePeriodTabUi();
         if (state.periodTab === 'region') {
-          const monthKey = state.monthKey || today().slice(0, 7);
-          window.BremRevenueRegionSettlement?.setMonthKey?.(monthKey);
+          const week = state.weekStart || weekStartKey();
+          window.BremRevenueRegionSettlement?.setWeekStart?.(week);
         }
       });
     });
@@ -909,7 +909,7 @@
     renderMonthlySummary();
     refreshOfficeDateLabels();
     if (state.periodTab === 'region') {
-      window.BremRevenueRegionSettlement?.setMonthKey?.(state.monthKey);
+      window.BremRevenueRegionSettlement?.setWeekStart?.(state.weekStart || weekStartKey());
     }
   }
 

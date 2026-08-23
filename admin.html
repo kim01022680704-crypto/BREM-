@@ -6652,11 +6652,15 @@
 
         <div id="revenueRegionPanels" hidden>
           <div class="revenue-toolbar card">
-            <label>
-              정산 월
-              <input type="month" id="revenueRegionMonthInput">
+            <label class="period-label-block week-target-block">
+              <span class="label-row">정산주</span>
+              <span class="field-preview week-range-label" id="revenueRegionWeekRangePreview">수요일~화요일 기준</span>
+              <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="revenue-region">
+                <span id="revenueRegionWeekLabel">수요일 선택</span>
+              </button>
+              <span class="period-picker-caption">클릭하여 수요일 선택 (수~화 주차)</span>
+              <input type="hidden" id="revenueRegionWeekDate">
             </label>
-            <p class="revenue-period-label" id="revenueRegionMonthLabel">월을 선택하세요</p>
             <label class="revenue-region-tax-rate">
               세무처리비율 (%)
               <input type="number" id="revenueRegionTaxFeePercent" min="0" max="100" step="0.1" value="20">
@@ -6668,7 +6672,7 @@
             <div class="card-header">
               <div>
                 <h2>지역별 정산</h2>
-                <p class="form-help">선택 월의 직계약 정산서를 지역별로 합산합니다. 공급대가·부가세는 직접 입력하고, 입급가액·원천세는 정산서에서 자동 계산됩니다.</p>
+                <p class="form-help">선택한 정산주(수~화)의 직계약 정산서를 지역별로 합산합니다. 공급대가·부가세는 직접 입력하고, 입급가액·원천세는 정산서에서 자동 계산됩니다.</p>
                 <p class="form-help" id="revenueRegionWeekHint">-</p>
               </div>
               <div class="revenue-action-group">
@@ -8404,7 +8408,7 @@
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
   <script src="js/admin-lease-menus.js?v=20260813g"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-revenue-region-settlement.js?v=20260823b"></script>
+  <script src="js/admin-revenue-region-settlement.js?v=20260823c"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
   <script src="js/payroll-slip-utils.js?v=20260814match1"></script>
