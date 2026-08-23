@@ -203,8 +203,10 @@
         const usageRateWithTax = supplyBase > 0 && supplyBaseWithTax > 0
           ? (payAmount / supplyBaseWithTax) * 100
           : null;
-        const remain = supplyPaid > 0 ? supplyBase - payAmount : 0;
-        const remainWithTax = supplyPaid > 0 ? supplyBaseWithTax - payAmount : 0;
+        // 실제 남는 현금 = 받은 공급대가(부가세 포함) + 원천세 − 지급한 임금 − 세무처리비
+        const remain = supplyPaid > 0
+          ? supplyPaid + withholdingTaxTotal - payAmount - taxFee
+          : 0;
         return {
           ...bucket,
           generalDeduct,
@@ -217,8 +219,7 @@
           taxFee,
           usageRate,
           usageRateWithTax,
-          remain,
-          remainWithTax
+          remain
         };
       })
       .sort((a, b) => String(a.region).localeCompare(String(b.region), 'ko-KR'));
@@ -284,7 +285,7 @@
         <td class="weekly-amount-cell">${formatMoney(row.withholdingTaxTotal)}</td>
         <td class="weekly-amount-cell${row.usageRate != null && row.usageRate > 100 ? ' revenue-region-overrun' : ''}">${formatPercent(row.usageRate)}</td>
         <td class="weekly-amount-cell${row.usageRateWithTax != null && row.usageRateWithTax > 100 ? ' revenue-region-overrun' : ''}">${formatPercent(row.usageRateWithTax)}</td>
-        <td class="weekly-amount-cell${row.remain < 0 ? ' revenue-region-overrun' : ''}">${formatRemain(row.remain)}${row.remain || row.remainWithTax ? `<br><span class="muted-inline">원천세 포함 ${formatRemain(row.remainWithTax)}</span>` : ''}</td>
+        <td class="weekly-amount-cell${row.remain < 0 ? ' revenue-region-overrun' : ''}">${formatRemain(row.remain)}</td>
       </tr>
     `).join('');
 
@@ -296,7 +297,6 @@
       acc.vat += row.vat;
       acc.taxFee += row.taxFee;
       acc.remain += row.remain;
-      acc.remainWithTax += row.remainWithTax;
       return acc;
     }, {
       grossPay: 0,
@@ -305,8 +305,7 @@
       withholdingTaxTotal: 0,
       vat: 0,
       taxFee: 0,
-      remain: 0,
-      remainWithTax: 0
+      remain: 0
     });
     totals.supplyBase = totals.supplyPaid - totals.vat;
     totals.supplyBaseWithTax = totals.supplyBase + totals.withholdingTaxTotal;
@@ -329,7 +328,7 @@
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.withholdingTaxTotal)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatPercent(totals.usageRate)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatPercent(totals.usageRateWithTax)}</strong></td>
-          <td class="weekly-amount-cell${totals.remain < 0 ? ' revenue-region-overrun' : ''}"><strong>${formatRemain(totals.remain)}</strong>${totals.remain || totals.remainWithTax ? `<br><span class="muted-inline">원천세 포함 ${formatRemain(totals.remainWithTax)}</span>` : ''}</td>
+          <td class="weekly-amount-cell${totals.remain < 0 ? ' revenue-region-overrun' : ''}"><strong>${formatRemain(totals.remain)}</strong></td>
         </tr>`;
     }
 
@@ -823,8 +822,7 @@
       [
         '지역', '기사수', '공급대가(실지급액)', '부가세', '세무처리비',
         '지급합계', '입급가액', '원천세합',
-        '사용률(%)', '원천세포함 사용률(%)',
-        '남은 금액', '남은 금액(원천세 포함)'
+        '사용률(%)', '원천세포함 사용률(%)', '남은 금액'
       ]
     ];
     regions.forEach(row => {
@@ -839,8 +837,7 @@
         row.withholdingTaxTotal,
         row.usageRate != null ? Number(row.usageRate.toFixed(2)) : '',
         row.usageRateWithTax != null ? Number(row.usageRateWithTax.toFixed(2)) : '',
-        row.remain,
-        row.remainWithTax
+        row.remain
       ]);
     });
 

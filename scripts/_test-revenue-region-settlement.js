@@ -204,8 +204,10 @@ check('입급가액 34,711원', bodyText.includes('34,711원'), 'true');
 check('사용률 = 34,711÷36,481 = 95.1%', bodyText.includes('95.1%'), 'true');
 check('원천세 포함 = 34,711÷37,701 = 92.1%', bodyText.includes('92.1%'), 'true');
 check('공급대가 기준(86.4%)은 더 이상 없다', bodyText.includes('86.4%'), 'false');
-check('남은 금액 1,770원 남음', bodyText.some(t => t.includes('1,770원남음')), 'true');
-check('원천세 포함 2,990원 남음', bodyText.some(t => t.includes('2,990원남음')), 'true');
+// 남은 금액 = 40,179 + 1,220 − 34,711 − 740(부가세 3,698×20%) = 5,948
+check('세무처리비 740원', bodyText.includes('740원'), 'true');
+check('남은 금액 5,948원 남음', bodyText.some(t => t.includes('5,948원남음')), 'true');
+check('보조줄(원천세 포함)은 없앴다', bodyText.some(t => t.includes('원천세포함')), 'false');
 
 // 사용자 예시: 공급가액 100만 + 부가세 10만 = 공급대가 110만, 105만 지출 → 105%
 const exampleBase = 1100000 - 100000;
