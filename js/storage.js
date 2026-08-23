@@ -1534,7 +1534,14 @@ const BremStorage = (function () {
     ],
     'urgent-missions': [KEYS.drivers],
     'rider-push': [KEYS.drivers],
-    'revenue-management': [],
+    'revenue-management': [KEYS.revenue],
+    'revenue-region-settlement': [
+      KEYS.weeklySettlementsDirect,
+      KEYS.directSettlementAdjustments,
+      KEYS.directOtherPayments,
+      KEYS.directBremPromotions,
+      KEYS.revenue
+    ],
     'admin-account': [],
     'baemin-biz-status': [],
     'baemin-status': [],
@@ -8865,6 +8872,7 @@ const BremStorage = (function () {
       WEEKLY_PROFIT: 'weeklyProfit',
       WEEKLY_FINAL: 'weeklyFinalSettlement',
       MONTHLY_SETTLEMENT: 'monthlySettlements',
+      REGION_SETTLEMENT: 'regionSettlement',
       DEBT_BAEMIN: 'debtBaemin',
       DEBT_COUPANG: 'debtCoupang'
     }),
@@ -8951,6 +8959,7 @@ const BremStorage = (function () {
         weeklyProfit: [],
         weeklyFinalSettlement: [],
         monthlySettlements: [],
+        regionSettlement: [],
         debtBaemin: [],
         debtCoupang: []
       };
@@ -9311,6 +9320,33 @@ const BremStorage = (function () {
         .filter(item => item.monthKey !== record.monthKey);
       list.push(record);
       revenue.setCollection(revenue.COLLECTIONS.MONTHLY_SETTLEMENT, list);
+      return record;
+    },
+
+    getRegionSettlementByWeek(weekStart) {
+      const key = revenue.normalizeDate(weekStart);
+      return revenue.getCollection(revenue.COLLECTIONS.REGION_SETTLEMENT)
+        .find(item => item.weekStart === key) || null;
+    },
+
+    saveRegionSettlement(weekStart, data = {}) {
+      const key = revenue.normalizeDate(weekStart);
+      const existing = revenue.getRegionSettlementByWeek(key);
+      const regions = data.regions && typeof data.regions === 'object' ? data.regions : {};
+      const record = {
+        id: existing?.id || createId(),
+        weekStart: key,
+        taxFeePercent: Math.max(0, Math.min(100, Number(
+          data.taxFeePercent != null ? data.taxFeePercent : (existing?.taxFeePercent ?? 20)
+        ))),
+        regions,
+        savedAt: new Date().toISOString(),
+        createdAt: existing?.createdAt || new Date().toISOString()
+      };
+      const list = revenue.getCollection(revenue.COLLECTIONS.REGION_SETTLEMENT)
+        .filter(item => item.weekStart !== key);
+      list.push(record);
+      revenue.setCollection(revenue.COLLECTIONS.REGION_SETTLEMENT, list);
       return record;
     },
 

@@ -1,12 +1,15 @@
 // 수익 관리 · 지역별 정산 — 정산주(수~화) 단위로 직계약 정산서를 지역별 합산하고
 // 공급대가·부가세 입력과 부가세 세무처리비(조절 가능 %)를 비교한다.
 (function () {
-  const STORE_KEY = 'brem_revenue_region_settlement_v2';
+  const LOAD_TIMEOUT_MS = 20000;
 
   const state = {
     weekStart: '',
     taxFeePercent: 20,
-    rows: []
+    rows: [],
+    draftRegions: {},
+    loading: false,
+    savedAt: ''
   };
 
   function $(id) {
@@ -15,6 +18,10 @@
 
   function Calc() {
     return window.BremDirectSettlementCalc;
+  }
+
+  function Revenue() {
+    return window.BremStorage?.revenue;
   }
 
   function today() {
@@ -83,42 +90,56 @@
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
 
-  function readStore() {
-    try {
-      const raw = localStorage.getItem(STORE_KEY);
-      if (!raw) return { taxFeePercent: 20, weeks: {} };
-      const parsed = JSON.parse(raw);
-      return {
-        taxFeePercent: Number(parsed?.taxFeePercent) || 20,
-        weeks: parsed?.weeks && typeof parsed.weeks === 'object' ? parsed.weeks : {}
-      };
-    } catch (_) {
-      return { taxFeePercent: 20, weeks: {} };
+  function setLoadStatus(message) {
+    const el = $('revenueRegionLoadStatus');
+    if (el) el.textContent = message || '-';
+  }
+
+  function setSavedStatus(message) {
+    const el = $('revenueRegionSavedStatus');
+    if (el) el.textContent = message || '아직 저장되지 않았습니다.';
+  }
+
+  function loadSavedDraft(weekStart) {
+    const saved = Revenue()?.getRegionSettlementByWeek?.(weekStart);
+    state.savedAt = saved?.savedAt || '';
+    state.taxFeePercent = Math.max(0, Math.min(100, Number(saved?.taxFeePercent ?? 20)));
+    state.draftRegions = saved?.regions && typeof saved.regions === 'object'
+      ? { ...saved.regions }
+      : {};
+    const taxInput = $('revenueRegionTaxFeePercent');
+    if (taxInput) taxInput.value = String(state.taxFeePercent);
+    if (state.savedAt) {
+      setSavedStatus(`마지막 저장 ${new Date(state.savedAt).toLocaleString('ko-KR')}`);
+    } else {
+      setSavedStatus('아직 저장되지 않았습니다.');
     }
   }
 
-  function writeStore(store) {
-    localStorage.setItem(STORE_KEY, JSON.stringify(store));
+  function collectDraftFromInputs() {
+    const regions = { ...state.draftRegions };
+    document.querySelectorAll('[data-region-supply]').forEach(input => {
+      const region = String(input.dataset.regionSupply || '').trim();
+      if (!region) return;
+      if (!regions[region]) regions[region] = {};
+      regions[region].supplyPaid = Math.round(Number(input.value || 0));
+    });
+    document.querySelectorAll('[data-region-vat]').forEach(input => {
+      const region = String(input.dataset.regionVat || '').trim();
+      if (!region) return;
+      if (!regions[region]) regions[region] = {};
+      regions[region].vat = Math.round(Number(input.value || 0));
+    });
+    state.draftRegions = regions;
+    return regions;
   }
 
-  function weekDraft(weekStart) {
-    const store = readStore();
-    if (!store.weeks[weekStart]) store.weeks[weekStart] = { regions: {} };
-    return store.weeks[weekStart];
-  }
-
-  function saveRegionInput(weekStart, region, patch) {
-    const store = readStore();
-    if (!store.weeks[weekStart]) store.weeks[weekStart] = { regions: {} };
-    const regions = store.weeks[weekStart].regions;
-    regions[region] = { ...(regions[region] || {}), ...patch };
-    writeStore(store);
-  }
-
-  function saveTaxFeePercent(value) {
-    const store = readStore();
-    store.taxFeePercent = value;
-    writeStore(store);
+  function draftForRegion(region) {
+    const saved = state.draftRegions[region] || {};
+    return {
+      supplyPaid: Math.round(Number(saved.supplyPaid || 0)),
+      vat: Math.round(Number(saved.vat || 0))
+    };
   }
 
   function settlementsForWeek(weekStart) {
@@ -155,15 +176,14 @@
       });
     });
 
-    const draft = weekDraft(normalized);
     const regions = [...byRegion.values()]
       .map(bucket => {
         const generalDeduct = calc.generalDeductTotal(bucket);
         const payAmount = Math.round(Number(bucket.grossPay || 0)) - generalDeduct;
         const withholdingTaxTotal = calc.withholdingTaxTotal(bucket);
-        const saved = draft.regions[bucket.region] || {};
-        const supplyPaid = Math.round(Number(saved.supplyPaid || 0));
-        const vat = Math.round(Number(saved.vat || 0));
+        const draft = draftForRegion(bucket.region);
+        const supplyPaid = draft.supplyPaid;
+        const vat = draft.vat;
         const taxFee = Math.round(vat * (state.taxFeePercent / 100));
         const usageRate = payAmount > 0 && supplyPaid > 0
           ? (supplyPaid / payAmount) * 100
@@ -205,6 +225,11 @@
     const weekStart = state.weekStart || weekStartKey();
     state.weekStart = weekStartKey(weekStart);
     updateWeekUi();
+
+    const saveBtn = $('revenueRegionSaveBtn');
+    const reloadBtn = $('revenueRegionReloadBtn');
+    if (saveBtn) saveBtn.disabled = state.loading;
+    if (reloadBtn) reloadBtn.disabled = state.loading;
 
     const { settlements, regions } = aggregateRegions(state.weekStart);
     state.rows = regions;
@@ -298,11 +323,57 @@
     if (taxFeeEl) taxFeeEl.textContent = formatMoney(t.taxFee);
   }
 
+  async function loadSettlementData() {
+    state.loading = true;
+    setLoadStatus('직계약 정산서를 불러오는 중…');
+    render();
+
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('timeout')), LOAD_TIMEOUT_MS);
+    });
+
+    try {
+      await Promise.race([
+        window.BremStorage?.ensureSectionLoaded?.('revenue-region-settlement'),
+        timeout
+      ]);
+      const count = settlementsForWeek(state.weekStart || weekStartKey()).length;
+      setLoadStatus(count
+        ? `정산서 ${count}건 불러옴 · ${formatWeekRange(state.weekStart)}`
+        : `정산서 없음 · ${formatWeekRange(state.weekStart)}`);
+    } catch (error) {
+      console.warn('[revenue region settlement] load failed:', error);
+      setLoadStatus('정산 데이터를 불러오지 못했습니다. 「불러오기」를 다시 눌러주세요.');
+      showToast('정산 데이터 로드에 실패했습니다. 잠시 후 다시 시도하세요.');
+    } finally {
+      state.loading = false;
+      render();
+    }
+  }
+
+  function saveDraft() {
+    const weekStart = weekStartKey(state.weekStart || weekStartKey());
+    if (!Revenue()?.saveRegionSettlement) {
+      showToast('저장 기능을 사용할 수 없습니다. 페이지를 새로고침하세요.');
+      return;
+    }
+    const regions = collectDraftFromInputs();
+    const taxFeePercent = Math.max(0, Math.min(100, Number($('revenueRegionTaxFeePercent')?.value || state.taxFeePercent || 20)));
+    state.taxFeePercent = taxFeePercent;
+    const saved = Revenue().saveRegionSettlement(weekStart, { regions, taxFeePercent });
+    state.savedAt = saved?.savedAt || new Date().toISOString();
+    state.draftRegions = { ...regions };
+    setSavedStatus(`저장 완료 · ${new Date(state.savedAt).toLocaleString('ko-KR')}`);
+    showToast('공급대가·부가세 입력을 저장했습니다.');
+    render();
+  }
+
   function exportExcel() {
     if (!window.XLSX) {
       showToast('엑셀 라이브러리를 불러오지 못했습니다.');
       return;
     }
+    collectDraftFromInputs();
     const weekStart = state.weekStart || weekStartKey();
     const { regions } = aggregateRegions(weekStart);
     if (!regions.length) {
@@ -340,39 +411,20 @@
     if (bindEvents.bound) return;
     bindEvents.bound = true;
 
-    $('revenueRegionTaxFeePercent')?.addEventListener('change', event => {
-      const value = Math.max(0, Math.min(100, Number(event.target.value) || 0));
-      state.taxFeePercent = value;
-      event.target.value = String(value);
-      saveTaxFeePercent(value);
-      render();
-    });
-
     $('revenueRegionTaxFeePercent')?.addEventListener('input', event => {
       const value = Math.max(0, Math.min(100, Number(event.target.value) || 0));
       state.taxFeePercent = value;
       render();
     });
 
+    $('revenueRegionSaveBtn')?.addEventListener('click', saveDraft);
+    $('revenueRegionReloadBtn')?.addEventListener('click', () => { void loadSettlementData(); });
     $('revenueRegionExportBtn')?.addEventListener('click', exportExcel);
 
     $('revenueRegionBody')?.addEventListener('change', event => {
-      const supplyInput = event.target.closest('[data-region-supply]');
-      const vatInput = event.target.closest('[data-region-vat]');
-      const weekStart = weekStartKey(state.weekStart || weekStartKey());
-      if (supplyInput) {
-        saveRegionInput(weekStart, supplyInput.dataset.regionSupply, {
-          supplyPaid: Math.round(Number(supplyInput.value || 0))
-        });
-        render();
-        return;
-      }
-      if (vatInput) {
-        saveRegionInput(weekStart, vatInput.dataset.regionVat, {
-          vat: Math.round(Number(vatInput.value || 0))
-        });
-        render();
-      }
+      if (!event.target.matches('[data-region-supply], [data-region-vat]')) return;
+      collectDraftFromInputs();
+      render();
     });
   }
 
@@ -380,22 +432,18 @@
     if (!$('revenueRegionBody')) return;
     bindEvents();
 
-    const store = readStore();
-    state.taxFeePercent = Number(store.taxFeePercent) || 20;
     if (!state.weekStart) state.weekStart = weekStartKey();
-
-    const taxInput = $('revenueRegionTaxFeePercent');
-    if (taxInput) taxInput.value = String(state.taxFeePercent);
-
-    await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
-    render();
+    loadSavedDraft(state.weekStart);
+    await loadSettlementData();
   }
 
   function setWeekStart(value) {
+    collectDraftFromInputs();
     state.weekStart = weekStartKey(value || today());
-    void refresh();
+    loadSavedDraft(state.weekStart);
+    void loadSettlementData();
   }
 
   bindEvents();
-  window.BremRevenueRegionSettlement = { refresh, setWeekStart, render, weekStartKey };
+  window.BremRevenueRegionSettlement = { refresh, setWeekStart, render, loadSettlementData };
 })();
