@@ -9802,6 +9802,40 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   color: var(--text);
 }
 
+.revenue-region-tax-rate {
+  display: grid;
+  gap: 6px;
+  max-width: 220px;
+}
+
+.revenue-region-tax-rate input {
+  width: 100%;
+}
+
+.revenue-region-table .revenue-region-money-input {
+  width: 8.5rem;
+  max-width: 100%;
+  text-align: right;
+}
+
+.revenue-region-input-cell {
+  min-width: 9rem;
+}
+
+.revenue-region-overrun {
+  color: #f5b942;
+  font-weight: 700;
+}
+
+.revenue-region-total-row td {
+  border-top: 2px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.revenue-region-stats {
+  margin-bottom: 16px;
+}
+
 .revenue-panel {
   margin-bottom: 18px;
 }

@@ -45,13 +45,14 @@ const BremDirectSettlementCalc = (function () {
   // 합칠 수 있는 숫자 열(최종입금에서 쿠팡+배민을 한 줄로 더할 때 쓴다)
   const NUMERIC_KEYS = Object.freeze(COLUMNS.filter(col => col.money !== false).map(col => col.key));
 
-  // 일반공제 = 고용·산재·시간제보험 + 원천세·프로모션원천세 (차감내역·수수료·선정산·리스·대여 제외)
+  // 일반공제 = 고용·산재·시간제보험 + 원천세·프로모션원천세 + 콜수수료 (차감내역·일정산수수료·선정산·리스·대여 제외)
   const GENERAL_DEDUCT_KEYS = Object.freeze([
     'employmentInsurance',
     'accidentInsurance',
     'hourlyInsurance',
     'withholdingTax',
-    'promotionWithholdingTax'
+    'promotionWithholdingTax',
+    'callFee'
   ]);
 
   const WITHHOLDING_TAX_KEYS = Object.freeze([

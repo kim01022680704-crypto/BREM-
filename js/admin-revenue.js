@@ -587,6 +587,7 @@
     });
     $('revenueWeeklyPanels').hidden = state.periodTab !== 'weekly';
     $('revenueMonthlyPanels').hidden = state.periodTab !== 'monthly';
+    $('revenueRegionPanels').hidden = state.periodTab !== 'region';
   }
 
   function updateWeeklyPanelUi() {
@@ -734,6 +735,10 @@
       button.addEventListener('click', () => {
         state.periodTab = button.dataset.revenuePeriod;
         updatePeriodTabUi();
+        if (state.periodTab === 'region') {
+          const monthKey = state.monthKey || today().slice(0, 7);
+          window.BremRevenueRegionSettlement?.setMonthKey?.(monthKey);
+        }
       });
     });
 
@@ -903,6 +908,9 @@
     renderOfficeTable();
     renderMonthlySummary();
     refreshOfficeDateLabels();
+    if (state.periodTab === 'region') {
+      window.BremRevenueRegionSettlement?.setMonthKey?.(state.monthKey);
+    }
   }
 
   bindEvents();

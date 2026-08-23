@@ -6330,6 +6330,7 @@
         <div class="revenue-period-tabs" role="tablist" aria-label="수익 정산 주기">
           <button type="button" class="revenue-period-btn active" data-revenue-period="weekly" aria-selected="true">주간 정산</button>
           <button type="button" class="revenue-period-btn" data-revenue-period="monthly" aria-selected="false">월간 정산</button>
+          <button type="button" class="revenue-period-btn" data-revenue-period="region" aria-selected="false">지역별 정산</button>
         </div>
 
         <div id="revenueWeeklyPanels">
@@ -6646,6 +6647,74 @@
               메모
               <textarea id="revenueMonthlyMemo" rows="2" placeholder="월간 정산 메모"></textarea>
             </label>
+          </article>
+        </div>
+
+        <div id="revenueRegionPanels" hidden>
+          <div class="revenue-toolbar card">
+            <label>
+              정산 월
+              <input type="month" id="revenueRegionMonthInput">
+            </label>
+            <p class="revenue-period-label" id="revenueRegionMonthLabel">월을 선택하세요</p>
+            <label class="revenue-region-tax-rate">
+              세무처리비율 (%)
+              <input type="number" id="revenueRegionTaxFeePercent" min="0" max="100" step="0.1" value="20">
+              <span class="form-help">부가세 × 이 비율 = 세무처리비 (기본 20%)</span>
+            </label>
+          </div>
+
+          <article class="card revenue-panel" data-revenue-panel="region">
+            <div class="card-header">
+              <div>
+                <h2>지역별 정산</h2>
+                <p class="form-help">선택 월의 직계약 정산서를 지역별로 합산합니다. 공급대가·부가세는 직접 입력하고, 입급가액·원천세는 정산서에서 자동 계산됩니다.</p>
+                <p class="form-help" id="revenueRegionWeekHint">-</p>
+              </div>
+              <div class="revenue-action-group">
+                <button type="button" class="small-btn" id="revenueRegionExportBtn">엑셀 다운로드</button>
+              </div>
+            </div>
+            <div class="stats-grid revenue-region-stats" id="revenueRegionSummaryPanel">
+              <article class="stat-card">
+                <span>지역 수</span>
+                <strong id="revenueRegionCount">0</strong>
+              </article>
+              <article class="stat-card">
+                <span>입급가액 합계</span>
+                <strong id="revenueRegionPayTotal">-</strong>
+              </article>
+              <article class="stat-card">
+                <span>공급대가 합계</span>
+                <strong id="revenueRegionSupplyTotal">-</strong>
+              </article>
+              <article class="stat-card">
+                <span>부가세 합계</span>
+                <strong id="revenueRegionVatTotal">-</strong>
+              </article>
+              <article class="stat-card stat-card--warning">
+                <span>세무처리비 합계</span>
+                <strong id="revenueRegionTaxFeeTotal">-</strong>
+              </article>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table revenue-region-table">
+                <thead>
+                  <tr>
+                    <th>지역</th>
+                    <th>공급대가<br><span class="muted-inline">(실지급액)</span></th>
+                    <th>지급합계-일반공제<br><span class="muted-inline">(입급가액)</span></th>
+                    <th>원천세합</th>
+                    <th>부가세</th>
+                    <th>세무처리비</th>
+                    <th>사용률</th>
+                    <th>초과지급</th>
+                  </tr>
+                </thead>
+                <tbody id="revenueRegionBody"></tbody>
+                <tfoot id="revenueRegionFoot"></tfoot>
+              </table>
+            </div>
           </article>
         </div>
       </section>
@@ -8335,6 +8404,7 @@
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
   <script src="js/admin-lease-menus.js?v=20260813g"></script>
   <script src="js/admin-revenue.js"></script>
+  <script src="js/admin-revenue-region-settlement.js?v=20260823b"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
   <script src="js/payroll-slip-utils.js?v=20260814match1"></script>
@@ -8342,7 +8412,7 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260807b"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260813b"></script>
   <script src="js/direct-adjustment-admin.js?v=20260820add1"></script>
-  <script src="js/direct-settlement-calc.js?v=20260823b"></script>
+  <script src="js/direct-settlement-calc.js?v=20260823d"></script>
   <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260823c"></script>
   <script src="js/driver-management-admin.js?v=20260820c"></script>
