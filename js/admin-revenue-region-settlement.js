@@ -185,19 +185,26 @@
         const supplyPaid = draft.supplyPaid;
         const vat = draft.vat;
         const taxFee = Math.round(vat * (state.taxFeePercent / 100));
+        // 원천세는 회사 수익이라 사용 가능한 재원에 더해 사용률을 다시 본다.
+        const payWithTax = payAmount + withholdingTaxTotal;
         const usageRate = payAmount > 0 && supplyPaid > 0
           ? (supplyPaid / payAmount) * 100
+          : null;
+        const usageRateWithTax = payWithTax > 0 && supplyPaid > 0
+          ? (supplyPaid / payWithTax) * 100
           : null;
         const overrun = supplyPaid > payAmount ? supplyPaid - payAmount : 0;
         return {
           ...bucket,
           generalDeduct,
           payAmount,
+          payWithTax,
           withholdingTaxTotal,
           supplyPaid,
           vat,
           taxFee,
           usageRate,
+          usageRateWithTax,
           overrun
         };
       })
@@ -242,7 +249,7 @@
     }
 
     if (!regions.length) {
-      body.innerHTML = '<tr><td colspan="8" class="empty">표시할 지역이 없습니다.</td></tr>';
+      body.innerHTML = '<tr><td colspan="10" class="empty">표시할 지역이 없습니다.</td></tr>';
       if (foot) foot.innerHTML = '';
       updateSummaryTotals([]);
       return;
@@ -250,22 +257,25 @@
 
     body.innerHTML = regions.map(row => `
       <tr data-region-row="${escapeHtml(row.region)}">
-        <td><strong>${escapeHtml(row.region)}</strong><br><span class="muted-inline">${Number(row.riderCount || 0).toLocaleString('ko-KR')}명</span></td>
+        <td class="revenue-region-col-region"><strong>${escapeHtml(row.region)}</strong><br><span class="muted-inline">${Number(row.riderCount || 0).toLocaleString('ko-KR')}명</span></td>
         <td class="revenue-region-input-cell">
           <input type="number" class="admin-period-input revenue-region-money-input" data-region-supply="${escapeHtml(row.region)}" min="0" step="1" value="${row.supplyPaid || ''}" placeholder="0">
         </td>
-        <td class="weekly-amount-cell">${formatMoney(row.payAmount)}</td>
-        <td class="weekly-amount-cell">${formatMoney(row.withholdingTaxTotal)}</td>
         <td class="revenue-region-input-cell">
           <input type="number" class="admin-period-input revenue-region-money-input" data-region-vat="${escapeHtml(row.region)}" min="0" step="1" value="${row.vat || ''}" placeholder="0">
         </td>
         <td class="weekly-amount-cell">${formatMoney(row.taxFee)}</td>
-        <td class="weekly-amount-cell">${formatPercent(row.usageRate)}</td>
+        <td class="weekly-amount-cell">${formatMoney(row.grossPay)}</td>
+        <td class="weekly-amount-cell">${formatMoney(row.payAmount)}</td>
+        <td class="weekly-amount-cell">${formatMoney(row.withholdingTaxTotal)}</td>
+        <td class="weekly-amount-cell${row.usageRate != null && row.usageRate > 100 ? ' revenue-region-overrun' : ''}">${formatPercent(row.usageRate)}</td>
+        <td class="weekly-amount-cell${row.usageRateWithTax != null && row.usageRateWithTax > 100 ? ' revenue-region-overrun' : ''}">${formatPercent(row.usageRateWithTax)}</td>
         <td class="weekly-amount-cell${row.overrun > 0 ? ' revenue-region-overrun' : ''}">${row.overrun > 0 ? formatMoney(row.overrun) : '-'}</td>
       </tr>
     `).join('');
 
     const totals = regions.reduce((acc, row) => {
+      acc.grossPay += row.grossPay;
       acc.payAmount += row.payAmount;
       acc.supplyPaid += row.supplyPaid;
       acc.withholdingTaxTotal += row.withholdingTaxTotal;
@@ -274,6 +284,7 @@
       acc.overrun += row.overrun;
       return acc;
     }, {
+      grossPay: 0,
       payAmount: 0,
       supplyPaid: 0,
       withholdingTaxTotal: 0,
@@ -281,20 +292,26 @@
       taxFee: 0,
       overrun: 0
     });
+    totals.payWithTax = totals.payAmount + totals.withholdingTaxTotal;
     totals.usageRate = totals.payAmount > 0 && totals.supplyPaid > 0
       ? (totals.supplyPaid / totals.payAmount) * 100
+      : null;
+    totals.usageRateWithTax = totals.payWithTax > 0 && totals.supplyPaid > 0
+      ? (totals.supplyPaid / totals.payWithTax) * 100
       : null;
 
     if (foot) {
       foot.innerHTML = `
         <tr class="revenue-region-total-row">
-          <td><strong>합계</strong></td>
+          <td class="revenue-region-col-region"><strong>합계</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.supplyPaid)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.payAmount)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.withholdingTaxTotal)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.vat)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.taxFee)}</strong></td>
+          <td class="weekly-amount-cell"><strong>${formatMoney(totals.grossPay)}</strong></td>
+          <td class="weekly-amount-cell"><strong>${formatMoney(totals.payAmount)}</strong></td>
+          <td class="weekly-amount-cell"><strong>${formatMoney(totals.withholdingTaxTotal)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatPercent(totals.usageRate)}</strong></td>
+          <td class="weekly-amount-cell"><strong>${formatPercent(totals.usageRateWithTax)}</strong></td>
           <td class="weekly-amount-cell"><strong>${totals.overrun > 0 ? formatMoney(totals.overrun) : '-'}</strong></td>
         </tr>`;
     }
@@ -304,17 +321,23 @@
 
   function updateSummaryTotals(regions, totals = null) {
     const t = totals || regions.reduce((acc, row) => {
+      acc.grossPay += row.grossPay;
       acc.payAmount += row.payAmount;
       acc.supplyPaid += row.supplyPaid;
+      acc.withholdingTaxTotal += row.withholdingTaxTotal;
       acc.vat += row.vat;
       acc.taxFee += row.taxFee;
       return acc;
-    }, { payAmount: 0, supplyPaid: 0, vat: 0, taxFee: 0 });
+    }, { grossPay: 0, payAmount: 0, supplyPaid: 0, withholdingTaxTotal: 0, vat: 0, taxFee: 0 });
 
     const countEl = $('revenueRegionCount');
     if (countEl) countEl.textContent = String(regions.length);
+    const grossEl = $('revenueRegionGrossTotal');
+    if (grossEl) grossEl.textContent = formatMoney(t.grossPay);
     const payEl = $('revenueRegionPayTotal');
     if (payEl) payEl.textContent = formatMoney(t.payAmount);
+    const taxEl = $('revenueRegionTaxTotal');
+    if (taxEl) taxEl.textContent = formatMoney(t.withholdingTaxTotal);
     const supplyEl = $('revenueRegionSupplyTotal');
     if (supplyEl) supplyEl.textContent = formatMoney(t.supplyPaid);
     const vatEl = $('revenueRegionVatTotal');
@@ -385,18 +408,23 @@
       ['지역별 정산', formatWeekRange(weekStart)],
       ['세무처리비율(%)', state.taxFeePercent],
       [],
-      ['지역', '기사수', '공급대가(실지급액)', '입급가액', '원천세합', '부가세', '세무처리비', '사용률(%)', '초과지급']
+      [
+        '지역', '기사수', '공급대가(실지급액)', '부가세', '세무처리비',
+        '지급합계', '입급가액', '원천세합', '사용률(%)', '원천세포함 사용률(%)', '초과지급'
+      ]
     ];
     regions.forEach(row => {
       rows.push([
         row.region,
         row.riderCount,
         row.supplyPaid,
-        row.payAmount,
-        row.withholdingTaxTotal,
         row.vat,
         row.taxFee,
+        row.grossPay,
+        row.payAmount,
+        row.withholdingTaxTotal,
         row.usageRate != null ? Number(row.usageRate.toFixed(2)) : '',
+        row.usageRateWithTax != null ? Number(row.usageRateWithTax.toFixed(2)) : '',
         row.overrun
       ]);
     });

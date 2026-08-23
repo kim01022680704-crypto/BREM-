@@ -9812,14 +9812,44 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   width: 100%;
 }
 
+.revenue-region-table {
+  min-width: 1180px;
+}
+
+.revenue-region-table th,
+.revenue-region-table td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.revenue-region-table th .muted-inline {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
 .revenue-region-table .revenue-region-money-input {
-  width: 8.5rem;
-  max-width: 100%;
+  width: 100%;
+  min-width: 7.5rem;
   text-align: right;
 }
 
 .revenue-region-input-cell {
-  min-width: 9rem;
+  min-width: 8.5rem;
+  background: rgba(245, 185, 66, 0.06);
+}
+
+.revenue-region-col-region {
+  min-width: 8rem;
+  text-align: left;
+}
+
+.revenue-region-col-money {
+  min-width: 7.5rem;
+}
+
+.revenue-region-col-rate {
+  min-width: 8rem;
 }
 
 .revenue-region-overrun {

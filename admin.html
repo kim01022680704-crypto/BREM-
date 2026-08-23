@@ -6689,15 +6689,23 @@
                 <strong id="revenueRegionCount">0</strong>
               </article>
               <article class="stat-card">
+                <span>지급합계</span>
+                <strong id="revenueRegionGrossTotal">-</strong>
+              </article>
+              <article class="stat-card">
                 <span>입급가액 합계</span>
                 <strong id="revenueRegionPayTotal">-</strong>
+              </article>
+              <article class="stat-card">
+                <span>원천세합 (수익)</span>
+                <strong id="revenueRegionTaxTotal">-</strong>
               </article>
               <article class="stat-card">
                 <span>공급대가 합계</span>
                 <strong id="revenueRegionSupplyTotal">-</strong>
               </article>
               <article class="stat-card">
-                <span>부가세 합계</span>
+                <span>부가세 합계 (수익)</span>
                 <strong id="revenueRegionVatTotal">-</strong>
               </article>
               <article class="stat-card stat-card--warning">
@@ -6709,14 +6717,16 @@
               <table class="data-table revenue-region-table">
                 <thead>
                   <tr>
-                    <th>지역</th>
-                    <th>공급대가<br><span class="muted-inline">(실지급액)</span></th>
-                    <th>지급합계-일반공제<br><span class="muted-inline">(입급가액)</span></th>
-                    <th>원천세합</th>
-                    <th>부가세</th>
-                    <th>세무처리비</th>
-                    <th>사용률</th>
-                    <th>초과지급</th>
+                    <th class="revenue-region-col-region">지역</th>
+                    <th class="revenue-region-col-input">공급대가<br><span class="muted-inline">(실지급액 · 입력)</span></th>
+                    <th class="revenue-region-col-input">부가세<br><span class="muted-inline">(입력)</span></th>
+                    <th class="revenue-region-col-money">세무처리비<br><span class="muted-inline">(부가세×비율)</span></th>
+                    <th class="revenue-region-col-money">지급합계<br><span class="muted-inline">(참고)</span></th>
+                    <th class="revenue-region-col-money">입급가액<br><span class="muted-inline">(지급합계-일반공제)</span></th>
+                    <th class="revenue-region-col-money">원천세합</th>
+                    <th class="revenue-region-col-rate">사용률<br><span class="muted-inline">(공급대가÷입급가액)</span></th>
+                    <th class="revenue-region-col-rate">원천세 포함 사용률<br><span class="muted-inline">(공급대가÷(입급가액+원천세))</span></th>
+                    <th class="revenue-region-col-money">초과지급</th>
                   </tr>
                 </thead>
                 <tbody id="revenueRegionBody"></tbody>
@@ -8412,7 +8422,7 @@
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
   <script src="js/admin-lease-menus.js?v=20260813g"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-revenue-region-settlement.js?v=20260823d"></script>
+  <script src="js/admin-revenue-region-settlement.js?v=20260823e"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
   <script src="js/payroll-slip-utils.js?v=20260814match1"></script>
