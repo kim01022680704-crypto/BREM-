@@ -594,22 +594,33 @@
       supplyTotal = cellNumber(rows[30] || [], 3);
     }
 
+    // 회사가 부담하는 몫만 뺀다. 사업주부담 고용보험료(I열)·산재보험료(K열).
+    // 라이더부담(J·L열)은 라이더 급여에서 공제되므로 제외한다.
     let employment = 0;
     let accident = 0;
     let employmentLabel = 'I열';
-    let accidentLabel = 'J열';
+    let accidentLabel = 'K열';
     let insuranceFound = false;
     const weekHeader = findHeaderRowIndex(rows, /^정산\s*시작일$/);
     if (weekHeader >= 0) {
       const header = rows[weekHeader] || [];
-      employmentLabel = cellString(header, 8) || employmentLabel;
-      accidentLabel = cellString(header, 9) || accidentLabel;
-      insuranceFound = /보험/.test(employmentLabel) && /보험/.test(accidentLabel);
+      const squashed = index => String(header[index] ?? '').replace(/\s+/g, '');
+      let employmentCol = header.findIndex(
+        (_, index) => /사업주부담.*고용보험/.test(squashed(index))
+      );
+      let accidentCol = header.findIndex(
+        (_, index) => /사업주부담.*산재보험/.test(squashed(index))
+      );
+      insuranceFound = employmentCol >= 0 && accidentCol >= 0;
+      if (employmentCol < 0) employmentCol = 8;
+      if (accidentCol < 0) accidentCol = 10;
+      employmentLabel = cellString(header, employmentCol).replace(/\s+/g, ' ') || employmentLabel;
+      accidentLabel = cellString(header, accidentCol).replace(/\s+/g, ' ') || accidentLabel;
       for (let i = weekHeader + 1; i < Math.min(rows.length, weekHeader + 5); i += 1) {
         const row = rows[i] || [];
         if (!rowText(row).trim()) continue;
-        employment = cellNumber(row, 8);
-        accident = cellNumber(row, 9);
+        employment = cellNumber(row, employmentCol);
+        accident = cellNumber(row, accidentCol);
         break;
       }
     }
@@ -617,7 +628,7 @@
     const supplyPaid = supplyTotal - (employment + accident);
     const note = insuranceFound
       ? `공급대가 ${formatMoney(supplyTotal)} − ${employmentLabel} ${formatMoney(employment)} − ${accidentLabel} ${formatMoney(accident)}`
-      : `공급대가 ${formatMoney(supplyTotal)} · 고용·산재보험료를 찾지 못했습니다 (주차별 정산내역 I·J열 확인)`;
+      : `공급대가 ${formatMoney(supplyTotal)} · 사업주부담 고용·산재보험료를 찾지 못했습니다 (주차별 정산내역 I·K열 확인)`;
     return {
       vat,
       supplyTotal,
