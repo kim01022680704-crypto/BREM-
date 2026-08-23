@@ -45,6 +45,22 @@ const BremDirectSettlementCalc = (function () {
   // 합칠 수 있는 숫자 열(최종입금에서 쿠팡+배민을 한 줄로 더할 때 쓴다)
   const NUMERIC_KEYS = Object.freeze(COLUMNS.filter(col => col.money !== false).map(col => col.key));
 
+  // 일반공제 = 고용·산재·시간제보험 + 원천세·프로모션원천세 (차감내역·수수료·선정산·리스·대여 제외)
+  const GENERAL_DEDUCT_KEYS = Object.freeze([
+    'employmentInsurance',
+    'accidentInsurance',
+    'hourlyInsurance',
+    'withholdingTax',
+    'promotionWithholdingTax'
+  ]);
+
+  function generalDeductTotal(source) {
+    return GENERAL_DEDUCT_KEYS.reduce(
+      (sum, key) => sum + Math.round(Number(source?.[key] || 0)),
+      0
+    );
+  }
+
   function promoTax(sum) {
     return Math.floor(Number(sum || 0) * PROMO_TAX_RATE);
   }
@@ -939,6 +955,8 @@ const BremDirectSettlementCalc = (function () {
     totals.negativeNetCount = negativeNetCount;
     totals.untaggedWithdrawalCount = untaggedCount;
     totals.untaggedWithdrawalAmount = untaggedAmount;
+    totals.generalDeduct = generalDeductTotal(totals);
+    totals.grossAfterGeneralDeduct = Math.round(Number(totals.grossPay || 0)) - totals.generalDeduct;
     return totals;
   }
 
@@ -947,6 +965,8 @@ const BremDirectSettlementCalc = (function () {
     GROUPS,
     COLUMNS,
     NUMERIC_KEYS,
+    GENERAL_DEDUCT_KEYS,
+    generalDeductTotal,
     promoTax,
     dateKey,
     weekStartKey,

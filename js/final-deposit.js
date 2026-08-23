@@ -318,6 +318,8 @@ const BremFinalDeposit = (function () {
       summaryEl.innerHTML = `체크 <strong>${picked.length}</strong>명 / 전체 ${rows.length}명`
         + ` · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong>`
         + ` · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong>`
+        + ` · 일반공제 <strong>${formatNumber(totals.generalDeduct)}</strong>`
+        + ` · 지급-일반공제 <strong>${formatNumber(totals.grossAfterGeneralDeduct)}</strong>`
         + ` · 선정산(처리완료) <strong>${formatNumber(totals.prepaid)}</strong>`
         + ` · 리스차감 <strong>${formatNumber(totals.leaseFee)}</strong>`
         + ` · 대여차감 <strong>${formatNumber(totals.loanFee)}</strong>`
