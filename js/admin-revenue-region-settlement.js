@@ -504,6 +504,20 @@
     return -1;
   }
 
+  // 표 헤더 줄만 찾는다. 안내문("…배달료, 수기정산금, 관리비입니다.")은 한 셀에
+  // 긴 문장으로 들어와 있어 셀 길이 제한으로 걸러낸다.
+  function findHeaderRowIndex(rows, pattern, maxCellLength = 24) {
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = Array.isArray(rows[i]) ? rows[i] : [];
+      const hit = row.some(cell => {
+        const text = String(cell ?? '').trim();
+        return text && text.length <= maxCellLength && pattern.test(text);
+      });
+      if (hit) return i;
+    }
+    return -1;
+  }
+
   // 쿠팡: 한 파일에 전 지역. C열 지역구 · G열 부가세 · J열 실지급액.
   function parseCoupangRows(rows) {
     let headerIndex = -1;
@@ -558,7 +572,7 @@
     let vat = 0;
     let supplyTotal = 0;
 
-    const taxHeader = findRowIndex(rows, /공급\s*대가/);
+    const taxHeader = findHeaderRowIndex(rows, /^공급\s*대가$/);
     if (taxHeader >= 0) {
       const header = rows[taxHeader] || [];
       const vatCol = header.findIndex(cell => /부가세\s*액/.test(String(cell ?? '')));
@@ -584,11 +598,13 @@
     let accident = 0;
     let employmentLabel = 'I열';
     let accidentLabel = 'J열';
-    const weekHeader = findRowIndex(rows, /정산\s*시작일|배달료/);
+    let insuranceFound = false;
+    const weekHeader = findHeaderRowIndex(rows, /^정산\s*시작일$/);
     if (weekHeader >= 0) {
       const header = rows[weekHeader] || [];
       employmentLabel = cellString(header, 8) || employmentLabel;
       accidentLabel = cellString(header, 9) || accidentLabel;
+      insuranceFound = /보험/.test(employmentLabel) && /보험/.test(accidentLabel);
       for (let i = weekHeader + 1; i < Math.min(rows.length, weekHeader + 5); i += 1) {
         const row = rows[i] || [];
         if (!rowText(row).trim()) continue;
@@ -599,18 +615,25 @@
     }
 
     const supplyPaid = supplyTotal - (employment + accident);
+    const note = insuranceFound
+      ? `공급대가 ${formatMoney(supplyTotal)} − ${employmentLabel} ${formatMoney(employment)} − ${accidentLabel} ${formatMoney(accident)}`
+      : `공급대가 ${formatMoney(supplyTotal)} · 고용·산재보험료를 찾지 못했습니다 (주차별 정산내역 I·J열 확인)`;
     return {
       vat,
       supplyTotal,
       supplyPaid,
       employment,
       accident,
-      note: `공급대가 ${formatMoney(supplyTotal)} − ${employmentLabel} ${formatMoney(employment)} − ${accidentLabel} ${formatMoney(accident)}`
+      insuranceFound,
+      note
     };
   }
 
   function baeminRowsLookValid(rows) {
-    return Array.isArray(rows) && rows.length > 0 && findRowIndex(rows, /공급\s*대가/) >= 0;
+    return Array.isArray(rows)
+      && rows.length > 0
+      && findHeaderRowIndex(rows, /^공급\s*대가$/) >= 0
+      && findHeaderRowIndex(rows, /^정산\s*시작일$/) >= 0;
   }
 
   function uploadPassword() {
@@ -681,10 +704,22 @@
 
     for (const file of files) {
       try {
-        const rows = await readSheetRows(file, uploadPassword(), {
-          sheetIndexes: [0, 1, 2],
-          validateRows: baeminRowsLookValid
-        });
+        let rows;
+        try {
+          rows = await readSheetRows(file, uploadPassword(), {
+            sheetIndexes: [0, 1, 2],
+            validateRows: baeminRowsLookValid
+          });
+        } catch (strictError) {
+          if (strictError?.code === 'PASSWORD_REQUIRED' || strictError?.code === 'WRONG_PASSWORD') {
+            throw strictError;
+          }
+          // 주차별 정산내역이 없는 형식이면 세금계산서 표만 있는 시트라도 읽는다.
+          rows = await readSheetRows(file, uploadPassword(), {
+            sheetIndexes: [0, 1, 2],
+            validateRows: candidate => findHeaderRowIndex(candidate, /^공급\s*대가$/) >= 0
+          });
+        }
         const parsed = parseBaeminSheet(rows);
         if (!parsed.supplyTotal && !parsed.vat) {
           failed.push(`${file.name} (공급대가·부가세액 없음)`);

@@ -97,8 +97,17 @@ check('세 번째 실지급액', coupang[2]?.supplyPaid, 10717232);
 
 // --- 배민 정산서 (스크린샷 구조 재현) ---------------------------------------
 // 24행: 주차별 정산내역 헤더 · 25행: 값 / 30행: 세금계산서 헤더 · 31행: 값
+// 상단 참고사항에 "배달료"·"고용/산재보험료" 단어가 들어 있어 헤더 오인 위험이 있다.
 const baeminRows = [];
-for (let i = 0; i < 23; i += 1) baeminRows.push(['']);
+for (let i = 0; i < 23; i += 1) {
+  if (i === 5) {
+    baeminRows.push(['- 세금계산서에 포함되는 항목은 배달료, 수기정산금, 관리비입니다.']);
+  } else if (i === 9) {
+    baeminRows.push(['- 이를 기반으로 계산된 고용/산재보험료가 포함되어 있습니다. 정산시작일 기준입니다.']);
+  } else {
+    baeminRows.push(['']);
+  }
+}
 baeminRows.push(row({
   0: '정산시작일', 1: '정산종료일', 2: '배달료(A-1)', 3: '주기정산(A-2)', 4: '관리비(B)',
   5: '부가세액(C)', 6: '시간제보험료(D)', 7: '사업주부담 고용보험료①', 8: '라이더부담 고용보험료②',
@@ -119,7 +128,9 @@ check('공급대가 = D31', baemin.supplyTotal, 8070700);
 check('I열 고용보험', baemin.employment, 60000);
 check('J열 산재보험', baemin.accident, 50170);
 check('실지급액 = 8,070,700 − 110,170', baemin.supplyPaid, 8070700 - 60000 - 50170);
+check('보험료 열을 찾았다고 표시', baemin.insuranceFound, 'true');
 check('근거 문구에 헤더명 포함', /라이더부담 고용보험료/.test(baemin.note), 'true');
+check('참고사항 문장을 헤더로 오인하지 않는다', baemin.employment > 0 && baemin.accident > 0, 'true');
 
 // 라벨 탐색 실패 시 고정 위치(C31·D31) 폴백
 const baeminNoHeader = baeminRows.map((r, i) => (i === 29 ? [''] : r));
