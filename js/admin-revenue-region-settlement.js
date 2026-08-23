@@ -195,18 +195,22 @@
         const taxFee = Math.round(vat * (state.taxFeePercent / 100));
         // 공급대가(받은 재원) 대비 입급가액(실제 지급한 돈)이 사용률.
         // 원천세도 수익이라 포함하면 재원이 늘어 사용률은 내려간다.
-        const supplyWithTax = supplyPaid + withholdingTaxTotal;
-        const usageRate = supplyPaid > 0 ? (payAmount / supplyPaid) * 100 : null;
-        const usageRateWithTax = supplyPaid > 0 && supplyWithTax > 0
-          ? (payAmount / supplyWithTax) * 100
+        // 사용률 기준(100%) = 공급대가 − 부가세. 부가세는 수익이라 재원에서 뺀다.
+        // 원천세도 수익이라 포함하면 재원이 늘어 사용률은 내려간다.
+        const supplyBase = supplyPaid - vat;
+        const supplyBaseWithTax = supplyBase + withholdingTaxTotal;
+        const usageRate = supplyBase > 0 ? (payAmount / supplyBase) * 100 : null;
+        const usageRateWithTax = supplyBase > 0 && supplyBaseWithTax > 0
+          ? (payAmount / supplyBaseWithTax) * 100
           : null;
-        const remain = supplyPaid > 0 ? supplyPaid - payAmount : 0;
-        const remainWithTax = supplyPaid > 0 ? supplyWithTax - payAmount : 0;
+        const remain = supplyPaid > 0 ? supplyBase - payAmount : 0;
+        const remainWithTax = supplyPaid > 0 ? supplyBaseWithTax - payAmount : 0;
         return {
           ...bucket,
           generalDeduct,
           payAmount,
-          supplyWithTax,
+          supplyBase,
+          supplyBaseWithTax,
           withholdingTaxTotal,
           supplyPaid,
           vat,
@@ -304,12 +308,13 @@
       remain: 0,
       remainWithTax: 0
     });
-    totals.supplyWithTax = totals.supplyPaid + totals.withholdingTaxTotal;
-    totals.usageRate = totals.supplyPaid > 0
-      ? (totals.payAmount / totals.supplyPaid) * 100
+    totals.supplyBase = totals.supplyPaid - totals.vat;
+    totals.supplyBaseWithTax = totals.supplyBase + totals.withholdingTaxTotal;
+    totals.usageRate = totals.supplyBase > 0
+      ? (totals.payAmount / totals.supplyBase) * 100
       : null;
-    totals.usageRateWithTax = totals.supplyWithTax > 0 && totals.supplyPaid > 0
-      ? (totals.payAmount / totals.supplyWithTax) * 100
+    totals.usageRateWithTax = totals.supplyBaseWithTax > 0 && totals.supplyBase > 0
+      ? (totals.payAmount / totals.supplyBaseWithTax) * 100
       : null;
 
     if (foot) {
@@ -323,6 +328,7 @@
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.payAmount)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.withholdingTaxTotal)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatPercent(totals.usageRate)}</strong></td>
+          <td class="weekly-amount-cell"><strong>${formatPercent(totals.usageRateWithTax)}</strong></td>
           <td class="weekly-amount-cell${totals.remain < 0 ? ' revenue-region-overrun' : ''}"><strong>${formatRemain(totals.remain)}</strong>${totals.remain || totals.remainWithTax ? `<br><span class="muted-inline">원천세 포함 ${formatRemain(totals.remainWithTax)}</span>` : ''}</td>
         </tr>`;
     }
@@ -816,7 +822,8 @@
       [],
       [
         '지역', '기사수', '공급대가(실지급액)', '부가세', '세무처리비',
-        '지급합계', '입급가액', '원천세합', '사용률(%)', '원천세포함 사용률(%)',
+        '지급합계', '입급가액', '원천세합',
+        '사용률(%)', '원천세포함 사용률(%)',
         '남은 금액', '남은 금액(원천세 포함)'
       ]
     ];

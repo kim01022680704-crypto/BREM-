@@ -20,10 +20,27 @@ try {
 }
 
 const root = path.join(__dirname, '..');
-const dom = new JSDOM('<!doctype html><html><body></body></html>', {
-  url: 'http://localhost/',
-  runScripts: 'outside-only'
-});
+const html = fs.readFileSync(path.join(root, 'admin.html'), 'utf8');
+
+function extractSection(id) {
+  const start = html.indexOf(`<section class="section" id="${id}">`);
+  if (start < 0) throw new Error(`섹션 ${id} 을(를) 찾지 못했습니다.`);
+  let depth = 0;
+  const re = /<\/?section\b[^>]*>/g;
+  re.lastIndex = start;
+  let m;
+  while ((m = re.exec(html))) {
+    if (m[0].startsWith('</')) depth -= 1;
+    else depth += 1;
+    if (depth === 0) return html.slice(start, m.index + m[0].length);
+  }
+  throw new Error(`섹션 ${id} 의 끝을 찾지 못했습니다.`);
+}
+
+const dom = new JSDOM(
+  `<!doctype html><html><body>${extractSection('revenue-management')}</body></html>`,
+  { url: 'http://localhost/', runScripts: 'outside-only' }
+);
 const { window } = dom;
 const ctx = vm.createContext(window);
 vm.runInContext(
@@ -123,6 +140,76 @@ console.log('\n[4] 배민 파일명 매칭');
 check('파일명 안의 지역 추출', M.matchRegionByFileName('2026년8월3주차_정산서_북구남부.xlsx', REGIONS, {}), '북구남부');
 check('공백·하이픈 섞여도 매칭', M.matchRegionByFileName('배민 정산서 - 창원성산 (8월3주).xlsx', REGIONS, {}), '창원성산');
 check('매칭 없으면 빈값', M.matchRegionByFileName('정산서_미지정지역.xlsx', REGIONS, {}), '');
+
+// --- 표 렌더링 (열 수 · 사용률 방향) ----------------------------------------
+console.log('\n[5] 표 렌더링 · 열 수와 사용률');
+
+const GENERAL_DEDUCT_KEYS = [
+  'employmentInsurance', 'accidentInsurance', 'hourlyInsurance',
+  'withholdingTax', 'promotionWithholdingTax', 'callFee'
+];
+const sum = (src, keys) => keys.reduce((acc, key) => acc + Math.round(Number(src?.[key] || 0)), 0);
+
+// 중구중앙: 지급합계 36,181 · 일반공제 1,470 → 입급가액 34,711 · 원천세합 1,220
+const CALC_ROW = {
+  region: '중구중앙',
+  grossPay: 36181,
+  employmentInsurance: 150,
+  accidentInsurance: 100,
+  hourlyInsurance: 0,
+  withholdingTax: 1120,
+  promotionWithholdingTax: 100,
+  callFee: 0
+};
+
+window.BremDirectSettlementCalc = {
+  GENERAL_DEDUCT_KEYS,
+  generalDeductTotal: src => sum(src, GENERAL_DEDUCT_KEYS),
+  withholdingTaxTotal: src => sum(src, ['withholdingTax', 'promotionWithholdingTax']),
+  weekStartKey: value => String(value || '2026-08-19').slice(0, 10),
+  settlementWeek: () => '2026-08-19',
+  computeRows: () => [CALC_ROW]
+};
+window.BremStorage = {
+  weeklySettlements: { getAll: () => [{ id: 's1', region: '중구중앙', startDate: '2026-08-19' }] },
+  revenue: {
+    getRegionSettlementByWeek: () => ({
+      weekStart: '2026-08-19',
+      taxFeePercent: 20,
+      regions: { 중구중앙: { supplyPaid: 40179, vat: 3698 } }
+    }),
+    getRegionAliasMap: () => ({}),
+    saveRegionSettlement: (weekStart, data) => ({ weekStart, ...data, savedAt: new Date().toISOString() }),
+    saveRegionAliases: () => ({})
+  },
+  ensureSectionLoaded: async () => ({ ok: true })
+};
+
+M.setWeekStart('2026-08-19');
+M.render();
+
+const headCells = [...window.document.querySelectorAll('.revenue-region-table thead tr th')];
+const bodyCells = [...window.document.querySelectorAll('#revenueRegionBody tr td')];
+const footCells = [...window.document.querySelectorAll('#revenueRegionFoot tr td')];
+
+check('본문 열 수 = 헤더 열 수', bodyCells.length, headCells.length);
+check('합계 열 수 = 헤더 열 수', footCells.length, headCells.length);
+
+const headText = headCells.map(th => th.textContent.replace(/\s+/g, ''));
+check('사용률 기준은 공급대가−부가세', headText.some(t => t.includes('입급가액÷(공급대가−부가세)')), 'true');
+
+const bodyText = bodyCells.map(td => td.textContent.replace(/\s+/g, ''));
+// 공급대가 40,179 · 부가세 3,698 → 기준 36,481 / 입급가액 34,711 · 원천세 1,220
+check('입급가액 34,711원', bodyText.includes('34,711원'), 'true');
+check('사용률 = 34,711÷36,481 = 95.1%', bodyText.includes('95.1%'), 'true');
+check('원천세 포함 = 34,711÷37,701 = 92.1%', bodyText.includes('92.1%'), 'true');
+check('공급대가 기준(86.4%)은 더 이상 없다', bodyText.includes('86.4%'), 'false');
+check('남은 금액 1,770원 남음', bodyText.some(t => t.includes('1,770원남음')), 'true');
+check('원천세 포함 2,990원 남음', bodyText.some(t => t.includes('2,990원남음')), 'true');
+
+// 사용자 예시: 공급가액 100만 + 부가세 10만 = 공급대가 110만, 105만 지출 → 105%
+const exampleBase = 1100000 - 100000;
+check('예시 105만 지출 → 105.0%', ((1050000 / exampleBase) * 100).toFixed(1), '105.0');
 
 console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
 process.exit(failed ? 1 : 0);
