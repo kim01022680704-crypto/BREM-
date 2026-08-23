@@ -54,11 +54,24 @@ const BremDirectSettlementCalc = (function () {
     'promotionWithholdingTax'
   ]);
 
-  function generalDeductTotal(source) {
-    return GENERAL_DEDUCT_KEYS.reduce(
+  const WITHHOLDING_TAX_KEYS = Object.freeze([
+    'withholdingTax',
+    'promotionWithholdingTax'
+  ]);
+
+  function sumKeys(source, keys) {
+    return keys.reduce(
       (sum, key) => sum + Math.round(Number(source?.[key] || 0)),
       0
     );
+  }
+
+  function generalDeductTotal(source) {
+    return sumKeys(source, GENERAL_DEDUCT_KEYS);
+  }
+
+  function withholdingTaxTotal(source) {
+    return sumKeys(source, WITHHOLDING_TAX_KEYS);
   }
 
   function promoTax(sum) {
@@ -956,6 +969,7 @@ const BremDirectSettlementCalc = (function () {
     totals.untaggedWithdrawalCount = untaggedCount;
     totals.untaggedWithdrawalAmount = untaggedAmount;
     totals.generalDeduct = generalDeductTotal(totals);
+    totals.withholdingTaxTotal = withholdingTaxTotal(totals);
     totals.grossAfterGeneralDeduct = Math.round(Number(totals.grossPay || 0)) - totals.generalDeduct;
     return totals;
   }
@@ -966,7 +980,9 @@ const BremDirectSettlementCalc = (function () {
     COLUMNS,
     NUMERIC_KEYS,
     GENERAL_DEDUCT_KEYS,
+    WITHHOLDING_TAX_KEYS,
     generalDeductTotal,
+    withholdingTaxTotal,
     promoTax,
     dateKey,
     weekStartKey,

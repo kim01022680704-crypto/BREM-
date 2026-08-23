@@ -319,6 +319,7 @@ const BremFinalDeposit = (function () {
         + ` · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong>`
         + ` · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong>`
         + ` · 일반공제 <strong>${formatNumber(totals.generalDeduct)}</strong>`
+        + ` · 원천세합 <strong>${formatNumber(totals.withholdingTaxTotal)}</strong>`
         + ` · 지급-일반공제 <strong>${formatNumber(totals.grossAfterGeneralDeduct)}</strong>`
         + ` · 선정산(처리완료) <strong>${formatNumber(totals.prepaid)}</strong>`
         + ` · 리스차감 <strong>${formatNumber(totals.leaseFee)}</strong>`
