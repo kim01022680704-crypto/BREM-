@@ -377,7 +377,8 @@
     }
   }
 
-  function saveDraft() {
+  function saveDraft(options = {}) {
+    const silent = options.silent === true;
     const weekStart = weekStartKey(state.weekStart || weekStartKey());
     if (!Revenue()?.saveRegionSettlement) {
       showToast('저장 기능을 사용할 수 없습니다. 페이지를 새로고침하세요.');
@@ -390,7 +391,7 @@
     state.savedAt = saved?.savedAt || new Date().toISOString();
     state.draftRegions = { ...regions };
     setSavedStatus(`저장 완료 · ${new Date(state.savedAt).toLocaleString('ko-KR')}`);
-    showToast('공급대가·부가세 입력을 저장했습니다.');
+    if (!silent) showToast('공급대가·부가세 입력을 저장했습니다.');
     render();
   }
 
@@ -754,17 +755,20 @@
 
     const merged = {};
     const aliases = {};
-    let applied = 0;
+    const leftover = [];
     state.uploadRows.forEach(row => {
-      if (!row.region) return;
+      if (!row.region) {
+        leftover.push(row);
+        return;
+      }
       if (!merged[row.region]) merged[row.region] = { supplyPaid: 0, vat: 0 };
       merged[row.region].supplyPaid += Math.round(Number(row.supplyPaid || 0));
       merged[row.region].vat += Math.round(Number(row.vat || 0));
       aliases[row.source] = row.region;
-      applied += 1;
     });
 
-    if (!applied) {
+    const appliedRegions = Object.keys(merged).length;
+    if (!appliedRegions) {
       showToast('반영할 지역을 하나 이상 골라주세요.');
       return;
     }
@@ -774,10 +778,14 @@
     });
     Revenue()?.saveRegionAliases?.(aliases);
 
-    const skipped = state.uploadRows.length - applied;
+    // 반영한 줄은 목록에서 지우고, 매칭 못 한 줄만 남겨 이어서 처리하게 한다.
+    state.uploadRows = leftover;
     render();
-    setUploadStatus(`${Object.keys(merged).length}개 지역에 반영했습니다.${skipped ? ` (건너뜀 ${skipped}건)` : ''} 「입력 저장」을 눌러 저장하세요.`);
-    showToast(`${Object.keys(merged).length}개 지역 반영 · 「입력 저장」을 눌러주세요.`);
+    saveDraft({ silent: true });
+
+    const tail = leftover.length ? ` · 매칭 안 된 ${leftover.length}건은 아래에 남겨뒀습니다.` : '';
+    setUploadStatus(`${appliedRegions}개 지역 반영·저장 완료.${tail}`);
+    showToast(`${appliedRegions}개 지역 반영·저장 완료${leftover.length ? ` · 미매칭 ${leftover.length}건 남음` : ''}`);
   }
 
   function exportExcel() {
@@ -834,7 +842,7 @@
       render();
     });
 
-    $('revenueRegionSaveBtn')?.addEventListener('click', saveDraft);
+    $('revenueRegionSaveBtn')?.addEventListener('click', () => saveDraft());
     $('revenueRegionReloadBtn')?.addEventListener('click', () => { void loadSettlementData(); });
     $('revenueRegionExportBtn')?.addEventListener('click', exportExcel);
 
