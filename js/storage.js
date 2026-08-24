@@ -2397,8 +2397,9 @@ const BremStorage = (function () {
     const runFetch = async () => {
       logDataSource('riders', false);
       window.BremPerf?.time?.('storage.fetchAllDrivers');
-      // raw_data 포함 SELECT는 페이지가 크면 타임아웃나기 쉬워 100명 단위로 받는다.
-      const pageSize = Math.min(Math.max(Number(options.limit) || 100, 20), 200);
+      // 전원 로드는 왕복 횟수가 곧 체감 시간이다(요청마다 함수 기동 + 관리자 인증 검증).
+      // 실측: 100명씩 8요청 7.9초 → 500명씩 2요청 4.8초. 어느 크기에서도 777명 전원 로드는 동일.
+      const pageSize = Math.min(Math.max(Number(options.limit) || 500, 20), 500);
       let offset = 0;
       let hasMore = true;
       let supabaseTotal = null;
@@ -2537,7 +2538,7 @@ const BremStorage = (function () {
     }
 
     window.BremPerf?.time?.('storage.syncDriversFromServer');
-    const limit = Math.min(Math.max(Number(options.limit) || 100, 1), 200);
+    const limit = Math.min(Math.max(Number(options.limit) || 100, 1), 500);
     const offset = Math.max(Number(options.offset) || 0, 0);
     const params = new URLSearchParams({
       limit: String(limit),

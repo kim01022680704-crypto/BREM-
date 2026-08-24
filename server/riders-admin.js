@@ -426,7 +426,9 @@ async function listRiders(accessToken, options = {}) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
 
-  const limit = Math.min(Math.max(Number(options.limit) || 100, 1), 200);
+  // 상한 500. 전원 로드(일정산서 업로드 매칭 등)에서 왕복 횟수를 줄인다.
+  // 실측: 777명 전체를 한 번에 받아도 0.2초 · 1.24MB (Vercel 응답 한도와 여유가 크다)
+  const limit = Math.min(Math.max(Number(options.limit) || 100, 1), 500);
   const offset = Math.max(Number(options.offset) || 0, 0);
   const search = String(options.search || '').trim();
   const status = String(options.status || '').trim();
