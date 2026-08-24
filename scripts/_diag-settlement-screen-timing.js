@@ -134,7 +134,8 @@ async function loadTable(spec, token) {
   return { ...spec, rows, bytes, elapsedMs: Date.now() - started };
 }
 
-async function loadAllRiders(token, pageSize = Number(process.env.RIDER_PAGE_SIZE) || 100) {
+// 기본값은 js/storage.js 의 fetchAllDriversFromServer pageSize 와 같게 유지한다.
+async function loadAllRiders(token, pageSize = Number(process.env.RIDER_PAGE_SIZE) || 500) {
   const started = Date.now();
   let offset = 0;
   let requests = 0;
