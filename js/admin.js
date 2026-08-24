@@ -6216,8 +6216,24 @@
         showToast('등록된 기사가 없습니다. 기사 목록을 확인하세요.');
         return;
       }
+      // 일부만 로드된 상태로 매칭하면 등록 기사가 "미매칭"으로 잡혀 정산이 틀어진다.
+      // 예전에는 토스트만 띄우고 그대로 진행해서 놓치기 쉬웠다.
+      // DB 수와 단순 비교로 하드 차단하면 중복제거 때문에 영구히 막힐 수 있으므로,
+      // 확인 창으로 바꿔 "모르고 지나가는" 경우만 없앤다. (정상 로드 시에는 안 뜬다)
       if (driverLoad?.complete === false || driverLoad?.partial) {
-        showToast(`기사 ${driverList.length}명만 로드된 상태로 매칭합니다. 미매칭이 많으면 잠시 후 다시 업로드하세요.`);
+        const knownTotal = Number(driverLoad?.supabaseTotal || 0);
+        const proceed = window.confirm(
+          '기사 목록이 끝까지 불러와지지 않았습니다.\n\n'
+          + `로드됨: ${driverList.length}명${knownTotal ? ` / DB ${knownTotal}명` : ''}\n\n`
+          + '이 상태로 매칭하면 등록된 기사가 「미매칭」으로 잡혀\n'
+          + '정산 금액이 틀어질 수 있습니다.\n\n'
+          + '취소하고 잠시 후 다시 업로드하는 것을 권합니다.\n'
+          + '그래도 진행할까요?'
+        );
+        if (!proceed) {
+          showToast('업로드를 취소했습니다. 기사 목록이 전원 로드된 뒤 다시 시도하세요.');
+          return;
+        }
       }
 
       uploadBtn.textContent = '정산서 처리 중...';
