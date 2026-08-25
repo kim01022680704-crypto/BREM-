@@ -74,6 +74,42 @@ check('설정없음(신규)도 포함', ranked.includes('newRider'), 'true');
 check('leader 제외', ranked.includes('B'), 'false');
 check('dashboard 제외', ranked.includes('D'), 'false');
 
+console.log('\n[4-b] 팀장은 전부 볼 수 있어야 한다');
+// 팀장이 자기 지역 대시보드에 들어갈 수 있는가 (미노출이면 지역 자체가 안 보인다)
+const REGION_LIST = [{ ...REGION }];
+const leaderRegions = S.filterViewerRegions(
+  withModes,
+  'baemin',
+  { id: 'B', regionBaemin: '남구e' },
+  REGION_LIST
+).map(r => r.key);
+check('팀장(B) 자기 지역 보임', leaderRegions.includes('r1'), 'true');
+
+const hiddenRegions = S.filterViewerRegions(
+  withModes,
+  'baemin',
+  { id: 'C', regionBaemin: '남구e' },
+  REGION_LIST
+).map(r => r.key);
+check('미노출(C) 지역 안 보임 — 의도된 동작', hiddenRegions.includes('r1'), 'false');
+
+const newRiderRegions = S.filterViewerRegions(
+  withModes,
+  'baemin',
+  { id: 'newRider', regionBaemin: '남구e' },
+  REGION_LIST
+).map(r => r.key);
+check('신규 기사(설정없음) 지역 안 보임 — 이번 변경 목적', newRiderRegions.includes('r1'), 'false');
+
+// 팀장이 보는 순위 목록 — 미노출·설정없음까지 전원 포함되어야 한다
+const leaderView = S.filterLeaderViewRankingRiders(withModes, REGION, riders).map(r => r.id);
+check('팀장 시야: 올노출 포함', leaderView.includes('A'), 'true');
+check('팀장 시야: 미노출 포함', leaderView.includes('C'), 'true');
+check('팀장 시야: 전체열람 포함', leaderView.includes('D'), 'true');
+check('팀장 시야: 할당만 포함', leaderView.includes('E'), 'true');
+check('팀장 시야: 설정없음(신규) 포함', leaderView.includes('newRider'), 'true');
+check('팀장 시야: 팀장(본인·다른팀장) 제외', leaderView.includes('B'), 'false');
+
 console.log('\n[5] 클라이언트 기본값이 서버와 같은가');
 const dom = { document: { getElementById: () => null, querySelector: () => null, querySelectorAll: () => [], addEventListener: () => {} } };
 const src = fs.readFileSync(path.join(root, 'js', 'driver-management-admin.js'), 'utf8');

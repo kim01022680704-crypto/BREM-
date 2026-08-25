@@ -1093,6 +1093,8 @@ module.exports = {
     normalizeRiderRegionMode,
     getRiderRegionMode,
     getRiderRegionModeForRegion,
-    filterRankingRiders
+    filterRankingRiders,
+    filterLeaderViewRankingRiders,
+    filterViewerRegions
   }
 };
