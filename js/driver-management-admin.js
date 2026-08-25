@@ -1655,6 +1655,13 @@ const BremDriverManagementAdmin = (function () {
     return Boolean(side[key]?.exposed);
   }
 
+  /**
+   * 설정이 없을 때의 기본 모드 = 미노출. (server/rider-region-dashboard.js 와 같아야 한다)
+   * 신규 등록 기사가 자동으로 기사앱 대시보드에 노출되지 않게 한다.
+   * 미노출은 앱 대시보드만 숨기고 집계·순위에는 그대로 포함된다.
+   */
+  const DEFAULT_DRIVER_REGION_MODE = 'hidden';
+
   /** 기사별 옵션: full=올노출, dashboard=전체열람, metrics=할당만, leader=팀장, hidden=미노출 */
   function normalizeDriverRegionMode(value) {
     const mode = String(value || '').toLowerCase();
@@ -1662,12 +1669,14 @@ const BremDriverManagementAdmin = (function () {
     if (mode === 'metrics' || mode === 'quota' || mode === '할당만') return 'metrics';
     if (mode === 'leader' || mode === 'team_leader' || mode === '팀장') return 'leader';
     if (mode === 'hidden' || mode === 'off' || mode === 'none' || mode === '미노출') return 'hidden';
-    return 'full';
+    // 올노출은 명시값으로 다뤄야 한다. 기본값이 미노출이라 여기서 흘려보내면 안 된다.
+    if (mode === 'full' || mode === 'all' || mode === '올노출') return 'full';
+    return DEFAULT_DRIVER_REGION_MODE;
   }
 
   function getDriverRegionMode(platform, regionKey, driverId) {
     const id = String(driverId || '').trim();
-    if (!id) return 'full';
+    if (!id) return DEFAULT_DRIVER_REGION_MODE;
     const side = state.regionExposure?.[platform] || {};
     const region = regionCatalog().find(item => item.key === regionKey) || null;
     const keys = [regionKey, region?.partnerId, region?.label]
@@ -1680,7 +1689,7 @@ const BremDriverManagementAdmin = (function () {
         return normalizeDriverRegionMode(raw);
       }
     }
-    return 'full';
+    return DEFAULT_DRIVER_REGION_MODE;
   }
 
   async function loadRegionExposure() {

@@ -151,18 +151,27 @@ function listExposedRegions(exposure, platform) {
  * leader=팀장(전원 보드 열람·본인 순위 비노출)
  * hidden=미노출(기사앱 대시보드만 숨김 — 집계·순위·팀장 열람에는 포함)
  */
+/**
+ * 설정이 없을 때의 기본 모드 = 미노출.
+ * 신규 등록 기사가 자동으로 기사앱 대시보드에 노출되지 않게 한다.
+ * (미노출은 "앱 대시보드만 숨김"이고 집계·순위에는 그대로 포함된다 — filterRankingRiders 참고)
+ */
+const DEFAULT_RIDER_REGION_MODE = 'hidden';
+
 function normalizeRiderRegionMode(value) {
   const mode = String(value || '').toLowerCase();
   if (mode === 'dashboard' || mode === 'view' || mode === '전체열람') return 'dashboard';
   if (mode === 'metrics' || mode === 'quota' || mode === '할당만') return 'metrics';
   if (mode === 'leader' || mode === 'team_leader' || mode === '팀장') return 'leader';
   if (mode === 'hidden' || mode === 'off' || mode === 'none' || mode === '미노출') return 'hidden';
-  return 'full';
+  // 올노출은 명시값으로 다뤄야 한다. 기본값이 미노출이라 여기서 흘려보내면 안 된다.
+  if (mode === 'full' || mode === 'all' || mode === '올노출') return 'full';
+  return DEFAULT_RIDER_REGION_MODE;
 }
 
 function getRiderRegionMode(exposure, platform, regionKey, driverId) {
   const id = String(driverId || '').trim();
-  if (!id) return 'full';
+  if (!id) return DEFAULT_RIDER_REGION_MODE;
   const entry = exposure?.[platform]?.[String(regionKey || '').trim()]?.riders?.[id];
   return normalizeRiderRegionMode(entry?.mode);
 }
@@ -170,7 +179,7 @@ function getRiderRegionMode(exposure, platform, regionKey, driverId) {
 /** region 객체 기준으로 모드 조회 (key / partnerId / label 모두 시도) */
 function getRiderRegionModeForRegion(exposure, region, driverId) {
   const id = String(driverId || '').trim();
-  if (!id || !region) return 'full';
+  if (!id || !region) return DEFAULT_RIDER_REGION_MODE;
   const platform = normalizePlatform(region.platform || 'baemin');
   const side = exposure?.[platform] || {};
   const keys = [region.key, region.partnerId, region.label]
@@ -183,7 +192,7 @@ function getRiderRegionModeForRegion(exposure, region, driverId) {
       return normalizeRiderRegionMode(entry.mode);
     }
   }
-  return 'full';
+  return DEFAULT_RIDER_REGION_MODE;
 }
 
 /** 일반 순위에 올릴 기사 — 올노출·할당만·미노출 (전체열람·팀장만 제외)
@@ -993,8 +1002,9 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
       const targets = driverIdsBulk.length ? driverIdsBulk : [driverId];
       const now = new Date().toISOString();
       targets.forEach(id => {
-        if (mode === 'full') {
-          // 기본값이 올노출이므로 명시 full 은 맵에서 지워 용량을 줄인다.
+        if (mode === DEFAULT_RIDER_REGION_MODE) {
+          // 기본값(미노출)은 맵에서 지워 용량을 줄인다. 조회 시 기본값으로 되돌아온다.
+          // ※ 올노출은 반드시 명시 저장해야 한다. 지우면 기본값인 미노출이 되어버린다.
           delete riders[id];
         } else {
           riders[id] = {
@@ -1072,9 +1082,17 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
 
 module.exports = {
   EXPOSURE_KEY,
+  DEFAULT_RIDER_REGION_MODE,
   getRiderRegionDashboard,
   getAdminRegionRanking,
   getAdminRegionCrawlMatch,
   getAdminRegionExposure,
-  saveAdminRegionExposure
+  saveAdminRegionExposure,
+  // 기본값 변경 검증용 (scripts/_test-region-mode-default.js)
+  __test: {
+    normalizeRiderRegionMode,
+    getRiderRegionMode,
+    getRiderRegionModeForRegion,
+    filterRankingRiders
+  }
 };
