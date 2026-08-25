@@ -1624,6 +1624,41 @@ h3 {
   transform: scale(0.98);
 }
 
+/* 신청 처리 중. 회색으로만 죽으면 안 눌린 것처럼 보여 연타를 유발한다. */
+.target-save-btn.is-submitting,
+.target-save-btn.is-submitting:disabled {
+  position: relative;
+  padding-left: 42px;
+  opacity: 1;
+  cursor: progress;
+}
+
+.target-save-btn.is-submitting::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border: 2px solid rgba(0, 0, 0, 0.25);
+  border-top-color: var(--black);
+  border-radius: 50%;
+  animation: target-save-spin 0.7s linear infinite;
+}
+
+@keyframes target-save-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .target-save-btn.is-submitting::before {
+    animation-duration: 2s;
+  }
+}
+
 .target-help {
   margin: 0;
   padding: 14px 22px 20px;

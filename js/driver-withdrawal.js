@@ -295,13 +295,7 @@
     }
     syncPlatformOptions(payload.enrolledPlatforms || {});
     syncMaxUi();
-    if (submitBtn) {
-      const blocked = payload.withdrawalPaused === true || payload.weekFinalized === true;
-      submitBtn.disabled = blocked;
-      submitBtn.textContent = payload.withdrawalPaused
-        ? '정산중엔 출금신청정지'
-        : (payload.weekFinalized ? '주정산 마무리됨' : '출금 신청하기');
-    }
+    applySubmitButtonState();
   }
 
   // 헤드라인 = 실제 출금가능(마이너스 표시) / 입력 max = 신청 가능액(0 이상)
@@ -432,8 +426,19 @@
     });
   }
 
+  // 신청 처리 중에는 버튼을 건드리지 않는다. 재조회가 버튼을 되살리면
+  // 기사는 눌러도 반응이 없는 것으로 보고 연타한다.
+  function applySubmitButtonState() {
+    if (!submitBtn || state.submitting) return;
+    const blocked = state.withdrawalPaused === true || state.weekFinalized === true;
+    submitBtn.disabled = blocked;
+    submitBtn.textContent = state.withdrawalPaused
+      ? '정산중엔 출금신청정지'
+      : (state.weekFinalized ? '주정산 마무리됨' : '출금 신청하기');
+  }
+
   function setUnconfirmedUi(message) {
-    if (submitBtn) {
+    if (submitBtn && !state.submitting) {
       submitBtn.disabled = true;
       submitBtn.textContent = '금액 확인 중…';
     }
@@ -461,7 +466,7 @@
       emptyTextEl.textContent = message || '출금가능금액을 확인하지 못했습니다. 다시 조회해 주세요.';
     }
     if (contentEl) contentEl.hidden = true;
-    if (submitBtn) {
+    if (submitBtn && !state.submitting) {
       submitBtn.disabled = false;
       submitBtn.textContent = '다시 조회';
     }
@@ -557,7 +562,10 @@
 
   form?.addEventListener('submit', event => {
     event.preventDefault();
-    if (state.submitting) return;
+    if (state.submitting) {
+      showToast('출금신청을 처리하는 중입니다. 잠시만 기다려 주세요.');
+      return;
+    }
     const amount = Math.max(0, Math.round(Number(amountInput?.value || 0)));
     const platform = selectedPlatform();
     if (!state.confirmed) {
@@ -596,7 +604,11 @@
     }
     state.submitting = true;
     void (async () => {
-      if (submitBtn) submitBtn.disabled = true;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = '신청 중…';
+        submitBtn.classList.add('is-submitting');
+      }
       try {
         await loadWithdrawal();
         if (!state.confirmed) {
@@ -629,7 +641,8 @@
         await loadWithdrawal();
       } finally {
         state.submitting = false;
-        if (submitBtn) submitBtn.disabled = false;
+        submitBtn?.classList.remove('is-submitting');
+        applySubmitButtonState();
       }
     })();
   });
