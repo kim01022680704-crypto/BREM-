@@ -13342,135 +13342,171 @@ tr.is-week-first td {
 .driver-org-list-crew-table-wrap {
   flex: 1 1 auto;
   min-height: 0;
-  max-height: none;
-  overflow: auto;
+  overflow: hidden;
   margin: 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.02);
+}
+
+.driver-org-list-crew-columns {
+  display: grid;
+  grid-template-columns: repeat(var(--crew-cols, 2), minmax(0, 1fr));
+  gap: 8px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.driver-org-list-crew-column {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .settlement-match-modal--org-crew {
-  padding: 10px;
+  padding: 0;
 }
 
 .settlement-match-modal__dialog--org-crew {
   display: flex;
   flex-direction: column;
-  width: min(1280px, 98vw);
+  width: 100vw;
   max-width: none;
-  height: min(92vh, 960px);
-  max-height: calc(100vh - 20px);
+  height: 100dvh;
+  max-height: 100dvh;
   overflow: hidden;
-  padding: 16px 18px;
+  padding: 8px 10px 10px;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
 }
 
 .driver-org-list-crew-head {
   flex: 0 0 auto;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
+  gap: 4px;
 }
 
 .driver-org-list-crew-head .settlement-match-modal__head-top h3 {
-  font-size: 1.05rem;
+  font-size: 0.98rem;
 }
 
-.driver-org-list-crew-totals {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 8px;
+.driver-org-list-crew-head .direct-inline-stats {
+  margin: 0;
+  font-size: 0.76rem;
 }
 
-.driver-org-list-crew-stat {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.driver-org-list-crew-stat span {
-  font-size: 0.72rem;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.driver-org-list-crew-stat strong {
-  font-size: 0.92rem;
-  font-variant-numeric: tabular-nums;
-  color: #f8fafc;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.driver-org-list-crew-stat--accent {
-  border-color: rgba(251, 191, 36, 0.45);
+.driver-org-list-crew-totals-line {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 8px;
   background: rgba(251, 191, 36, 0.08);
+  color: #fde68a;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  font-weight: 600;
 }
 
-.driver-org-list-crew-stat--accent strong {
+.driver-org-list-crew-totals-line strong {
   color: #fbbf24;
 }
 
 .driver-org-list-crew-table {
-  min-width: 860px;
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .driver-org-list-crew-table th,
 .driver-org-list-crew-table td {
-  padding: 4px 8px;
-  font-size: 0.8rem;
-  line-height: 1.25;
+  padding: 2px 5px;
+  font-size: 0.72rem;
+  line-height: 1.15;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .driver-org-list-crew-table th {
   position: sticky;
   top: 0;
   z-index: 2;
-  font-size: 0.76rem;
+  font-size: 0.68rem;
+  color: var(--yellow);
+  background: #111113;
+  text-align: center;
+  padding: 3px 4px;
 }
 
-.driver-org-list-crew-table td:nth-child(2) {
-  max-width: 180px;
+.driver-org-list-crew-table .crew-name-cell {
+  width: 34%;
+  text-align: left;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.driver-org-list-crew-table .crew-name-cell strong {
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.driver-org-list-crew-table .driver-org-badge--crew {
+  padding: 0 4px;
+  font-size: 0.62rem;
+  line-height: 1.2;
+}
+
+.crew-platform-cell {
+  width: 24%;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.crew-platform-cell__calls,
+.crew-platform-cell__fee {
+  display: block;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.crew-platform-cell__calls {
+  color: #e5e7eb;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.crew-platform-cell__fee {
+  color: #94a3b8;
+  font-size: 0.64rem;
+}
+
+.crew-total-cell {
+  width: 18%;
+  text-align: right;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #f8fafc;
+  font-variant-numeric: tabular-nums;
 }
 
 .settlement-match-modal__dialog--org-crew .settlement-match-actions {
   flex: 0 0 auto;
-  margin-top: 10px;
+  margin-top: 6px;
   padding-top: 0;
 }
 
-.driver-org-list-crew-table tfoot .driver-org-total-row td {
-  position: sticky;
-  bottom: 0;
-  background: var(--black-2);
-  border-top: 2px solid var(--line);
-  font-weight: 700;
-  z-index: 1;
-}
-
-@media (max-width: 1100px) {
-  .driver-org-list-crew-totals {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 720px) {
-  .settlement-match-modal__dialog--org-crew {
-    width: 100%;
-    height: calc(100vh - 16px);
-    max-height: none;
-    border-radius: 14px;
-    padding: 12px;
-  }
-
-  .driver-org-list-crew-totals {
+@media (max-width: 900px) {
+  .driver-org-list-crew-columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .driver-org-list-crew-columns {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .driver-org-list-crew-column {
+    overflow: visible;
   }
 }
 

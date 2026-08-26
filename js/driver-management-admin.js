@@ -1077,13 +1077,52 @@ const BremDriverManagementAdmin = (function () {
     state.orgListModalRows = [];
   }
 
+  function splitCrewRowsForDisplay(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const count = list.length;
+    if (!count) return { colCount: 1, chunks: [[]] };
+    const vh = window.innerHeight || 800;
+    const reserved = 150;
+    const rowPx = 20;
+    const maxRowsOneCol = Math.max(12, Math.floor((vh - reserved) / rowPx));
+    let colCount = Math.max(1, Math.ceil(count / maxRowsOneCol));
+    if (count > 36) colCount = Math.max(colCount, 4);
+    else if (count > 24) colCount = Math.max(colCount, 3);
+    else if (count > 12) colCount = Math.max(colCount, 2);
+    colCount = Math.min(4, colCount);
+    const chunkSize = Math.ceil(count / colCount);
+    const chunks = [];
+    for (let i = 0; i < count; i += chunkSize) {
+      chunks.push(list.slice(i, i + chunkSize));
+    }
+    return { colCount: chunks.length, chunks };
+  }
+
+  function renderCrewPlatformCell(calls, fee) {
+    return `<td class="crew-platform-cell">
+      <span class="crew-platform-cell__calls">${formatNumber(calls)}</span>
+      <span class="crew-platform-cell__fee">${formatNumber(fee)}</span>
+    </td>`;
+  }
+
+  function renderCrewDriverRowHtml(row) {
+    return `
+      <tr>
+        <td class="crew-name-cell">
+          <strong>${escapeHtml(row.name)}</strong>${row.isCrew ? ' <span class="driver-org-badge driver-org-badge--crew">장</span>' : ''}
+        </td>
+        ${renderCrewPlatformCell(row.coupangCalls, row.coupangFee)}
+        ${renderCrewPlatformCell(row.baeminCalls, row.baeminFee)}
+        <td class="crew-total-cell weekly-amount-cell">${formatNumber(row.totalFee)}</td>
+      </tr>`;
+  }
+
   function renderOrgListCrewModal() {
     const title = $('#driverOrgListCrewTitle');
     const summary = $('#driverOrgListCrewSummary');
     const totalsEl = $('#driverOrgListCrewTotals');
-    const tbody = $('#driverOrgListCrewRows');
-    const tfoot = $('#driverOrgListCrewFoot');
-    if (!tbody) return;
+    const columnsRoot = $('#driverOrgListCrewColumns');
+    if (!columnsRoot) return;
     loadOrg();
     const node = state.org.nodes.find(item => item.id === state.orgListModalNodeId);
     if (!node) {
@@ -1111,43 +1150,31 @@ const BremDriverManagementAdmin = (function () {
     const totalCalls = totalCoupangCalls + totalBaeminCalls;
     const totalFee = totalCoupangFee + totalBaeminFee;
     if (summary) {
-      summary.textContent = `${formatWeekRange(week)} · 하위 박스 포함`;
+      summary.textContent = `${formatWeekRange(week)} · 하위 박스 포함 · 쿠팡=콜/배달료 · 배민=콜/배달료`;
     }
     if (totalsEl) {
-      totalsEl.innerHTML = `
-        <div class="driver-org-list-crew-stat"><span>기사</span><strong>${formatNumber(rows.length)}명</strong></div>
-        <div class="driver-org-list-crew-stat"><span>쿠팡콜</span><strong>${formatNumber(totalCoupangCalls)}</strong></div>
-        <div class="driver-org-list-crew-stat"><span>배민콜</span><strong>${formatNumber(totalBaeminCalls)}</strong></div>
-        <div class="driver-org-list-crew-stat"><span>콜합계</span><strong>${formatNumber(totalCalls)}</strong></div>
-        <div class="driver-org-list-crew-stat"><span>쿠팡배달료</span><strong>${formatNumber(totalCoupangFee)}원</strong></div>
-        <div class="driver-org-list-crew-stat"><span>배민배달료</span><strong>${formatNumber(totalBaeminFee)}원</strong></div>
-        <div class="driver-org-list-crew-stat driver-org-list-crew-stat--accent"><span>배달료합계</span><strong>${formatNumber(totalFee)}원</strong></div>`;
+      totalsEl.innerHTML = `기사 <strong>${formatNumber(rows.length)}명</strong> · 쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜합계 ${formatNumber(totalCalls)} · 쿠팡배달료 ${formatNumber(totalCoupangFee)}원 · 배민배달료 ${formatNumber(totalBaeminFee)}원 · 배달료합계 <strong>${formatNumber(totalFee)}원</strong>`;
     }
-    tbody.innerHTML = rows.length
-      ? rows.map(row => `
-        <tr>
-          <td><strong>${escapeHtml(row.name)}</strong>${row.isCrew ? ' <span class="driver-org-badge driver-org-badge--crew">크루장</span>' : ''}</td>
-          <td>${escapeHtml(row.boxLabel)}</td>
-          <td class="weekly-amount-cell">${formatNumber(row.coupangCalls)}</td>
-          <td class="weekly-amount-cell">${formatNumber(row.baeminCalls)}</td>
-          <td class="weekly-amount-cell">${formatNumber(row.coupangFee)}원</td>
-          <td class="weekly-amount-cell">${formatNumber(row.baeminFee)}원</td>
-          <td class="weekly-amount-cell">${formatNumber(row.totalFee)}원</td>
-        </tr>`).join('')
-      : '<tr><td colspan="7" class="empty">소속 기사가 없습니다.</td></tr>';
-    if (tfoot) {
-      tfoot.innerHTML = rows.length
-        ? `<tr class="driver-org-total-row">
-            <td class="driver-org-total-label">합계 (${formatNumber(rows.length)}명)</td>
-            <td></td>
-            <td class="weekly-amount-cell">${formatNumber(totalCoupangCalls)}</td>
-            <td class="weekly-amount-cell">${formatNumber(totalBaeminCalls)}</td>
-            <td class="weekly-amount-cell">${formatNumber(totalCoupangFee)}원</td>
-            <td class="weekly-amount-cell">${formatNumber(totalBaeminFee)}원</td>
-            <td class="weekly-amount-cell">${formatNumber(totalCoupangFee + totalBaeminFee)}원</td>
-          </tr>`
-        : '';
-    }
+    const split = splitCrewRowsForDisplay(rows);
+    columnsRoot.style.setProperty('--crew-cols', String(split.colCount));
+    columnsRoot.innerHTML = !rows.length
+      ? '<p class="driver-org-list__empty">소속 기사가 없습니다.</p>'
+      : split.chunks.map(chunk => `
+        <div class="driver-org-list-crew-column">
+          <table class="driver-org-list-crew-table">
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>쿠팡</th>
+                <th>배민</th>
+                <th>합계</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${chunk.map(row => renderCrewDriverRowHtml(row)).join('')}
+            </tbody>
+          </table>
+        </div>`).join('');
   }
 
   async function openOrgListCrewModal(nodeId) {
@@ -3710,6 +3737,11 @@ const BremDriverManagementAdmin = (function () {
     $('#driverOrgListWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
     $('#driverOrgListWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     $('#driverOrgListCrewExportBtn')?.addEventListener('click', () => exportOrgListCrewExcel());
+    window.addEventListener('resize', () => {
+      if (!state.orgListModalNodeId) return;
+      if ($('#driverOrgListCrewModal')?.hidden) return;
+      renderOrgListCrewModal();
+    });
     $('#driverOrgListRoot')?.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       const row = event.target.closest('[data-org-list-crew]');
