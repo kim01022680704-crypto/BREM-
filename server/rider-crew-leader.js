@@ -229,6 +229,39 @@ async function loadCallCounts(supabase, driverIds, weekStart, weekEnd, today) {
   return { todayMap, weekMap, weekBaemin, weekCoupang, todayBaemin, todayCoupang };
 }
 
+/** 정산주 admin_rejection_rates — 배민=수락율, 쿠팡=거절율 (기사앱·관리자와 동일) */
+async function loadPlatformRatesForDrivers(supabase, driverIds, weekStart) {
+  const baemin = new Map();
+  const coupang = new Map();
+  const ids = [...new Set((driverIds || []).map(id => String(id || '').trim()).filter(Boolean))];
+  const week = String(weekStart || '').slice(0, 10);
+  if (!ids.length || !week) return { baemin, coupang };
+
+  for (let i = 0; i < ids.length; i += 80) {
+    const chunk = ids.slice(i, i + 80);
+    const { data, error } = await supabase
+      .from('admin_rejection_rates')
+      .select('driver_id,platform,rate,stats')
+      .in('driver_id', chunk)
+      .eq('week_start', week)
+      .in('platform', ['baemin', 'coupang']);
+    if (error) throw error;
+    (data || []).forEach(row => {
+      const id = String(row.driver_id || '').trim();
+      if (!id) return;
+      const platform = String(row.platform || '').toLowerCase();
+      const stats = row.stats && typeof row.stats === 'object' ? row.stats : {};
+      if (stats.unmeasured) return;
+      const rate = Number(row.rate);
+      if (!Number.isFinite(rate)) return;
+      const rounded = Math.round(rate * 10) / 10;
+      if (platform === 'baemin') baemin.set(id, rounded);
+      if (platform === 'coupang') coupang.set(id, rounded);
+    });
+  }
+  return { baemin, coupang };
+}
+
 /**
  * 배민 배달현황 스냅샷에서 운행중·오늘완료콜 매칭
  */
@@ -438,9 +471,10 @@ async function getCrewLeaderDetail(accessToken, options = {}) {
   const boxMap = collectSubtreeDriverBoxMap(chart, box);
   const leaderDriverId = String(box.leaderRef?.kind === 'driver' ? box.leaderRef.id : '').trim();
 
-  const [riders, statsMap] = await Promise.all([
+  const [riders, statsMap, rates] = await Promise.all([
     loadRidersByIds(supabase, memberIds),
-    loadWeekStatsForDrivers(supabase, memberIds, weekStart, weekEnd)
+    loadWeekStatsForDrivers(supabase, memberIds, weekStart, weekEnd),
+    loadPlatformRatesForDrivers(supabase, memberIds, weekStart)
   ]);
 
   const members = riders.map(rider => {
@@ -455,6 +489,8 @@ async function getCrewLeaderDetail(accessToken, options = {}) {
       boxLabel: boxLabels ? [...boxLabels].sort((a, b) => a.localeCompare(b, 'ko')).join(', ') : box.label,
       isSelf: id === riderId,
       isCrew: Boolean(leaderDriverId && id === leaderDriverId),
+      baeminAcceptRate: rates.baemin.has(id) ? rates.baemin.get(id) : null,
+      coupangRejectRate: rates.coupang.has(id) ? rates.coupang.get(id) : null,
       coupangCalls: Math.round(Number(stats.coupangCalls || 0)),
       baeminCalls: Math.round(Number(stats.baeminCalls || 0)),
       coupangFee,
@@ -541,9 +577,10 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
   const today = formatKstDateKey();
 
   const riders = await loadRidersByIds(supabase, memberIds);
-  const [calls, liveMap] = await Promise.all([
+  const [calls, liveMap, rates] = await Promise.all([
     loadCallCounts(supabase, memberIds, weekStart, weekEnd, today),
-    loadBaeminLiveByRiders(supabase, riders)
+    loadBaeminLiveByRiders(supabase, riders),
+    loadPlatformRatesForDrivers(supabase, memberIds, weekStart)
   ]);
 
   const members = riders.map(rider => {
@@ -565,6 +602,8 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
       name: String(rider.name || '').trim() || '이름 없음',
       isSelf: id === riderId,
       operating,
+      baeminAcceptRate: rates.baemin.has(id) ? rates.baemin.get(id) : null,
+      coupangRejectRate: rates.coupang.has(id) ? rates.coupang.get(id) : null,
       todayCalls: todayBaemin,
       todayBaemin,
       todayCoupang,

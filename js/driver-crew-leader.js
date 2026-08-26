@@ -113,6 +113,19 @@
     return '<span class="driver-crew-tag driver-crew-tag--unk"><span class="driver-crew-tag__dot" aria-hidden="true"></span>미확인</span>';
   }
 
+  function formatRatePct(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    return Math.round(n * 10) / 10;
+  }
+
+  function rateCellHtml(value, platform) {
+    const rate = formatRatePct(value);
+    const cls = platform === 'baemin' ? 'driver-crew-rate--baemin' : 'driver-crew-rate--coupang';
+    if (rate == null) return '<td class="driver-crew-rate is-empty">-</td>';
+    return `<td class="driver-crew-rate ${cls}">${rate}%</td>`;
+  }
+
   function notifyFeatureVisibility(visible) {
     document.dispatchEvent(new CustomEvent('brem-driver-feature-visibility', {
       detail: { kind: 'crew', visible: Boolean(visible) }
@@ -187,18 +200,20 @@
               </div>
             </td>
             <td class="driver-crew-box">${escapeHtml(member.boxLabel || '-')}</td>
+            ${rateCellHtml(member.baeminAcceptRate, 'baemin')}
+            ${rateCellHtml(member.coupangRejectRate, 'coupang')}
             <td class="driver-crew-num">${formatNumber(member.coupangCalls)}</td>
             <td class="driver-crew-num">${formatNumber(member.baeminCalls)}</td>
             <td class="driver-crew-num">${formatNumber(member.coupangFee)}</td>
             <td class="driver-crew-num">${formatNumber(member.baeminFee)}</td>
             <td class="driver-crew-num driver-crew-num--total">${formatNumber(member.totalFee)}</td>
           </tr>`).join('')
-        : '<tr><td colspan="7" class="empty">소속 기사가 없습니다.</td></tr>';
+        : '<tr><td colspan="9" class="empty">소속 기사가 없습니다.</td></tr>';
     }
     if (detailFootEl) {
       detailFootEl.innerHTML = members.length
         ? `<tr class="driver-crew-total-row">
-            <td colspan="2">합계 (${formatNumber(members.length)}명)</td>
+            <td colspan="4">합계 (${formatNumber(members.length)}명)</td>
             <td class="driver-crew-num">${formatNumber(summary.coupangCalls)}</td>
             <td class="driver-crew-num">${formatNumber(summary.baeminCalls)}</td>
             <td class="driver-crew-num">${formatNumber(summary.coupangFee)}</td>
@@ -255,12 +270,14 @@
               </div>
             </td>
             <td class="driver-crew-ops">${operatingTagHtml(member.operating)}</td>
+            ${rateCellHtml(member.baeminAcceptRate, 'baemin')}
+            ${rateCellHtml(member.coupangRejectRate, 'coupang')}
             <td class="driver-crew-num">${formatNumber(member.todayBaemin ?? member.todayCalls)}</td>
             <td class="driver-crew-num">${formatNumber(member.weekBaemin)}</td>
             <td class="driver-crew-num">${formatNumber(member.weekCoupang)}</td>
             <td class="driver-crew-num">${formatNumber(member.weekCalls)}</td>
           </tr>`).join('')
-        : '<tr><td colspan="6" class="empty">소속 기사가 없습니다.</td></tr>';
+        : '<tr><td colspan="8" class="empty">소속 기사가 없습니다.</td></tr>';
     }
   }
 

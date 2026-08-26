@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260827crewcompact1">
+  <link rel="stylesheet" href="css/driver.css?v=20260827crewrate1">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -401,6 +401,8 @@
                   <tr>
                     <th>이름</th>
                     <th>운행</th>
+                    <th title="배민 주간 수락율">배민수락</th>
+                    <th title="쿠팡 주간 거절율">쿠팡거절</th>
                     <th>오늘배민</th>
                     <th>주간배민</th>
                     <th>주간쿠팡</th>
@@ -409,7 +411,7 @@
                 </thead>
                 <tbody id="driverCrewLeaderRows"></tbody>
               </table>
-              <p class="driver-crew-footnote">운행·오늘배민은 배민 배달현황 크롤 기준입니다. 쿠팡은 실시간 불가 · 주간콜만 표시. 배달료는 표시되지 않습니다.</p>
+              <p class="driver-crew-footnote">운행·오늘배민은 배민 배달현황 크롤 기준 · 배민수락/쿠팡거절은 선택 정산주(수~화) 주간율 · 쿠팡 실시간 불가</p>
             </div>
 
             <div class="driver-crew-table-wrap" id="driverCrewLeaderDetailContent" hidden>
@@ -419,6 +421,8 @@
                   <tr>
                     <th>이름</th>
                     <th>소속</th>
+                    <th title="배민 주간 수락율">배민수락</th>
+                    <th title="쿠팡 주간 거절율">쿠팡거절</th>
                     <th>쿠팡콜</th>
                     <th>배민콜</th>
                     <th>쿠팡배달료</th>
@@ -429,7 +433,7 @@
                 <tbody id="driverCrewLeaderDetailRows"></tbody>
                 <tfoot id="driverCrewLeaderDetailFoot"></tfoot>
               </table>
-              <p class="driver-crew-footnote">관리자 「조직도 정리」와 동일한 정산주(수~화) · 일정산·콜수 기준입니다.</p>
+              <p class="driver-crew-footnote">관리자 「조직도 정리」와 동일한 정산주(수~화) · 콜수·배달료·배민수락/쿠팡거절율</p>
             </div>
           </article>
 
@@ -1057,7 +1061,7 @@
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260816inq1"></script>
   <script src="js/driver-region-dashboard.js?v=20260818slot6"></script>
-  <script src="js/driver-crew-leader.js?v=20260826crewdetail3"></script>
+  <script src="js/driver-crew-leader.js?v=20260827crewrate1"></script>
   <script src="js/driver-withdrawal.js?v=20260826wdmax2"></script>
   <script src="js/driver-urgent-missions.js?v=20260816um2"></script>
   <script src="js/driver-inquiries.js?v=20260817inq7"></script>

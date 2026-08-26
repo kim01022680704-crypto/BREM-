@@ -3188,6 +3188,30 @@ button.calendar-day:hover {
   padding-right: 4px;
 }
 
+.driver-crew-rate {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  width: 1%;
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
+.driver-crew-rate--baemin {
+  color: #1d4ed8;
+}
+
+.driver-crew-rate--coupang {
+  color: #ea580c;
+}
+
+.driver-crew-rate.is-empty {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
 .driver-crew-table tr.is-self td {
   background: #fffbeb;
 }
