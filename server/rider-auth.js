@@ -1694,5 +1694,7 @@ module.exports = {
   provisionRiderAuthAccount,
   readRiderSecrets,
   invalidateCachedRiderMe,
-  makeRiderLoginId
+  makeRiderLoginId,
+  loadRiderBaeminOps,
+  loadRiderCoupangOps
 };
