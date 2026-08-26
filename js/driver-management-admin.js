@@ -2388,7 +2388,7 @@ const BremDriverManagementAdmin = (function () {
       $('#driverRegionRealtimeList'),
       realtime,
       realtimeDisabled
-        ? (payload.realtimeRankingReason || '쿠팡은 실시간 기사별 순위를 집계하지 않습니다.')
+        ? (payload.realtimeRankingReason || '실시간 순위를 불러오지 못했습니다.')
         : '집계된 순위가 없습니다.'
     );
     renderRankList($('#driverRegionWeeklyList'), weekly);
@@ -2411,7 +2411,7 @@ const BremDriverManagementAdmin = (function () {
     if (realtimeNote) {
       if (realtimeDisabled) {
         realtimeNote.textContent = payload.realtimeRankingReason
-          || '쿠팡 실시간 콜수는 0.8 가중치라 기사별 순위가 불가합니다.';
+          || '실시간 순위를 불러오지 못했습니다.';
       } else {
         const note = alignRegionRegisteredNote(
           metrics.sourceNote || '',
@@ -2424,9 +2424,10 @@ const BremDriverManagementAdmin = (function () {
       }
     }
     if (weeklyNote) {
+      const weekBasis = '콜수입력·없으면 일정산 업로드 콜수';
       weeklyNote.textContent = weekly.length
-        ? `${formatWeekRange(payload.weekStart)} · 지역 등록 기사 · 콜수 입력 기준`
-        : `${formatWeekRange(payload.weekStart)} · 이 지역 등록 기사의 콜수 입력이 없으면 주간 순위가 비어 있습니다.`;
+        ? `${formatWeekRange(payload.weekStart)} · 지역 등록 기사 · ${weekBasis}`
+        : `${formatWeekRange(payload.weekStart)} · 이 지역 등록 기사의 ${weekBasis}가 없으면 주간 순위가 비어 있습니다.`;
     }
   }
 

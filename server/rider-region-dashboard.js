@@ -444,6 +444,87 @@ async function loadRidersForRegion(supabase, region) {
     .filter(rider => riderMatchesRegion(rider, region));
 }
 
+/**
+ * 주간 콜수 — admin_calls 우선, 없으면 일정산(daily_settlements) order_count (기사지역관리·조직도와 동일)
+ */
+async function loadWeekCallTotalsForDrivers(supabase, driverIds, weekStart, weekEnd, platform) {
+  const ids = [...new Set((driverIds || []).map(id => String(id || '').trim()).filter(Boolean))];
+  const plat = normalizePlatform(platform);
+  const totals = new Map();
+  if (!ids.length) return totals;
+
+  const touch = (driverId) => {
+    if (!totals.has(driverId)) {
+      totals.set(driverId, { callCount: 0, orderByDay: new Map() });
+    }
+    return totals.get(driverId);
+  };
+
+  for (let i = 0; i < ids.length; i += 80) {
+    const chunk = ids.slice(i, i + 80);
+    const { data: callRows, error: callError } = await supabase
+      .from('admin_calls')
+      .select('driver_id,date,platform,count')
+      .in('driver_id', chunk)
+      .eq('platform', plat)
+      .gte('date', weekStart)
+      .lte('date', weekEnd);
+    if (callError) throw callError;
+    (callRows || []).forEach(row => {
+      const id = String(row.driver_id || '').trim();
+      if (!id) return;
+      touch(id).callCount += Math.max(0, Math.round(Number(row.count || 0)));
+    });
+
+    const { data: settlementRows, error: settlementError } = await supabase
+      .from('daily_settlements')
+      .select('driver_id,period,platform,order_count,applied_at')
+      .in('driver_id', chunk)
+      .eq('platform', plat)
+      .gte('period', weekStart)
+      .lte('period', weekEnd);
+    if (settlementError) throw settlementError;
+    (settlementRows || []).forEach(row => {
+      const id = String(row.driver_id || '').trim();
+      if (!id) return;
+      const day = String(row.period || '').slice(0, 10);
+      if (!day) return;
+      const bucket = touch(id);
+      const appliedAt = String(row.applied_at || '');
+      const orderCount = Math.max(0, Math.round(Number(row.order_count || 0)));
+      const prev = bucket.orderByDay.get(day);
+      if (!prev || appliedAt >= prev.appliedAt) {
+        bucket.orderByDay.set(day, { orderCount, appliedAt });
+      }
+    });
+  }
+
+  ids.forEach(id => {
+    const row = totals.get(id);
+    if (!row) {
+      totals.set(id, 0);
+      return;
+    }
+    let callCount = row.callCount;
+    if (callCount <= 0) {
+      row.orderByDay.forEach(day => {
+        callCount += day.orderCount;
+      });
+    }
+    totals.set(id, callCount);
+  });
+
+  return totals;
+}
+
+/** 쿠팡 rider_daily completeCount — 0.8/1 가중치 합(소수). 정수만 있으면 ×0.8 */
+function coupangRealtimeCallUnits(complete) {
+  const n = Math.max(0, Number(complete) || 0);
+  if (n <= 0) return 0;
+  if (!Number.isInteger(n)) return Math.round(n * 10) / 10;
+  return Math.round(n * 0.8 * 10) / 10;
+}
+
 async function buildWeeklyRanking(supabase, region, weekStart, weekEnd, options = {}) {
   const mask = options.maskNames !== false;
   const riders = Array.isArray(options.rankingRiders)
@@ -453,30 +534,19 @@ async function buildWeeklyRanking(supabase, region, weekStart, weekEnd, options 
       : await loadRidersForRegion(supabase, region));
   if (!riders.length) return [];
   const riderIds = riders.map(r => r.id);
-  // PostgREST .in() URL 한도 대비 청크
-  const totals = new Map();
-  for (let i = 0; i < riderIds.length; i += 80) {
-    const chunk = riderIds.slice(i, i + 80);
-    const { data, error } = await supabase
-      .from('admin_calls')
-      .select('driver_id,date,platform,count')
-      .in('driver_id', chunk)
-      .eq('platform', region.platform)
-      .gte('date', weekStart)
-      .lte('date', weekEnd);
-    if (error) throw error;
-    (data || []).forEach(row => {
-      const id = String(row.driver_id || '');
-      if (!id) return;
-      totals.set(id, (totals.get(id) || 0) + Math.max(0, Math.round(Number(row.count || 0))));
-    });
-  }
+  const totals = await loadWeekCallTotalsForDrivers(
+    supabase,
+    riderIds,
+    weekStart,
+    weekEnd,
+    region.platform
+  );
 
   return riders
     .map(rider => ({
       driverId: rider.id,
       name: maskName(rider.name, mask),
-      callCount: totals.get(rider.id) || 0
+      callCount: totals.get(String(rider.id)) || 0
     }))
     .filter(row => row.callCount > 0)
     .sort((a, b) => b.callCount - a.callCount || a.name.localeCompare(b.name, 'ko'))
@@ -758,8 +828,7 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
       coupangId: rider.raw_data?.coupangId || rider.raw_data?.coupangLoginKey || ''
     })));
     const rankingIds = new Set(rankingRiders.map(rider => rider.id));
-    const totals = new Map();
-    const names = new Map();
+    const rankingByDriver = new Map();
 
     filteredDaily.forEach(row => {
       const parsed = row.parsed_json || {};
@@ -768,18 +837,19 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
         phone: row.phone_number || parsed.phone
       }, lookup);
       if (!driver || !rankingIds.has(driver.id)) return;
-      const complete = metricsFromParsed(parsed).complete;
+      const complete = coupangRealtimeCallUnits(metricsFromParsed(parsed).complete);
       if (complete <= 0) return;
-      totals.set(driver.id, (totals.get(driver.id) || 0) + complete);
-      names.set(driver.id, driver.name || parsed.name || '');
+      const prev = rankingByDriver.get(driver.id);
+      if (!prev || complete > prev.callCount) {
+        rankingByDriver.set(driver.id, {
+          driverId: driver.id,
+          name: maskName(driver.name || parsed.name || '-', mask),
+          callCount: complete
+        });
+      }
     });
 
-    realtimeRanking = [...totals.entries()]
-      .map(([driverId, callCount]) => ({
-        driverId,
-        name: maskName(names.get(driverId) || '-', mask),
-        callCount: Math.round(callCount * 10) / 10
-      }))
+    realtimeRanking = [...rankingByDriver.values()]
       .filter(row => row.callCount > 0)
       .sort((a, b) => b.callCount - a.callCount || a.name.localeCompare(b.name, 'ko'))
       .slice(0, 10)
@@ -787,9 +857,9 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
   }
 
   const metricsNote = Object.keys(peaksByType).length
-    ? `쿠팡 피크타임 현황 · 운행중 ${operating}명 · 실시간순위=라이더일일(rider_daily) 크롤`
+    ? `쿠팡 피크타임 현황 · 운행중 ${operating}명 · 실시간순위=rider_daily 0.8가중치`
     : metricsSource
-      ? `쿠팡 ${metricsSource} ${coupangProgressLabel(slotComplete, assigned)} · 운행중 ${operating}명 · 실시간순위=라이더일일(rider_daily) 크롤`
+      ? `쿠팡 ${metricsSource} ${coupangProgressLabel(slotComplete, assigned)} · 운행중 ${operating}명 · 실시간순위=rider_daily 0.8가중치`
       : '오늘 쿠팡 피크타임·지역요약 크롤링 데이터가 없습니다';
 
   const peaks = Object.fromEntries(PEAK_ORDER.map(pt => {

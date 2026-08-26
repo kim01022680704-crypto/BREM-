@@ -321,13 +321,12 @@
       return;
     }
 
-    const realtimeDisabled = result?.realtimeRankingDisabled === true
-      || result?.platform === 'coupang';
+    const realtimeDisabled = result?.realtimeRankingDisabled === true;
     renderRanking(
       realtimeList,
       realtimeDisabled ? [] : (result?.realtimeRanking || []),
       realtimeDisabled
-        ? (result.realtimeRankingReason || '쿠팡은 실시간 기사별 순위를 집계하지 않습니다. (0.8 가중치)')
+        ? (result.realtimeRankingReason || '실시간 순위를 불러오지 못했습니다.')
         : '집계된 콜수가 없습니다.'
     );
     renderRanking(weeklyList, result?.weeklyRanking || []);
