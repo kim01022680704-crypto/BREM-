@@ -2201,6 +2201,88 @@ const BremDriverManagementAdmin = (function () {
     }, 900);
   }
 
+  const COUPANG_PEAK_ORDER = ['MORNING', 'LUNCH', 'POST_LUNCH', 'DINNER', 'POST_DINNER'];
+  const COUPANG_PEAK_LABEL = {
+    MORNING: '아침',
+    LUNCH: '점심피크',
+    POST_LUNCH: '점심논피크',
+    DINNER: '저녁피크',
+    POST_DINNER: '저녁논피크'
+  };
+  const COUPANG_PEAK_LABEL_SHORT = {
+    MORNING: '아침',
+    LUNCH: '점피',
+    POST_LUNCH: '점논',
+    DINNER: '저피',
+    POST_DINNER: '저논'
+  };
+
+  function formatCoupangQuotaNumber(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '0';
+    const rounded = Math.round(n * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  }
+
+  function coupangPeakHasData(peaks) {
+    if (!peaks || typeof peaks !== 'object') return false;
+    return COUPANG_PEAK_ORDER.some(pt => {
+      const row = peaks[pt] || {};
+      return Number(row.goal || 0) > 0 || Number(row.completed || 0) > 0;
+    });
+  }
+
+  function renderCoupangPeakQuotaCell(completed, goal) {
+    const done = Number(completed) || 0;
+    const target = Number(goal) || 0;
+    if (!target && !done) {
+      return '<td class="dashboard-baemin-qcell"><span class="form-help">-</span></td>';
+    }
+    const achieved = target > 0 ? done >= target : done > 0;
+    const statusClass = achieved ? 'baemin-quota-tag--achieved' : 'baemin-quota-tag--missed';
+    return `<td class="dashboard-baemin-qcell">
+      <div class="dashboard-baemin-qcell__stack">
+        <span class="dashboard-baemin-qcell__ratio">${escapeHtml(formatCoupangQuotaNumber(done))}/${escapeHtml(formatCoupangQuotaNumber(target))}</span>
+        <span class="dashboard-baemin-qcell__meta">
+          <span class="baemin-quota-tag ${statusClass}">${achieved ? '달성' : '미달'}</span>
+        </span>
+      </div>
+    </td>`;
+  }
+
+  function renderCoupangPeakTable(metrics, collectDate = '') {
+    const peaks = metrics?.peaks || {};
+    const operating = Number(metrics?.operating || 0);
+    const peakHeads = COUPANG_PEAK_ORDER.map(pt =>
+      `<th title="${escapeHtml(COUPANG_PEAK_LABEL[pt] || pt)}">${escapeHtml(COUPANG_PEAK_LABEL_SHORT[pt] || pt)}</th>`
+    ).join('');
+    const peakCells = COUPANG_PEAK_ORDER.map(pt => {
+      const row = peaks[pt] || { goal: 0, completed: 0 };
+      return renderCoupangPeakQuotaCell(row.completed, row.goal);
+    }).join('');
+    const dateLabel = collectDate ? ` · ${collectDate}` : '';
+    return `<div class="driver-region-peak-table__head">
+        <strong>피크타임별 할당</strong>
+        <span class="form-help">쿠팡 대시보드와 동일${escapeHtml(dateLabel)}</span>
+      </div>
+      <div class="dashboard-baemin-table-wrap dashboard-coupang-table-wrap driver-region-peak-table">
+        <table class="admin-table dashboard-baemin-compact-table dashboard-coupang-compact-table">
+          <thead>
+            <tr>
+              <th>운행</th>
+              ${peakHeads}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>${escapeHtml(formatNumber(operating))}</td>
+              ${peakCells}
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+  }
+
   function clearRegionRankingUi(message = '') {
     const panels = $('#driverRegionRankPanels');
     if (panels) panels.hidden = true;
@@ -2220,6 +2302,11 @@ const BremDriverManagementAdmin = (function () {
     if (weeklyNote) weeklyNote.textContent = '';
     if (metricsEl) metricsEl.hidden = true;
     if (metricsNote) metricsNote.textContent = '';
+    const peakTableWrap = $('#driverRegionPeakTableWrap');
+    if (peakTableWrap) {
+      peakTableWrap.hidden = true;
+      peakTableWrap.innerHTML = '';
+    }
     ['driverRegionMetricAssigned', 'driverRegionMetricOperating', 'driverRegionMetricRemaining']
       .forEach(id => {
         const el = $(`#${id}`);
@@ -2253,17 +2340,32 @@ const BremDriverManagementAdmin = (function () {
     const metrics = payload?.metrics || {};
     const metricsEl = $('#driverRegionLiveMetrics');
     const metricsNote = $('#driverRegionMetricsNote');
-    const hasMetrics = Number(metrics.assigned || 0) > 0
+    const peakTableWrap = $('#driverRegionPeakTableWrap');
+    const platform = state.regionPlatform === 'coupang' ? 'coupang' : 'baemin';
+    const showCoupangPeakTable = platform === 'coupang' && coupangPeakHasData(metrics.peaks);
+
+    if (peakTableWrap) {
+      if (showCoupangPeakTable) {
+        peakTableWrap.hidden = false;
+        peakTableWrap.innerHTML = renderCoupangPeakTable(metrics, payload?.collectDate || payload?.today || '');
+      } else {
+        peakTableWrap.hidden = true;
+        peakTableWrap.innerHTML = '';
+      }
+    }
+
+    const hasMetrics = showCoupangPeakTable
+      || Number(metrics.assigned || 0) > 0
       || Number(metrics.operating || 0) > 0
       || Number(metrics.remaining || 0) > 0
       || Boolean(metrics.sourceNote)
       || typeof metrics.progressLabel === 'string';
     if (metricsEl) {
-      metricsEl.hidden = !hasMetrics;
+      metricsEl.hidden = !hasMetrics || showCoupangPeakTable;
       const a = $('#driverRegionMetricAssigned');
       const o = $('#driverRegionMetricOperating');
       const r = $('#driverRegionMetricRemaining');
-      // 배민: 콜달성과 동일하게 완료/할당. 쿠팡 등은 assigned 숫자만.
+      // 배민: 콜달성과 동일하게 완료/할당. 쿠팡 피크표는 별도 테이블.
       const assignedLabel = $('#driverRegionMetricAssignedLabel');
       const hasProgress = typeof metrics.progressLabel === 'string';
       if (assignedLabel) assignedLabel.textContent = hasProgress ? '완료/할당' : '할당';
@@ -2388,6 +2490,8 @@ const BremDriverManagementAdmin = (function () {
       const merged = {
         ...basePayload,
         today: payload.today || today,
+        collectDate: payload.collectDate || payload.today || today,
+        registeredCount: payload.registeredCount,
         metrics: payload.metrics || {},
         realtimeRanking: payload.realtimeRankingDisabled ? [] : (payload.realtimeRanking || []),
         realtimeRankingDisabled: payload.realtimeRankingDisabled === true,

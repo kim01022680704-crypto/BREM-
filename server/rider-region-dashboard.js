@@ -1,6 +1,6 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { getRiderMe } = require('./rider-auth');
-const { computeSlotTargets, SLOT_LABELS, currentBaeminSlotKey } = require('./baemin-quota');
+const { computeSlotTargets, SLOT_LABELS, currentBaeminSlotKey, kstHour } = require('./baemin-quota');
 const { readWeekdayQuotaMatrix } = require('./baemin-weekday-quota');
 const { readPartnerSetCountMap, normalizeSetCount } = require('./baemin-partner-set-count');
 const {
@@ -10,7 +10,9 @@ const {
 } = require('./coupang-erp-sync');
 const {
   shortCoupangRegionLabel,
-  coupangVendorMatchesRegion
+  coupangVendorMatchesRegion,
+  PEAK_LABELS,
+  PEAK_ORDER
 } = require('./coupang-collect-sources');
 
 const shortCoupangRegion = shortCoupangRegionLabel;
@@ -40,6 +42,30 @@ function formatKstDateKey(date = new Date()) {
     month: '2-digit',
     day: '2-digit'
   }).format(date);
+}
+
+/** 쿠팡 현재 피크 슬롯 (KST). 0~6시는 전 영업일 마지막 피크(저녁논피크) */
+function currentCoupangPeakKey(now = new Date()) {
+  const hour = kstHour(now);
+  if (hour < 6) return 'POST_DINNER';
+  if (hour >= 7 && hour < 11) return 'MORNING';
+  if (hour >= 11 && hour < 14) return 'LUNCH';
+  if (hour >= 14 && hour < 17) return 'POST_LUNCH';
+  if (hour >= 17 && hour < 21) return 'DINNER';
+  return 'POST_DINNER';
+}
+
+function formatCoupangCount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 10) / 10;
+}
+
+function coupangProgressLabel(complete, assigned) {
+  const c = formatCoupangCount(complete);
+  const a = formatCoupangCount(assigned);
+  const show = v => (Number.isInteger(v) ? String(v) : String(v));
+  return `${show(c)}/${show(a)}`;
 }
 
 /** 쿠팡 영업일 — KST 06:00 이전이면 전날 (coupang-session collect 와 동일) */
@@ -659,35 +685,45 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
     );
   });
 
-  let assigned = 0;
+  const peaksByType = {};
+  let vendorInfo = null;
   let operating = 0;
-  let remaining = 0;
-  let peakGoalSum = 0;
-  let peakRemainSum = 0;
-  let hasPeak = false;
-  let hasVendor = false;
 
   rows.forEach(row => {
     const parsed = row.parsed_json || {};
     if (row.source_menu === 'peak_realtime') {
-      hasPeak = true;
-      peakGoalSum += Math.max(0, Number(parsed.goalCount || 0));
-      peakRemainSum += Math.max(0, Number(parsed.remainingCount || 0));
+      const peakType = String(parsed.peakType || '').toUpperCase();
+      if (PEAK_ORDER.includes(peakType)) {
+        peaksByType[peakType] = {
+          goal: Math.max(0, Number(parsed.goalCount || 0)),
+          completed: Math.max(0, Number(parsed.completedCount || 0))
+        };
+      }
     }
     if (row.source_menu === 'vendor_info') {
-      hasVendor = true;
-      operating = Math.max(operating, Math.round(Number(parsed.riderOnLineCount || parsed.onGoingCount || 0)));
-      if (!hasPeak) {
-        assigned = Math.max(assigned, Math.round(Number(parsed.target || 0)));
-      }
+      vendorInfo = parsed;
+      operating = Math.max(operating, Math.round(Number(parsed.riderOnLineCount || 0)));
     }
   });
 
-  if (hasPeak) {
-    assigned = Math.round(peakGoalSum);
-    remaining = Math.round(peakRemainSum);
-  } else if (hasVendor && assigned > 0) {
-    remaining = Math.max(0, assigned - operating);
+  const peakKey = currentCoupangPeakKey();
+  const peakLabel = PEAK_LABELS[peakKey] || peakKey;
+  const currentPeak = peaksByType[peakKey];
+  let assigned = 0;
+  let slotComplete = 0;
+  let remaining = 0;
+  let metricsSource = '';
+
+  if (currentPeak && currentPeak.goal > 0) {
+    assigned = formatCoupangCount(currentPeak.goal);
+    slotComplete = formatCoupangCount(currentPeak.completed);
+    remaining = formatCoupangCount(Math.max(0, currentPeak.goal - currentPeak.completed));
+    metricsSource = `피크 ${peakLabel}`;
+  } else if (vendorInfo) {
+    assigned = formatCoupangCount(vendorInfo.target || 0);
+    slotComplete = formatCoupangCount(vendorInfo.completedCount || 0);
+    remaining = formatCoupangCount(Math.max(0, assigned - slotComplete));
+    metricsSource = '현재시프트';
   }
 
   const dailyBaseQuery = () => supabase
@@ -750,15 +786,32 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
       .map((row, index) => ({ ...row, rank: index + 1 }));
   }
 
-  const metricsNote = hasPeak || hasVendor
-    ? '쿠팡 할당=피크타임 현황 · 운행중=지역요약 · 실시간순위=라이더일일(rider_daily) 크롤'
-    : '오늘 쿠팡 피크타임·지역요약 크롤링 데이터가 없습니다';
+  const metricsNote = Object.keys(peaksByType).length
+    ? `쿠팡 피크타임 현황 · 운행중 ${operating}명 · 실시간순위=라이더일일(rider_daily) 크롤`
+    : metricsSource
+      ? `쿠팡 ${metricsSource} ${coupangProgressLabel(slotComplete, assigned)} · 운행중 ${operating}명 · 실시간순위=라이더일일(rider_daily) 크롤`
+      : '오늘 쿠팡 피크타임·지역요약 크롤링 데이터가 없습니다';
+
+  const peaks = Object.fromEntries(PEAK_ORDER.map(pt => {
+    const row = peaksByType[pt] || { goal: 0, completed: 0 };
+    return [pt, {
+      goal: formatCoupangCount(row.goal),
+      completed: formatCoupangCount(row.completed),
+      has: Boolean(peaksByType[pt])
+    }];
+  }));
 
   return {
     metrics: {
       assigned,
+      slotComplete,
       operating,
       remaining,
+      progressLabel: assigned > 0 ? coupangProgressLabel(slotComplete, assigned) : undefined,
+      peakKey,
+      peakLabel,
+      peaks,
+      collectDate: today,
       sourceNote: realtimeRanking.length
         ? `${metricsNote} · 지역등록 ${rankingRiders.length}명 중`
         : metricsNote
@@ -837,7 +890,12 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
   const selected = regions.find(region => region.key === requestedKey)
     || regions[0];
 
-  const cacheKey = `rider|${me.riderId || riderRow.id || '-'}|${platform}|${selected.key}|${weekStart}|${today}|${currentBaeminSlotKey()}`;
+  const coupangDateInfo = platform === 'coupang'
+    ? await resolveCoupangRiderDailyDate(supabase, today)
+    : null;
+  const liveDate = platform === 'coupang' ? coupangDateInfo.collectDate : today;
+  const slotKey = platform === 'coupang' ? currentCoupangPeakKey() : currentBaeminSlotKey();
+  const cacheKey = `rider|${me.riderId || riderRow.id || '-'}|${platform}|${selected.key}|${weekStart}|${liveDate}|${slotKey}`;
   const cached = readResponseCache(cacheKey);
   if (cached) {
     return { ...cached, regions, selectedRegionKey: selected.key, region: selected };
@@ -857,7 +915,7 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
     const weekOpts = { regionRiders, rankingRiders };
     [live, weeklyRanking] = await Promise.all([
       platform === 'coupang'
-        ? buildCoupangLive(supabase, selected, today, liveOpts)
+        ? buildCoupangLive(supabase, selected, liveDate, liveOpts)
         : buildBaeminLive(supabase, selected, today, liveOpts),
       buildWeeklyRanking(supabase, selected, weekStart, weekEnd, weekOpts)
     ]);
@@ -870,7 +928,7 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
     platform,
     weekStart,
     weekEnd,
-    today,
+    today: platform === 'coupang' ? liveDate : today,
     regions,
     selectedRegionKey: selected.key,
     region: selected,
@@ -922,7 +980,7 @@ async function getAdminRegionRanking(accessToken, query = {}) {
   if (!region.key) region.key = region.partnerId || region.label;
   if (!region.label) region.label = region.key;
 
-  const cacheKey = `admin|${platform}|${region.key}|${weekStart}|${today}|nomask|${currentBaeminSlotKey()}`;
+  const cacheKey = `admin|${platform}|${region.key}|${weekStart}|${today}|nomask|${platform === 'coupang' ? currentCoupangPeakKey() : currentBaeminSlotKey()}`;
   const cached = readResponseCache(cacheKey);
   if (cached) return cached;
 
