@@ -3228,18 +3228,18 @@ button.calendar-day:hover {
 .driver-crew-view-tab {
   flex: 1;
   padding: 10px 12px;
-  border: 1px solid #334155;
+  border: 1px solid #cbd5e1;
   border-radius: 10px;
-  background: #111827;
-  color: #cbd5e1;
+  background: #ffffff;
+  color: #111827;
   font-size: 0.86rem;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .driver-crew-view-tab.active {
-  border-color: #fbbf24;
-  background: rgba(251, 191, 36, 0.12);
-  color: #fde68a;
+  border-color: #1e293b;
+  background: #1e293b;
+  color: #ffffff;
 }
 
 .driver-crew-detail-summary {
