@@ -5315,7 +5315,7 @@
               <button type="button" class="small-btn" id="taxManagementExportBtn" disabled>엑셀보내기</button>
             </div>
           </div>
-          <p class="form-help">원천세는 <strong>월 단위</strong>로 신고합니다. 신고월 → 정산서 선택 → <strong>계산하기</strong> 순서로 진행하세요. 지급합계 = 배달비+추가지급+기타지급+BREM프로모션 (같은 기사는 쿠팡·배민·지역 합산).</p>
+          <p class="form-help">원천세는 <strong>월 단위</strong>로 신고합니다. 신고월 → 정산서 선택 → <strong>계산하기</strong> 순서로 진행하세요. <strong>주민번호는 BREM에 넣지 않고</strong> 별도 보관한 뒤, 엑셀의 이름·ID로 로컬에서 합치세요.</p>
 
           <div class="tax-management-steps">
             <section class="tax-management-step">
@@ -5358,15 +5358,17 @@
               <thead>
                 <tr>
                   <th>이름</th>
-                  <th>주민번호</th>
                   <th>지급합계</th>
+                  <th>ERPID</th>
+                  <th>쿠팡ID</th>
+                  <th>배민ID</th>
                   <th>플랫폼</th>
                 </tr>
               </thead>
               <tbody id="taxManagementRows"></tbody>
             </table>
           </div>
-          <p class="form-help">엑셀보내기는 <strong>이름 · 주민번호</strong> 양식입니다.</p>
+          <p class="form-help">엑셀보내기: <strong>이름 · 지급합계 · ERPID · 쿠팡ID · 배민ID</strong> (주민번호는 별도 보관 파일과 합치세요)</p>
         </article>
 
         <div class="range-calendar month-calendar" id="taxManagementMonthCalendar" hidden>
@@ -8627,7 +8629,7 @@
   <script src="js/direct-settlement-calc.js?v=20260827tax1"></script>
   <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260823c"></script>
-  <script src="js/tax-management-admin.js?v=20260827tax2"></script>
+  <script src="js/tax-management-admin.js?v=20260827tax3"></script>
   <script src="js/driver-management-admin.js?v=20260827coupangrank1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260822other1"></script>

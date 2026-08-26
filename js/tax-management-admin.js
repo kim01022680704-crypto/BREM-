@@ -106,20 +106,31 @@ const BremTaxManagementAdmin = (function () {
     setMonth(next);
   }
 
-  function residentNumberForDriver(driverId) {
+  function driverExportIds(driverId, row = {}) {
     const id = String(driverId || '').trim();
-    if (!id) return '';
-    const driver = window.BremStorage?.drivers?.getById?.(id);
-    if (!driver) return '';
-    if (driver.hiddenFields?.residentNumber) return '';
-    const raw = driver.residentNumber || driver.raw_data?.residentNumber || '';
-    return window.BremDriverUtils?.formatResidentNumber?.(raw) || String(raw || '').trim();
+    const driver = id ? window.BremStorage?.drivers?.getById?.(id) : null;
+    const utils = window.BremDriverUtils;
+    const erpId = utils?.makeDriverLoginId?.(driver) || '';
+    const coupangId = utils?.getErpCoupangId?.(driver)
+      || String(driver?.coupangId || driver?.coupangLoginKey || '').trim()
+      || '';
+    const baeminId = String(driver?.baeminId || driver?.raw_data?.baeminId || '').trim()
+      || '';
+    // 정산서 매칭 ID 보조 (기사 DB에 없을 때)
+    const labels = String(row.idLabel || '').split('/').map(s => s.trim()).filter(s => s && s !== '-');
+    const coupangFromRow = labels.find(l => /[가-힣a-zA-Z]/.test(l) && /\d{3,}$/.test(l.replace(/\s/g, '')));
+    const baeminFromRow = labels.find(l => /^\d+$/.test(l.replace(/\s/g, '')));
+    return {
+      erpId,
+      coupangId: coupangId || coupangFromRow || '',
+      baeminId: baeminId || baeminFromRow || ''
+    };
   }
 
   function buildRowsFromSettlements(settlements) {
     return Calc().buildGrossPayTotals(settlements).map(row => ({
       ...row,
-      residentNumber: residentNumberForDriver(row.driverId)
+      ...driverExportIds(row.driverId, row)
     }));
   }
 
@@ -204,32 +215,34 @@ const BremTaxManagementAdmin = (function () {
           : '신고월을 고른 뒤 정산서를 선택하고 「계산하기」를 누르세요.';
       }
       if (exportBtn) exportBtn.disabled = true;
-      body.innerHTML = '<tr><td colspan="4" class="empty">월 선택 → 정산서 선택 → 계산하기</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" class="empty">월 선택 → 정산서 선택 → 계산하기</td></tr>';
       return;
     }
 
     const { settlements, rows } = state.calculated;
     const totalGross = rows.reduce((sum, row) => sum + Number(row.grossPay || 0), 0);
-    const missingResident = rows.filter(row => !row.residentNumber).length;
+    const missingIds = rows.filter(row => !row.erpId && !row.coupangId && !row.baeminId).length;
 
     if (summary) {
       summary.textContent = `${formatMonthLabel(ensureMonth())} · 선택 정산서 ${settlements.length}건`
         + ` · 기사 ${formatNumber(rows.length)}명 · 지급합계 합 ${formatNumber(totalGross)}원`
-        + (missingResident ? ` · 주민번호 미등록 ${formatNumber(missingResident)}명` : '');
+        + (missingIds ? ` · ID 미확인 ${formatNumber(missingIds)}명` : '');
     }
 
     if (exportBtn) exportBtn.disabled = !rows.length;
 
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="4" class="empty">집계할 기사가 없습니다.</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" class="empty">집계할 기사가 없습니다.</td></tr>';
       return;
     }
 
     body.innerHTML = rows.map(row => `
       <tr>
         <td><strong>${escapeHtml(row.name)}</strong></td>
-        <td>${escapeHtml(row.residentNumber || '-')}</td>
         <td class="weekly-amount-cell">${formatNumber(row.grossPay)}</td>
+        <td class="muted-inline">${escapeHtml(row.erpId || '-')}</td>
+        <td class="muted-inline">${escapeHtml(row.coupangId || '-')}</td>
+        <td class="muted-inline">${escapeHtml(row.baeminId || '-')}</td>
         <td class="muted-inline">${escapeHtml(row.platformLabel || '-')}</td>
       </tr>`).join('');
   }
@@ -267,9 +280,15 @@ const BremTaxManagementAdmin = (function () {
     const month = ensureMonth();
     const sheetRows = rows.map(row => [
       String(row.name || '').trim(),
-      row.residentNumber || ''
+      Number(row.grossPay || 0),
+      row.erpId || '',
+      row.coupangId || '',
+      row.baeminId || ''
     ]);
-    const ws = window.XLSX.utils.aoa_to_sheet([['이름', '주민번호'], ...sheetRows]);
+    const ws = window.XLSX.utils.aoa_to_sheet([
+      ['이름', '지급합계', 'ERPID', '쿠팡ID', '배민ID'],
+      ...sheetRows
+    ]);
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, ws, '원천세신고');
     window.XLSX.writeFile(wb, `원천세신고_${month}.xlsx`);
