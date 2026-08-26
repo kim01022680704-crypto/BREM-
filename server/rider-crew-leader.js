@@ -229,33 +229,184 @@ async function loadCallCounts(supabase, driverIds, weekStart, weekEnd, today) {
   return { todayMap, weekMap, weekBaemin, weekCoupang, todayBaemin, todayCoupang };
 }
 
-/** 기사앱 「현재수락율/현재거절율」과 동일 — 배달현황·live_accept_rates / rider_daily */
-async function loadLiveRatesForDrivers(supabase, riders) {
-  const { loadRiderBaeminOps, loadRiderCoupangOps } = require('./rider-auth');
-  const baemin = new Map();
-  const coupang = new Map();
-  const list = Array.isArray(riders) ? riders : [];
-  const chunkSize = 8;
-  for (let i = 0; i < list.length; i += chunkSize) {
-    const chunk = list.slice(i, i + chunkSize);
-    await Promise.all(chunk.map(async (rider) => {
-      const id = String(rider.id || '').trim();
-      if (!id) return;
-      const riderRef = {
-        id,
-        name: rider.name,
-        phone: rider.phone,
-        baemin_id: rider.baemin_id,
-        baeminId: rider.baemin_id
-      };
-      const [bOps, cOps] = await Promise.all([
-        loadRiderBaeminOps(supabase, riderRef),
-        loadRiderCoupangOps(supabase, riderRef)
-      ]);
-      if (bOps?.acceptRate != null) baemin.set(id, bOps.acceptRate);
-      if (cOps?.rejectionRate != null) coupang.set(id, cOps.rejectionRate);
-    }));
+function extractDeliveryStatusMetrics(parsed = {}) {
+  return {
+    complete: Math.max(0, Number(parsed.totalComplete || parsed.completeCount || 0) || 0),
+    foodReject: Math.max(0, Number(parsed.foodReject || 0) || 0),
+    foodCancel: Math.max(0, Number(parsed.foodCancel || 0) || 0),
+    foodRiderFault: Math.max(0, Number(parsed.foodRiderFault || 0) || 0)
+  };
+}
+
+function calcAcceptRateFromDelivery(parsed = {}) {
+  const metrics = extractDeliveryStatusMetrics(parsed);
+  const complete = Number(metrics.complete || 0);
+  const deny = Number(metrics.foodReject || 0)
+    + Number(metrics.foodCancel || 0)
+    + Number(metrics.foodRiderFault || 0);
+  const denom = complete + deny;
+  if (denom <= 0) return null;
+  return Math.round((100 - (deny / denom) * 100) * 10) / 10;
+}
+
+function calcRejectionRateFromCounts(complete, reject, cancel) {
+  const c = Math.max(0, Number(complete) || 0);
+  const r = Math.max(0, Number(reject) || 0);
+  const x = Math.max(0, Number(cancel) || 0);
+  const denom = c + r + x;
+  if (denom <= 0) return null;
+  return Math.round(((r + x) / denom) * 1000) / 10;
+}
+
+function sumCoupangRiderDailyRows(rows = []) {
+  return (rows || []).reduce((acc, row) => {
+    const p = row?.parsed_json && typeof row.parsed_json === 'object' ? row.parsed_json : {};
+    acc.complete += Math.max(0, Number(p.completeCount ?? row.complete_count) || 0);
+    acc.reject += Math.max(0, Number(p.rejectCount ?? row.reject_count) || 0);
+    acc.cancel += Math.max(0, Number(p.cancelCount ?? row.cancel_count) || 0);
+    return acc;
+  }, { complete: 0, reject: 0, cancel: 0 });
+}
+
+function settlementWeekStartDayFlag() {
+  try {
+    const { todayKST, settlementWeekStart } = require('./baemin-settlement-week');
+    const today = todayKST();
+    return today === settlementWeekStart(today);
+  } catch {
+    return false;
   }
+}
+
+/** 배민 현재수락율 — live_accept_rates 일괄 조회 + 배달현황 fallback */
+async function loadBaeminAcceptRatesBatch(supabase, riders, liveMap) {
+  const rates = new Map();
+  const ids = [...new Set((riders || []).map(r => String(r.id || '').trim()).filter(Boolean))];
+  if (!ids.length) return rates;
+
+  const snapshots = new Map();
+  for (let i = 0; i < ids.length; i += 80) {
+    const chunk = ids.slice(i, i + 80);
+    const { data, error } = await supabase
+      .from('baemin_live_accept_rates')
+      .select('driver_id,current_accept_rate,week_start,updated_at')
+      .in('driver_id', chunk)
+      .order('week_start', { ascending: false })
+      .order('updated_at', { ascending: false });
+    if (error) {
+      if (!/does not exist|Could not find the table/i.test(String(error.message || ''))) {
+        console.warn('[BREM] crew-leader baemin accept batch:', error.message || error);
+      }
+      break;
+    }
+    (data || []).forEach(row => {
+      const id = String(row.driver_id || '').trim();
+      if (!id || snapshots.has(id)) return;
+      const rate = Number(row.current_accept_rate);
+      if (Number.isFinite(rate)) snapshots.set(id, Math.round(rate * 10) / 10);
+    });
+  }
+
+  const weekStartDay = settlementWeekStartDayFlag();
+  ids.forEach(id => {
+    const live = liveMap?.get(id);
+    const deliveryRate = live?.acceptRateFromDelivery ?? null;
+    const snapshotRate = snapshots.get(id) ?? null;
+    if (weekStartDay && deliveryRate != null) {
+      rates.set(id, deliveryRate);
+    } else if (snapshotRate != null) {
+      rates.set(id, snapshotRate);
+    } else if (deliveryRate != null) {
+      rates.set(id, deliveryRate);
+    }
+  });
+  return rates;
+}
+
+/** 쿠팡 현재거절율 — rider_daily 일괄 조회 */
+async function loadCoupangRejectRatesBatch(supabase, riders) {
+  const { makeRiderLoginId } = require('./rider-auth');
+  const rates = new Map();
+  const keyToDriver = new Map();
+  (riders || []).forEach(rider => {
+    const id = String(rider.id || '').trim();
+    const key = makeRiderLoginId(rider);
+    if (id && key && key.length >= 5) keyToDriver.set(key, id);
+  });
+  const keys = [...keyToDriver.keys()];
+  if (!keys.length) return rates;
+
+  let today = '';
+  let weekStart = '';
+  let yesterday = '';
+  try {
+    const week = require('./baemin-settlement-week');
+    today = week.todayKST();
+    weekStart = week.settlementWeekStart(today);
+    yesterday = week.addDays(today, -1);
+  } catch {
+    today = formatKstDateKey(new Date());
+    weekStart = today;
+    yesterday = today;
+  }
+  const pastTo = yesterday >= weekStart && yesterday < today ? yesterday : '';
+
+  const rowsByKey = new Map();
+  for (let i = 0; i < keys.length; i += 40) {
+    const chunk = keys.slice(i, i + 40);
+    const { data, error } = await supabase
+      .from('coupang_collect_items')
+      .select('collect_date,match_key,parsed_json')
+      .eq('source_menu', 'rider_daily')
+      .in('match_key', chunk)
+      .gte('collect_date', weekStart)
+      .lte('collect_date', today)
+      .limit(3000);
+    if (error) {
+      if (!/does not exist|Could not find the table/i.test(String(error.message || ''))) {
+        console.warn('[BREM] crew-leader coupang reject batch:', error.message || error);
+      }
+      break;
+    }
+    (data || []).forEach(row => {
+      const key = String(row.match_key || '').trim();
+      if (!key) return;
+      if (!rowsByKey.has(key)) rowsByKey.set(key, []);
+      rowsByKey.get(key).push(row);
+    });
+  }
+
+  rowsByKey.forEach((rows, key) => {
+    const driverId = keyToDriver.get(key);
+    if (!driverId) return;
+    const pastRows = pastTo
+      ? rows.filter(row => {
+        const day = String(row.collect_date || '').slice(0, 10);
+        return day >= weekStart && day <= pastTo;
+      })
+      : [];
+    const todayRows = rows.filter(row => String(row.collect_date || '').slice(0, 10) === today);
+    if (!pastRows.length && !todayRows.length) return;
+    const pastAgg = sumCoupangRiderDailyRows(pastRows);
+    const todayAgg = sumCoupangRiderDailyRows(todayRows);
+    const pastRate = calcRejectionRateFromCounts(pastAgg.complete, pastAgg.reject, pastAgg.cancel);
+    const todayRate = calcRejectionRateFromCounts(todayAgg.complete, todayAgg.reject, todayAgg.cancel);
+    let rejectionRate = null;
+    if (pastRate != null && todayRate != null) {
+      rejectionRate = Math.round(((pastRate + todayRate) / 2) * 10) / 10;
+    } else {
+      rejectionRate = todayRate ?? pastRate;
+    }
+    if (rejectionRate != null) rates.set(driverId, rejectionRate);
+  });
+  return rates;
+}
+
+async function loadLiveRatesForDrivers(supabase, riders, liveMap) {
+  const [baemin, coupang] = await Promise.all([
+    loadBaeminAcceptRatesBatch(supabase, riders, liveMap),
+    loadCoupangRejectRatesBatch(supabase, riders)
+  ]);
   return { baemin, coupang };
 }
 
@@ -305,7 +456,8 @@ async function loadBaeminLiveByRiders(supabase, riders) {
           liveComplete: complete,
           collectDate: String(row.collect_date || '').slice(0, 10),
           collectedAt,
-          statusDesc: String(parsed.statusDesc || parsed.status_desc || '').trim()
+          statusDesc: String(parsed.statusDesc || parsed.status_desc || '').trim(),
+          acceptRateFromDelivery: calcAcceptRateFromDelivery(parsed)
         });
       });
     }
@@ -472,7 +624,6 @@ async function getCrewLeaderDetail(accessToken, options = {}) {
     loadRidersByIds(supabase, memberIds),
     loadWeekStatsForDrivers(supabase, memberIds, weekStart, weekEnd)
   ]);
-  const rates = await loadLiveRatesForDrivers(supabase, riders);
 
   const members = riders.map(rider => {
     const id = String(rider.id || '').trim();
@@ -486,8 +637,6 @@ async function getCrewLeaderDetail(accessToken, options = {}) {
       boxLabel: boxLabels ? [...boxLabels].sort((a, b) => a.localeCompare(b, 'ko')).join(', ') : box.label,
       isSelf: id === riderId,
       isCrew: Boolean(leaderDriverId && id === leaderDriverId),
-      baeminAcceptRate: rates.baemin.has(id) ? rates.baemin.get(id) : null,
-      coupangRejectRate: rates.coupang.has(id) ? rates.coupang.get(id) : null,
       coupangCalls: Math.round(Number(stats.coupangCalls || 0)),
       baeminCalls: Math.round(Number(stats.baeminCalls || 0)),
       coupangFee,
@@ -574,10 +723,10 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
   const today = formatKstDateKey();
 
   const riders = await loadRidersByIds(supabase, memberIds);
-  const [calls, liveMap, rates] = await Promise.all([
+  const liveMap = await loadBaeminLiveByRiders(supabase, riders);
+  const [calls, rates] = await Promise.all([
     loadCallCounts(supabase, memberIds, weekStart, weekEnd, today),
-    loadBaeminLiveByRiders(supabase, riders),
-    loadLiveRatesForDrivers(supabase, riders)
+    loadLiveRatesForDrivers(supabase, riders, liveMap)
   ]);
 
   const members = riders.map(rider => {

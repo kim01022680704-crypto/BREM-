@@ -200,20 +200,18 @@
               </div>
             </td>
             <td class="driver-crew-box">${escapeHtml(member.boxLabel || '-')}</td>
-            ${rateCellHtml(member.baeminAcceptRate, 'baemin')}
-            ${rateCellHtml(member.coupangRejectRate, 'coupang')}
             <td class="driver-crew-num">${formatNumber(member.coupangCalls)}</td>
             <td class="driver-crew-num">${formatNumber(member.baeminCalls)}</td>
             <td class="driver-crew-num">${formatNumber(member.coupangFee)}</td>
             <td class="driver-crew-num">${formatNumber(member.baeminFee)}</td>
             <td class="driver-crew-num driver-crew-num--total">${formatNumber(member.totalFee)}</td>
           </tr>`).join('')
-        : '<tr><td colspan="9" class="empty">소속 기사가 없습니다.</td></tr>';
+        : '<tr><td colspan="7" class="empty">소속 기사가 없습니다.</td></tr>';
     }
     if (detailFootEl) {
       detailFootEl.innerHTML = members.length
         ? `<tr class="driver-crew-total-row">
-            <td colspan="4">합계 (${formatNumber(members.length)}명)</td>
+            <td colspan="2">합계 (${formatNumber(members.length)}명)</td>
             <td class="driver-crew-num">${formatNumber(summary.coupangCalls)}</td>
             <td class="driver-crew-num">${formatNumber(summary.baeminCalls)}</td>
             <td class="driver-crew-num">${formatNumber(summary.coupangFee)}</td>
@@ -385,9 +383,6 @@
       openBtn.hidden = false;
       notifyFeatureVisibility(true);
       renderResult(result);
-      if (state.viewMode === 'detail') {
-        void loadDetail();
-      }
       return result;
     } catch (error) {
       if (seq === state.requestSeq) {
