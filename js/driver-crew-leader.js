@@ -183,8 +183,7 @@
             <td>
               <div class="driver-crew-name">
                 <strong class="driver-crew-name__text">${escapeHtml(member.name)}</strong>
-                ${member.isSelf ? '<span class="driver-crew-tag driver-crew-tag--self">나</span>' : ''}
-                ${member.isCrew ? '<span class="driver-crew-tag driver-crew-tag--crew">크루장</span>' : ''}
+                ${(member.isSelf || member.isCrew) ? `<span class="driver-crew-name__badges">${member.isSelf ? '<span class="driver-crew-tag driver-crew-tag--self">나</span>' : ''}${member.isCrew ? '<span class="driver-crew-tag driver-crew-tag--crew">장</span>' : ''}</span>` : ''}
               </div>
             </td>
             <td class="driver-crew-box">${escapeHtml(member.boxLabel || '-')}</td>
@@ -252,7 +251,7 @@
             <td>
               <div class="driver-crew-name">
                 <strong class="driver-crew-name__text">${escapeHtml(member.name)}</strong>
-                ${member.isSelf ? '<span class="driver-crew-tag driver-crew-tag--self">나</span>' : ''}
+                ${member.isSelf ? '<span class="driver-crew-name__badges"><span class="driver-crew-tag driver-crew-tag--self">나</span></span>' : ''}
               </div>
             </td>
             <td class="driver-crew-ops">${operatingTagHtml(member.operating)}</td>

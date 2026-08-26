@@ -3070,80 +3070,110 @@ button.calendar-day:hover {
 }
 
 .driver-crew-summary {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
   background: #111827;
   color: #fde68a;
-  font-size: 0.86rem;
-  font-weight: 800;
-  line-height: 1.4;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .driver-crew-table-wrap {
   overflow-x: auto;
   border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  border-radius: 10px;
   background: #fff;
 }
 
-.driver-crew-table {
+.driver-crew-leader-panel .driver-crew-table {
   width: 100%;
-  min-width: 560px;
+  min-width: 520px;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
-.driver-crew-table th,
-.driver-crew-table td {
-  padding: 8px 10px;
+.driver-crew-leader-panel .driver-crew-table th,
+.driver-crew-leader-panel .driver-crew-table td {
+  padding: 5px 6px;
   border-bottom: 1px solid #e2e8f0;
-  font-size: 0.86rem;
+  font-size: 0.74rem;
+  line-height: 1.25;
   vertical-align: middle;
   text-align: left;
 }
 
-.driver-crew-table th {
+.driver-crew-leader-panel .driver-crew-table th {
   background: #0f172a;
   color: #fde68a;
-  font-size: 0.78rem;
+  font-size: 0.68rem;
   white-space: nowrap;
   text-align: center;
 }
 
-.driver-crew-table th:nth-child(1),
-.driver-crew-table td:nth-child(1) {
+.driver-crew-leader-panel .driver-crew-table th:nth-child(1),
+.driver-crew-leader-panel .driver-crew-table td:nth-child(1) {
   text-align: left;
+  width: 26%;
 }
 
-.driver-crew-table th:nth-child(2),
-.driver-crew-table td.driver-crew-ops {
+.driver-crew-leader-panel .driver-crew-table th:nth-child(2),
+.driver-crew-leader-panel .driver-crew-table td:nth-child(2) {
   text-align: center;
 }
 
 .driver-crew-name {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
 }
 
 .driver-crew-name__text {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.driver-crew-name .driver-crew-tag--self {
+.driver-crew-name__badges {
+  display: inline-flex;
+  align-items: center;
   flex: 0 0 auto;
-  margin-left: auto;
+  gap: 3px;
 }
 
-.driver-crew-table td.driver-crew-num {
+.driver-crew-name .driver-crew-tag--self,
+.driver-crew-name .driver-crew-tag--crew {
+  flex: 0 0 auto;
+  margin-left: 0;
+}
+
+.driver-crew-leader-panel .driver-crew-table td.driver-crew-ops {
+  text-align: center;
+}
+
+.driver-crew-ops .driver-crew-tag {
+  padding: 2px 6px;
+  font-size: 10px;
+  gap: 3px;
+}
+
+.driver-crew-ops .driver-crew-tag__dot {
+  width: 6px;
+  height: 6px;
+}
+
+.driver-crew-leader-panel .driver-crew-table td.driver-crew-num {
   text-align: center;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
+  font-size: 0.72rem;
 }
 
 .driver-crew-table tr.is-self td {
@@ -3154,12 +3184,12 @@ button.calendar-day:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 4px 9px;
+  gap: 4px;
+  padding: 2px 6px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1.15;
   white-space: nowrap;
   vertical-align: middle;
 }
@@ -3208,31 +3238,31 @@ button.calendar-day:hover {
   background: #1d4ed8;
   color: #ffffff;
   border: 1px solid #1d4ed8;
-  min-width: 22px;
-  padding: 3px 8px;
+  min-width: 0;
+  padding: 1px 5px;
 }
 
 .driver-crew-footnote {
-  margin: 10px 12px 12px;
+  margin: 8px 10px 10px;
   color: #64748b;
-  font-size: 0.78rem;
-  line-height: 1.4;
+  font-size: 0.68rem;
+  line-height: 1.35;
 }
 
 .driver-crew-view-tabs {
   display: flex;
-  gap: 8px;
-  margin: 0 12px 10px;
+  gap: 6px;
+  margin: 0 0 8px;
 }
 
 .driver-crew-view-tab {
   flex: 1;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid #cbd5e1;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #ffffff;
   color: #111827;
-  font-size: 0.86rem;
+  font-size: 0.78rem;
   font-weight: 800;
 }
 
@@ -3243,33 +3273,38 @@ button.calendar-day:hover {
 }
 
 .driver-crew-detail-summary {
-  margin: 0 12px 8px;
-  padding: 8px 10px;
-  border: 1px solid rgba(251, 191, 36, 0.35);
-  border-radius: 10px;
-  background: rgba(251, 191, 36, 0.08);
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #111827;
   color: #fde68a;
-  font-size: 0.76rem;
-  line-height: 1.45;
-  font-weight: 600;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  font-weight: 700;
 }
 
 .driver-crew-detail-table {
-  min-width: 720px;
+  min-width: 640px;
 }
 
-.driver-crew-detail-table th,
-.driver-crew-detail-table td {
-  padding: 5px 6px;
-  font-size: 0.74rem;
+.driver-crew-detail-table th:nth-child(1),
+.driver-crew-detail-table td:nth-child(1) {
+  width: 24%;
+}
+
+.driver-crew-detail-table th:nth-child(2),
+.driver-crew-detail-table td:nth-child(2) {
+  width: 14%;
 }
 
 .driver-crew-detail-table td.driver-crew-box {
-  max-width: 88px;
+  max-width: 72px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #94a3b8;
+  color: #64748b;
+  font-size: 0.68rem;
 }
 
 .driver-crew-detail-table td.driver-crew-num--total {
@@ -3288,8 +3323,8 @@ button.calendar-day:hover {
   background: #312e81;
   color: #e0e7ff;
   border: 1px solid #4338ca;
-  font-size: 0.62rem;
-  padding: 2px 6px;
+  font-size: 9px;
+  padding: 1px 5px;
 }
 
 .driver-region-dashboard-panel .driver-payslip-platform-tabs {
