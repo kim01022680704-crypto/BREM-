@@ -31,6 +31,8 @@
     netPayByPlatform: { coupang: 0, baemin: 0 },
     enrolledPlatforms: { coupang: false, baemin: false },
     feesByPlatform: { coupang: null, baemin: null },
+    enrolled: null,
+    leaseText: '',
     requestSeq: 0,
     confirmed: false,
     submitting: false
@@ -207,6 +209,26 @@
     else if (baeminOk && platformBaemin) platformBaemin.checked = true;
   }
 
+  // 플랫폼별 실지급·신청가능 안내. 헤드라인·「최대」와 같은 기준(신청 가능 금액)을 쓴다.
+  // 플랫폼 자동선택이 끝난 뒤에 그려야 "플랫폼을 선택하세요" 가 남지 않는다.
+  function renderPlatformHint() {
+    if (!hintEl) return;
+    if (state.withdrawalPaused || state.weekFinalized || state.enrolled === false) return;
+    const by = state.netPayByPlatform || {};
+    const avail = state.availableByPlatform || {};
+    const requestable = key => {
+      const pool = Number(avail[key] || 0);
+      return pool < 0 ? pool : maxWithdrawableAmount(key);
+    };
+    const platform = selectedPlatform();
+    const platformPart = platform
+      ? `선택 ${platformLabel(platform)} 신청가능 ${formatMoney(requestable(platform))}`
+      : '플랫폼을 선택하세요';
+    hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 신청가능 ${formatMoney(requestable('coupang'))}`
+      + ` · 배민 실지급 ${formatMoney(by.baemin)} / 신청가능 ${formatMoney(requestable('baemin'))}`
+      + `${state.leaseText || ''} · ${platformPart}`;
+  }
+
   function setOpenState(open) {
     state.visible = open;
     panel.hidden = !open;
@@ -226,11 +248,8 @@
     };
     state.weekFinalized = payload.weekFinalized === true;
     state.withdrawalPaused = payload.withdrawalPaused === true;
+    state.enrolled = payload.enrolled;
     state.feesByPlatform = payload.feesByPlatform || state.feesByPlatform || {};
-    // 출금가능금액(헤드라인) = 선택한 플랫폼의 최대 신청 가능액 (수수료 감안)
-    const maxRequestable = Math.max(0, maxWithdrawableAmount());
-    const by = state.netPayByPlatform;
-    const avail = state.availableByPlatform;
     const lease = payload.lease || {};
     const leaseDeduction = Math.max(0, Number(lease.leaseDeductionTotal || 0));
     const outstandingArrears = Math.max(0, Number(lease.outstandingArrears || 0));
@@ -256,7 +275,8 @@
       );
     }
     if (ledgerCharge > 0) deductParts.push(`대여·차감관리 ${formatMoney(ledgerCharge)}`);
-    const leaseText = deductParts.length
+    // 플랫폼을 바꿀 때도 같은 안내를 다시 그려야 하므로 상태에 남긴다.
+    state.leaseText = deductParts.length
       ? ` · ${deductParts.join(' · ')}(실지급 큰 쪽부터 홀드 · 마이너스 가능)`
       : (leaseDeduction > 0
         ? ` · 리스·대여차감 ${formatMoney(leaseDeduction)}(실지급 큰 쪽부터 홀드 · 마이너스 가능)`
@@ -281,6 +301,9 @@
         pausedBanner.textContent = '';
       }
     }
+    // 힌트보다 플랫폼 확정이 먼저다. 순서가 뒤바뀌면 배민이 자동선택돼 있는데도
+    // 힌트에 "플랫폼을 선택하세요" 가 그대로 남는다.
+    syncPlatformOptions(payload.enrolledPlatforms || {});
     if (hintEl) {
       if (payload.withdrawalPaused) {
         hintEl.textContent = '정산 처리 중입니다. 출금신청이 일시 정지되어 있습니다.';
@@ -289,18 +312,9 @@
       } else if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else {
-        const platform = selectedPlatform();
-        // 헤드라인과 같은 기준(신청 가능 금액)으로 보여준다. 마이너스는 그대로 표기.
-        const requestable = key => (avail[key] < 0 ? avail[key] : maxWithdrawableAmount(key));
-        const platformPart = platform
-          ? `선택 ${platformLabel(platform)} 신청가능 ${formatMoney(requestable(platform))}`
-          : '플랫폼을 선택하세요';
-        hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 신청가능 ${formatMoney(requestable('coupang'))}`
-          + ` · 배민 실지급 ${formatMoney(by.baemin)} / 신청가능 ${formatMoney(requestable('baemin'))}`
-          + `${leaseText} · ${platformPart}`;
+        renderPlatformHint();
       }
     }
-    syncPlatformOptions(payload.enrolledPlatforms || {});
     syncMaxUi();
     applySubmitButtonState();
   }
@@ -669,15 +683,7 @@
 
   amountInput?.addEventListener('input', updateFeePreview);
   platformCoupang?.addEventListener('change', () => {
-    if (hintEl && !state.withdrawalPaused && !state.weekFinalized) {
-      const by = state.netPayByPlatform || {};
-      const avail = state.availableByPlatform || {};
-      const platform = selectedPlatform();
-      const platformPart = platform
-        ? `선택 ${platformLabel(platform)} 출금가능 ${formatMoney(platformAvailableAmount(platform))}`
-        : '플랫폼을 선택하세요';
-      hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 출금가능 ${formatMoney(avail.coupang)} · 배민 실지급 ${formatMoney(by.baemin)} / 출금가능 ${formatMoney(avail.baemin)} · ${platformPart}`;
-    }
+    renderPlatformHint();
     syncMaxUi();
   });
   platformBaemin?.addEventListener('change', () => {
@@ -706,6 +712,8 @@
     state.withdrawalPaused = false;
     state.enrolledPlatforms = { coupang: false, baemin: false };
     state.feesByPlatform = { coupang: null, baemin: null };
+    state.enrolled = null;
+    state.leaseText = '';
     setOpenState(false);
     if (daysBody) daysBody.innerHTML = '';
     if (requestList) requestList.innerHTML = '';
