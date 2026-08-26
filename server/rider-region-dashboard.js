@@ -42,6 +42,58 @@ function formatKstDateKey(date = new Date()) {
   }).format(date);
 }
 
+/** 쿠팡 영업일 — KST 06:00 이전이면 전날 (coupang-session collect 와 동일) */
+function coupangBusinessDateKst(date = new Date()) {
+  const kst = new Date(date.getTime() + 9 * 3600 * 1000);
+  if (kst.getUTCHours() < 6) kst.setUTCDate(kst.getUTCDate() - 1);
+  return kst.toISOString().slice(0, 10);
+}
+
+/** rider_daily 조회일 — 영업일 우선, 없으면 최신 수집일 (자정~06시 0건 방지) */
+async function resolveCoupangRiderDailyDate(supabase, preferredDate = '') {
+  const want = String(preferredDate || '').slice(0, 10);
+  const biz = coupangBusinessDateKst();
+  const cal = formatKstDateKey(new Date());
+  const candidates = [];
+  if (want) candidates.push(want);
+  if (!candidates.includes(biz)) candidates.push(biz);
+  if (!candidates.includes(cal)) candidates.push(cal);
+
+  for (const date of candidates) {
+    const { count, error } = await supabase
+      .from('coupang_collect_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('source_menu', 'rider_daily')
+      .eq('collect_date', date);
+    if (!error && (count || 0) > 0) {
+      const primary = want || biz;
+      return {
+        collectDate: date,
+        requestedDate: primary,
+        fallback: date !== primary,
+        crawlRowCount: count || 0
+      };
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('coupang_collect_items')
+    .select('collect_date')
+    .eq('source_menu', 'rider_daily')
+    .order('collect_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  const latest = String(data?.collect_date || '').slice(0, 10);
+  const primary = want || biz;
+  return {
+    collectDate: latest || primary,
+    requestedDate: primary,
+    fallback: Boolean(latest && latest !== primary),
+    crawlRowCount: 0
+  };
+}
+
 function normalizeSettlementWeekStart(dateValue) {
   const seed = String(dateValue || '').trim().slice(0, 10);
   const base = /^\d{4}-\d{2}-\d{2}$/.test(seed) ? seed : formatKstDateKey(new Date());
@@ -880,16 +932,20 @@ async function getAdminRegionRanking(accessToken, query = {}) {
     // 관리자 화면도 기사앱과 동일: 팀장·전체열람은 순위에서 제외 (미노출은 집계 포함)
     const rankingRiders = filterRankingRiders(exposure, platform, region.key, regionRiders, region);
     const shared = { maskNames: false, regionRiders, rankingRiders };
+    const coupangDateInfo = platform === 'coupang'
+      ? await resolveCoupangRiderDailyDate(supabase, today)
+      : null;
+    const liveDate = platform === 'coupang' ? coupangDateInfo.collectDate : today;
     const [live, weeklyRanking] = await Promise.all([
       platform === 'coupang'
-        ? buildCoupangLive(supabase, region, today, shared)
+        ? buildCoupangLive(supabase, region, liveDate, shared)
         : buildBaeminLive(supabase, region, today, shared),
       buildWeeklyRanking(supabase, region, weekStart, weekEnd, shared)
     ]);
     const payload = {
       ok: true,
       platform,
-      today,
+      today: platform === 'coupang' ? liveDate : today,
       weekStart,
       weekEnd,
       region,
@@ -901,7 +957,11 @@ async function getAdminRegionRanking(accessToken, query = {}) {
       realtimeRankingReason: live.realtimeRankingReason || '',
       weeklyRanking: weeklyRanking || [],
       realtimeFirst: (live.realtimeRanking || [])[0] || null,
-      weeklyFirst: (weeklyRanking || [])[0] || null
+      weeklyFirst: (weeklyRanking || [])[0] || null,
+      collectDate: platform === 'coupang' ? liveDate : today,
+      dateNote: platform === 'coupang' && coupangDateInfo?.fallback
+        ? `rider_daily ${liveDate} (오늘 ${coupangDateInfo.requestedDate} 수집분 없음)`
+        : ''
     };
     writeResponseCache(cacheKey, payload);
     return payload;
@@ -946,11 +1006,12 @@ async function getAdminRegionCoupangCrawlMatch(accessToken, query = {}) {
     return { ok: false, status: 400, error: '쿠팡 vendorId 또는 지역명이 필요합니다.' };
   }
 
-  const today = formatKstDateKey(new Date());
+  const dateInfo = await resolveCoupangRiderDailyDate(supabase, query.date || '');
+  const collectDate = dateInfo.collectDate;
   const baseQuery = () => supabase
     .from('coupang_collect_items')
     .select('vendor_id,vendor_name,match_key,phone_number,courier_id,rider_name,parsed_json,collect_date')
-    .eq('collect_date', today)
+    .eq('collect_date', collectDate)
     .eq('source_menu', 'rider_daily');
 
   let { data: crawlRows, error: crawlError } = vendorId
@@ -1056,8 +1117,12 @@ async function getAdminRegionCoupangCrawlMatch(accessToken, query = {}) {
     platform: 'coupang',
     vendorId,
     label: short || label,
-    today,
-    snapshotDate: today,
+    today: collectDate,
+    collectDate,
+    snapshotDate: collectDate,
+    dateNote: dateInfo.fallback
+      ? `rider_daily ${collectDate} (요청일 ${dateInfo.requestedDate} 수집분 없음)`
+      : '',
     summary,
     rows
   };
@@ -1193,11 +1258,12 @@ async function getAdminCoupangClusterCrawlAssign(accessToken, query = {}) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  const today = String(query.date || formatKstDateKey(new Date())).slice(0, 10);
+  const dateInfo = await resolveCoupangRiderDailyDate(supabase, query.date || '');
+  const collectDate = dateInfo.collectDate;
   const { data: crawlRows, error: crawlError } = await supabase
     .from('coupang_collect_items')
     .select('vendor_id,vendor_name,match_key,phone_number,courier_id,rider_name,parsed_json,collect_date')
-    .eq('collect_date', today)
+    .eq('collect_date', collectDate)
     .eq('source_menu', 'rider_daily')
     .limit(20000);
   if (crawlError) {
@@ -1326,7 +1392,11 @@ async function getAdminCoupangClusterCrawlAssign(accessToken, query = {}) {
   return {
     ok: true,
     platform: 'coupang',
-    today,
+    today: collectDate,
+    collectDate,
+    dateNote: dateInfo.fallback
+      ? `rider_daily ${collectDate} (요청일 ${dateInfo.requestedDate} 수집분 없음 · 쿠팡 영업일 06시 기준)`
+      : `rider_daily ${collectDate}`,
     summary,
     clusters,
     assignments,

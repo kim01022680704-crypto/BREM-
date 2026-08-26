@@ -3153,7 +3153,10 @@ const BremDriverManagementAdmin = (function () {
     const s = state.clusterAssign.summary || {};
 
     if (summaryEl) {
-      summaryEl.innerHTML = [
+      const datePart = state.clusterAssign.dateNote || state.clusterAssign.collectDate
+        ? `<strong>${escapeHtml(state.clusterAssign.dateNote || state.clusterAssign.collectDate)}</strong> · `
+        : '';
+      summaryEl.innerHTML = `${datePart}${[
         `크롤 <strong>${s.crawlTotal || 0}</strong>행`,
         `클러스터 <strong>${s.clusterCount || 0}</strong>`,
         `매칭 <strong>${s.matchedDrivers || 0}</strong>`,
@@ -3161,10 +3164,11 @@ const BremDriverManagementAdmin = (function () {
         `이미등록 <strong>${s.already || 0}</strong>`,
         `미등록 <strong>${s.unregistered || 0}</strong>`,
         s.noVendor ? `지역없음 <strong>${s.noVendor}</strong>` : ''
-      ].filter(Boolean).join(' · ');
+      ].filter(Boolean).join(' · ')}`;
     }
     if (footnote) {
       const parts = [];
+      if (state.clusterAssign.dateNote) parts.push(state.clusterAssign.dateNote);
       if (s.noVendor) parts.push(`vendor 정보 없는 크롤 ${s.noVendor}건은 자동 배정에서 제외됩니다.`);
       if (s.unregistered) parts.push(`ERP 미등록 ${s.unregistered}건 — 개별 지역의 「크롤링으로 지역등록」에서 간이등록하세요.`);
       footnote.textContent = parts.join(' ');
@@ -3181,7 +3185,12 @@ const BremDriverManagementAdmin = (function () {
     });
 
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="7" class="empty">배정할 기사가 없습니다. 쿠팡 rider_daily 수집 후 다시 시도하세요.</td></tr>';
+      const emptyMsg = (s.crawlTotal || 0) > 0
+        ? '크롤 기사는 있으나 ERP 매칭·배정 가능 건이 없습니다. 기사등록·쿠팡ID(이름+전화4자리)를 확인하세요.'
+        : (state.clusterAssign.dateNote
+          ? `${state.clusterAssign.dateNote} — 해당일 rider_daily 가 없습니다. 쿠팡 수집 후 다시 시도하세요.`
+          : '배정할 기사가 없습니다. 쿠팡 rider_daily 수집 후 다시 시도하세요.');
+      body.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(emptyMsg)}</td></tr>`;
       if (applyBtn) applyBtn.disabled = true;
       if (checkAll) {
         checkAll.checked = false;
@@ -3239,7 +3248,9 @@ const BremDriverManagementAdmin = (function () {
       state.clusterAssign = {
         assignments: payload.assignments || [],
         summary: payload.summary || {},
-        today: payload.today || '',
+        today: payload.today || payload.collectDate || '',
+        collectDate: payload.collectDate || payload.today || '',
+        dateNote: payload.dateNote || '',
         unregistered: payload.unregistered || [],
         noVendorRows: payload.noVendorRows || [],
         busy: false
