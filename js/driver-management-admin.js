@@ -383,10 +383,11 @@ const BremDriverManagementAdmin = (function () {
           || value === region.key
           || (region.partnerId && String(region.partnerId).length >= 6 && value.includes(region.partnerId));
       }
-      return shortCoupangRegion(value) === region.key
-        || shortCoupangRegion(value) === shortCoupangRegion(region.label)
+      return value === region.vendorId
+        || value === region.key
         || value === region.vendorName
-        || value === region.vendorId;
+        || shortCoupangRegion(value) === region.label
+        || shortCoupangRegion(value) === shortCoupangRegion(region.vendorName);
     });
   }
 
@@ -1872,23 +1873,21 @@ const BremDriverManagementAdmin = (function () {
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || '쿠팡 지역을 불러오지 못했습니다.');
       const items = payload.allItems || payload.items || [];
-      const byShort = new Map();
-      items.forEach(item => {
+      const seen = new Set();
+      state.coupangRegions = items.map(item => {
         const vendorId = String(item.vendorId || '').trim();
         const vendorName = String(item.vendorName || '').trim();
-        const short = shortCoupangRegion(vendorName);
-        if (!vendorId || !short) return;
-        if (!byShort.has(short)) {
-          byShort.set(short, {
-            key: short,
-            vendorId,
-            vendorName,
-            label: short,
-            platform: 'coupang'
-          });
-        }
-      });
-      state.coupangRegions = [...byShort.values()].sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+        if (!vendorId || seen.has(vendorId)) return null;
+        seen.add(vendorId);
+        const label = shortCoupangRegion(vendorName) || vendorId;
+        return {
+          key: vendorId,
+          vendorId,
+          vendorName,
+          label,
+          platform: 'coupang'
+        };
+      }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label, 'ko') || a.vendorId.localeCompare(b.vendorId));
     } catch (error) {
       console.warn('[BREM] coupang regions:', error);
       state.coupangRegions = [];
@@ -2108,10 +2107,11 @@ const BremDriverManagementAdmin = (function () {
           || value === region.key
           || (region.partnerId && region.partnerId.length >= 6 && value.includes(region.partnerId));
       }
-      return shortCoupangRegion(value) === region.key
-        || shortCoupangRegion(value) === shortCoupangRegion(region.label)
+      return value === region.vendorId
+        || value === region.key
         || value === region.vendorName
-        || value === region.vendorId;
+        || shortCoupangRegion(value) === region.label
+        || shortCoupangRegion(value) === shortCoupangRegion(region.vendorName);
     });
     state.regionMemberCache.byKey.set(region.key, matched);
     return matched;
@@ -3102,14 +3102,21 @@ const BremDriverManagementAdmin = (function () {
 
   function regionForCluster(clusterKey, vendorId = '', vendorName = '') {
     const key = String(clusterKey || '').trim();
-    if (!key) return null;
-    const found = state.coupangRegions.find(item => item.key === key);
-    if (found) return found;
+    const vid = String(vendorId || '').trim();
+    if (vid) {
+      const byId = state.coupangRegions.find(item => item.vendorId === vid || item.key === vid);
+      if (byId) return byId;
+    }
+    if (key) {
+      const byLabel = state.coupangRegions.find(item => item.label === key || item.key === key);
+      if (byLabel) return byLabel;
+    }
+    const label = key || shortCoupangRegion(vendorName) || vid;
     return {
-      key,
-      label: key,
-      vendorId: String(vendorId || '').trim(),
-      vendorName: String(vendorName || key).trim(),
+      key: vid || label,
+      label,
+      vendorId: vid,
+      vendorName: String(vendorName || label).trim(),
       platform: 'coupang'
     };
   }

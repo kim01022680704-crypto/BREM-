@@ -8,6 +8,12 @@ const {
   resolveDriver,
   metricsFromParsed
 } = require('./coupang-erp-sync');
+const {
+  shortCoupangRegionLabel,
+  coupangVendorMatchesRegion
+} = require('./coupang-collect-sources');
+
+const shortCoupangRegion = shortCoupangRegionLabel;
 
 const EXPOSURE_KEY = 'brem_rider_dashboard_region_exposure_v1';
 
@@ -68,10 +74,6 @@ function maskName(name, mask = true) {
   if (text.length === 1) return text;
   if (text.length === 2) return `${text[0]}*`;
   return `${text[0]}${'*'.repeat(Math.min(2, text.length - 2))}${text[text.length - 1]}`;
-}
-
-function shortCoupangRegion(value) {
-  return String(value || '').replace(/\s/g, '').slice(0, 4);
 }
 
 function normalizeBaeminUserId(value) {
@@ -242,10 +244,11 @@ function riderMatchesRegion(rider, region) {
   }
   const value = String(rider.regionCoupang || rider.raw_data?.regionCoupang || '').trim();
   if (!value) return false;
-  return shortCoupangRegion(value) === shortCoupangRegion(region.key)
-    || shortCoupangRegion(value) === shortCoupangRegion(region.label)
-    || value === region.vendorId
-    || (region.vendorName && value === region.vendorName);
+  if (value === region.vendorId || value === region.key) return true;
+  if (region.vendorName && value === region.vendorName) return true;
+  const valueShort = shortCoupangRegionLabel(value);
+  const regionShort = shortCoupangRegionLabel(region.label || region.vendorName || '');
+  return Boolean(valueShort && regionShort && valueShort === regionShort);
 }
 
 function mapRiderRow(row) {
@@ -588,12 +591,20 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
     throw error;
   }
 
+  const regionRef = {
+    key: vendorId || label,
+    vendorId,
+    label: shortCoupangRegionLabel(region.label || region.key || region.vendorName || ''),
+    vendorName: region.vendorName || region.label || ''
+  };
+
   const rows = (data || []).filter(row => {
-    const vid = String(row.vendor_id || '').trim();
-    const vname = shortCoupangRegion(row.vendor_name || '');
-    if (vendorId && vid === vendorId) return true;
-    if (label && vname === label) return true;
-    return false;
+    const parsed = row.parsed_json || {};
+    return coupangVendorMatchesRegion(
+      regionRef,
+      row.vendor_id || parsed.vendorId,
+      row.vendor_name || parsed.vendorName
+    );
   });
 
   let assigned = 0;
@@ -643,12 +654,12 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
   let realtimeRanking = [];
   if (!dailyError) {
     const filteredDaily = (dailyRows || []).filter(row => {
-      const vid = String(row.vendor_id || '').trim();
       const parsed = row.parsed_json || {};
-      const vname = shortCoupangRegion(row.vendor_name || parsed.vendorName || '');
-      if (vendorId && vid === vendorId) return true;
-      if (label && vname === label) return true;
-      return false;
+      return coupangVendorMatchesRegion(
+        regionRef,
+        row.vendor_id || parsed.vendorId,
+        row.vendor_name || parsed.vendorName
+      );
     });
 
     const lookup = buildCoupangLookup(rankingRiders.map(rider => ({
@@ -952,13 +963,10 @@ async function getAdminRegionCoupangCrawlMatch(accessToken, query = {}) {
     return { ok: false, status: 500, error: crawlError.message || '쿠팡 라이더일일 크롤을 불러오지 못했습니다.' };
   }
 
+  const targetRegion = { key: vendorId || short, vendorId, label: short || label, vendorName: label };
   const rowsFiltered = (crawlRows || []).filter(row => {
-    const vid = String(row.vendor_id || '').trim();
     const parsed = row.parsed_json || {};
-    const vname = shortCoupangRegion(row.vendor_name || parsed.vendorName || '');
-    if (vendorId && vid === vendorId) return true;
-    if (short && vname === short) return true;
-    return false;
+    return coupangVendorMatchesRegion(targetRegion, row.vendor_id || parsed.vendorId, row.vendor_name || parsed.vendorName);
   });
 
   const { data: riderRows, error: riderError } = await supabase
@@ -983,14 +991,15 @@ async function getAdminRegionCoupangCrawlMatch(accessToken, query = {}) {
   }).filter(driver => driver.id);
 
   const lookup = buildCoupangLookup(drivers);
-  const targetRegion = { label: short || label, vendorId, vendorName: label };
 
   function regionMatchesTarget(regionValue) {
     const value = String(regionValue || '').trim();
     if (!value) return false;
-    return shortCoupangRegion(value) === shortCoupangRegion(targetRegion.label)
-      || value === targetRegion.vendorId
-      || value === targetRegion.vendorName;
+    if (value === targetRegion.vendorId || value === targetRegion.label) return true;
+    if (targetRegion.vendorName && value === targetRegion.vendorName) return true;
+    const valueShort = shortCoupangRegionLabel(value);
+    const targetShort = shortCoupangRegionLabel(targetRegion.label || targetRegion.vendorName || '');
+    return Boolean(valueShort && targetShort && valueShort === targetShort);
   }
 
   const seen = new Set();
@@ -1225,7 +1234,7 @@ async function getAdminCoupangClusterCrawlAssign(accessToken, query = {}) {
     const parsed = row.parsed_json || {};
     const vendorId = String(row.vendor_id || parsed.vendorId || '').trim();
     const vendorName = String(row.vendor_name || parsed.vendorName || '').trim();
-    const cluster = shortCoupangRegion(vendorName) || (vendorId ? vendorId.slice(0, 4) : '');
+    const cluster = shortCoupangRegionLabel(vendorName) || '';
     const matchKey = String(row.match_key || parsed.matchKey || '').trim();
     const courierId = String(row.courier_id || parsed.courierId || '').trim();
     const crawlName = String(row.rider_name || parsed.name || parsed.riderName || '').trim();
@@ -1277,7 +1286,7 @@ async function getAdminCoupangClusterCrawlAssign(accessToken, query = {}) {
   const clusterMap = new Map();
 
   bestByDriver.forEach(entry => {
-    const currentShort = shortCoupangRegion(entry.currentRegion);
+    const currentShort = shortCoupangRegionLabel(entry.currentRegion);
     const status = currentShort === entry.cluster ? 'already' : 'assignable';
     const row = { ...entry, status, targetRegion: entry.cluster };
     assignments.push(row);

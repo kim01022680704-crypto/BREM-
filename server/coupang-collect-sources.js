@@ -31,6 +31,35 @@ function buildMatchKey(name, phone) {
   return `${nm}${last4}`;
 }
 
+/** 쿠팡 지역 표시용 4글자 (쿠팡현황·기사지역관리와 동일) */
+function shortCoupangRegionLabel(name) {
+  let raw = String(name || '').replace(/\s+/g, '').trim();
+  if (!raw) return '';
+  raw = raw.replace(/\(\d+\)$/g, '');
+  const hangul = raw.replace(/[^가-힣]/g, '');
+  const base = hangul || raw;
+  if (!base) return '';
+  return base.length <= 4 ? base : base.slice(-4);
+}
+
+/** vendorName 정규화 — (2) 접미사 제거 */
+function coupangRegionDedupeKey(name) {
+  return String(name || '').replace(/\s+/g, '').replace(/\(\d+\)$/g, '').trim();
+}
+
+function coupangVendorMatchesRegion(region, vendorId, vendorName) {
+  if (!region) return false;
+  const vid = String(vendorId || '').trim();
+  const vname = String(vendorName || '').trim();
+  const regionVid = String(region.vendorId || region.key || '').trim();
+  if (vid && regionVid && vid === regionVid) return true;
+  const short = shortCoupangRegionLabel(vname);
+  const regionShort = shortCoupangRegionLabel(region.label || region.vendorName || '');
+  if (short && regionShort && short === regionShort) return true;
+  if (vname && (vname === region.vendorName || vname === region.label)) return true;
+  return false;
+}
+
 function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -234,6 +263,9 @@ module.exports = {
   COUPANG_COLLECT_MENUS,
   buildMatchKey,
   digitsOnly,
+  shortCoupangRegionLabel,
+  coupangRegionDedupeKey,
+  coupangVendorMatchesRegion,
   mapRealtimeToItems,
   mapWeeklyToItems,
   mapVendorInfoToItems,
