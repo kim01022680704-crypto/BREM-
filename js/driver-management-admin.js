@@ -1080,6 +1080,7 @@ const BremDriverManagementAdmin = (function () {
   function renderOrgListCrewModal() {
     const title = $('#driverOrgListCrewTitle');
     const summary = $('#driverOrgListCrewSummary');
+    const totalsEl = $('#driverOrgListCrewTotals');
     const tbody = $('#driverOrgListCrewRows');
     const tfoot = $('#driverOrgListCrewFoot');
     if (!tbody) return;
@@ -1097,9 +1098,6 @@ const BremDriverManagementAdmin = (function () {
     }
     const rows = buildOrgListCrewDriverRows(node);
     state.orgListModalRows = rows;
-    if (summary) {
-      summary.textContent = `${formatWeekRange(week)} · 기사 ${formatNumber(rows.length)}명 · 하위 박스 포함`;
-    }
     let totalCoupangCalls = 0;
     let totalBaeminCalls = 0;
     let totalCoupangFee = 0;
@@ -1110,6 +1108,21 @@ const BremDriverManagementAdmin = (function () {
       totalCoupangFee += row.coupangFee;
       totalBaeminFee += row.baeminFee;
     });
+    const totalCalls = totalCoupangCalls + totalBaeminCalls;
+    const totalFee = totalCoupangFee + totalBaeminFee;
+    if (summary) {
+      summary.textContent = `${formatWeekRange(week)} · 하위 박스 포함`;
+    }
+    if (totalsEl) {
+      totalsEl.innerHTML = `
+        <div class="driver-org-list-crew-stat"><span>기사</span><strong>${formatNumber(rows.length)}명</strong></div>
+        <div class="driver-org-list-crew-stat"><span>쿠팡콜</span><strong>${formatNumber(totalCoupangCalls)}</strong></div>
+        <div class="driver-org-list-crew-stat"><span>배민콜</span><strong>${formatNumber(totalBaeminCalls)}</strong></div>
+        <div class="driver-org-list-crew-stat"><span>콜합계</span><strong>${formatNumber(totalCalls)}</strong></div>
+        <div class="driver-org-list-crew-stat"><span>쿠팡배달료</span><strong>${formatNumber(totalCoupangFee)}원</strong></div>
+        <div class="driver-org-list-crew-stat"><span>배민배달료</span><strong>${formatNumber(totalBaeminFee)}원</strong></div>
+        <div class="driver-org-list-crew-stat driver-org-list-crew-stat--accent"><span>배달료합계</span><strong>${formatNumber(totalFee)}원</strong></div>`;
+    }
     tbody.innerHTML = rows.length
       ? rows.map(row => `
         <tr>
