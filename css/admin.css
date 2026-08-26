@@ -12456,6 +12456,70 @@ button.driver-org-node small,
   min-height: 1.2em;
 }
 
+/* 엑셀 일괄등록 미매칭 명단. 건수가 많아도 전부 보이고 복사할 수 있어야 한다. */
+.driver-org-member-missing {
+  margin: 4px 0 6px;
+  padding: 8px;
+  border: 1px solid #f0c36d;
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.driver-org-member-missing__head {
+  margin: 0 0 6px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #8a5a00;
+}
+
+.driver-org-member-missing__rows {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  max-height: 200px;
+  overflow: auto;
+  display: grid;
+  gap: 3px;
+}
+
+.driver-org-member-missing__rows li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.driver-org-member-missing__rows code {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.driver-org-member-missing__rows span {
+  color: #8a5a00;
+}
+
+.driver-org-member-missing__list {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
 .driver-org-member-list {
   max-height: 220px;
   overflow: auto;

@@ -1325,11 +1325,79 @@ const BremDriverManagementAdmin = (function () {
     const summaryText = `체크 ${matched}명 · 이미선택 ${already}명 · 미매칭 ${missing.length}명 / 총 ${ids.length}건`;
     if (summary) summary.textContent = summaryText;
     renderOrg();
-    if (missing.length && missing.length <= 8) {
-      showToast(`${summaryText} · 미매칭: ${missing.join(', ')}`);
-    } else {
-      showToast(`${summaryText}. 저장하려면 「조직도 저장」을 누르세요.`);
+    // 미매칭은 건수와 무관하게 전부 보여준다. 토스트로만 알리면 사라지고,
+    // 예전에는 8명 이하일 때만 명단을 띄워서 그보다 많으면 누군지 알 수 없었다.
+    renderOrgMemberBulkMissing(buildOrgMissingRows(missing, drivers));
+    showToast(missing.length
+      ? `${summaryText} · 미매칭 ${missing.length}명은 아래 목록에서 확인하세요.`
+      : `${summaryText}. 저장하려면 「조직도 저장」을 누르세요.`);
+  }
+
+  /**
+   * 못 붙은 ERP ID 마다 왜 안 붙었는지 판정한다.
+   * ERP ID 는 "이름+전화뒤4" 형식이라, 이름으로 등록 기사를 찾아 뒤4를 비교하면
+   * 미등록인지 · 번호가 다른지 · 동명이인인지 구분된다.
+   */
+  function buildOrgMissingRows(missing = [], drivers = []) {
+    const strip = value => String(value || '').replace(/\s/g, '');
+    const tailOf = value => String(value || '').replace(/[^0-9]/g, '').slice(-4);
+    return missing.map(id => {
+      const name = strip(String(id).replace(/[0-9]+$/, ''));
+      const sheetTail = (String(id).match(/(\d{4})\s*$/) || [])[1] || '';
+      const sameName = name
+        ? (drivers || []).filter(driver => strip(driver?.name) === name)
+        : [];
+      if (!sameName.length) {
+        return { id, hint: '등록된 기사가 없습니다 (미등록)' };
+      }
+      if (sameName.length > 1) {
+        return {
+          id,
+          hint: `같은 이름 ${sameName.length}명 — ${sameName.map(d => tailOf(d.phone) || '번호없음').join(', ')}`
+        };
+      }
+      const own = tailOf(sameName[0].phone);
+      if (sheetTail && own && sheetTail !== own) {
+        return { id, hint: `등록돼 있음 · 전화 뒤4 다름 (엑셀 ${sheetTail} / 등록 ${own})` };
+      }
+      return { id, hint: 'ERP ID 형식을 확인하세요 (이름+전화뒤4 / 배민ID / 쿠팡ID)' };
+    });
+  }
+
+  /** 엑셀 일괄등록에서 못 붙은 ERP ID 전체 목록 + 사유. 복사해서 바로 확인할 수 있게 둔다. */
+  function renderOrgMemberBulkMissing(rows = []) {
+    const box = $('#driverOrgMemberBulkMissing');
+    if (!box) return;
+    if (!rows.length) {
+      box.hidden = true;
+      box.innerHTML = '';
+      return;
     }
+    box.hidden = false;
+    box.innerHTML = `
+      <p class="driver-org-member-missing__head">
+        미매칭 <strong>${rows.length}명</strong> — 이 ERP ID 들은 기사·관리자 명단에서 찾지 못했습니다.
+      </p>
+      <ul class="driver-org-member-missing__rows">
+        ${rows.map(row => `<li><code>${escapeHtml(row.id)}</code><span>${escapeHtml(row.hint)}</span></li>`).join('')}
+      </ul>
+      <textarea class="driver-org-member-missing__list" id="driverOrgMemberBulkMissingList"
+        readonly rows="${Math.min(8, rows.length)}">${escapeHtml(rows.map(row => `${row.id}\t${row.hint}`).join('\n'))}</textarea>
+      <button type="button" class="small-btn" id="driverOrgMemberBulkMissingCopyBtn">목록 복사</button>
+    `;
+    box.querySelector('#driverOrgMemberBulkMissingCopyBtn')?.addEventListener('click', () => {
+      const text = rows.map(row => `${row.id}\t${row.hint}`).join('\n');
+      if (navigator.clipboard?.writeText) {
+        void navigator.clipboard.writeText(text).then(
+          () => showToast(`미매칭 ${rows.length}건을 복사했습니다.`),
+          () => showToast('복사에 실패했습니다. 목록을 직접 선택해 복사하세요.')
+        );
+        return;
+      }
+      const el = box.querySelector('#driverOrgMemberBulkMissingList');
+      el?.select?.();
+      showToast('목록을 선택했습니다. Ctrl+C 로 복사하세요.');
+    });
   }
 
   function clearOrgFileDragStyles() {
