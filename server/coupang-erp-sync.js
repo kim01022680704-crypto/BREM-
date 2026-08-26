@@ -244,5 +244,8 @@ module.exports = {
   calcRejectRate,
   metricsFromParsed,
   getErpCoupangId,
-  makeDriverLoginId
+  makeDriverLoginId,
+  buildCoupangLookup,
+  resolveDriver,
+  normalizeCoupangKey
 };

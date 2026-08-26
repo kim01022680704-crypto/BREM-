@@ -3,6 +3,11 @@ const { getRiderMe } = require('./rider-auth');
 const { computeSlotTargets, SLOT_LABELS, currentBaeminSlotKey } = require('./baemin-quota');
 const { readWeekdayQuotaMatrix } = require('./baemin-weekday-quota');
 const { readPartnerSetCountMap, normalizeSetCount } = require('./baemin-partner-set-count');
+const {
+  buildCoupangLookup,
+  resolveDriver,
+  metricsFromParsed
+} = require('./coupang-erp-sync');
 
 const EXPOSURE_KEY = 'brem_rider_dashboard_region_exposure_v1';
 
@@ -239,7 +244,8 @@ function riderMatchesRegion(rider, region) {
   if (!value) return false;
   return shortCoupangRegion(value) === shortCoupangRegion(region.key)
     || shortCoupangRegion(value) === shortCoupangRegion(region.label)
-    || value === region.vendorId;
+    || value === region.vendorId
+    || (region.vendorName && value === region.vendorName);
 }
 
 function mapRiderRow(row) {
@@ -247,6 +253,7 @@ function mapRiderRow(row) {
     id: row.id,
     name: row.name || '',
     baeminId: row.baemin_id || '',
+    phone: String(row.phone || row.raw_data?.phone || '').trim(),
     regionBaemin: String(row.raw_data?.regionBaemin || '').trim(),
     regionCoupang: String(row.raw_data?.regionCoupang || '').trim(),
     raw_data: row.raw_data || {},
@@ -319,14 +326,14 @@ async function loadRidersForRegion(supabase, region) {
     if (parts.length) {
       result = await fetchPages(() => supabase
         .from('riders')
-        .select('id,name,baemin_id,raw_data')
+        .select('id,name,baemin_id,phone,raw_data')
         .or(parts.join(',')));
     } else {
       result = { data: [], error: null };
     }
   } else {
     const short = shortCoupangRegion(region.label || region.key);
-    const parts = [region.label, region.key, region.vendorId]
+    const parts = [region.label, region.key, region.vendorId, region.vendorName]
       .map(value => String(value || '').trim())
       .filter(Boolean)
       .filter((value, index, list) => list.indexOf(value) === index)
@@ -335,7 +342,7 @@ async function loadRidersForRegion(supabase, region) {
     if (parts.length) {
       result = await fetchPages(() => supabase
         .from('riders')
-        .select('id,name,baemin_id,raw_data')
+        .select('id,name,baemin_id,phone,raw_data')
         .or(parts.join(',')));
     } else {
       result = { data: [], error: null };
@@ -347,7 +354,7 @@ async function loadRidersForRegion(supabase, region) {
     all.length = 0;
     result = await fetchPages(() => supabase
       .from('riders')
-      .select('id,name,baemin_id,raw_data'));
+      .select('id,name,baemin_id,phone,raw_data'));
     if (result.error) throw result.error;
   }
 
@@ -546,8 +553,12 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
 }
 
 async function buildCoupangLive(supabase, region, today, options = {}) {
-  // options.maskNames 는 쿠팡 실시간 순위가 비활성(가중치 0.8)이라 미사용
-  void options;
+  const mask = options.maskNames !== false;
+  const rankingRiders = Array.isArray(options.rankingRiders)
+    ? options.rankingRiders
+    : (Array.isArray(options.regionRiders)
+      ? options.regionRiders
+      : await loadRidersForRegion(supabase, region));
   const vendorId = region.vendorId || '';
   const label = shortCoupangRegion(region.label || region.key);
 
@@ -557,8 +568,6 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
     .eq('collect_date', today)
     .in('source_menu', ['peak_realtime', 'vendor_info']);
 
-  // vendorId 가 있으면 DB 에서 먼저 좁힌다. (그날 전체 5000행을 받아 앱에서 거르면 느리다)
-  // 지역명으로만 매칭되는 수집분도 있어서, 결과가 비면 기존처럼 전체를 훑는다.
   let { data, error } = vendorId
     ? await baseQuery().eq('vendor_id', vendorId).limit(5000)
     : await baseQuery().limit(5000);
@@ -573,9 +582,7 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
           ...emptyMetrics(),
           sourceNote: '쿠팡 피크타임·지역요약 크롤링 테이블 없음'
         },
-        realtimeRanking: [],
-        realtimeRankingDisabled: true,
-        realtimeRankingReason: '쿠팡 실시간 콜수는 피크 가중치(0.8 단위)라 기사별 순위 집계가 불가합니다. 할당·운행중·남은할당만 표시합니다.'
+        realtimeRanking: []
       };
     }
     throw error;
@@ -589,8 +596,6 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
     return false;
   });
 
-  // 할당/남은할당 = 피크타임 현황(peak_realtime) 크롤링
-  // 운행중 = 지역별 요약(vendor_info) 크롤링
   let assigned = 0;
   let operating = 0;
   let remaining = 0;
@@ -616,26 +621,86 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
   });
 
   if (hasPeak) {
-    // 피크별 목표/잔여 합산 (대시보드 피크타임 현황과 동일 소스)
     assigned = Math.round(peakGoalSum);
     remaining = Math.round(peakRemainSum);
   } else if (hasVendor && assigned > 0) {
     remaining = Math.max(0, assigned - operating);
   }
 
+  const dailyBaseQuery = () => supabase
+    .from('coupang_collect_items')
+    .select('vendor_id,vendor_name,match_key,phone_number,courier_id,parsed_json,collect_date')
+    .eq('collect_date', today)
+    .eq('source_menu', 'rider_daily');
+
+  let { data: dailyRows, error: dailyError } = vendorId
+    ? await dailyBaseQuery().eq('vendor_id', vendorId).limit(5000)
+    : await dailyBaseQuery().limit(5000);
+  if (!dailyError && vendorId && !(dailyRows || []).length) {
+    ({ data: dailyRows, error: dailyError } = await dailyBaseQuery().limit(5000));
+  }
+
+  let realtimeRanking = [];
+  if (!dailyError) {
+    const filteredDaily = (dailyRows || []).filter(row => {
+      const vid = String(row.vendor_id || '').trim();
+      const parsed = row.parsed_json || {};
+      const vname = shortCoupangRegion(row.vendor_name || parsed.vendorName || '');
+      if (vendorId && vid === vendorId) return true;
+      if (label && vname === label) return true;
+      return false;
+    });
+
+    const lookup = buildCoupangLookup(rankingRiders.map(rider => ({
+      id: rider.id,
+      name: rider.name,
+      phone: rider.phone || rider.raw_data?.phone || '',
+      raw: rider.raw_data || {},
+      coupangId: rider.raw_data?.coupangId || rider.raw_data?.coupangLoginKey || ''
+    })));
+    const rankingIds = new Set(rankingRiders.map(rider => rider.id));
+    const totals = new Map();
+    const names = new Map();
+
+    filteredDaily.forEach(row => {
+      const parsed = row.parsed_json || {};
+      const driver = resolveDriver({
+        matchKey: row.match_key || parsed.matchKey,
+        phone: row.phone_number || parsed.phone
+      }, lookup);
+      if (!driver || !rankingIds.has(driver.id)) return;
+      const complete = metricsFromParsed(parsed).complete;
+      if (complete <= 0) return;
+      totals.set(driver.id, (totals.get(driver.id) || 0) + complete);
+      names.set(driver.id, driver.name || parsed.name || '');
+    });
+
+    realtimeRanking = [...totals.entries()]
+      .map(([driverId, callCount]) => ({
+        driverId,
+        name: maskName(names.get(driverId) || '-', mask),
+        callCount: Math.round(callCount * 10) / 10
+      }))
+      .filter(row => row.callCount > 0)
+      .sort((a, b) => b.callCount - a.callCount || a.name.localeCompare(b.name, 'ko'))
+      .slice(0, 10)
+      .map((row, index) => ({ ...row, rank: index + 1 }));
+  }
+
+  const metricsNote = hasPeak || hasVendor
+    ? '쿠팡 할당=피크타임 현황 · 운행중=지역요약 · 실시간순위=라이더일일(rider_daily) 크롤'
+    : '오늘 쿠팡 피크타임·지역요약 크롤링 데이터가 없습니다';
+
   return {
     metrics: {
       assigned,
       operating,
       remaining,
-      sourceNote: hasPeak || hasVendor
-        ? '쿠팡 할당=피크타임 현황(peak_realtime) · 운행중=지역별 요약(vendor_info) 크롤링'
-        : '오늘 쿠팡 피크타임·지역요약 크롤링 데이터가 없습니다'
+      sourceNote: realtimeRanking.length
+        ? `${metricsNote} · 지역등록 ${rankingRiders.length}명 중`
+        : metricsNote
     },
-    // 쿠팡 라이더별 completeCount 는 0.8 가중치 소수 → 정수 순위 불가
-    realtimeRanking: [],
-    realtimeRankingDisabled: true,
-    realtimeRankingReason: '쿠팡 실시간 콜수는 피크 가중치(0.8 단위)라 기사별 순위 집계가 불가합니다. 할당·운행중·남은할당만 표시합니다.'
+    realtimeRanking
   };
 }
 
@@ -851,10 +916,153 @@ async function getAdminRegionExposure(accessToken) {
 }
 
 /**
+ * 선택 쿠팡 지역의 오늘 rider_daily 크롤 ↔ ERP 기사 매칭 미리보기.
+ */
+async function getAdminRegionCoupangCrawlMatch(accessToken, query = {}) {
+  const { verifyAdminCaller } = require('./admin-users');
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const vendorId = String(query.vendorId || '').trim();
+  const label = String(query.label || query.regionKey || '').trim();
+  const short = shortCoupangRegion(label);
+  if (!vendorId && !short) {
+    return { ok: false, status: 400, error: '쿠팡 vendorId 또는 지역명이 필요합니다.' };
+  }
+
+  const today = formatKstDateKey(new Date());
+  const baseQuery = () => supabase
+    .from('coupang_collect_items')
+    .select('vendor_id,vendor_name,match_key,phone_number,courier_id,rider_name,parsed_json,collect_date')
+    .eq('collect_date', today)
+    .eq('source_menu', 'rider_daily');
+
+  let { data: crawlRows, error: crawlError } = vendorId
+    ? await baseQuery().eq('vendor_id', vendorId).limit(5000)
+    : await baseQuery().limit(5000);
+  if (!crawlError && vendorId && !(crawlRows || []).length) {
+    ({ data: crawlRows, error: crawlError } = await baseQuery().limit(5000));
+  }
+  if (crawlError) {
+    return { ok: false, status: 500, error: crawlError.message || '쿠팡 라이더일일 크롤을 불러오지 못했습니다.' };
+  }
+
+  const rowsFiltered = (crawlRows || []).filter(row => {
+    const vid = String(row.vendor_id || '').trim();
+    const parsed = row.parsed_json || {};
+    const vname = shortCoupangRegion(row.vendor_name || parsed.vendorName || '');
+    if (vendorId && vid === vendorId) return true;
+    if (short && vname === short) return true;
+    return false;
+  });
+
+  const { data: riderRows, error: riderError } = await supabase
+    .from('riders')
+    .select('id,name,phone,baemin_id,raw_data')
+    .limit(8000);
+  if (riderError) {
+    return { ok: false, status: 500, error: riderError.message || '기사 목록을 불러오지 못했습니다.' };
+  }
+
+  const drivers = (riderRows || []).map(row => {
+    const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+    return {
+      id: String(row.id || ''),
+      name: String(row.name || raw.name || ''),
+      phone: String(row.phone || raw.phone || ''),
+      coupangId: String(raw.coupangId || raw.coupangLoginKey || ''),
+      coupangLoginKey: String(raw.coupangLoginKey || ''),
+      regionCoupang: String(raw.regionCoupang || '').trim(),
+      raw
+    };
+  }).filter(driver => driver.id);
+
+  const lookup = buildCoupangLookup(drivers);
+  const targetRegion = { label: short || label, vendorId, vendorName: label };
+
+  function regionMatchesTarget(regionValue) {
+    const value = String(regionValue || '').trim();
+    if (!value) return false;
+    return shortCoupangRegion(value) === shortCoupangRegion(targetRegion.label)
+      || value === targetRegion.vendorId
+      || value === targetRegion.vendorName;
+  }
+
+  const seen = new Set();
+  const rows = [];
+  rowsFiltered.forEach(row => {
+    const parsed = row.parsed_json || {};
+    const matchKey = String(row.match_key || parsed.matchKey || '').trim();
+    const courierId = String(row.courier_id || parsed.courierId || '').trim();
+    const identity = matchKey || courierId;
+    if (!identity || seen.has(identity)) return;
+    seen.add(identity);
+
+    const crawlName = String(
+      row.rider_name || parsed.name || parsed.riderName || ''
+    ).trim();
+    const phone = String(row.phone_number || parsed.phone || '').trim();
+    const driver = resolveDriver({ matchKey, phone, courierId }, lookup);
+    const currentRegion = driver ? String(driver.regionCoupang || '').trim() : '';
+
+    let status = 'unregistered';
+    if (driver) {
+      status = regionMatchesTarget(currentRegion) ? 'already' : 'assignable';
+    }
+
+    rows.push({
+      matchKey,
+      coupangId: courierId || matchKey,
+      crawlName: crawlName || '-',
+      phone,
+      driverId: driver?.id || '',
+      driverName: driver?.name || '',
+      currentRegion,
+      status,
+      targetRegion: short || label
+    });
+  });
+
+  rows.sort((a, b) => {
+    const order = { assignable: 0, unregistered: 1, already: 2 };
+    const d = (order[a.status] ?? 9) - (order[b.status] ?? 9);
+    if (d) return d;
+    return String(a.crawlName).localeCompare(String(b.crawlName), 'ko');
+  });
+
+  const summary = {
+    total: rows.length,
+    already: rows.filter(r => r.status === 'already').length,
+    assignable: rows.filter(r => r.status === 'assignable').length,
+    unregistered: rows.filter(r => r.status === 'unregistered').length
+  };
+
+  return {
+    ok: true,
+    platform: 'coupang',
+    vendorId,
+    label: short || label,
+    today,
+    snapshotDate: today,
+    summary,
+    rows
+  };
+}
+
+/**
  * 선택 DP의 오늘 배달현황 크롤 ↔ 전체 ERP 배민ID 매칭 미리보기.
  * 기사지역관리 「크롤링으로 지역등록」용.
  */
 async function getAdminRegionCrawlMatch(accessToken, query = {}) {
+  const platform = normalizePlatform(query.platform || 'baemin');
+  if (platform === 'coupang') {
+    return getAdminRegionCoupangCrawlMatch(accessToken, query);
+  }
   const { verifyAdminCaller } = require('./admin-users');
   const admin = await verifyAdminCaller(accessToken);
   if (!admin.ok) return admin;
@@ -958,6 +1166,163 @@ async function getAdminRegionCrawlMatch(accessToken, query = {}) {
     snapshotDate: snapshot.snapshotDate || '',
     summary,
     rows
+  };
+}
+
+/**
+ * 쿠팡 rider_daily 크롤의 vendor(클러스터)별 ERP 기사 자동 배정 미리보기.
+ * 지역별 수집 없이 한 번에 받은 rider_daily 에 vendorId/vendorName 이 있으면
+ * 4글자 클러스터(울산남 등)로 묶어 배정 후보를 만든다.
+ */
+async function getAdminCoupangClusterCrawlAssign(accessToken, query = {}) {
+  const { verifyAdminCaller } = require('./admin-users');
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const today = String(query.date || formatKstDateKey(new Date())).slice(0, 10);
+  const { data: crawlRows, error: crawlError } = await supabase
+    .from('coupang_collect_items')
+    .select('vendor_id,vendor_name,match_key,phone_number,courier_id,rider_name,parsed_json,collect_date')
+    .eq('collect_date', today)
+    .eq('source_menu', 'rider_daily')
+    .limit(20000);
+  if (crawlError) {
+    return { ok: false, status: 500, error: crawlError.message || '쿠팡 라이더일일 크롤을 불러오지 못했습니다.' };
+  }
+
+  const { data: riderRows, error: riderError } = await supabase
+    .from('riders')
+    .select('id,name,phone,baemin_id,raw_data')
+    .limit(8000);
+  if (riderError) {
+    return { ok: false, status: 500, error: riderError.message || '기사 목록을 불러오지 못했습니다.' };
+  }
+
+  const drivers = (riderRows || []).map(row => {
+    const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+    return {
+      id: String(row.id || ''),
+      name: String(row.name || raw.name || ''),
+      phone: String(row.phone || raw.phone || ''),
+      coupangId: String(raw.coupangId || raw.coupangLoginKey || ''),
+      coupangLoginKey: String(raw.coupangLoginKey || ''),
+      regionCoupang: String(raw.regionCoupang || '').trim(),
+      raw
+    };
+  }).filter(driver => driver.id);
+
+  const lookup = buildCoupangLookup(drivers);
+  const bestByDriver = new Map();
+  const noVendorRows = [];
+  const unregistered = [];
+
+  (crawlRows || []).forEach(row => {
+    const parsed = row.parsed_json || {};
+    const vendorId = String(row.vendor_id || parsed.vendorId || '').trim();
+    const vendorName = String(row.vendor_name || parsed.vendorName || '').trim();
+    const cluster = shortCoupangRegion(vendorName) || (vendorId ? vendorId.slice(0, 4) : '');
+    const matchKey = String(row.match_key || parsed.matchKey || '').trim();
+    const courierId = String(row.courier_id || parsed.courierId || '').trim();
+    const crawlName = String(row.rider_name || parsed.name || parsed.riderName || '').trim();
+    const phone = String(row.phone_number || parsed.phone || '').trim();
+    const completeCount = metricsFromParsed(parsed).complete;
+
+    if (!cluster) {
+      noVendorRows.push({
+        matchKey,
+        coupangId: courierId || matchKey,
+        crawlName: crawlName || '-',
+        phone,
+        completeCount: Math.round(completeCount * 10) / 10
+      });
+      return;
+    }
+
+    const driver = resolveDriver({ matchKey, phone, courierId }, lookup);
+    if (!driver) {
+      unregistered.push({
+        cluster,
+        vendorId,
+        vendorName,
+        matchKey,
+        coupangId: courierId || matchKey,
+        crawlName: crawlName || '-',
+        phone,
+        completeCount: Math.round(completeCount * 10) / 10
+      });
+      return;
+    }
+
+    const prev = bestByDriver.get(driver.id);
+    if (!prev || completeCount > prev.completeCount) {
+      bestByDriver.set(driver.id, {
+        driverId: driver.id,
+        driverName: driver.name || crawlName || '-',
+        currentRegion: String(driver.regionCoupang || '').trim(),
+        cluster,
+        vendorId,
+        vendorName,
+        completeCount: Math.round(completeCount * 10) / 10,
+        crawlName: crawlName || '-'
+      });
+    }
+  });
+
+  const assignments = [];
+  const clusterMap = new Map();
+
+  bestByDriver.forEach(entry => {
+    const currentShort = shortCoupangRegion(entry.currentRegion);
+    const status = currentShort === entry.cluster ? 'already' : 'assignable';
+    const row = { ...entry, status, targetRegion: entry.cluster };
+    assignments.push(row);
+
+    if (!clusterMap.has(entry.cluster)) {
+      clusterMap.set(entry.cluster, {
+        key: entry.cluster,
+        label: entry.cluster,
+        vendorId: entry.vendorId,
+        vendorName: entry.vendorName,
+        assignable: 0,
+        already: 0,
+        rows: []
+      });
+    }
+    const bucket = clusterMap.get(entry.cluster);
+    bucket.rows.push(row);
+    if (status === 'assignable') bucket.assignable += 1;
+    else bucket.already += 1;
+    if (!bucket.vendorId && entry.vendorId) bucket.vendorId = entry.vendorId;
+    if (!bucket.vendorName && entry.vendorName) bucket.vendorName = entry.vendorName;
+  });
+
+  const clusters = [...clusterMap.values()]
+    .sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+
+  const summary = {
+    crawlTotal: (crawlRows || []).length,
+    matchedDrivers: assignments.length,
+    assignable: assignments.filter(r => r.status === 'assignable').length,
+    already: assignments.filter(r => r.status === 'already').length,
+    unregistered: unregistered.length,
+    noVendor: noVendorRows.length,
+    clusterCount: clusters.length
+  };
+
+  return {
+    ok: true,
+    platform: 'coupang',
+    today,
+    summary,
+    clusters,
+    assignments,
+    unregistered,
+    noVendorRows
   };
 }
 
@@ -1086,6 +1451,7 @@ module.exports = {
   getRiderRegionDashboard,
   getAdminRegionRanking,
   getAdminRegionCrawlMatch,
+  getAdminCoupangClusterCrawlAssign,
   getAdminRegionExposure,
   saveAdminRegionExposure,
   // 기본값 변경 검증용 (scripts/_test-region-mode-default.js)

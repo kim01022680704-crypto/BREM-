@@ -6086,6 +6086,7 @@
             <div class="card-header">
               <h2>기사지역관리</h2>
               <div class="promotion-form-actions">
+                <button type="button" class="small-btn primary-btn" id="driverRegionClusterAssignBtn" hidden title="오늘 rider_daily 크롤의 vendor(클러스터)별로 ERP 기사를 일괄 배정">클러스터 크롤 배정</button>
                 <button type="button" class="small-btn" id="driverRegionReloadBtn">지역 새로고침</button>
               </div>
             </div>
@@ -6144,7 +6145,7 @@
                     </div>
                   </label>
                   <button type="button" class="small-btn primary-btn" id="driverRegionAddBtn">추가</button>
-                  <button type="button" class="small-btn" id="driverRegionCrawlMatchBtn" title="오늘 배달현황 크롤의 배민ID로 ERP 기사와 매칭">크롤링으로 지역등록</button>
+                  <button type="button" class="small-btn" id="driverRegionCrawlMatchBtn" title="오늘 크롤 데이터로 ERP 기사와 매칭해 지역 등록">크롤링으로 지역등록</button>
                 </div>
                 <div class="driver-region-list-filter">
                   <label class="field">
@@ -8299,6 +8300,42 @@
     </div>
   </div>
 
+  <div class="settlement-match-modal" id="driverRegionClusterAssignModal" hidden>
+    <div class="settlement-match-modal__backdrop" data-close-region-cluster-assign></div>
+    <div class="settlement-match-modal__dialog settlement-match-modal__dialog--wide" role="dialog" aria-labelledby="driverRegionClusterAssignTitle" aria-modal="true">
+      <div class="settlement-match-modal__head">
+        <div class="settlement-match-modal__head-top">
+          <h3 id="driverRegionClusterAssignTitle">클러스터 크롤 배정</h3>
+        </div>
+        <p class="form-help">오늘 <strong>rider_daily</strong> 크롤에 붙은 vendor(지역명) 기준으로 4글자 클러스터별 ERP 기사를 자동 배정합니다. 지역별 따로 수집하지 않아도, 크롤 행의 vendorName/vendorId 로 클러스터를 나눕니다.</p>
+        <p class="direct-inline-stats" id="driverRegionClusterAssignSummary"></p>
+      </div>
+      <div class="table-wrap driver-region-crawl-match-table-wrap">
+        <table class="weekly-settlement-detail-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="driverRegionClusterAssignCheckAll" title="반영가능 전체"></th>
+              <th>클러스터</th>
+              <th>크롤 이름</th>
+              <th>ERP 기사</th>
+              <th>현재 지역</th>
+              <th>완료</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody id="driverRegionClusterAssignRows">
+            <tr><td colspan="7" class="empty">불러오는 중…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="form-help" id="driverRegionClusterAssignFootnote"></p>
+      <div class="settlement-match-actions">
+        <button type="button" class="small-btn" data-close-region-cluster-assign>닫기</button>
+        <button type="button" class="primary-btn" id="driverRegionClusterAssignApplyBtn" disabled>선택 반영</button>
+      </div>
+    </div>
+  </div>
+
   <div class="settlement-match-modal" id="driverRegionBulkCreateModal" hidden>
     <div class="settlement-match-modal__backdrop" data-close-region-bulk-create></div>
     <div class="settlement-match-modal__dialog" role="dialog" aria-labelledby="driverRegionBulkCreateTitle" aria-modal="true">
@@ -8511,7 +8548,7 @@
   <script src="js/direct-settlement-calc.js?v=20260823d"></script>
   <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260823c"></script>
-  <script src="js/driver-management-admin.js?v=20260826orgcrew2"></script>
+  <script src="js/driver-management-admin.js?v=20260826coupangcluster1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260822other1"></script>
   <script src="js/admin-payroll-slip-search.js?v=20260817pay6"></script>
