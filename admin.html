@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260826orgmissing1">
+  <link rel="stylesheet" href="css/admin.css?v=20260826orgcrew1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -6068,7 +6068,7 @@
                 <button type="button" class="small-btn" id="driverOrgListReloadBtn">새로고침</button>
               </div>
             </div>
-            <p class="form-help">크루장이 지정된 박스만 표시합니다. 크루장 · 인원 · 쿠팡/배민 콜수 · 배달료 (정산주 수~화, 그 박스+하위 인원).</p>
+            <p class="form-help">크루장이 지정된 박스만 표시합니다. 크루장 · 인원 · 쿠팡/배민 콜수 · 배달료 (정산주 수~화, 그 박스+하위 인원). <strong>크루 행을 클릭</strong>하면 기사별 콜수·배달료를 볼 수 있습니다.</p>
             <div class="driver-org-week-bar">
               <span class="baemin-field__label">정산주 (수~화)</span>
               <button type="button" class="small-btn" id="driverOrgListWeekPrevBtn" title="이전 주">&lt;&lt;</button>
@@ -8227,6 +8227,41 @@
     </div>
   </div>
 
+  <div class="settlement-match-modal" id="driverOrgListCrewModal" hidden>
+    <div class="settlement-match-modal__backdrop" data-close-org-list-crew></div>
+    <div class="settlement-match-modal__dialog settlement-match-modal__dialog--wide" role="dialog" aria-labelledby="driverOrgListCrewTitle" aria-modal="true">
+      <div class="settlement-match-modal__head">
+        <div class="settlement-match-modal__head-top">
+          <h3 id="driverOrgListCrewTitle">크루 기사 실적</h3>
+        </div>
+        <p class="direct-inline-stats" id="driverOrgListCrewSummary"></p>
+      </div>
+      <div class="table-wrap driver-org-list-crew-table-wrap">
+        <table class="driver-org-member-table driver-org-list-crew-table">
+          <thead>
+            <tr>
+              <th>이름</th>
+              <th>소속박스</th>
+              <th>쿠팡콜</th>
+              <th>배민콜</th>
+              <th>쿠팡배달료</th>
+              <th>배민배달료</th>
+              <th>배달료합계</th>
+            </tr>
+          </thead>
+          <tbody id="driverOrgListCrewRows">
+            <tr><td colspan="7" class="empty">불러오는 중…</td></tr>
+          </tbody>
+          <tfoot id="driverOrgListCrewFoot"></tfoot>
+        </table>
+      </div>
+      <div class="settlement-match-actions">
+        <button type="button" class="small-btn" data-close-org-list-crew>닫기</button>
+        <button type="button" class="primary-btn" id="driverOrgListCrewExportBtn">엑셀 내보내기</button>
+      </div>
+    </div>
+  </div>
+
   <div class="settlement-match-modal" id="driverRegionCrawlMatchModal" hidden>
     <div class="settlement-match-modal__backdrop" data-close-region-crawl-match></div>
     <div class="settlement-match-modal__dialog settlement-match-modal__dialog--wide" role="dialog" aria-labelledby="driverRegionCrawlMatchTitle" aria-modal="true">
@@ -8474,7 +8509,7 @@
   <script src="js/direct-settlement-calc.js?v=20260823d"></script>
   <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260823c"></script>
-  <script src="js/driver-management-admin.js?v=20260826orgmissing1"></script>
+  <script src="js/driver-management-admin.js?v=20260826orgcrew1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260822other1"></script>
   <script src="js/admin-payroll-slip-search.js?v=20260817pay6"></script>

@@ -37,7 +37,9 @@ const BremDriverManagementAdmin = (function () {
     regionDetailSyncTimer: null,
     regionDetailDriverCount: -1,
     regionListFilter: '',
-    regionListFilterTimer: null
+    regionListFilterTimer: null,
+    orgListModalNodeId: '',
+    orgListModalRows: []
   };
 
   const REGION_RANKING_POLL_MS = 120 * 1000;
@@ -1027,6 +1029,171 @@ const BremDriverManagementAdmin = (function () {
       || String(a.label).localeCompare(String(b.label), 'ko'));
   }
 
+  function buildOrgListCrewDriverRows(node) {
+    if (!node) return [];
+    const week = ensureWeek();
+    const entries = collectSubtreeMemberEntries(node).filter(entry => entry.kind !== 'admin');
+    const byDriver = new Map();
+    entries.forEach(entry => {
+      const id = String(entry.id || '').trim();
+      if (!id) return;
+      let row = byDriver.get(id);
+      if (!row) {
+        const resolved = resolveOrgMemberName(entry);
+        const coupang = driverCallAndFee(id, week, 'coupang');
+        const baemin = driverCallAndFee(id, week, 'baemin');
+        row = {
+          id,
+          name: resolved?.name || '이름 없음',
+          boxLabels: new Set(),
+          isCrew: false,
+          coupangCalls: coupang.callCount,
+          baeminCalls: baemin.callCount,
+          coupangFee: coupang.deliveryFee,
+          baeminFee: baemin.deliveryFee,
+          totalFee: coupang.deliveryFee + baemin.deliveryFee,
+          totalCalls: coupang.callCount + baemin.callCount
+        };
+        byDriver.set(id, row);
+      }
+      row.boxLabels.add(entry.boxLabel || '이름 없음');
+      const boxNode = state.org.nodes.find(n => n.id === entry.nodeId);
+      if (boxNode?.leaderRef?.kind === 'driver' && boxNode?.leaderRef?.id === id) {
+        row.isCrew = true;
+      }
+    });
+    return [...byDriver.values()]
+      .map(row => ({
+        ...row,
+        boxLabel: [...row.boxLabels].sort((a, b) => a.localeCompare(b, 'ko')).join(', ')
+      }))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'));
+  }
+
+  function closeOrgListCrewModal() {
+    const modal = $('#driverOrgListCrewModal');
+    if (modal) modal.hidden = true;
+    state.orgListModalNodeId = '';
+    state.orgListModalRows = [];
+  }
+
+  function renderOrgListCrewModal() {
+    const title = $('#driverOrgListCrewTitle');
+    const summary = $('#driverOrgListCrewSummary');
+    const tbody = $('#driverOrgListCrewRows');
+    const tfoot = $('#driverOrgListCrewFoot');
+    if (!tbody) return;
+    loadOrg();
+    const node = state.org.nodes.find(item => item.id === state.orgListModalNodeId);
+    if (!node) {
+      closeOrgListCrewModal();
+      return;
+    }
+    const week = ensureWeek();
+    const leaderName = resolveLeaderName(node.leaderRef) || '-';
+    const isTopRep = state.org.topRepNodeId === node.id;
+    if (title) {
+      title.textContent = `${leaderName} · ${node.label || '이름 없음'}${isTopRep ? ' (대표)' : ''}`;
+    }
+    const rows = buildOrgListCrewDriverRows(node);
+    state.orgListModalRows = rows;
+    if (summary) {
+      summary.textContent = `${formatWeekRange(week)} · 기사 ${formatNumber(rows.length)}명 · 하위 박스 포함`;
+    }
+    let totalCoupangCalls = 0;
+    let totalBaeminCalls = 0;
+    let totalCoupangFee = 0;
+    let totalBaeminFee = 0;
+    rows.forEach(row => {
+      totalCoupangCalls += row.coupangCalls;
+      totalBaeminCalls += row.baeminCalls;
+      totalCoupangFee += row.coupangFee;
+      totalBaeminFee += row.baeminFee;
+    });
+    tbody.innerHTML = rows.length
+      ? rows.map(row => `
+        <tr>
+          <td><strong>${escapeHtml(row.name)}</strong>${row.isCrew ? ' <span class="driver-org-badge driver-org-badge--crew">크루장</span>' : ''}</td>
+          <td>${escapeHtml(row.boxLabel)}</td>
+          <td class="weekly-amount-cell">${formatNumber(row.coupangCalls)}</td>
+          <td class="weekly-amount-cell">${formatNumber(row.baeminCalls)}</td>
+          <td class="weekly-amount-cell">${formatNumber(row.coupangFee)}원</td>
+          <td class="weekly-amount-cell">${formatNumber(row.baeminFee)}원</td>
+          <td class="weekly-amount-cell">${formatNumber(row.totalFee)}원</td>
+        </tr>`).join('')
+      : '<tr><td colspan="7" class="empty">소속 기사가 없습니다.</td></tr>';
+    if (tfoot) {
+      tfoot.innerHTML = rows.length
+        ? `<tr class="driver-org-total-row">
+            <td class="driver-org-total-label">합계 (${formatNumber(rows.length)}명)</td>
+            <td></td>
+            <td class="weekly-amount-cell">${formatNumber(totalCoupangCalls)}</td>
+            <td class="weekly-amount-cell">${formatNumber(totalBaeminCalls)}</td>
+            <td class="weekly-amount-cell">${formatNumber(totalCoupangFee)}원</td>
+            <td class="weekly-amount-cell">${formatNumber(totalBaeminFee)}원</td>
+            <td class="weekly-amount-cell">${formatNumber(totalCoupangFee + totalBaeminFee)}원</td>
+          </tr>`
+        : '';
+    }
+  }
+
+  async function openOrgListCrewModal(nodeId) {
+    const id = String(nodeId || '').trim();
+    if (!id) return;
+    loadOrg();
+    const node = state.org.nodes.find(item => item.id === id);
+    if (!node) return;
+    await ensureDriverMgmtStatsLoaded({ force: false });
+    state.orgListModalNodeId = id;
+    renderOrgListCrewModal();
+    const modal = $('#driverOrgListCrewModal');
+    if (modal) modal.hidden = false;
+  }
+
+  function exportOrgListCrewExcel() {
+    if (!window.XLSX) {
+      showToast('엑셀 라이브러리를 불러오지 못했습니다.');
+      return;
+    }
+    const rows = state.orgListModalRows || [];
+    if (!rows.length) {
+      showToast('내보낼 기사가 없습니다.');
+      return;
+    }
+    loadOrg();
+    const node = state.org.nodes.find(item => item.id === state.orgListModalNodeId);
+    const leaderName = node ? (resolveLeaderName(node.leaderRef) || '-') : '-';
+    const boxLabel = node?.label || '크루';
+    const week = ensureWeek();
+    const header = ['이름', '소속박스', '쿠팡콜', '배민콜', '쿠팡배달료', '배민배달료', '배달료합계'];
+    const data = rows.map(row => [
+      row.name,
+      row.boxLabel,
+      row.coupangCalls,
+      row.baeminCalls,
+      row.coupangFee,
+      row.baeminFee,
+      row.totalFee
+    ]);
+    let totalCoupangCalls = 0;
+    let totalBaeminCalls = 0;
+    let totalCoupangFee = 0;
+    let totalBaeminFee = 0;
+    rows.forEach(row => {
+      totalCoupangCalls += row.coupangCalls;
+      totalBaeminCalls += row.baeminCalls;
+      totalCoupangFee += row.coupangFee;
+      totalBaeminFee += row.baeminFee;
+    });
+    data.push(['합계', `${rows.length}명`, totalCoupangCalls, totalBaeminCalls, totalCoupangFee, totalBaeminFee, totalCoupangFee + totalBaeminFee]);
+    const sheet = XLSX.utils.aoa_to_sheet([header, ...data]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, '기사실적');
+    const safeName = `${leaderName}_${boxLabel}`.replace(/[\\/:*?"<>|]/g, '_').slice(0, 40);
+    XLSX.writeFile(wb, `BREM_조직도정리_${safeName}_${week}.xlsx`);
+    showToast('엑셀 파일을 저장했습니다.');
+  }
+
   function renderOrgList() {
     const root = $('#driverOrgListRoot');
     const summary = $('#driverOrgListSummary');
@@ -1085,7 +1252,7 @@ const BremDriverManagementAdmin = (function () {
         </thead>
         <tbody>
           ${rows.map(row => `
-            <tr class="${row.isTopRep ? 'is-toprep' : ''}">
+            <tr class="${row.isTopRep ? 'is-toprep ' : ''}is-clickable" data-org-list-crew="${escapeHtml(row.id)}" tabindex="0" role="button" title="클릭하면 기사별 실적 보기">
               <td><strong>${escapeHtml(row.leaderName)}</strong></td>
               <td class="driver-org-list-table__box">
                 ${row.isTopRep ? '<span class="driver-org-badge driver-org-badge--toprep">대표</span> ' : ''}
@@ -1104,6 +1271,7 @@ const BremDriverManagementAdmin = (function () {
   async function refreshOrgList(options = {}) {
     await ensureDriverMgmtStatsLoaded({ force: options.force === true });
     renderOrgList();
+    if (state.orgListModalNodeId) renderOrgListCrewModal();
   }
 
   function selectedNode() {
@@ -3375,6 +3543,17 @@ const BremDriverManagementAdmin = (function () {
         return;
       }
 
+      if (event.target.closest('[data-close-org-list-crew]')) {
+        closeOrgListCrewModal();
+        return;
+      }
+
+      const orgListCrewRow = event.target.closest('[data-org-list-crew]');
+      if (orgListCrewRow) {
+        void openOrgListCrewModal(orgListCrewRow.dataset.orgListCrew);
+        return;
+      }
+
       const crawlQuick = event.target.closest('[data-crawl-quick-create]');
       if (crawlQuick) {
         const index = Number(crawlQuick.dataset.crawlQuickCreate);
@@ -3517,6 +3696,18 @@ const BremDriverManagementAdmin = (function () {
     });
     $('#driverOrgListWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
     $('#driverOrgListWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
+    $('#driverOrgListCrewExportBtn')?.addEventListener('click', () => exportOrgListCrewExcel());
+    $('#driverOrgListRoot')?.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const row = event.target.closest('[data-org-list-crew]');
+      if (!row) return;
+      event.preventDefault();
+      void openOrgListCrewModal(row.dataset.orgListCrew);
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      if (!$('#driverOrgListCrewModal')?.hidden) closeOrgListCrewModal();
+    });
     $('#driverOrgAddRootBtn')?.addEventListener('click', () => addNode(''));
     $('#driverOrgAddChildBtn')?.addEventListener('click', () => {
       if (!state.selectedNodeId) {

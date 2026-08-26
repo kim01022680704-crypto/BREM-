@@ -13325,6 +13325,33 @@ tr.is-week-first td {
   background: rgba(245, 158, 11, 0.08);
 }
 
+.driver-org-list-table tr.is-clickable {
+  cursor: pointer;
+}
+
+.driver-org-list-table tr.is-clickable:hover td,
+.driver-org-list-table tr.is-clickable:focus-visible td {
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.driver-org-list-table tr.is-clickable:focus-visible {
+  outline: 2px solid rgba(251, 191, 36, 0.55);
+  outline-offset: -2px;
+}
+
+.driver-org-list-crew-table-wrap {
+  max-height: min(62vh, 640px);
+  overflow: auto;
+}
+
+.driver-org-list-crew-table tfoot .driver-org-total-row td {
+  position: sticky;
+  bottom: 0;
+  background: var(--black-2);
+  border-top: 2px solid var(--line);
+  font-weight: 700;
+}
+
 .driver-org-list-table .driver-org-badge--toprep {
   color: #92400e;
   vertical-align: middle;
