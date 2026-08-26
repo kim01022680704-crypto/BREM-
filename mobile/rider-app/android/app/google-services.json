@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "219570159993",
+    "project_id": "brem-d0208",
+    "storage_bucket": "brem-d0208.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:219570159993:android:86bf57637d9bf40b2bafa8",
+        "android_client_info": {
+          "package_name": "kr.brem.rider"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBLOHLLCHkcYgJPtc352gbYUtypBOFVrrg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
