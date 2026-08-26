@@ -663,6 +663,15 @@ const BremSettlementParser = (function () {
     return `${name}${phone}`;
   }
 
+  function driverPhoneTail(driver) {
+    return String(driver?.phone || '').replace(/[^0-9]/g, '').slice(-4);
+  }
+
+  /** 정산서 성함칸("이름+전화뒤4")에서 뒤4자리만 뽑는다. 없으면 빈 문자열. */
+  function sheetPhoneTail(rawName) {
+    return (String(rawName || '').match(/(\d{4})\s*$/) || [])[1] || '';
+  }
+
   // 관리자가 「미매칭 매칭」 툴에서 직접 지정한 매핑.
   // originalName 에는 쿠팡 정산서 성함(=쿠팡ID) 또는 배민 라이더 User ID 가 들어간다.
   function loadManualMappings(platform) {
@@ -716,13 +725,28 @@ const BremSettlementParser = (function () {
     const byBaeminKey = new Map();
     const byCoupangKey = new Map();
     const byName = new Map();
+    // 같은 키를 쓰는 기사가 둘 이상이면 그 키로는 사람을 특정할 수 없다.
+    // 먼저 등록된 쪽을 조용히 고르면 남의 정산이 붙으므로 키를 아예 버린다.
+    const ambiguousBaeminKeys = new Set();
+    const ambiguousCoupangKeys = new Set();
+    const indexKey = (map, ambiguous, key, item) => {
+      if (!key) return;
+      const prev = map.get(key);
+      if (!prev) {
+        map.set(key, item);
+        return;
+      }
+      if (String(prev.id) !== String(item.id)) ambiguous.add(key);
+    };
     (driverList || []).forEach(item => {
-      const baeminKey = baeminIdMatchKey(item?.baeminId);
-      if (baeminKey && !byBaeminKey.has(baeminKey)) byBaeminKey.set(baeminKey, item);
-      const coupangKey = makeCoupangLoginKeyForDriver(item);
-      if (coupangKey && !byCoupangKey.has(coupangKey)) byCoupangKey.set(coupangKey, item);
-      const storedCoupang = normalizeCoupangLoginKey(item?.coupangId || item?.coupangLoginId || item?.loginId);
-      if (storedCoupang && !byCoupangKey.has(storedCoupang)) byCoupangKey.set(storedCoupang, item);
+      indexKey(byBaeminKey, ambiguousBaeminKeys, baeminIdMatchKey(item?.baeminId), item);
+      indexKey(byCoupangKey, ambiguousCoupangKeys, makeCoupangLoginKeyForDriver(item), item);
+      indexKey(
+        byCoupangKey,
+        ambiguousCoupangKeys,
+        normalizeCoupangLoginKey(item?.coupangId || item?.coupangLoginId || item?.loginId),
+        item
+      );
       const nameKey = normalizeDriverName(item?.name, format);
       if (nameKey) {
         const list = byName.get(nameKey) || [];
@@ -735,6 +759,7 @@ const BremSettlementParser = (function () {
       const normalizedRowName = normalizeDriverName(row.name, format);
       const normalizedRiderId = normalizeBaeminUserId(row.riderId);
       let driver = null;
+      let unmatchedReason = '';
 
       // 수동 지정 매핑이 자동 키보다 우선한다. (관리자가 잘못된 자동매칭도 고칠 수 있어야 한다)
       if (manualIndex.byIdKey.size || manualIndex.byNameKey.size) {
@@ -750,16 +775,43 @@ const BremSettlementParser = (function () {
 
       if (!driver && isBaemin) {
         const riderKey = baeminIdMatchKey(normalizedRiderId || row.riderId);
-        if (riderKey) driver = byBaeminKey.get(riderKey) || null;
+        if (!riderKey) {
+          unmatchedReason = '정산서에 배민 User ID 가 없습니다.';
+        } else if (ambiguousBaeminKeys.has(riderKey)) {
+          unmatchedReason = `배민ID ${riderKey} 가 여러 기사에 등록돼 있습니다. 중복 등록을 정리해 주세요.`;
+        } else {
+          driver = byBaeminKey.get(riderKey) || null;
+          if (!driver) unmatchedReason = `배민ID ${riderKey} 로 등록된 기사가 없습니다.`;
+        }
       } else if (!driver) {
         // 쿠팡 정산서의 성함칸은 "이름+전화뒷4자리"(쿠팡ID, 예: "정우성8281") 형식이다.
-        // → 쿠팡ID로 매칭하는 것을 최우선으로 하고, 이름-단독 매칭은 마지막 백업으로만 쓴다.
+        // → 쿠팡ID로 매칭하는 것을 최우선으로 한다.
         const loginKey = normalizeCoupangLoginKey(row.rawName || row.name);
-        if (loginKey) driver = byCoupangKey.get(loginKey) || null;
-        // 이름 매칭 (쿠팡ID/전화 미등록 기사 대비 · 동명이인 없을 때만 안전)
-        if (!driver && normalizedRowName) {
+        if (loginKey && ambiguousCoupangKeys.has(loginKey)) {
+          unmatchedReason = `쿠팡ID ${loginKey} 가 여러 기사에 등록돼 있습니다. 중복 등록을 정리해 주세요.`;
+        } else if (loginKey) {
+          driver = byCoupangKey.get(loginKey) || null;
+        }
+        // 이름 백업. 성함칸에 전화 뒤4자리가 이미 들어 있으므로 그걸 버리고 이름만
+        // 보면, 아직 등록되지 않은 기사의 정산이 같은 이름의 다른 기사에게 붙는다.
+        // 뒤4자리가 맞을 때만 붙이고, 다르면 미매칭으로 남겨 사람이 확인하게 한다.
+        if (!driver && !unmatchedReason && normalizedRowName) {
+          const sheetTail = sheetPhoneTail(row.rawName || row.name);
           const nameMatches = byName.get(normalizedRowName) || [];
-          if (nameMatches.length === 1) driver = nameMatches[0];
+          if (nameMatches.length === 1) {
+            const only = nameMatches[0];
+            const ownTail = driverPhoneTail(only);
+            if (!sheetTail || !ownTail || sheetTail === ownTail) {
+              driver = only;
+            } else {
+              unmatchedReason = `이름은 같지만 전화 뒤4자리가 다릅니다 (정산서 ${sheetTail} / 등록 ${ownTail}).`
+                + ' 미등록 기사이거나 등록 번호가 플랫폼 계정과 다릅니다.';
+            }
+          } else if (nameMatches.length > 1) {
+            unmatchedReason = `이름이 같은 기사가 ${nameMatches.length}명 있어 특정할 수 없습니다.`;
+          } else {
+            unmatchedReason = '등록된 기사와 매칭되지 않습니다.';
+          }
         }
       }
 
@@ -781,7 +833,7 @@ const BremSettlementParser = (function () {
           driverName: driver.name
         });
       } else {
-        unmatched.push(payload);
+        unmatched.push({ ...payload, reason: unmatchedReason });
       }
     });
 
