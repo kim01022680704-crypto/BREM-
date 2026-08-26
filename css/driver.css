@@ -3089,9 +3089,9 @@ button.calendar-day:hover {
 
 .driver-crew-leader-panel .driver-crew-table {
   width: 100%;
-  min-width: 520px;
+  min-width: 0;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .driver-crew-leader-panel .driver-crew-table th,
@@ -3112,32 +3112,41 @@ button.calendar-day:hover {
   text-align: center;
 }
 
+/* 이름·운행(소속)은 내용만큼만 — 고정 % 폭이면 짧은 이름 뒤에 빈칸이 생김 */
+.driver-crew-leader-panel .driver-crew-table th:nth-child(1),
+.driver-crew-leader-panel .driver-crew-table td:nth-child(1),
+.driver-crew-leader-panel .driver-crew-table th:nth-child(2),
+.driver-crew-leader-panel .driver-crew-table td:nth-child(2) {
+  width: 1%;
+  white-space: nowrap;
+  padding-right: 4px;
+}
+
 .driver-crew-leader-panel .driver-crew-table th:nth-child(1),
 .driver-crew-leader-panel .driver-crew-table td:nth-child(1) {
   text-align: left;
-  width: 26%;
 }
 
 .driver-crew-leader-panel .driver-crew-table th:nth-child(2),
 .driver-crew-leader-panel .driver-crew-table td:nth-child(2) {
   text-align: center;
+  padding-left: 2px;
+  padding-right: 6px;
 }
 
 .driver-crew-name {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-width: 100%;
+  flex-wrap: nowrap;
+  gap: 3px;
+  max-width: none;
 }
 
 .driver-crew-name__text {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
   font-size: 0.74rem;
   font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -3174,6 +3183,9 @@ button.calendar-day:hover {
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   font-size: 0.72rem;
+  width: 3.2rem;
+  padding-left: 4px;
+  padding-right: 4px;
 }
 
 .driver-crew-table tr.is-self td {
@@ -3285,21 +3297,32 @@ button.calendar-day:hover {
 }
 
 .driver-crew-detail-table {
-  min-width: 640px;
+  min-width: 0;
+}
+
+.driver-crew-detail-table th:nth-child(1),
+.driver-crew-detail-table td:nth-child(1),
+.driver-crew-detail-table th:nth-child(2),
+.driver-crew-detail-table td:nth-child(2) {
+  width: 1%;
+  white-space: nowrap;
+  padding-right: 4px;
 }
 
 .driver-crew-detail-table th:nth-child(1),
 .driver-crew-detail-table td:nth-child(1) {
-  width: 24%;
+  text-align: left;
 }
 
 .driver-crew-detail-table th:nth-child(2),
 .driver-crew-detail-table td:nth-child(2) {
-  width: 14%;
+  text-align: left;
+  padding-left: 2px;
+  padding-right: 6px;
 }
 
 .driver-crew-detail-table td.driver-crew-box {
-  max-width: 72px;
+  max-width: 5.5rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
