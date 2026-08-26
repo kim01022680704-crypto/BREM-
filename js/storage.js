@@ -1505,6 +1505,7 @@ const BremStorage = (function () {
     'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.deductionLedger, KEYS.leaseLoans],
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
     'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.deductionLedger, KEYS.leaseLoans],
+    'tax-management': [KEYS.drivers, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
@@ -12811,6 +12812,9 @@ const BremStorage = (function () {
     // 기존 계정은 메뉴 목록이 저장돼 있어 이 보정이 없으면 새 메뉴가 안 보인다.
     if (normalized.includes('settlement-result-direct') && !normalized.includes('final-deposit')) {
       normalized.splice(normalized.indexOf('settlement-result-direct') + 1, 0, 'final-deposit');
+    }
+    if (normalized.includes('final-deposit') && !normalized.includes('tax-management')) {
+      normalized.splice(normalized.indexOf('final-deposit') + 1, 0, 'tax-management');
     }
 
     if (!normalized.includes('driver-management')) {

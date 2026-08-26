@@ -952,6 +952,47 @@ const BremDirectSettlementCalc = (function () {
     return rows.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko-KR'));
   }
 
+  /** 원천세 신고용 — 선택 정산서의 기사별 지급합계(grossPay) 합산 */
+  function buildGrossPayTotals(settlements) {
+    const byPerson = new Map();
+    (Array.isArray(settlements) ? settlements : []).forEach(settlement => {
+      const platform = normalizePlatform(settlement.platform);
+      const unitCallFee = callFeeUnit(platform);
+      const adj = adjustmentMaps(settlement);
+      (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
+        const base = riderRowBase(rider, settlement, platform, unitCallFee, adj);
+        const key = base.canonicalKey || `row:${base.platform}:${base.idLabel}:${base.name}`;
+        const prev = byPerson.get(key);
+        if (!prev) {
+          byPerson.set(key, {
+            key,
+            driverId: base.driverId,
+            name: base.name,
+            grossPay: Math.round(Number(base.grossPay || 0)),
+            platforms: new Set([platform]),
+            idLabels: new Set(base.idLabel && base.idLabel !== '-' ? [base.idLabel] : [])
+          });
+          return;
+        }
+        prev.grossPay += Math.round(Number(base.grossPay || 0));
+        prev.platforms.add(platform);
+        if (!prev.driverId && base.driverId) prev.driverId = base.driverId;
+        if (base.idLabel && base.idLabel !== '-') prev.idLabels.add(base.idLabel);
+      });
+    });
+    return sortByName([...byPerson.values()].map(row => ({
+      key: row.key,
+      driverId: row.driverId,
+      name: row.name,
+      grossPay: row.grossPay,
+      platformLabel: ['coupang', 'baemin']
+        .filter(p => row.platforms.has(p))
+        .map(p => (p === 'coupang' ? '쿠팡' : '배민'))
+        .join('+'),
+      idLabel: [...row.idLabels].join(' / ') || '-'
+    })));
+  }
+
   function sumRows(rows) {
     const totals = {};
     NUMERIC_KEYS.forEach(key => { totals[key] = 0; });
@@ -999,6 +1040,7 @@ const BremDirectSettlementCalc = (function () {
     buildLeaseLoanSpilloverAllocation,
     buildSpilloverReport,
     computeRows,
+    buildGrossPayTotals,
     escapeHtml,
     theadHtml,
     sortByName,
