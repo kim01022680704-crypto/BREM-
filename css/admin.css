@@ -6630,6 +6630,25 @@ tr.direct-registry-active > td:first-child {
   font-style: italic;
 }
 
+/* 세무관리 — 월 선택 → 정산서 → 계산하기 */
+.tax-management-steps {
+  display: grid;
+  gap: 16px;
+  margin: 0 0 14px;
+}
+.tax-management-step {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-2, #161b2e);
+  border: 1px solid var(--border, #2a3350);
+}
+.tax-management-step__title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--yellow, #facc15);
+}
+
 /* 최종입금 · 정산서 선택 */
 .final-deposit-picker {
   margin: 0 0 12px;

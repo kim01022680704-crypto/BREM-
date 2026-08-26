@@ -1,12 +1,15 @@
-// 세무관리 — 원천세 신고용 지급합계 집계
+// 세무관리 — 원천세 신고용 월별 지급합계 집계
 const BremTaxManagementAdmin = (function () {
   const $ = selector => document.querySelector(selector);
   const Calc = () => window.BremDirectSettlementCalc;
 
   const state = {
-    week: '',
-    excludedSettlementIds: new Set()
+    month: '',
+    excludedSettlementIds: new Set(),
+    calculated: null
   };
+
+  let monthPicker = null;
 
   function escapeHtml(value) {
     return Calc().escapeHtml(value);
@@ -22,12 +25,36 @@ const BremTaxManagementAdmin = (function () {
       .format(new Date(`${String(value).slice(0, 10)}T00:00:00`));
   }
 
+  function formatMonthLabel(value) {
+    if (window.BremDatePicker?.formatMonthLabel) {
+      return window.BremDatePicker.formatMonthLabel(value, '월 선택');
+    }
+    if (!value) return '월 선택';
+    const [year, month] = String(value).split('-');
+    return `${year}년 ${month}월`;
+  }
+
   function showToast(message) {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
 
   function platformLabel(platform) {
     return platform === 'coupang' ? '쿠팡' : '배민';
+  }
+
+  function currentMonthKey() {
+    return window.BremDatePicker?.currentMonth?.()
+      || new Date().toISOString().slice(0, 7);
+  }
+
+  /** 신고월 — 지급일 우선, 없으면 정산 종료일, 없으면 정산주 */
+  function recordMonthKey(record) {
+    const payment = String(record.paymentDate || '').slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(payment)) return payment;
+    const end = String(record.endDate || '').slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(end)) return end;
+    const week = Calc().settlementWeek(record).slice(0, 7);
+    return /^\d{4}-\d{2}$/.test(week) ? week : '';
   }
 
   function allSettlements() {
@@ -40,35 +67,43 @@ const BremTaxManagementAdmin = (function () {
       ));
   }
 
-  function weekSettlements() {
-    const week = ensureWeek();
-    return allSettlements().filter(record => Calc().settlementWeek(record) === week);
+  function ensureMonth() {
+    if (state.month) return state.month;
+    const latest = allSettlements()[0];
+    state.month = latest ? recordMonthKey(latest) : currentMonthKey();
+    return state.month;
+  }
+
+  function monthSettlements() {
+    const month = ensureMonth();
+    return allSettlements().filter(record => recordMonthKey(record) === month);
   }
 
   function checkedSettlements() {
-    return weekSettlements().filter(record => !state.excludedSettlementIds.has(String(record.id)));
+    return monthSettlements().filter(record => !state.excludedSettlementIds.has(String(record.id)));
   }
 
-  function ensureWeek() {
-    if (state.week) return state.week;
-    const latest = allSettlements()[0];
-    state.week = latest ? Calc().settlementWeek(latest) : Calc().weekStartKey();
-    return state.week;
+  function clearCalculated() {
+    state.calculated = null;
   }
 
-  function setWeek(value) {
-    const next = value ? Calc().weekStartKey(value) : Calc().weekStartKey();
-    if (next === state.week) return;
-    state.week = next;
+  function setMonth(value) {
+    const next = String(value || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(next)) return;
+    if (next === state.month) return;
+    state.month = next;
     state.excludedSettlementIds.clear();
-    void refresh();
+    clearCalculated();
+    render();
   }
 
-  function shiftWeek(deltaWeeks) {
-    const base = ensureWeek();
-    const date = new Date(`${base}T00:00:00`);
-    date.setDate(date.getDate() + deltaWeeks * 7);
-    setWeek(Calc().dateKey(date));
+  function shiftMonth(deltaMonths) {
+    const base = ensureMonth();
+    const [year, month] = base.split('-').map(Number);
+    const date = new Date(year, month - 1 + deltaMonths, 1);
+    const next = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    monthPicker?.setMonth?.(next);
+    setMonth(next);
   }
 
   function residentNumberForDriver(driverId) {
@@ -81,37 +116,36 @@ const BremTaxManagementAdmin = (function () {
     return window.BremDriverUtils?.formatResidentNumber?.(raw) || String(raw || '').trim();
   }
 
-  function aggregateRows() {
-    const settlements = checkedSettlements();
-    if (!settlements.length) return { settlements, rows: [] };
-    const rows = Calc().buildGrossPayTotals(settlements).map(row => ({
+  function buildRowsFromSettlements(settlements) {
+    return Calc().buildGrossPayTotals(settlements).map(row => ({
       ...row,
       residentNumber: residentNumberForDriver(row.driverId)
     }));
-    return { settlements, rows };
   }
 
-  function renderWeekButton() {
-    const btn = $('#taxManagementWeekBtn');
-    if (btn) btn.textContent = `${formatDate(ensureWeek())}(수) 주`;
-    const hidden = $('#taxManagementWeek');
-    if (hidden) hidden.value = ensureWeek();
+  function renderMonthButton() {
+    const label = $('#taxManagementMonthLabel');
+    const hidden = $('#taxManagementMonth');
+    const month = ensureMonth();
+    if (label) label.textContent = formatMonthLabel(month);
+    if (hidden) hidden.value = month;
   }
 
   function renderSettlementPicker() {
     const listEl = $('#taxManagementSettlementList');
-    const rangeEl = $('#taxManagementWeekRange');
+    const rangeEl = $('#taxManagementMonthRange');
     if (!listEl) return;
 
-    const list = weekSettlements();
+    const list = monthSettlements();
+    const monthLabel = formatMonthLabel(ensureMonth());
     if (rangeEl) {
       rangeEl.textContent = list.length
-        ? `정산주 ${formatDate(ensureWeek())}(수) · 정산서 ${list.length}건 — 체크한 정산서만 지급합계에 합산됩니다`
-        : `${formatDate(ensureWeek())}(수) 주에 저장된 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요.`;
+        ? `${monthLabel} · 직계약 정산서 ${list.length}건 — 신고에 포함할 정산서를 고르세요`
+        : `${monthLabel}에 해당하는 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」을 확인하세요.`;
     }
 
     if (!list.length) {
-      listEl.innerHTML = '<p class="empty">이 주에 저장된 직계약 정산서가 없습니다.</p>';
+      listEl.innerHTML = '<p class="empty">이 달에 해당하는 정산서가 없습니다.</p>';
       const allChk = $('#taxManagementSettlementAll');
       if (allChk) allChk.checked = false;
       return;
@@ -123,12 +157,16 @@ const BremTaxManagementAdmin = (function () {
       const riders = Array.isArray(record.riders) ? record.riders.length : 0;
       const region = record.region ? ` · ${escapeHtml(record.region)}` : '';
       const file = record.fileName ? `<span class="muted-inline">${escapeHtml(record.fileName)}</span>` : '';
+      const payNote = record.paymentDate
+        ? `<span class="muted-inline">지급 ${formatDate(record.paymentDate)}</span>`
+        : '';
       return `
         <label class="final-deposit-settlement">
           <input type="checkbox" data-tax-settlement="${escapeHtml(id)}"${checked ? ' checked' : ''}>
           <span class="final-deposit-settlement-body">
             <strong>${escapeHtml(platformLabel(record.platform))}</strong>${region}
             <span class="muted-inline">${formatDate(record.startDate)} ~ ${formatDate(record.endDate)} · ${formatNumber(riders)}명</span>
+            ${payNote}
             ${file}
           </span>
         </label>`;
@@ -153,30 +191,35 @@ const BremTaxManagementAdmin = (function () {
     const body = $('#taxManagementRows');
     const summary = $('#taxManagementSummary');
     const exportBtn = $('#taxManagementExportBtn');
+    const calcBtn = $('#taxManagementCalculateBtn');
     if (!body) return;
 
-    const { settlements, rows } = aggregateRows();
+    const selectedCount = checkedSettlements().length;
+    if (calcBtn) calcBtn.disabled = selectedCount <= 0;
+
+    if (!state.calculated) {
+      if (summary) {
+        summary.textContent = selectedCount
+          ? `정산서 ${selectedCount}건 선택됨 · 「계산하기」를 눌러 지급합계를 집계하세요.`
+          : '신고월을 고른 뒤 정산서를 선택하고 「계산하기」를 누르세요.';
+      }
+      if (exportBtn) exportBtn.disabled = true;
+      body.innerHTML = '<tr><td colspan="4" class="empty">월 선택 → 정산서 선택 → 계산하기</td></tr>';
+      return;
+    }
+
+    const { settlements, rows } = state.calculated;
     const totalGross = rows.reduce((sum, row) => sum + Number(row.grossPay || 0), 0);
     const missingResident = rows.filter(row => !row.residentNumber).length;
 
     if (summary) {
-      if (!settlements.length) {
-        summary.textContent = '정산서를 선택하면 기사별 지급합계가 표시됩니다.';
-      } else if (!rows.length) {
-        summary.textContent = '선택한 정산서에 집계할 기사가 없습니다.';
-      } else {
-        summary.textContent = `선택 정산서 ${settlements.length}건 · 기사 ${formatNumber(rows.length)}명`
-          + ` · 지급합계 합 ${formatNumber(totalGross)}원`
-          + (missingResident ? ` · 주민번호 미등록 ${formatNumber(missingResident)}명` : '');
-      }
+      summary.textContent = `${formatMonthLabel(ensureMonth())} · 선택 정산서 ${settlements.length}건`
+        + ` · 기사 ${formatNumber(rows.length)}명 · 지급합계 합 ${formatNumber(totalGross)}원`
+        + (missingResident ? ` · 주민번호 미등록 ${formatNumber(missingResident)}명` : '');
     }
 
     if (exportBtn) exportBtn.disabled = !rows.length;
 
-    if (!settlements.length) {
-      body.innerHTML = '<tr><td colspan="4" class="empty">정산서를 선택하세요.</td></tr>';
-      return;
-    }
     if (!rows.length) {
       body.innerHTML = '<tr><td colspan="4" class="empty">집계할 기사가 없습니다.</td></tr>';
       return;
@@ -192,22 +235,36 @@ const BremTaxManagementAdmin = (function () {
   }
 
   function render() {
-    renderWeekButton();
+    renderMonthButton();
     renderSettlementPicker();
     renderTable();
   }
 
+  async function calculate() {
+    const settlements = checkedSettlements();
+    if (!settlements.length) {
+      showToast('정산서를 하나 이상 선택하세요.');
+      return;
+    }
+    await window.BremStorage?.ensureSectionLoaded?.('tax-management');
+    const rows = buildRowsFromSettlements(settlements);
+    state.calculated = { settlements, rows };
+    renderTable();
+    const totalGross = rows.reduce((sum, row) => sum + Number(row.grossPay || 0), 0);
+    showToast(`기사 ${formatNumber(rows.length)}명 · 지급합계 ${formatNumber(totalGross)}원 집계했습니다.`);
+  }
+
   function exportExcel() {
-    const { rows } = aggregateRows();
+    const rows = state.calculated?.rows || [];
     if (!rows.length) {
-      showToast('보낼 데이터가 없습니다. 정산서를 선택하세요.');
+      showToast('먼저 「계산하기」로 집계하세요.');
       return;
     }
     if (!window.XLSX) {
       showToast('엑셀 라이브러리를 불러오지 못했습니다.');
       return;
     }
-    const week = ensureWeek();
+    const month = ensureMonth();
     const sheetRows = rows.map(row => [
       String(row.name || '').trim(),
       row.residentNumber || ''
@@ -215,17 +272,38 @@ const BremTaxManagementAdmin = (function () {
     const ws = window.XLSX.utils.aoa_to_sheet([['이름', '주민번호'], ...sheetRows]);
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, ws, '원천세신고');
-    window.XLSX.writeFile(wb, `원천세신고_${week}.xlsx`);
+    window.XLSX.writeFile(wb, `원천세신고_${month}.xlsx`);
     showToast(`엑셀 ${formatNumber(rows.length)}명보냈습니다.`);
+  }
+
+  function setupMonthPicker() {
+    if (setupMonthPicker.bound || !window.BremDatePicker?.setupMonthSingle) return;
+    setupMonthPicker.bound = true;
+    monthPicker = window.BremDatePicker.setupMonthSingle({
+      popup: $('#taxManagementMonthCalendar'),
+      monthsContainer: $('#taxManagementMonthGrid'),
+      titleEl: $('#taxManagementMonthTitle'),
+      prevBtn: $('#taxManagementMonthPrev'),
+      nextBtn: $('#taxManagementMonthNext'),
+      todayBtn: $('#taxManagementMonthThisMonth'),
+      hiddenInput: $('#taxManagementMonth'),
+      openButton: $('#taxManagementMonthBtn'),
+      labelEl: $('#taxManagementMonthLabel'),
+      emptyLabel: '월 선택',
+      onSelect(value) {
+        setMonth(value);
+      }
+    });
   }
 
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
 
-    $('#taxManagementWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
-    $('#taxManagementWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
+    $('#taxManagementMonthPrevBtn')?.addEventListener('click', () => shiftMonth(-1));
+    $('#taxManagementMonthNextBtn')?.addEventListener('click', () => shiftMonth(1));
     $('#taxManagementReloadBtn')?.addEventListener('click', () => { void reload(); });
+    $('#taxManagementCalculateBtn')?.addEventListener('click', () => { void calculate(); });
     $('#taxManagementExportBtn')?.addEventListener('click', exportExcel);
 
     const section = $('#tax-management');
@@ -237,12 +315,14 @@ const BremTaxManagementAdmin = (function () {
         const id = String(settlementChk.dataset.taxSettlement);
         if (settlementChk.checked) state.excludedSettlementIds.delete(id);
         else state.excludedSettlementIds.add(id);
+        clearCalculated();
         render();
         return;
       }
       if (event.target.id === 'taxManagementSettlementAll') {
         if (event.target.checked) state.excludedSettlementIds.clear();
-        else weekSettlements().forEach(record => state.excludedSettlementIds.add(String(record.id)));
+        else monthSettlements().forEach(record => state.excludedSettlementIds.add(String(record.id)));
+        clearCalculated();
         render();
       }
     });
@@ -250,13 +330,16 @@ const BremTaxManagementAdmin = (function () {
 
   async function reload() {
     await window.BremStorage?.ensureSectionLoaded?.('tax-management');
+    clearCalculated();
     render();
     showToast('세무관리 데이터를 다시 불러왔습니다.');
   }
 
   async function refresh() {
     if (!$('#taxManagementRows')) return;
-    ensureWeek();
+    setupMonthPicker();
+    ensureMonth();
+    monthPicker?.setMonth?.(ensureMonth());
     bindEvents();
     await window.BremStorage?.ensureSectionLoaded?.('tax-management');
     render();
@@ -264,10 +347,11 @@ const BremTaxManagementAdmin = (function () {
 
   function init() {
     if (!$('#taxManagementRows')) return;
+    setupMonthPicker();
     bindEvents();
   }
 
-  return { init, refresh, onWeekPicked: setWeek };
+  return { init, refresh, onMonthPicked: setMonth };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

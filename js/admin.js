@@ -2003,16 +2003,6 @@
           };
         }
 
-        if (triggerId === 'tax-management-week') {
-          return {
-            hiddenInput: $('#taxManagementWeek'),
-            labelEl: $('#taxManagementWeekBtn'),
-            onSelect(value) {
-              window.BremTaxManagementAdmin?.onWeekPicked?.(value);
-            }
-          };
-        }
-
         if (triggerId === 'driver-org-week') {
           return {
             hiddenInput: $('#driverOrgWeek'),

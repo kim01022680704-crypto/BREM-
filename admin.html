@@ -5311,34 +5311,48 @@
           <div class="card-header">
             <h2>세무관리</h2>
             <div class="promotion-form-actions">
-              <label class="settlement-week-filter">
-                <span>정산주 (수요일만 선택)</span>
-                <span class="coupang-week-picker-inline">
-                  <button type="button" class="small-btn" id="taxManagementWeekPrevBtn" title="이전 주(수요일)">&lt;&lt;</button>
-                  <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="tax-management-week" id="taxManagementWeekBtn">수요일 선택</button>
-                  <button type="button" class="small-btn" id="taxManagementWeekNextBtn" title="다음 주(수요일)">&gt;&gt;</button>
-                </span>
-              </label>
               <button type="button" class="small-btn" id="taxManagementReloadBtn">불러오기</button>
               <button type="button" class="small-btn" id="taxManagementExportBtn" disabled>엑셀보내기</button>
-              <input type="hidden" id="taxManagementWeek">
             </div>
           </div>
-          <p class="form-help">원천세 신고용입니다. <strong>직계약 정산서</strong>를 선택하면 기사별 <strong>지급합계</strong>(배달비+추가지급+기타지급+BREM프로모션)를 합산합니다. 같은 기사는 쿠팡·배민·지역을 한 줄로 합칩니다.</p>
-          <p class="settlement-week-range-label" id="taxManagementWeekRange"></p>
+          <p class="form-help">원천세는 <strong>월 단위</strong>로 신고합니다. 신고월 → 정산서 선택 → <strong>계산하기</strong> 순서로 진행하세요. 지급합계 = 배달비+추가지급+기타지급+BREM프로모션 (같은 기사는 쿠팡·배민·지역 합산).</p>
 
-          <div class="final-deposit-picker">
-            <div class="final-deposit-picker-head">
-              <strong>정산서 선택</strong>
-              <label class="final-deposit-select-all">
-                <input type="checkbox" id="taxManagementSettlementAll" checked>
-                <span>전체 선택</span>
+          <div class="tax-management-steps">
+            <section class="tax-management-step">
+              <h3 class="tax-management-step__title">1. 신고월 선택</h3>
+              <label class="settlement-week-filter">
+                <span class="coupang-week-picker-inline">
+                  <button type="button" class="small-btn" id="taxManagementMonthPrevBtn" title="이전 달">&lt;&lt;</button>
+                  <button type="button" class="month-range-label month-picker-trigger admin-period-input" id="taxManagementMonthBtn">
+                    <span id="taxManagementMonthLabel">월 선택</span>
+                  </button>
+                  <button type="button" class="small-btn" id="taxManagementMonthNextBtn" title="다음 달">&gt;&gt;</button>
+                </span>
+                <input type="hidden" id="taxManagementMonth">
               </label>
-            </div>
-            <div class="final-deposit-settlement-list" id="taxManagementSettlementList"></div>
+              <p class="settlement-week-range-label" id="taxManagementMonthRange"></p>
+            </section>
+
+            <section class="tax-management-step">
+              <h3 class="tax-management-step__title">2. 정산서 선택</h3>
+              <div class="final-deposit-picker">
+                <div class="final-deposit-picker-head">
+                  <label class="final-deposit-select-all">
+                    <input type="checkbox" id="taxManagementSettlementAll" checked>
+                    <span>전체 선택</span>
+                  </label>
+                </div>
+                <div class="final-deposit-settlement-list" id="taxManagementSettlementList"></div>
+              </div>
+            </section>
+
+            <section class="tax-management-step">
+              <h3 class="tax-management-step__title">3. 계산</h3>
+              <button type="button" class="primary-btn" id="taxManagementCalculateBtn" disabled>계산하기</button>
+            </section>
           </div>
 
-          <p class="direct-inline-stats" id="taxManagementSummary">정산서를 선택하면 기사별 지급합계가 표시됩니다.</p>
+          <p class="direct-inline-stats" id="taxManagementSummary">신고월을 고른 뒤 정산서를 선택하고 「계산하기」를 누르세요.</p>
           <div class="table-wrap direct-scroll">
             <table class="weekly-settlement-saved-table" id="taxManagementTable">
               <thead>
@@ -5352,8 +5366,21 @@
               <tbody id="taxManagementRows"></tbody>
             </table>
           </div>
-          <p class="form-help">엑셀보내기는 <strong>이름 · 주민번호</strong> 양식입니다. 주민번호는 기사관리에 등록된 값을 사용합니다.</p>
+          <p class="form-help">엑셀보내기는 <strong>이름 · 주민번호</strong> 양식입니다.</p>
         </article>
+
+        <div class="range-calendar month-calendar" id="taxManagementMonthCalendar" hidden>
+          <div class="calendar-header">
+            <button type="button" id="taxManagementMonthPrev" aria-label="이전 해">&lt;</button>
+            <strong id="taxManagementMonthTitle">-</strong>
+            <button type="button" id="taxManagementMonthNext" aria-label="다음 해">&gt;</button>
+          </div>
+          <div class="month-grid" id="taxManagementMonthGrid"></div>
+          <div class="month-calendar-footer">
+            <button type="button" class="month-today-btn" id="taxManagementMonthThisMonth">이번 달</button>
+          </div>
+          <p class="calendar-help">원천세 신고월을 선택하세요.</p>
+        </div>
       </section>
 
       <section class="section" id="promotion-apply">
@@ -8600,7 +8627,7 @@
   <script src="js/direct-settlement-calc.js?v=20260827tax1"></script>
   <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260823c"></script>
-  <script src="js/tax-management-admin.js?v=20260827tax1"></script>
+  <script src="js/tax-management-admin.js?v=20260827tax2"></script>
   <script src="js/driver-management-admin.js?v=20260827coupangrank1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260822other1"></script>
