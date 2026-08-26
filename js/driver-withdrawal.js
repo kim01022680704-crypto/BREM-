@@ -155,8 +155,11 @@
     return Math.max(0, Number(state.availableAmount || 0));
   }
 
-  function maxWithdrawableAmount() {
-    const platform = selectedPlatform() || 'coupang';
+  // 신청 가능 금액. 일정산수수료는 신청금액 위에 붙으므로
+  // (신청액 + 수수료) 가 출금가능금액을 넘지 않는 최대 신청액을 구한다.
+  // 출금가능금액을 그대로 신청하면 수수료만큼 초과해서 거부된다.
+  function maxWithdrawableAmount(platformInput) {
+    const platform = platformInput || selectedPlatform() || 'coupang';
     const available = Math.max(0, platformAvailableAmount(platform));
     const fees = state.feesByPlatform?.[platform] || state.feesByPlatform?.coupang || {};
     const mode = String(fees?.dailySettlementFeeMode || 'fixed').toLowerCase() === 'percent'
@@ -287,10 +290,14 @@
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else {
         const platform = selectedPlatform();
+        // 헤드라인과 같은 기준(신청 가능 금액)으로 보여준다. 마이너스는 그대로 표기.
+        const requestable = key => (avail[key] < 0 ? avail[key] : maxWithdrawableAmount(key));
         const platformPart = platform
-          ? `선택 ${platformLabel(platform)} 출금가능 ${formatMoney(platformAvailableAmount(platform))}`
+          ? `선택 ${platformLabel(platform)} 신청가능 ${formatMoney(requestable(platform))}`
           : '플랫폼을 선택하세요';
-        hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 출금가능 ${formatMoney(avail.coupang)} · 배민 실지급 ${formatMoney(by.baemin)} / 출금가능 ${formatMoney(avail.baemin)}${leaseText} · ${platformPart}`;
+        hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 신청가능 ${formatMoney(requestable('coupang'))}`
+          + ` · 배민 실지급 ${formatMoney(by.baemin)} / 신청가능 ${formatMoney(requestable('baemin'))}`
+          + `${leaseText} · ${platformPart}`;
       }
     }
     syncPlatformOptions(payload.enrolledPlatforms || {});
@@ -298,13 +305,17 @@
     applySubmitButtonState();
   }
 
-  // 헤드라인 = 실제 출금가능(마이너스 표시) / 입력 max = 신청 가능액(0 이상)
+  // 헤드라인 = 「최대」를 눌렀을 때 들어가는 금액과 정확히 같은 값.
+  // 예전엔 헤드라인이 차감 한도(수수료 포함)를 보여줘서, 최대를 누르면
+  // 수수료만큼 작은 값이 들어가 두 숫자가 안 맞았다.
+  // 마이너스(리스·대여 홀드)는 그대로 보여줘야 하므로 그때만 원래 값을 쓴다.
   // 플랫폼별 수수료가 다를 수 있어 플랫폼 변경 시에도 호출한다.
   function syncMaxUi() {
     const maxRequestable = Math.max(0, maxWithdrawableAmount());
-    const displayAvailable = selectedPlatform()
+    const pool = selectedPlatform()
       ? Number(platformAvailableAmount(selectedPlatform()) || 0)
       : Number(state.availableAmount || 0);
+    const displayAvailable = pool < 0 ? pool : maxRequestable;
     if (availableEl) {
       availableEl.textContent = formatMoney(displayAvailable);
       availableEl.classList.toggle('is-negative', displayAvailable < 0);
@@ -323,7 +334,16 @@
     if (!preview) return;
     const amount = Math.max(0, Math.round(Number(amountInput?.value || 0)));
     if (!amount) {
-      preview.textContent = '일정산수수료(2%)는 신청금액 기준으로 출금 시 차감됩니다.';
+      // 금액을 넣기 전에도 「최대」로 들어갈 값과 그때 차감될 총액을 미리 보여준다.
+      const max = Math.max(0, maxWithdrawableAmount());
+      if (max > 0) {
+        const maxFee = estimateFeeForAmount(max);
+        preview.textContent = maxFee > 0
+          ? `「최대」 누르면 ${formatMoney(max)} · 일정산수수료 ${formatMoney(maxFee)} 포함해 실지급에서 ${formatMoney(max + maxFee)} 차감`
+          : `「최대」 누르면 ${formatMoney(max)} (일정산수수료 없음)`;
+        return;
+      }
+      preview.textContent = '일정산수수료는 신청금액 위에 붙어 출금 시 함께 차감됩니다.';
       return;
     }
     const fee = estimateFeeForAmount(amount);
