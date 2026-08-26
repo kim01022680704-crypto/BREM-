@@ -284,6 +284,218 @@ async function loadBaeminLiveByRiders(supabase, riders) {
   return result;
 }
 
+function collectSubtreeDriverBoxMap(chart, rootNode) {
+  if (!rootNode) return new Map();
+  const byId = new Map((chart.nodes || []).map(node => [node.id, node]));
+  const map = new Map();
+  const seenNodes = new Set();
+  const queue = [rootNode.id];
+  while (queue.length) {
+    const nodeId = queue.shift();
+    if (!nodeId || seenNodes.has(nodeId)) continue;
+    seenNodes.add(nodeId);
+    const node = byId.get(nodeId);
+    if (!node) continue;
+    const label = String(node.label || '').trim() || '이름 없음';
+    (node.memberRefs || []).forEach(ref => {
+      if (ref.kind !== 'driver' || !ref.id) return;
+      const id = String(ref.id).trim();
+      if (!id) return;
+      if (!map.has(id)) map.set(id, new Set());
+      map.get(id).add(label);
+    });
+    (chart.nodes || []).forEach(child => {
+      if (child.parentId === nodeId) queue.push(child.id);
+    });
+  }
+  return map;
+}
+
+/** 조직도 정리와 동일 — 콜수(admin_calls) + 배달료(daily_settlements) */
+async function loadWeekStatsForDrivers(supabase, driverIds, weekStart, weekEnd) {
+  const ids = [...new Set((driverIds || []).map(id => String(id || '').trim()).filter(Boolean))];
+  const map = new Map();
+  const touch = (driverId, platform) => {
+    const key = `${driverId}|${platform}`;
+    let row = map.get(key);
+    if (!row) {
+      row = {
+        callCount: 0,
+        deliveryFee: 0,
+        feeByDay: new Map(),
+        orderByDay: new Map()
+      };
+      map.set(key, row);
+    }
+    return row;
+  };
+
+  for (let i = 0; i < ids.length; i += 80) {
+    const chunk = ids.slice(i, i + 80);
+    const { data: callRows, error: callError } = await supabase
+      .from('admin_calls')
+      .select('driver_id,date,platform,count')
+      .in('driver_id', chunk)
+      .gte('date', weekStart)
+      .lte('date', weekEnd);
+    if (callError) throw callError;
+    (callRows || []).forEach(row => {
+      const id = String(row.driver_id || '').trim();
+      const platform = String(row.platform || '').toLowerCase();
+      if (!id || (platform !== 'coupang' && platform !== 'baemin')) return;
+      touch(id, platform).callCount += Math.max(0, Math.round(Number(row.count || 0)));
+    });
+
+    const { data: settlementRows, error: settlementError } = await supabase
+      .from('daily_settlements')
+      .select('driver_id,period,platform,order_count,delivery_amount,settlement_amount,applied_at')
+      .in('driver_id', chunk)
+      .gte('period', weekStart)
+      .lte('period', weekEnd);
+    if (settlementError) throw settlementError;
+    (settlementRows || []).forEach(row => {
+      const id = String(row.driver_id || '').trim();
+      const platform = String(row.platform || '').toLowerCase();
+      if (!id || (platform !== 'coupang' && platform !== 'baemin')) return;
+      const day = String(row.period || '').slice(0, 10);
+      if (!day) return;
+      const bucket = touch(id, platform);
+      const appliedAt = String(row.applied_at || '');
+      const prevFee = bucket.feeByDay.get(day);
+      const fee = Math.max(0, Number(row.delivery_amount ?? row.settlement_amount ?? 0));
+      if (!prevFee || appliedAt >= prevFee.appliedAt) {
+        bucket.feeByDay.set(day, { deliveryFee: fee, appliedAt });
+      }
+      const prevOrder = bucket.orderByDay.get(day);
+      const orderCount = Math.max(0, Math.round(Number(row.order_count || 0)));
+      if (!prevOrder || appliedAt >= prevOrder.appliedAt) {
+        bucket.orderByDay.set(day, { orderCount, appliedAt });
+      }
+    });
+  }
+
+  const byDriver = new Map();
+  ids.forEach(id => {
+    byDriver.set(id, { coupangCalls: 0, baeminCalls: 0, coupangFee: 0, baeminFee: 0 });
+  });
+
+  map.forEach((row, key) => {
+    const [driverId, platform] = key.split('|');
+    if (!byDriver.has(driverId)) return;
+    let deliveryFee = 0;
+    row.feeByDay.forEach(day => {
+      deliveryFee += day.deliveryFee;
+    });
+    let callCount = row.callCount;
+    if (callCount <= 0) {
+      row.orderByDay.forEach(day => {
+        callCount += day.orderCount;
+      });
+    }
+    const target = byDriver.get(driverId);
+    if (platform === 'coupang') {
+      target.coupangCalls += callCount;
+      target.coupangFee += deliveryFee;
+    } else if (platform === 'baemin') {
+      target.baeminCalls += callCount;
+      target.baeminFee += deliveryFee;
+    }
+  });
+
+  return byDriver;
+}
+
+async function getCrewLeaderDetail(accessToken, options = {}) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+
+  const riderId = String(me.rider?.id || '').trim();
+  if (!riderId) {
+    return { ok: false, status: 401, error: '기사 정보를 확인할 수 없습니다.' };
+  }
+
+  const supabase = getServiceClient();
+  const chart = await readOrgChart(supabase);
+  const box = await findCrewBoxForLeaderResolved(supabase, chart, riderId, me.rider);
+  if (!box) {
+    return {
+      ok: true,
+      isCrewLeader: false,
+      members: [],
+      box: null
+    };
+  }
+
+  const boxMeta = {
+    id: box.id,
+    label: box.label,
+    isTopRep: chart.topRepNodeId === box.id
+  };
+
+  const memberIds = collectSubtreeDriverIds(chart, box);
+  const weekStart = normalizeSettlementWeekStart(options.weekStart);
+  const weekEnd = settlementWeekEnd(weekStart);
+  const boxMap = collectSubtreeDriverBoxMap(chart, box);
+  const leaderDriverId = String(box.leaderRef?.kind === 'driver' ? box.leaderRef.id : '').trim();
+
+  const [riders, statsMap] = await Promise.all([
+    loadRidersByIds(supabase, memberIds),
+    loadWeekStatsForDrivers(supabase, memberIds, weekStart, weekEnd)
+  ]);
+
+  const members = riders.map(rider => {
+    const id = String(rider.id || '').trim();
+    const stats = statsMap.get(id) || {};
+    const boxLabels = boxMap.get(id);
+    const coupangFee = Math.round(Number(stats.coupangFee || 0));
+    const baeminFee = Math.round(Number(stats.baeminFee || 0));
+    return {
+      driverId: id,
+      name: String(rider.name || '').trim() || '이름 없음',
+      boxLabel: boxLabels ? [...boxLabels].sort((a, b) => a.localeCompare(b, 'ko')).join(', ') : box.label,
+      isSelf: id === riderId,
+      isCrew: Boolean(leaderDriverId && id === leaderDriverId),
+      coupangCalls: Math.round(Number(stats.coupangCalls || 0)),
+      baeminCalls: Math.round(Number(stats.baeminCalls || 0)),
+      coupangFee,
+      baeminFee,
+      totalFee: coupangFee + baeminFee
+    };
+  }).sort((a, b) => {
+    if (a.isSelf !== b.isSelf) return a.isSelf ? -1 : 1;
+    return String(a.name).localeCompare(String(b.name), 'ko');
+  });
+
+  const summary = members.reduce((acc, member) => {
+    acc.memberCount += 1;
+    acc.coupangCalls += member.coupangCalls;
+    acc.baeminCalls += member.baeminCalls;
+    acc.coupangFee += member.coupangFee;
+    acc.baeminFee += member.baeminFee;
+    acc.totalFee += member.totalFee;
+    return acc;
+  }, {
+    memberCount: 0,
+    coupangCalls: 0,
+    baeminCalls: 0,
+    coupangFee: 0,
+    baeminFee: 0,
+    totalFee: 0
+  });
+  summary.totalCalls = summary.coupangCalls + summary.baeminCalls;
+
+  return {
+    ok: true,
+    isCrewLeader: true,
+    view: 'detail',
+    box: boxMeta,
+    weekStart,
+    weekEnd,
+    summary,
+    members
+  };
+}
+
 async function getCrewLeaderDashboard(accessToken, options = {}) {
   const me = await getRiderMe(accessToken);
   if (!me.ok) return me;
@@ -479,6 +691,7 @@ async function renameCrewBox(accessToken, body = {}) {
 
 module.exports = {
   getCrewLeaderDashboard,
+  getCrewLeaderDetail,
   renameCrewBox,
   ORG_CHART_KEY
 };

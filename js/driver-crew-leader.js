@@ -16,6 +16,11 @@
   const renameForm = document.getElementById('driverCrewLeaderRenameForm');
   const renameInput = document.getElementById('driverCrewLeaderRenameInput');
   const renameCancelBtn = document.getElementById('driverCrewLeaderRenameCancelBtn');
+  const viewTabsEl = document.getElementById('driverCrewLeaderViewTabs');
+  const detailContentEl = document.getElementById('driverCrewLeaderDetailContent');
+  const detailSummaryEl = document.getElementById('driverCrewLeaderDetailSummary');
+  const detailRowsEl = document.getElementById('driverCrewLeaderDetailRows');
+  const detailFootEl = document.getElementById('driverCrewLeaderDetailFoot');
 
   if (!panel || !openBtn) return;
 
@@ -28,6 +33,8 @@
     renaming: false,
     weekStart: '',
     lastResult: null,
+    lastDetailResult: null,
+    viewMode: 'ops',
     pollTimer: null,
     requestSeq: 0,
     visibilitySeq: 0
@@ -141,22 +148,89 @@
     if (renameForm) renameForm.hidden = false;
   }
 
+  function setViewMode(mode) {
+    const next = mode === 'detail' ? 'detail' : 'ops';
+    state.viewMode = next;
+    viewTabsEl?.querySelectorAll('[data-crew-view]').forEach(btn => {
+      const active = btn.dataset.crewView === next;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    if (contentEl) contentEl.hidden = next !== 'ops';
+    if (detailContentEl) detailContentEl.hidden = next !== 'detail';
+    if (summaryEl) summaryEl.hidden = next !== 'ops';
+  }
+
+  function renderDetailResult(result) {
+    state.lastDetailResult = result;
+    if (!result?.ok || !result.isCrewLeader) {
+      if (detailSummaryEl) detailSummaryEl.textContent = '';
+      if (detailRowsEl) detailRowsEl.innerHTML = '';
+      if (detailFootEl) detailFootEl.innerHTML = '';
+      return;
+    }
+
+    const summary = result.summary || {};
+    if (detailSummaryEl) {
+      detailSummaryEl.textContent = `기사 ${formatNumber(summary.memberCount)}명 · 쿠팡콜 ${formatNumber(summary.coupangCalls)} · 배민콜 ${formatNumber(summary.baeminCalls)} · 쿠팡배달료 ${formatNumber(summary.coupangFee)}원 · 배민배달료 ${formatNumber(summary.baeminFee)}원 · 배달료합계 ${formatNumber(summary.totalFee)}원`;
+    }
+
+    const members = Array.isArray(result.members) ? result.members : [];
+    if (detailRowsEl) {
+      detailRowsEl.innerHTML = members.length
+        ? members.map(member => `
+          <tr class="${member.isSelf ? 'is-self' : ''}">
+            <td>
+              <div class="driver-crew-name">
+                <strong class="driver-crew-name__text">${escapeHtml(member.name)}</strong>
+                ${member.isSelf ? '<span class="driver-crew-tag driver-crew-tag--self">나</span>' : ''}
+                ${member.isCrew ? '<span class="driver-crew-tag driver-crew-tag--crew">크루장</span>' : ''}
+              </div>
+            </td>
+            <td class="driver-crew-box">${escapeHtml(member.boxLabel || '-')}</td>
+            <td class="driver-crew-num">${formatNumber(member.coupangCalls)}</td>
+            <td class="driver-crew-num">${formatNumber(member.baeminCalls)}</td>
+            <td class="driver-crew-num">${formatNumber(member.coupangFee)}</td>
+            <td class="driver-crew-num">${formatNumber(member.baeminFee)}</td>
+            <td class="driver-crew-num driver-crew-num--total">${formatNumber(member.totalFee)}</td>
+          </tr>`).join('')
+        : '<tr><td colspan="7" class="empty">소속 기사가 없습니다.</td></tr>';
+    }
+    if (detailFootEl) {
+      detailFootEl.innerHTML = members.length
+        ? `<tr class="driver-crew-total-row">
+            <td colspan="2">합계 (${formatNumber(members.length)}명)</td>
+            <td class="driver-crew-num">${formatNumber(summary.coupangCalls)}</td>
+            <td class="driver-crew-num">${formatNumber(summary.baeminCalls)}</td>
+            <td class="driver-crew-num">${formatNumber(summary.coupangFee)}</td>
+            <td class="driver-crew-num">${formatNumber(summary.baeminFee)}</td>
+            <td class="driver-crew-num driver-crew-num--total">${formatNumber(summary.totalFee)}</td>
+          </tr>`
+        : '';
+    }
+  }
+
   function renderResult(result) {
     state.lastResult = result;
     if (!result?.ok || !result.isCrewLeader) {
       applyCrewTitle('');
       if (summaryEl) summaryEl.textContent = '';
       if (contentEl) contentEl.hidden = true;
+      if (detailContentEl) detailContentEl.hidden = true;
+      if (viewTabsEl) viewTabsEl.hidden = true;
       if (emptyEl) emptyEl.hidden = false;
       if (rowsEl) rowsEl.innerHTML = '';
+      if (detailRowsEl) detailRowsEl.innerHTML = '';
+      if (detailFootEl) detailFootEl.innerHTML = '';
       if (renameBtn) renameBtn.hidden = true;
       closeRenameForm();
       return;
     }
 
     if (emptyEl) emptyEl.hidden = true;
-    if (contentEl) contentEl.hidden = false;
+    if (viewTabsEl) viewTabsEl.hidden = false;
     if (renameBtn) renameBtn.hidden = false;
+    setViewMode(state.viewMode);
     applyCrewTitle(result.box?.label || '');
     const weekStart = result.weekStart || ensureWeekStart();
     const weekEnd = result.weekEnd || settlementWeekEnd(weekStart);
@@ -230,6 +304,47 @@
     }
   }
 
+  async function loadDetail(options = {}) {
+    const seq = ++state.requestSeq;
+    const weekStart = ensureWeekStart();
+    state.loading = true;
+    panel.classList.toggle('is-loading', true);
+    try {
+      const result = await window.BremStorage?.fetchRiderCrewLeaderDetailFromServer?.({ weekStart });
+      if (seq !== state.requestSeq) return null;
+      if (!result?.ok) {
+        showToast(result?.message || result?.error || '크루 상세 실적을 불러오지 못했습니다.');
+        return null;
+      }
+      if (!result.isCrewLeader) {
+        openBtn.hidden = true;
+        notifyFeatureVisibility(false);
+        renderDetailResult(result);
+        if (state.visible) closePanel();
+        return result;
+      }
+      openBtn.hidden = false;
+      notifyFeatureVisibility(true);
+      if (emptyEl) emptyEl.hidden = true;
+      if (viewTabsEl) viewTabsEl.hidden = false;
+      if (renameBtn) renameBtn.hidden = false;
+      applyCrewTitle(result.box?.label || state.lastResult?.box?.label || '');
+      setViewMode('detail');
+      renderDetailResult(result);
+      return result;
+    } catch (error) {
+      if (seq === state.requestSeq) {
+        showToast(error?.message || '크루 상세 실적을 불러오지 못했습니다.');
+      }
+      return null;
+    } finally {
+      if (seq === state.requestSeq) {
+        state.loading = false;
+        panel.classList.toggle('is-loading', false);
+      }
+    }
+  }
+
   async function loadDashboard(options = {}) {
     const seq = ++state.requestSeq;
     const weekStart = ensureWeekStart();
@@ -254,6 +369,9 @@
       openBtn.hidden = false;
       notifyFeatureVisibility(true);
       renderResult(result);
+      if (state.viewMode === 'detail') {
+        void loadDetail();
+      }
       return result;
     } catch (error) {
       if (seq === state.requestSeq) {
@@ -299,7 +417,8 @@
     stopAutoPoll();
     state.pollTimer = setInterval(() => {
       if (!state.visible || document.visibilityState === 'hidden') return;
-      void loadDashboard();
+      if (state.viewMode === 'detail') void loadDetail();
+      else void loadDashboard();
     }, POLL_MS);
   }
 
@@ -319,7 +438,11 @@
     openBtn.setAttribute('aria-expanded', 'true');
     ensureWeekStart();
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    void loadDashboard();
+    if (state.viewMode === 'detail') {
+      void loadDetail();
+    } else {
+      void loadDashboard();
+    }
     startAutoPoll();
   }
 
@@ -336,6 +459,8 @@
     state.visibilitySeq += 1;
     state.weekStart = settlementWeekStart(localDateKey());
     state.lastResult = null;
+    state.lastDetailResult = null;
+    state.viewMode = 'ops';
     state.loading = false;
     state.renaming = false;
     stopAutoPoll();
@@ -347,7 +472,12 @@
     if (periodEl) periodEl.textContent = '-';
     if (summaryEl) summaryEl.textContent = '';
     if (rowsEl) rowsEl.innerHTML = '';
+    if (detailRowsEl) detailRowsEl.innerHTML = '';
+    if (detailFootEl) detailFootEl.innerHTML = '';
+    if (detailSummaryEl) detailSummaryEl.textContent = '';
     if (contentEl) contentEl.hidden = true;
+    if (detailContentEl) detailContentEl.hidden = true;
+    if (viewTabsEl) viewTabsEl.hidden = true;
     if (emptyEl) emptyEl.hidden = false;
     if (renameBtn) renameBtn.hidden = true;
   }
@@ -357,15 +487,40 @@
     const date = new Date(`${base}T00:00:00`);
     date.setDate(date.getDate() + delta * 7);
     state.weekStart = settlementWeekStart(localDateKey(date));
-    void loadDashboard({ force: true });
+    state.lastDetailResult = null;
+    if (state.viewMode === 'detail') void loadDetail({ force: true });
+    else void loadDashboard({ force: true });
   }
+
+  viewTabsEl?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-crew-view]');
+    if (!btn || state.loading) return;
+    const next = btn.dataset.crewView === 'detail' ? 'detail' : 'ops';
+    if (next === state.viewMode) return;
+    setViewMode(next);
+    if (next === 'detail') {
+      if (state.lastDetailResult?.weekStart === ensureWeekStart()) {
+        renderDetailResult(state.lastDetailResult);
+      } else {
+        void loadDetail();
+      }
+    } else if (state.lastResult?.ok) {
+      renderResult(state.lastResult);
+    } else {
+      void loadDashboard();
+    }
+  });
 
   openBtn.addEventListener('click', () => {
     if (state.visible) closePanel();
     else openPanel();
   });
   closeBtn?.addEventListener('click', closePanel);
-  refreshBtn?.addEventListener('click', () => void loadDashboard({ force: true }));
+  refreshBtn?.addEventListener('click', () => {
+    state.lastDetailResult = null;
+    if (state.viewMode === 'detail') void loadDetail({ force: true });
+    else void loadDashboard({ force: true });
+  });
   prevWeekBtn?.addEventListener('click', () => shiftWeek(-1));
   nextWeekBtn?.addEventListener('click', () => shiftWeek(1));
   renameBtn?.addEventListener('click', openRenameForm);
@@ -376,7 +531,8 @@
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && state.visible) {
-      void loadDashboard();
+      if (state.viewMode === 'detail') void loadDetail();
+      else void loadDashboard();
     }
   });
 

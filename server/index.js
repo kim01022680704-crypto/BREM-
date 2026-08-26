@@ -553,6 +553,20 @@ app.get('/api/rider/region-dashboard', async (req, res) => {
   }
 });
 
+app.get('/api/rider/crew-leader/detail', async (req, res) => {
+  try {
+    const result = await riderCrewLeader.getCrewLeaderDetail(getBearerToken(req), {
+      weekStart: req.query.weekStart
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '크루장 상세 실적을 불러오지 못했습니다.' });
+  }
+});
+
 app.get('/api/rider/crew-leader', async (req, res) => {
   try {
     const probe = String(req.query.probe || '').trim() === '1'

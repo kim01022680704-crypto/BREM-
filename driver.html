@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260826wdspin1">
+  <link rel="stylesheet" href="css/driver.css?v=20260826crewdetail1">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -385,6 +385,11 @@
 
             <div class="driver-crew-summary" id="driverCrewLeaderSummary" aria-live="polite"></div>
 
+            <div class="driver-crew-view-tabs" id="driverCrewLeaderViewTabs" role="tablist" aria-label="크루장 보기" hidden>
+              <button type="button" class="driver-crew-view-tab active" data-crew-view="ops" role="tab" aria-selected="true">현황</button>
+              <button type="button" class="driver-crew-view-tab" data-crew-view="detail" role="tab" aria-selected="false">상세보기</button>
+            </div>
+
             <div class="driver-payslip-empty" id="driverCrewLeaderEmpty" hidden>
               <p>조직도에서 크루장으로 지정된 계정만 소속 기사 현황을 볼 수 있습니다.</p>
               <p class="driver-payslip-empty-hint">관리자가 조직도에서 크루장을 지정하면 표시됩니다.</p>
@@ -405,6 +410,26 @@
                 <tbody id="driverCrewLeaderRows"></tbody>
               </table>
               <p class="driver-crew-footnote">운행·오늘배민은 배민 배달현황 크롤 기준입니다. 쿠팡은 실시간 불가 · 주간콜만 표시. 배달료는 표시되지 않습니다.</p>
+            </div>
+
+            <div class="driver-crew-table-wrap" id="driverCrewLeaderDetailContent" hidden>
+              <div class="driver-crew-detail-summary" id="driverCrewLeaderDetailSummary" aria-live="polite"></div>
+              <table class="driver-crew-table driver-crew-detail-table">
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>소속</th>
+                    <th>쿠팡콜</th>
+                    <th>배민콜</th>
+                    <th>쿠팡배달료</th>
+                    <th>배민배달료</th>
+                    <th>합계</th>
+                  </tr>
+                </thead>
+                <tbody id="driverCrewLeaderDetailRows"></tbody>
+                <tfoot id="driverCrewLeaderDetailFoot"></tfoot>
+              </table>
+              <p class="driver-crew-footnote">관리자 「조직도 정리」와 동일한 정산주(수~화) · 일정산·콜수 기준입니다.</p>
             </div>
           </article>
 
@@ -1027,12 +1052,12 @@
   <script src="js/storage-supabase-mapper.js?v=20260816popup1"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260816popup1"></script>
-  <script src="js/storage.js?v=20260817wd2"></script>
+  <script src="js/storage.js?v=20260826crewdetail1"></script>
   <script src="js/driver-utils.js?v=20260816login1"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260816inq1"></script>
   <script src="js/driver-region-dashboard.js?v=20260818slot6"></script>
-  <script src="js/driver-crew-leader.js?v=20260816nav1"></script>
+  <script src="js/driver-crew-leader.js?v=20260826crewdetail1"></script>
   <script src="js/driver-withdrawal.js?v=20260826wdmax2"></script>
   <script src="js/driver-urgent-missions.js?v=20260816um2"></script>
   <script src="js/driver-inquiries.js?v=20260817inq7"></script>

@@ -3399,6 +3399,15 @@ const BremStorage = (function () {
     });
   }
 
+  async function fetchRiderCrewLeaderDetailFromServer({ weekStart } = {}) {
+    const params = new URLSearchParams();
+    if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return riderApiFetch(`/api/rider/crew-leader/detail${qs}`, 'crew-leader-detail', {
+      timeoutMs: REGION_DASHBOARD_TIMEOUT_MS
+    });
+  }
+
   async function fetchRiderCrewLeaderFromServer({ weekStart, probe } = {}) {
     const params = new URLSearchParams();
     if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
@@ -14423,6 +14432,7 @@ const BremStorage = (function () {
     ackRiderInquiryOnServer,
     fetchRiderRegionDashboardFromServer,
     fetchRiderCrewLeaderFromServer,
+    fetchRiderCrewLeaderDetailFromServer,
     renameRiderCrewFromServer,
     fetchRiderWithdrawalFromServer,
     submitRiderWithdrawalToServer,
