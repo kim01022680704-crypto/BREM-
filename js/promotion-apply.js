@@ -18,6 +18,30 @@ const BremPromotionApply = (function () {
     };
   }
 
+  // 직계약: 프로모션 콜수·배달료는 주정산서(정산결과와 동일) 우선.
+  // 일정산 합계만 쓰면 ERP 등록 전 주·누락 일정산 때문에 건당/구간 프로모션이 틀어진다.
+  function resolveRiderWeekStats(rider, driverId, settlement, platform, options = {}) {
+    const daily = getWeekStatsForDriver(
+      driverId,
+      settlement?.startDate,
+      settlement?.endDate,
+      platform
+    );
+    const channel = normalizeChannel(options.channel || settlement?.channel);
+    if (channel !== 'direct' || !rider) return daily;
+
+    const weeklyCalls = Math.round(Number(rider.weeklyOrderCount || 0));
+    if (weeklyCalls <= 0) return daily;
+
+    const sheetDelivery = Math.round(Number(rider.amounts?.deliveryFee || 0));
+    return {
+      callCount: weeklyCalls,
+      deliveryAmount: sheetDelivery > 0 ? sheetDelivery : daily.deliveryAmount,
+      byDay: daily.byDay,
+      uploadDays: daily.uploadDays
+    };
+  }
+
   function makeCoupangLoginIdFromDriver(driver) {
     if (!driver) return '';
     const name = String(driver.name || '').replace(/\s+/g, '');
@@ -418,11 +442,12 @@ const BremPromotionApply = (function () {
   }
 
   function resolveBaeminStats(rider, driver, settlement, statsPlatform, deliveryFeeIndex, options = {}) {
-    const stats = getWeekStatsForDriver(
+    const stats = resolveRiderWeekStats(
+      rider,
       driver.id,
-      settlement.startDate,
-      settlement.endDate,
-      statsPlatform
+      settlement,
+      statsPlatform,
+      { channel: options.channel || settlement?.channel }
     );
 
     const useDeliveryFee = options.useDeliveryFee === true;
@@ -916,11 +941,12 @@ const BremPromotionApply = (function () {
       });
     }
 
-    let stats = getWeekStatsForDriver(
+    let stats = resolveRiderWeekStats(
+      rider,
       driver.id,
-      coupangSettlement.startDate,
-      coupangSettlement.endDate,
-      'coupang'
+      coupangSettlement,
+      'coupang',
+      { channel: coupangSettlement?.channel }
     );
     const coupangRiderForLookup = {
       ...(rider || {}),
@@ -1152,10 +1178,22 @@ const BremPromotionApply = (function () {
 
     const needsDeliveryFee = ruleUsesGuarantee(rule);
     let coupangStats = assignment.coupangRider && coupangSettlement
-      ? getWeekStatsForDriver(driver.id, coupangSettlement.startDate, coupangSettlement.endDate, 'coupang')
+      ? resolveRiderWeekStats(
+        assignment.coupangRider,
+        driver.id,
+        coupangSettlement,
+        'coupang',
+        { channel: coupangSettlement.channel }
+      )
       : emptyWeekStats();
     let baeminStats = assignment.baeminRider && baeminSettlement
-      ? getWeekStatsForDriver(driver.id, baeminSettlement.startDate, baeminSettlement.endDate, 'baemin')
+      ? resolveRiderWeekStats(
+        assignment.baeminRider,
+        driver.id,
+        baeminSettlement,
+        'baemin',
+        { channel: baeminSettlement.channel }
+      )
       : emptyWeekStats();
 
     const coupangRiderForLookup = {
@@ -1862,6 +1900,7 @@ const BremPromotionApply = (function () {
     weekEndKey,
     exportWeekResultsToExcel,
     getWeekStatsForDriver,
+    resolveRiderWeekStats,
     getResultRowDisplayName,
     getResultRowBaeminRiderId,
     getResultRowMatchedDriverName,
