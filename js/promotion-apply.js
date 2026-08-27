@@ -154,6 +154,29 @@ const BremPromotionApply = (function () {
     const assignmentMode = options.assignmentMode === 'per_driver' ? 'per_driver' : 'selected_rules';
 
     if (p === 'combined') {
+      if (assignmentMode === 'per_driver') {
+        const catalog = window.BremMissionPromotionCatalog;
+        if (catalog?.getDriverAssignment) {
+          const assigned = catalog.getDriverAssignment(driver);
+          if (assigned.combined) {
+            const rule = BremStorage.promotionRules.getById(assigned.combined);
+            if (rule && rule.enabled !== false && normalizePlatform(rule.platform) === 'combined') return rule;
+          }
+        }
+        const driverRuleId = String(
+          driver?.selectedMissionIdCombined
+          || driver?.promotionRuleIdCombined
+          || driver?.promotionSelectorCombined
+          || ''
+        ).trim();
+        if (driverRuleId) {
+          const assigned = BremStorage.promotionRules.getById(driverRuleId);
+          if (assigned && assigned.enabled !== false && normalizePlatform(assigned.platform) === 'combined') {
+            return assigned;
+          }
+        }
+        return null;
+      }
       const combinedIds = selected.filter(id => {
         const rule = BremStorage.promotionRules.getById(id);
         return rule && normalizePlatform(rule.platform) === 'combined';
@@ -262,16 +285,18 @@ const BremPromotionApply = (function () {
     return { fees: adjusted, weatherCount };
   }
 
-  function combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, selectedRuleIds = []) {
+  function combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, selectedRuleIds = [], options = {}) {
     // 합산 단가보장은 쿠팡+배민 콜수 합으로 구간을 고르고,
     // 쿠팡·배민 배달처리비에 각각 보장액을 적용한다.
-    if (selectedRulesNeedDeliveryFee(selectedRuleIds)) return true;
+    const assignmentMode = options.assignmentMode === 'per_driver' ? 'per_driver' : 'selected_rules';
+    const ruleIds = assignmentMode === 'per_driver' ? [] : selectedRuleIds;
+    if (selectedRulesNeedDeliveryFee(ruleIds)) return true;
     if (!coupangSettlement && !baeminSettlement) return false;
     const assignments = buildDriverAssignments(coupangSettlement, baeminSettlement);
     return assignments.some(item => {
       const driver = BremStorage.drivers.getById(item.driverId);
       if (!driver) return false;
-      const rule = pickPromotionRule(driver, 'combined', selectedRuleIds);
+      const rule = pickPromotionRule(driver, 'combined', ruleIds, { assignmentMode });
       return ruleUsesGuarantee(rule);
     });
   }
@@ -639,7 +664,8 @@ const BremPromotionApply = (function () {
     deliveryFeeIndex = null,
     coupangDeliveryFeeIndex = null,
     ignoreMissingRates = false,
-    rainApply = false
+    rainApply = false,
+    assignmentMode = 'selected_rules'
   }) {
     const ratePlatform = normalizePlatform(assignment.ratePlatform || 'coupang');
     const displayRider = assignment.baeminRider || assignment.coupangRider || assignment.rider;
@@ -664,8 +690,19 @@ const BremPromotionApply = (function () {
       };
     }
 
-    const rule = pickPromotionRule(driver, 'combined', selectedRuleIds);
+    const ruleMode = assignmentMode === 'selected_rules' ? 'selected_rules' : 'per_driver';
+    const rule = pickPromotionRule(driver, 'combined', selectedRuleIds, { assignmentMode: ruleMode });
     if (!rule || !rule.enabled || normalizePlatform(rule.platform) !== 'combined') {
+      const assignedId = String(
+        driver?.selectedMissionIdCombined
+        || driver?.promotionRuleIdCombined
+        || ''
+      ).trim();
+      const failureReasons = ruleMode === 'selected_rules'
+        ? ['선택한 프로모션 조건을 찾을 수 없거나 비활성화되었습니다']
+        : [assignedId
+          ? '배정된 합산 미션이 비활성화되었거나 플랫폼이 맞지 않습니다'
+          : '미션 미배정 (미션 관리에서 합산 미션 배정)'];
       return {
         riderName: displayRider?.riderName || driver.name,
         driverName: driver.name,
@@ -681,7 +718,7 @@ const BremPromotionApply = (function () {
         totalPromotionAmount: 0,
         appliedConditions: [],
         failedConditions: [],
-        failureReasons: ['선택한 프로모션 조건을 찾을 수 없거나 비활성화되었습니다']
+        failureReasons
       };
     }
 
@@ -902,8 +939,13 @@ const BremPromotionApply = (function () {
     if (!baeminSettlement) throw new Error('저장된 배민 주정산서를 선택하세요.');
 
     const promotionSettings = settings || BremStorage.promotionSettings.get();
-    const selected = (selectedPromotionRuleIds || []).filter(Boolean);
-    if (!selected.length) throw new Error('적용할 합산 프로모션 조건을 선택하세요.');
+    const assignmentMode = options.assignmentMode === 'per_driver' ? 'per_driver' : 'selected_rules';
+    const selected = assignmentMode === 'per_driver'
+      ? []
+      : (selectedPromotionRuleIds || []).filter(Boolean);
+    if (assignmentMode === 'selected_rules' && !selected.length) {
+      throw new Error('적용할 합산 프로모션 조건을 선택하세요.');
+    }
 
     const assignments = buildDriverAssignments(coupangSettlement, baeminSettlement);
     if (!assignments.length) throw new Error('매칭된 기사가 없습니다.');
@@ -911,7 +953,7 @@ const BremPromotionApply = (function () {
     const deliveryFeeIndex = options.deliveryFeeIndex || null;
     const coupangDeliveryFeeIndex = options.coupangDeliveryFeeIndex || null;
     const requireDeliveryFee = options.requireDeliveryFee === true
-      || combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, selected);
+      || combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, selected, { assignmentMode });
 
     if (requireDeliveryFee && !deliveryFeeIndex) {
       throw new Error('단가보장 프로모션은 배민 배달처리비 정산서 업로드가 필요합니다.');
@@ -932,7 +974,8 @@ const BremPromotionApply = (function () {
         deliveryFeeIndex,
         coupangDeliveryFeeIndex,
         ignoreMissingRates: options.ignoreMissingRates === true,
-        rainApply: options.rainApply === true
+        rainApply: options.rainApply === true,
+        assignmentMode
       });
     });
 
@@ -962,8 +1005,13 @@ const BremPromotionApply = (function () {
       region: `${coupangSettlement.region || ''} / ${baeminSettlement.region || ''}`.trim(),
       startDate,
       endDate,
+      assignmentMode,
       selectedPromotionRuleIds: selected,
-      selectedPromotionRuleNames: selected.map(id => BremStorage.promotionRules.getById(id)?.name || id).filter(Boolean),
+      selectedPromotionRuleNames: assignmentMode === 'per_driver'
+        ? collectResultRuleSummary(results).names
+        : selected.map(id => BremStorage.promotionRules.getById(id)?.name || id).filter(Boolean),
+      appliedRuleLabel: assignmentMode === 'per_driver' ? collectResultRuleSummary(results).label : '',
+      unassignedRiderCount: assignmentMode === 'per_driver' ? collectResultRuleSummary(results).unassigned : 0,
       deliveryFeeFileName: feeFiles.join(' / '),
       deliveryFeeLabel: feeLabels.join(' / '),
       rainApply: options.rainApply === true,

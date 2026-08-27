@@ -68,23 +68,41 @@ window.BremMissionPromotionCatalog = (function () {
 
   function getForPlatform(platform) {
     const p = normalizePlatform(platform);
-    return getAll().filter(item => item.platform === p || item.platform === 'combined');
+    return getAll().filter(item => item.platform === p);
+  }
+
+  function resolveLegacyMissionIdForPlatform(driver, platform) {
+    const legacy = String(driver?.selectedMissionId || '').trim();
+    if (!legacy) return '';
+    const rule = BremStorage?.promotionRules?.getById?.(legacy);
+    if (!rule || rule.enabled === false) return '';
+    if (normalizePlatform(rule.platform) !== normalizePlatform(platform)) return '';
+    return legacy;
   }
 
   function getDriverAssignment(driver) {
-    if (!driver) return { baemin: '', coupang: '' };
+    if (!driver) return { baemin: '', coupang: '', combined: '' };
     return {
       // 미션관리 저장값(selectedMissionId*)을 우선. 없으면 프로모션 배정 레거시 필드.
       baemin: String(
         driver.selectedMissionIdBaemin
         || driver.promotionRuleIdBaemin
         || driver.promotionSelectorBaemin
+        || resolveLegacyMissionIdForPlatform(driver, 'baemin')
         || ''
       ).trim(),
       coupang: String(
         driver.selectedMissionIdCoupang
         || driver.promotionRuleIdCoupang
         || driver.promotionSelectorCoupang
+        || resolveLegacyMissionIdForPlatform(driver, 'coupang')
+        || ''
+      ).trim(),
+      combined: String(
+        driver.selectedMissionIdCombined
+        || driver.promotionRuleIdCombined
+        || driver.promotionSelectorCombined
+        || resolveLegacyMissionIdForPlatform(driver, 'combined')
         || ''
       ).trim()
     };
@@ -93,6 +111,7 @@ window.BremMissionPromotionCatalog = (function () {
   function buildAssignmentPatch(draft) {
     const baemin = String(draft?.baemin || '').trim();
     const coupang = String(draft?.coupang || '').trim();
+    const combined = String(draft?.combined || '').trim();
     const changes = {};
     if (draft?.baemin !== undefined) {
       // 미션관리·프로모션 적용이 같은 값을 보도록 관련 필드를 함께 맞춤
@@ -105,8 +124,14 @@ window.BremMissionPromotionCatalog = (function () {
       changes.promotionRuleIdCoupang = coupang;
       changes.promotionSelectorCoupang = coupang;
     }
-    if (draft?.baemin !== undefined || draft?.coupang !== undefined) {
-      if (baemin && coupang && baemin === coupang) changes.selectedMissionId = baemin;
+    if (draft?.combined !== undefined) {
+      changes.selectedMissionIdCombined = combined;
+      changes.promotionRuleIdCombined = combined;
+      changes.promotionSelectorCombined = combined;
+    }
+    if (draft?.baemin !== undefined || draft?.coupang !== undefined || draft?.combined !== undefined) {
+      if (combined) changes.selectedMissionId = combined;
+      else if (baemin && coupang && baemin === coupang) changes.selectedMissionId = baemin;
       else if (baemin && !coupang) changes.selectedMissionId = baemin;
       else if (!baemin && coupang) changes.selectedMissionId = coupang;
       else changes.selectedMissionId = '';

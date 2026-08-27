@@ -73,7 +73,7 @@ window.BremSupabaseStorageAdapter = (function () {
     'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
     'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
     'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
-    'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang',
+    'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang', 'selected_mission_id_combined',
     'raw_data', 'created_at', 'updated_at'
   ].join(',');
 
@@ -95,6 +95,7 @@ window.BremSupabaseStorageAdapter = (function () {
     delete row.selected_mission_id;
     delete row.selected_mission_id_baemin;
     delete row.selected_mission_id_coupang;
+    delete row.selected_mission_id_combined;
     delete row.long_event_platform;
   }
 

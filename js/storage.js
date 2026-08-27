@@ -1160,10 +1160,13 @@ const BremStorage = (function () {
       if (driver.selectedMissionId === id) patch.selectedMissionId = '';
       if (driver.selectedMissionIdBaemin === id) patch.selectedMissionIdBaemin = '';
       if (driver.selectedMissionIdCoupang === id) patch.selectedMissionIdCoupang = '';
+      if (driver.selectedMissionIdCombined === id) patch.selectedMissionIdCombined = '';
       if (driver.promotionRuleIdBaemin === id) patch.promotionRuleIdBaemin = '';
       if (driver.promotionRuleIdCoupang === id) patch.promotionRuleIdCoupang = '';
+      if (driver.promotionRuleIdCombined === id) patch.promotionRuleIdCombined = '';
       if (driver.promotionSelectorBaemin === id) patch.promotionSelectorBaemin = '';
       if (driver.promotionSelectorCoupang === id) patch.promotionSelectorCoupang = '';
+      if (driver.promotionSelectorCombined === id) patch.promotionSelectorCombined = '';
       if (!Object.keys(patch).length) return driver;
       changed = true;
       return { ...driver, ...patch };
@@ -2833,10 +2836,13 @@ const BremStorage = (function () {
     'selectedMissionId',
     'selectedMissionIdBaemin',
     'selectedMissionIdCoupang',
+    'selectedMissionIdCombined',
     'promotionRuleIdBaemin',
     'promotionRuleIdCoupang',
+    'promotionRuleIdCombined',
     'promotionSelectorBaemin',
-    'promotionSelectorCoupang'
+    'promotionSelectorCoupang',
+    'promotionSelectorCombined'
   ]);
 
   const LONG_EVENT_DRIVER_FIELDS = new Set([
@@ -2859,6 +2865,9 @@ const BremStorage = (function () {
     if (changes.selectedMissionIdCoupang !== undefined) {
       patch.selectedMissionIdCoupang = changes.selectedMissionIdCoupang;
     }
+    if (changes.selectedMissionIdCombined !== undefined) {
+      patch.selectedMissionIdCombined = changes.selectedMissionIdCombined;
+    }
     if (changes.selectedMissionId !== undefined) {
       patch.selectedMissionId = changes.selectedMissionId;
     }
@@ -2868,11 +2877,17 @@ const BremStorage = (function () {
     if (changes.promotionRuleIdCoupang !== undefined) {
       patch.promotionRuleIdCoupang = changes.promotionRuleIdCoupang;
     }
+    if (changes.promotionRuleIdCombined !== undefined) {
+      patch.promotionRuleIdCombined = changes.promotionRuleIdCombined;
+    }
     if (changes.promotionSelectorBaemin !== undefined) {
       patch.promotionSelectorBaemin = changes.promotionSelectorBaemin;
     }
     if (changes.promotionSelectorCoupang !== undefined) {
       patch.promotionSelectorCoupang = changes.promotionSelectorCoupang;
+    }
+    if (changes.promotionSelectorCombined !== undefined) {
+      patch.promotionSelectorCombined = changes.promotionSelectorCombined;
     }
     return patch;
   }
@@ -2892,6 +2907,9 @@ const BremStorage = (function () {
     if (source.selectedMissionIdCoupang !== undefined) {
       patch.selectedMissionIdCoupang = source.selectedMissionIdCoupang;
     }
+    if (source.selectedMissionIdCombined !== undefined) {
+      patch.selectedMissionIdCombined = source.selectedMissionIdCombined;
+    }
     if (source.selectedMissionId !== undefined) {
       patch.selectedMissionId = source.selectedMissionId;
     }
@@ -2901,15 +2919,22 @@ const BremStorage = (function () {
     if (source.promotionRuleIdCoupang !== undefined) {
       patch.promotionRuleIdCoupang = source.promotionRuleIdCoupang;
     }
+    if (source.promotionRuleIdCombined !== undefined) {
+      patch.promotionRuleIdCombined = source.promotionRuleIdCombined;
+    }
     if (source.promotionSelectorBaemin !== undefined) {
       patch.promotionSelectorBaemin = source.promotionSelectorBaemin;
     }
     if (source.promotionSelectorCoupang !== undefined) {
       patch.promotionSelectorCoupang = source.promotionSelectorCoupang;
     }
+    if (source.promotionSelectorCombined !== undefined) {
+      patch.promotionSelectorCombined = source.promotionSelectorCombined;
+    }
     return patch.selectedMissionId !== undefined
       || patch.selectedMissionIdBaemin !== undefined
       || patch.selectedMissionIdCoupang !== undefined
+      || patch.selectedMissionIdCombined !== undefined
       || patch.promotionRuleIdBaemin !== undefined
       || patch.promotionRuleIdCoupang !== undefined
       || patch.promotionSelectorBaemin !== undefined
@@ -5676,6 +5701,13 @@ const BremStorage = (function () {
         selectedMissionId: String(next.selectedMissionId || '').trim(),
         selectedMissionIdBaemin: String(next.selectedMissionIdBaemin || '').trim(),
         selectedMissionIdCoupang: String(next.selectedMissionIdCoupang || '').trim(),
+        selectedMissionIdCombined: String(next.selectedMissionIdCombined || '').trim(),
+        promotionRuleIdCombined: String(
+          next.promotionRuleIdCombined || next.promotionSelectorCombined || next.selectedMissionIdCombined || ''
+        ).trim(),
+        promotionSelectorCombined: String(
+          next.promotionSelectorCombined || next.promotionRuleIdCombined || next.selectedMissionIdCombined || ''
+        ).trim(),
         longEventPlatform: normalizeLongEventPlatform(next.longEventPlatform),
         hiddenFields: normalizeHiddenFields(next.hiddenFields)
       };
@@ -5870,6 +5902,7 @@ const BremStorage = (function () {
         selectedMissionId: '',
         selectedMissionIdBaemin: '',
         selectedMissionIdCoupang: '',
+        selectedMissionIdCombined: '',
         hiddenFields: normalizeHiddenFields(driver.hiddenFields),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -6024,6 +6057,7 @@ const BremStorage = (function () {
         selectedMissionId: '',
         selectedMissionIdBaemin: '',
         selectedMissionIdCoupang: '',
+        selectedMissionIdCombined: '',
         hiddenFields: normalizeHiddenFields(driver.hiddenFields),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()

@@ -29,6 +29,7 @@ function stripOptionalRiderColumns(row) {
   delete row.selected_mission_id;
   delete row.selected_mission_id_baemin;
   delete row.selected_mission_id_coupang;
+  delete row.selected_mission_id_combined;
   delete row.long_event_platform;
 }
 
@@ -194,7 +195,7 @@ function mergeRiderRows(keep, donor) {
     'baemin_id', 'memo', 'long_event_item_id', 'long_event_item', 'long_event_platform',
     'promotion_selector_coupang', 'promotion_selector_baemin',
     'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
-    'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang'
+    'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang', 'selected_mission_id_combined'
   ].forEach(field => mergeStringField(merged, donor, field));
 
   if (!merged.long_event_start_date && donor.long_event_start_date) merged.long_event_start_date = donor.long_event_start_date;
@@ -413,9 +414,16 @@ function riderToRow(driver) {
     promotion_selector_baemin: String(source.promotionSelectorBaemin || ''),
     promotion_rule_id_coupang: String(source.promotionRuleIdCoupang || ''),
     promotion_rule_id_baemin: String(source.promotionRuleIdBaemin || ''),
-    selected_mission_id: String(source.selectedMissionId || source.selectedMissionIdBaemin || source.selectedMissionIdCoupang || ''),
+    selected_mission_id: String(
+      source.selectedMissionId
+      || source.selectedMissionIdCombined
+      || source.selectedMissionIdBaemin
+      || source.selectedMissionIdCoupang
+      || ''
+    ),
     selected_mission_id_baemin: String(source.selectedMissionIdBaemin || source.selectedMissionId || ''),
     selected_mission_id_coupang: String(source.selectedMissionIdCoupang || source.selectedMissionId || ''),
+    selected_mission_id_combined: String(source.selectedMissionIdCombined || ''),
     raw_data: source,
     created_at: toIso(source.createdAt),
     updated_at: toIso(source.updatedAt)
@@ -681,6 +689,9 @@ function dbRowToDriver(row) {
       || raw.selectedMissionIdCoupang
       || raw.selectedMissionId
       || '',
+    selectedMissionIdCombined: row.selected_mission_id_combined
+      || raw.selectedMissionIdCombined
+      || '',
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -711,6 +722,7 @@ function mergeIncomingRiderWithExisting(incoming, existingRow) {
   keep('selectedMissionId', 'selected_mission_id');
   keep('selectedMissionIdBaemin', 'selected_mission_id_baemin');
   keep('selectedMissionIdCoupang', 'selected_mission_id_coupang');
+  keep('selectedMissionIdCombined', 'selected_mission_id_combined');
   keep('promotionRuleIdBaemin', 'promotion_rule_id_baemin');
   keep('promotionRuleIdCoupang', 'promotion_rule_id_coupang');
   keep('promotionSelectorBaemin', 'promotion_selector_baemin');
@@ -777,6 +789,7 @@ const PROTECTED_RIDER_COLUMNS = [
   'selected_mission_id',
   'selected_mission_id_baemin',
   'selected_mission_id_coupang',
+  'selected_mission_id_combined',
   'promotion_rule_id_baemin',
   'promotion_rule_id_coupang',
   'promotion_selector_baemin',
@@ -1139,15 +1152,21 @@ function normalizeMissionPatchFields(fields = {}) {
   if (fields.selectedMissionIdCoupang !== undefined) {
     next.selected_mission_id_coupang = String(fields.selectedMissionIdCoupang || '').trim();
   }
+  if (fields.selectedMissionIdCombined !== undefined) {
+    next.selected_mission_id_combined = String(fields.selectedMissionIdCombined || '').trim();
+  }
   if (fields.selectedMissionId !== undefined) {
     next.selected_mission_id = String(fields.selectedMissionId || '').trim();
   } else if (
-    next.selected_mission_id_baemin !== undefined
+    next.selected_mission_id_combined !== undefined
+    || next.selected_mission_id_baemin !== undefined
     || next.selected_mission_id_coupang !== undefined
   ) {
+    const combined = next.selected_mission_id_combined ?? '';
     const baemin = next.selected_mission_id_baemin ?? '';
     const coupang = next.selected_mission_id_coupang ?? '';
-    if (baemin && coupang && baemin === coupang) next.selected_mission_id = baemin;
+    if (combined) next.selected_mission_id = combined;
+    else if (baemin && coupang && baemin === coupang) next.selected_mission_id = baemin;
     else if (baemin && !coupang) next.selected_mission_id = baemin;
     else if (!baemin && coupang) next.selected_mission_id = coupang;
     else if (!baemin && !coupang) next.selected_mission_id = '';

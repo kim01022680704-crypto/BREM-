@@ -59,8 +59,10 @@ window.BremSupabaseMapper = (function () {
     promotion_rule_id_baemin: String(driver.promotionRuleIdBaemin || ''),
     selected_mission_id_baemin: String(driver.selectedMissionIdBaemin || '').trim(),
     selected_mission_id_coupang: String(driver.selectedMissionIdCoupang || '').trim(),
+    selected_mission_id_combined: String(driver.selectedMissionIdCombined || '').trim(),
     selected_mission_id: String(
       driver.selectedMissionId
+      || driver.selectedMissionIdCombined
       || driver.selectedMissionIdBaemin
       || driver.selectedMissionIdCoupang
       || ''
@@ -122,6 +124,7 @@ window.BremSupabaseMapper = (function () {
       selectedMissionId: row.selected_mission_id || row.selected_mission_id_baemin || row.selected_mission_id_coupang || '',
       selectedMissionIdBaemin: resolvePlatformMissionIdFromRow(row, 'baemin'),
       selectedMissionIdCoupang: resolvePlatformMissionIdFromRow(row, 'coupang'),
+      selectedMissionIdCombined: String(row.selected_mission_id_combined || '').trim(),
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };

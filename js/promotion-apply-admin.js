@@ -470,13 +470,13 @@ const BremPromotionApplyAdmin = (function () {
   }
 
   async function resolveDeliveryFeeForCalculation(platform, baeminSettlement, coupangSettlement = null) {
-    const assignmentMode = platform === 'combined' ? 'selected_rules' : readApplyMode(platform);
-    const ruleIds = platform === 'combined' || assignmentMode === 'selected_rules'
+    const assignmentMode = readApplyMode(platform);
+    const ruleIds = assignmentMode === 'selected_rules'
       ? readSelectedRuleIds(platform)
       : [];
     const pickOptions = { assignmentMode };
     const needsFile = platform === 'combined'
-      ? BremPromotionApply.combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, ruleIds)
+      ? BremPromotionApply.combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, ruleIds, pickOptions)
       : BremPromotionApply.settlementNeedsDeliveryFee(baeminSettlement, 'baemin', ruleIds, pickOptions);
     if (!needsFile) return null;
 
@@ -583,13 +583,11 @@ const BremPromotionApplyAdmin = (function () {
   }
 
   function readApplyMode(platform = getActivePlatform()) {
-    if (platform === 'combined') return 'selected_rules';
     const checked = $(`input[name="promotionApplyMode-${platform}"]:checked`);
     return checked?.value === 'selected_rules' ? 'selected_rules' : 'per_driver';
   }
 
   function syncApplyModeUI(platform) {
-    if (platform === 'combined') return;
     const mode = readApplyMode(platform);
     const selectedSection = $(`#promotionApplySelectedSection-${platform}`);
     const missionSection = $(`#promotionApplyMissionSection-${platform}`);
@@ -603,7 +601,7 @@ const BremPromotionApplyAdmin = (function () {
 
     const catalog = window.BremMissionPromotionCatalog;
     const drivers = BremStorage.drivers.getAll();
-    const field = platform === 'baemin' ? 'baemin' : 'coupang';
+    const field = platform === 'baemin' ? 'baemin' : (platform === 'combined' ? 'combined' : 'coupang');
     const assigned = drivers.filter(driver => {
       const assignment = catalog?.getDriverAssignment?.(driver) || {};
       return Boolean(assignment[field]);
@@ -651,14 +649,12 @@ const BremPromotionApplyAdmin = (function () {
     const container = $(`#promotionApplyRuleList-${platform}`);
     if (!container) return;
 
-    if (platform === 'coupang' || platform === 'baemin') {
+    if (platform === 'coupang' || platform === 'baemin' || platform === 'combined') {
       renderPromotionRuleCheckboxList(platform, container);
       renderMissionAssignmentSummary(platform);
       syncApplyModeUI(platform);
       return;
     }
-
-    renderPromotionRuleCheckboxList(platform, container);
   }
 
   function renderPromotionRulePickers() {
@@ -866,7 +862,7 @@ const BremPromotionApplyAdmin = (function () {
   async function runCalculation(options = {}) {
     const platform = getActivePlatform();
     const assignmentMode = readApplyMode(platform);
-    const ruleIds = platform === 'combined' || assignmentMode === 'selected_rules'
+    const ruleIds = assignmentMode === 'selected_rules'
       ? readSelectedRuleIds(platform)
       : [];
     const ignoreMissingRates = options.ignoreMissingRates === true
@@ -874,7 +870,7 @@ const BremPromotionApplyAdmin = (function () {
     const rainApply = (platform === 'baemin' || platform === 'combined')
       && options.rainApply === true;
 
-    if (platform === 'combined' && !ruleIds.length) {
+    if (platform === 'combined' && assignmentMode === 'selected_rules' && !ruleIds.length) {
       showToast('적용할 합산 프로모션 조건을 선택하세요.');
       return;
     }
@@ -936,9 +932,10 @@ const BremPromotionApplyAdmin = (function () {
             coupangDeliveryFeeMeta: deliveryFeeParsed.coupang || null,
             ignoreMissingRates,
             rainApply,
+            assignmentMode,
             ...combinedMeta
           }
-          : { ignoreMissingRates, rainApply, ...combinedMeta };
+          : { ignoreMissingRates, rainApply, assignmentMode, ...combinedMeta };
 
         state.lastResult = BremPromotionApply.applyPromotionToCombinedSettlements(
           coupangSettlement,
