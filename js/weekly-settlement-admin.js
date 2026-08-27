@@ -108,19 +108,43 @@ const BremWeeklySettlementAdmin = (function () {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
 
-  function weekStartKey(dateValue = new Date().toISOString().slice(0, 10)) {
+  function localDateKey(date) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-');
+  }
+
+  function localTodayKey() {
+    return localDateKey(new Date());
+  }
+
+  function weekStartKey(dateValue = localTodayKey()) {
     if (window.BremDatePicker?.weekStartKey) return BremDatePicker.weekStartKey(dateValue);
     const date = new Date(`${dateValue}T00:00:00`);
     const day = date.getDay();
     const diff = (day - 3 + 7) % 7;
     date.setDate(date.getDate() - diff);
-    return date.toISOString().slice(0, 10);
+    return localDateKey(date);
   }
 
   function weekEndKey(weekStart) {
+    if (window.BremDatePicker?.weekEndKey) return BremDatePicker.weekEndKey(weekStart);
     const end = new Date(`${weekStart}T00:00:00`);
     end.setDate(end.getDate() + 6);
-    return end.toISOString().slice(0, 10);
+    return localDateKey(end);
+  }
+
+  /** 정산 시작일 → 적용주 수요일 (화요일 시작 off-by-one 보정) */
+  function settlementWeekStartKey(startDate) {
+    if (window.BremWeeklySettlement?.baeminWeekStartKey) {
+      return BremWeeklySettlement.baeminWeekStartKey(startDate);
+    }
+    if (window.BremDatePicker?.applyWeekWednesday) {
+      return BremDatePicker.applyWeekWednesday(startDate);
+    }
+    return weekStartKey(startDate);
   }
 
   function formatDate(value) {
@@ -197,7 +221,7 @@ const BremWeeklySettlementAdmin = (function () {
     const startDate = starts[0] || '';
     const endDate = ends[ends.length - 1] || '';
     const regions = [...new Set(parsedList.map(p => String(p.teamName || '').trim()).filter(Boolean))];
-    const weekStart = startDate ? weekStartKey(startDate) : '';
+    const weekStart = startDate ? settlementWeekStartKey(startDate) : '';
     const weekLabel = startDate && endDate ? `${startDate} ~ ${endDate}` : '';
     const paymentDate = startDate
       ? BremWeeklySettlement.calculateCoupangSettlementDates(startDate).paymentDate
@@ -375,7 +399,7 @@ const BremWeeklySettlementAdmin = (function () {
       platform,
       fileName: record.fileName || sourceFileName || '',
       period: record.startDate,
-      weekStart: weekStartKey(record.startDate),
+      weekStart: settlementWeekStartKey(record.startDate),
       region: record.region,
       startDate: record.startDate,
       endDate: record.endDate,
@@ -386,7 +410,7 @@ const BremWeeklySettlementAdmin = (function () {
     if (record.previewUnmatched?.length) {
       try {
         BremStorage.settlementUnmatched.saveWeeklyBatch({
-          weekStart: weekStartKey(record.startDate),
+          weekStart: settlementWeekStartKey(record.startDate),
           startDate: record.startDate,
           endDate: record.endDate,
           records: record.previewUnmatched,
@@ -563,7 +587,7 @@ const BremWeeklySettlementAdmin = (function () {
       channel: ch
     };
     const saved = BremWeeklySettlement.saveWeeklySettlement(refreshedRecord);
-    const savedWeek = weekStartKey(saved.startDate || saveRecord.startDate || record.startDate);
+    const savedWeek = settlementWeekStartKey(saved.startDate || saveRecord.startDate || record.startDate);
     if (record.uploadLogId) {
       BremStorage.settlementUploadLogs.update(record.uploadLogId, {
         status: 'saved',
@@ -1422,7 +1446,7 @@ const BremWeeklySettlementAdmin = (function () {
         if (weekLabelInput && start && end) weekLabelInput.value = `${start} ~ ${end}`;
         const logWeekInput = q(ch, 'LogWeek', 'baemin');
         if (logWeekInput && start) {
-          const wk = weekStartKey(start);
+          const wk = settlementWeekStartKey(start);
           logWeekInput.value = wk;
           state.weeklyLogWeekByChannel[ch].baemin = wk;
         }

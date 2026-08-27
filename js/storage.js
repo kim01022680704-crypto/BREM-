@@ -6755,6 +6755,25 @@ const BremStorage = (function () {
     ].join('-');
   }
 
+  /** 주정산 시작일 → 적용주 수요일 (화요일 시작 off-by-one 보정) */
+  function applyWeekWednesdayFromDate(dateValue) {
+    const raw = String(dateValue || '').slice(0, 10);
+    if (!raw) return '';
+    const date = new Date(`${raw}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return weekStartKeyFromDate(raw);
+    const day = date.getDay();
+    if (day === 3) return weekStartKeyFromDate(raw);
+    if (day === 2) {
+      date.setDate(date.getDate() + 1);
+      return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0')
+      ].join('-');
+    }
+    return weekStartKeyFromDate(raw);
+  }
+
   function weekEndKeyFromDate(weekStart) {
     const end = new Date(`${weekStart}T00:00:00`);
     end.setDate(end.getDate() + 6);
@@ -10782,8 +10801,10 @@ const BremStorage = (function () {
 
   function normalizeSettlementUploadLog(entry = {}) {
     const period = String(entry.period || entry.startDate || '').slice(0, 10);
-    const weekStart = String(entry.weekStart || (period ? weekStartKeyFromDate(period) : '')).slice(0, 10);
     const kind = normalizeSettlementUploadKind(entry.kind);
+    const weekStart = kind === 'weekly' && period
+      ? applyWeekWednesdayFromDate(period)
+      : String(entry.weekStart || (period ? weekStartKeyFromDate(period) : '')).slice(0, 10);
     const matchedRecords = Array.isArray(entry.matchedRecords)
       ? entry.matchedRecords.map(normalizeSettlementUploadApplyRecord)
       : [];
@@ -10861,9 +10882,11 @@ const BremStorage = (function () {
         if (kind && item.kind !== kind) return false;
         if (platform && item.platform !== platform) return false;
         if (weekStart) {
-          const itemWeekStart = String(
-            item.weekStart || (item.period ? weekStartKeyFromDate(item.period) : '')
-          ).slice(0, 10);
+          const itemWeekStart = item.kind === 'weekly' && item.period
+            ? applyWeekWednesdayFromDate(item.period)
+            : String(
+              item.weekStart || (item.period ? weekStartKeyFromDate(item.period) : '')
+            ).slice(0, 10);
           if (itemWeekStart !== weekStart) return false;
         }
         return true;
@@ -11201,7 +11224,7 @@ const BremStorage = (function () {
           platform: record.platform,
           fileName: record.fileName,
           period: record.startDate,
-          weekStart: weekStartKeyFromDate(record.startDate || record.baseSettlementDate || record.uploadedAt),
+          weekStart: applyWeekWednesdayFromDate(record.startDate || record.baseSettlementDate || record.uploadedAt),
           region: record.region,
           startDate: record.startDate,
           endDate: record.endDate,
