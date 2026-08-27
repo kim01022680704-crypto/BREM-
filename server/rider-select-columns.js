@@ -60,6 +60,11 @@ function isMissingColumnError(error) {
   return message.includes('does not exist') || message.includes('column');
 }
 
+function parseMissingRiderColumn(error) {
+  const match = String(error?.message || error || '').match(/column riders\.([a-z0-9_]+) does not exist/i);
+  return match ? match[1] : '';
+}
+
 async function queryRidersWithSelectFallback(variants, runQuery) {
   let lastResult = null;
   for (const selectColumns of variants) {
@@ -85,5 +90,6 @@ module.exports = {
   RIDER_LIST_SELECT_VARIANTS,
   RIDER_DETAIL_SELECT_VARIANTS,
   isMissingColumnError,
+  parseMissingRiderColumn,
   queryRidersWithSelectFallback
 };

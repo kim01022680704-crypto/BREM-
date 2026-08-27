@@ -9,7 +9,8 @@
 |------|------|------|------|
 | 1 | `schema.sql` | 최초 1회 | profiles, riders, notices, promotions, settings, RLS |
 | 2 | `missions_migration.sql` | 미션 사용 시 | missions 테이블 + `brem_is_admin()` |
-| 3 | `riders_schema_sync_migration.sql` | 컬럼 누락 시 | riders 컬럼 동기화 |
+| 3 | `riders_schema_sync_migration.sql` | 컬럼 누락 시 | riders 컬럼 동기화 (합산 미션 포함) |
+| 3b | `riders_mission_combined_migration.sql` | 합산 미션 저장 시 | `selected_mission_id_combined` 컬럼 |
 | 4 | `rider_inquiries_migration.sql` | 문의 사용 시 | rider_inquiries |
 | 5 | `admin_schedules_migration.sql` | **필수** | 관리자 스케줄표 |
 | 6 | `operations_tables_migration.sql` | **필수** | admin_calls · admin_rejection_rates · admin_targets + settings→table |

@@ -38,6 +38,7 @@ const EXPECTED_COLUMNS = [
   'selected_mission_id',
   'selected_mission_id_baemin',
   'selected_mission_id_coupang',
+  'selected_mission_id_combined',
   'raw_data',
   'created_at',
   'updated_at'
@@ -78,7 +79,13 @@ async function main() {
   console.log('OK: code select columns exist');
   console.log('sample rows:', Array.isArray(data) ? data.length : 0);
 
-  const critical = ['long_event_platform', 'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang'];
+  const critical = [
+    'long_event_platform',
+    'selected_mission_id',
+    'selected_mission_id_baemin',
+    'selected_mission_id_coupang',
+    'selected_mission_id_combined'
+  ];
   critical.forEach(column => {
     const present = CODE_SELECT_COLUMNS.includes(column);
     console.log(`${present ? '✓' : '?'} ${column}`);

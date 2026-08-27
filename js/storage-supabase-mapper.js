@@ -124,7 +124,7 @@ window.BremSupabaseMapper = (function () {
       selectedMissionId: row.selected_mission_id || row.selected_mission_id_baemin || row.selected_mission_id_coupang || '',
       selectedMissionIdBaemin: resolvePlatformMissionIdFromRow(row, 'baemin'),
       selectedMissionIdCoupang: resolvePlatformMissionIdFromRow(row, 'coupang'),
-      selectedMissionIdCombined: String(row.selected_mission_id_combined || '').trim(),
+      selectedMissionIdCombined: String(row.selected_mission_id_combined || raw.selectedMissionIdCombined || '').trim(),
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };

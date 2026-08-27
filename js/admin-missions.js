@@ -10,6 +10,15 @@
     dirty: new Set()
   };
 
+  const MISSION_PLACEHOLDER = {
+    baemin: '배민 미션 미선택',
+    coupang: '쿠팡 미션 미선택',
+    combined: '합산 미션 미선택'
+  };
+
+  let driverSearchIndex = null;
+  let missionTitleCache = new Map();
+
   function $(id) {
     return document.getElementById(id);
   }
@@ -48,8 +57,33 @@
   }
 
   function missionTitle(missionId) {
-    const item = catalog().getById(missionId);
-    return item?.title || '미선택';
+    const id = String(missionId || '').trim();
+    if (!id) return '미선택';
+    if (missionTitleCache.has(id)) return missionTitleCache.get(id);
+    const title = catalog().getById(id)?.title || '미선택';
+    missionTitleCache.set(id, title);
+    return title;
+  }
+
+  function invalidateMissionTitleCache() {
+    missionTitleCache = new Map();
+  }
+
+  function invalidateDriverSearchIndex() {
+    driverSearchIndex = null;
+  }
+
+  function buildDriverSearchIndex() {
+    driverSearchIndex = BremStorage.drivers.getAll().map(driver => {
+      const coupangId = getCoupangLoginId(driver);
+      return {
+        driver,
+        nameLower: String(driver.name || '').toLowerCase(),
+        phoneDigits: String(driver.phone || '').replace(/\D/g, ''),
+        baeminIdLower: String(driver.baeminId || '').toLowerCase(),
+        coupangIdLower: String(coupangId || '').toLowerCase()
+      };
+    });
   }
 
   function getSavedAssignment(driver) {
@@ -57,7 +91,8 @@
   }
 
   function getDriverDraft(driver) {
-    return state.drafts.get(driver.id) || getSavedAssignment(driver);
+    const raw = state.drafts.get(driver.id) || getSavedAssignment(driver);
+    return catalog().normalizeAssignmentDraft(raw);
   }
 
   function isDriverAssignmentDirty(driverId) {
@@ -73,6 +108,35 @@
   function syncDirtyState(driverId) {
     if (isDriverAssignmentDirty(driverId)) state.dirty.add(driverId);
     else state.dirty.delete(driverId);
+  }
+
+  function applyDraftToRow(row, draft) {
+    if (!row) return;
+    const pairs = [
+      ['baemin', draft.baemin],
+      ['coupang', draft.coupang],
+      ['combined', draft.combined]
+    ];
+    pairs.forEach(([platform, missionId]) => {
+      const select = row.querySelector(`[data-driver-mission-${platform}]`);
+      if (!select) return;
+      setMissionSelectValue(select, platform, missionId || '');
+    });
+  }
+
+  function commitDriverAssignmentDraft(driverId, partialDraft) {
+    const driver = BremStorage.drivers.getById(driverId);
+    if (!driver) return null;
+
+    const current = getDriverDraft(driver);
+    const next = catalog().normalizeAssignmentDraft({
+      baemin: partialDraft.baemin !== undefined ? partialDraft.baemin : current.baemin,
+      coupang: partialDraft.coupang !== undefined ? partialDraft.coupang : current.coupang,
+      combined: partialDraft.combined !== undefined ? partialDraft.combined : current.combined
+    });
+    state.drafts.set(driverId, next);
+    syncDirtyState(driverId);
+    return next;
   }
 
   let missionOptionsCache = { baemin: '', coupang: '', combined: '', key: '' };
@@ -99,13 +163,52 @@
 
   function invalidateMissionOptionsCache() {
     missionOptionsCache = { baemin: '', coupang: '', combined: '', key: '' };
+    invalidateMissionTitleCache();
   }
 
-  function missionOptions(platform, selectedId = '') {
-    const template = getMissionOptionsForPlatform(platform);
+  function missionOptionsFromTemplate(template, selectedId = '') {
     if (!selectedId) return template;
     const safeId = escapeHtml(selectedId);
     return template.replace(`value="${safeId}"`, `value="${safeId}" selected`);
+  }
+
+  function missionSelectInitialHtml(platform, selectedId = '') {
+    const placeholder = MISSION_PLACEHOLDER[platform] || '미션 미선택';
+    const id = String(selectedId || '').trim();
+    if (!id) {
+      return `<option value="">${placeholder}</option>`;
+    }
+    return `<option value="">${placeholder}</option><option value="${escapeHtml(id)}" selected>${escapeHtml(missionTitle(id))}</option>`;
+  }
+
+  function populateMissionSelectOptions(select, platform, selectedId = '') {
+    const placeholder = MISSION_PLACEHOLDER[platform] || '미션 미선택';
+    const template = getMissionOptionsForPlatform(platform);
+    select.innerHTML = `<option value="">${placeholder}</option>${missionOptionsFromTemplate(template, selectedId)}`;
+    select.dataset.optionsLoaded = '1';
+  }
+
+  function setMissionSelectValue(select, platform, selectedId = '') {
+    const id = String(selectedId || '').trim();
+    if (select.dataset.optionsLoaded === '1') {
+      select.value = id;
+      if (select.value !== id && id) {
+        select.insertAdjacentHTML(
+          'beforeend',
+          `<option value="${escapeHtml(id)}" selected>${escapeHtml(missionTitle(id))}</option>`
+        );
+      }
+      return;
+    }
+    select.innerHTML = missionSelectInitialHtml(platform, id);
+    select.dataset.optionsLoaded = '0';
+  }
+
+  function ensureMissionSelectOptions(select) {
+    if (!select || select.dataset.optionsLoaded === '1') return;
+    const platform = select.dataset.missionPlatform || '';
+    if (!platform) return;
+    populateMissionSelectOptions(select, platform, select.value || '');
   }
 
   function populateMissionFilterSelect() {
@@ -126,18 +229,15 @@
     }
   }
 
-  function matchesAssignmentFilter(driver) {
+  function matchesAssignmentFilter(entry) {
+    const driver = entry.driver;
     const query = state.assignmentSearch.trim().toLowerCase();
     if (query) {
-      const name = String(driver.name || '').toLowerCase();
-      const phone = String(driver.phone || '').replace(/\D/g, '');
-      const baeminId = String(driver.baeminId || '').toLowerCase();
-      const coupangId = getCoupangLoginId(driver).toLowerCase();
       const phoneQuery = query.replace(/\D/g, '');
-      const matched = name.includes(query)
-        || (phoneQuery && phone.includes(phoneQuery))
-        || baeminId.includes(query)
-        || coupangId.includes(query);
+      const matched = entry.nameLower.includes(query)
+        || (phoneQuery && entry.phoneDigits.includes(phoneQuery))
+        || entry.baeminIdLower.includes(query)
+        || entry.coupangIdLower.includes(query);
       if (!matched) return false;
     }
 
@@ -145,9 +245,7 @@
       if (!driver.platformBaemin) return false;
     } else if (state.assignmentPlatform === 'coupang') {
       if (driver.platformCoupang === false) return false;
-    } else if (state.assignmentPlatform === 'both') {
-      if (!driver.platformBaemin || driver.platformCoupang === false) return false;
-    } else if (state.assignmentPlatform === 'combined') {
+    } else if (state.assignmentPlatform === 'both' || state.assignmentPlatform === 'combined') {
       if (!driver.platformBaemin || driver.platformCoupang === false) return false;
     }
 
@@ -169,16 +267,15 @@
     return true;
   }
 
-  function filteredAssignmentDrivers() {
-    return BremStorage.drivers.getAll()
-      .filter(matchesAssignmentFilter)
-      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+  function countFilteredDrivers() {
+    if (!driverSearchIndex) buildDriverSearchIndex();
+    return driverSearchIndex.filter(matchesAssignmentFilter).length;
   }
 
-  function updateAssignmentSearchStatus() {
+  function updateAssignmentSearchStatus(visibleCount) {
     const resultEl = $('missionAssignmentSearchResult');
     const clearBtn = $('missionAssignmentSearchClear');
-    const drivers = filteredAssignmentDrivers();
+    const count = Number.isFinite(visibleCount) ? visibleCount : countFilteredDrivers();
 
     if (clearBtn) {
       clearBtn.hidden = !state.assignmentSearch
@@ -186,7 +283,7 @@
         && state.assignmentMissionFilter === 'all';
     }
     if (resultEl) {
-      resultEl.textContent = `표시 ${drivers.length}명 · 아래 목록 스크롤`;
+      resultEl.textContent = `표시 ${count}명 · 아래 목록 스크롤`;
     }
 
     const saveAllBtn = $('missionAssignmentSaveAllBtn');
@@ -197,28 +294,67 @@
     }
   }
 
-  async function saveDriverAssignment(driverId) {
-    const driver = BremStorage.drivers.getById(driverId);
-    if (!driver) throw new Error('기사를 찾을 수 없습니다.');
+  function applyAssignmentRowVisibility() {
+    const rowsEl = $('missionDriverRows');
+    if (!rowsEl) return;
 
-    const draft = getDriverDraft(driver);
-    const saved = getSavedAssignment(driver);
-    const changes = catalog().buildAssignmentPatch({
-      baemin: draft.baemin !== saved.baemin ? draft.baemin : undefined,
-      coupang: draft.coupang !== saved.coupang ? draft.coupang : undefined,
-      combined: draft.combined !== saved.combined ? draft.combined : undefined
-    });
-
-    if (!Object.keys(changes).length) {
-      state.dirty.delete(driverId);
-      state.drafts.delete(driverId);
-      updateAssignmentSearchStatus();
+    const rows = rowsEl.querySelectorAll('tr[data-driver-id]');
+    if (!rows.length) {
+      updateAssignmentSearchStatus(0);
       return;
     }
 
-    await BremStorage.drivers.update(driverId, changes);
+    if (!driverSearchIndex) buildDriverSearchIndex();
+    const entryById = new Map(driverSearchIndex.map(entry => [String(entry.driver.id), entry]));
+
+    let visible = 0;
+    rows.forEach(row => {
+      const entry = entryById.get(String(row.dataset.driverId || ''));
+      const show = Boolean(entry && matchesAssignmentFilter(entry));
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+
+    let emptyRow = rowsEl.querySelector('tr.mission-assignment-empty');
+    if (!visible) {
+      if (!emptyRow) {
+        emptyRow = document.createElement('tr');
+        emptyRow.className = 'mission-assignment-empty';
+        emptyRow.innerHTML = '<td colspan="8" class="empty">조건에 맞는 기사가 없습니다.</td>';
+        rowsEl.appendChild(emptyRow);
+      }
+      emptyRow.hidden = false;
+    } else if (emptyRow) {
+      emptyRow.hidden = true;
+    }
+
+    updateAssignmentSearchStatus(visible);
+  }
+
+  async function saveDriverAssignment(driverId) {
+    return persistDriverAssignment(driverId);
+  }
+
+  async function persistDriverAssignment(driverId) {
+    const driver = BremStorage.drivers.getById(driverId);
+    if (!driver) throw new Error('기사를 찾을 수 없습니다.');
+
+    const draft = catalog().normalizeAssignmentDraft(getDriverDraft(driver));
+    const saved = getSavedAssignment(driver);
+    if (draft.baemin === saved.baemin
+      && draft.coupang === saved.coupang
+      && draft.combined === saved.combined) {
+      state.dirty.delete(driverId);
+      state.drafts.delete(driverId);
+      updateAssignmentSearchStatus();
+      return { saved: false };
+    }
+
+    const changes = catalog().buildAssignmentPatch(draft);
+    const result = await BremStorage.drivers.batchPatch([{ id: driverId, changes }]);
     state.drafts.delete(driverId);
     state.dirty.delete(driverId);
+    return { saved: true, warning: result?.warning || '' };
   }
 
   async function saveAllDirtyAssignments() {
@@ -235,39 +371,42 @@
       const patches = ids.map(driverId => {
         const driver = BremStorage.drivers.getById(driverId);
         if (!driver) return null;
-        const draft = getDriverDraft(driver);
+        const draft = catalog().normalizeAssignmentDraft(getDriverDraft(driver));
         const saved = getSavedAssignment(driver);
-        const changes = catalog().buildAssignmentPatch({
-          baemin: draft.baemin !== saved.baemin ? draft.baemin : undefined,
-          coupang: draft.coupang !== saved.coupang ? draft.coupang : undefined,
-          combined: draft.combined !== saved.combined ? draft.combined : undefined
-        });
-        if (!Object.keys(changes).length) return null;
-        return { id: driverId, changes };
+        if (draft.baemin === saved.baemin
+          && draft.coupang === saved.coupang
+          && draft.combined === saved.combined) {
+          return null;
+        }
+        return { id: driverId, changes: catalog().buildAssignmentPatch(draft) };
       }).filter(Boolean);
 
       if (patches.length) {
-        await window.BremPerf.runSave('missions.assignments.bulk', {
+        const result = await window.BremPerf.runSave('missions.assignments.bulk', {
           write: () => BremStorage.drivers.batchPatch(patches),
           render: () => {
             ids.forEach(id => {
               state.drafts.delete(id);
               state.dirty.delete(id);
             });
-            renderDriverMissionAssignments();
+            renderDriverMissionAssignmentRows();
           }
         });
-        showToast(`${patches.length || ids.length}명 미션 배정을 저장했습니다.`);
+        if (result?.warning) {
+          showToast(result.warning);
+        } else {
+          showToast(`${patches.length || ids.length}명 미션 배정을 저장했습니다.`);
+        }
       } else {
         ids.forEach(id => {
           state.drafts.delete(id);
           state.dirty.delete(id);
         });
-        renderDriverMissionAssignments();
+        renderDriverMissionAssignmentRows();
       }
     } catch (error) {
       showToast(error.message || '미션 배정 저장에 실패했습니다.');
-      renderDriverMissionAssignments();
+      renderDriverMissionAssignmentRows();
     } finally {
       if (saveAllBtn) saveAllBtn.disabled = false;
       updateAssignmentSearchStatus();
@@ -295,12 +434,6 @@
     `).join('') || '<p class="empty-state mission-catalog-empty">등록된 프로모션이 없습니다.</p>';
   }
 
-  function missionHintHtml(missionId) {
-    const id = String(missionId || '').trim();
-    if (!id) return '';
-    return `<span class="hint mission-selected-hint">${escapeHtml(missionTitle(id))}</span>`;
-  }
-
   function platformBadgesHtml(driver) {
     const badges = [];
     if (driver.platformBaemin) badges.push('<span class="mission-platform-badge mission-platform-badge--baemin">배민</span>');
@@ -308,34 +441,28 @@
     return badges.length ? badges.join(' ') : '<span class="hint">-</span>';
   }
 
-  function renderDriverMissionAssignments() {
+  function renderDriverMissionAssignmentRows() {
     const rowsEl = $('missionDriverRows');
     if (!rowsEl) return;
 
-    populateMissionFilterSelect();
-    invalidateMissionOptionsCache();
-
     if (!BremStorage.drivers.getAll().length) {
       rowsEl.innerHTML = '<tr><td colspan="8" class="empty">등록된 기사가 없습니다.</td></tr>';
-      updateAssignmentSearchStatus();
+      updateAssignmentSearchStatus(0);
       return;
     }
 
-    const drivers = filteredAssignmentDrivers();
-    updateAssignmentSearchStatus();
-
-    if (!drivers.length) {
-      rowsEl.innerHTML = '<tr><td colspan="8" class="empty">조건에 맞는 기사가 없습니다.</td></tr>';
-      return;
-    }
+    if (!driverSearchIndex) buildDriverSearchIndex();
+    const drivers = driverSearchIndex
+      .map(entry => entry.driver)
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
 
     rowsEl.innerHTML = drivers.map(driver => {
       const draft = getDriverDraft(driver);
       const isDirty = isDriverAssignmentDirty(driver.id);
       const baeminDisabled = !driver.platformBaemin ? ' disabled' : '';
       const coupangDisabled = driver.platformCoupang === false ? ' disabled' : '';
-
       const combinedDisabled = (!driver.platformBaemin || driver.platformCoupang === false) ? ' disabled' : '';
+      const coupangLoginId = getCoupangLoginId(driver);
 
       return `
         <tr class="${isDirty ? 'mission-row-dirty' : ''}" data-driver-id="${escapeHtml(driver.id)}">
@@ -347,27 +474,21 @@
           </td>
           <td class="mission-platform-cell">${platformBadgesHtml(driver)}</td>
           <td><code class="mission-id-code">${escapeHtml(driver.platformBaemin ? (driver.baeminId || '-') : '-')}</code></td>
-          <td><code class="mission-id-code">${escapeHtml(driver.platformCoupang !== false ? getCoupangLoginId(driver) : '-')}</code></td>
+          <td><code class="mission-id-code">${escapeHtml(driver.platformCoupang !== false ? coupangLoginId : '-')}</code></td>
           <td class="mission-select-cell">
-            <select data-driver-mission-baemin="${escapeHtml(driver.id)}" class="inline-select"${baeminDisabled}>
-              <option value="">배민 미션 미선택</option>
-              ${missionOptions('baemin', draft.baemin)}
+            <select data-driver-mission-baemin="${escapeHtml(driver.id)}" data-mission-platform="baemin" data-options-loaded="0" class="inline-select"${baeminDisabled}>
+              ${missionSelectInitialHtml('baemin', draft.baemin)}
             </select>
-            ${missionHintHtml(draft.baemin)}
           </td>
           <td class="mission-select-cell">
-            <select data-driver-mission-coupang="${escapeHtml(driver.id)}" class="inline-select"${coupangDisabled}>
-              <option value="">쿠팡 미션 미선택</option>
-              ${missionOptions('coupang', draft.coupang)}
+            <select data-driver-mission-coupang="${escapeHtml(driver.id)}" data-mission-platform="coupang" data-options-loaded="0" class="inline-select"${coupangDisabled}>
+              ${missionSelectInitialHtml('coupang', draft.coupang)}
             </select>
-            ${missionHintHtml(draft.coupang)}
           </td>
           <td class="mission-select-cell">
-            <select data-driver-mission-combined="${escapeHtml(driver.id)}" class="inline-select"${combinedDisabled}>
-              <option value="">합산 미션 미선택</option>
-              ${missionOptions('combined', draft.combined)}
+            <select data-driver-mission-combined="${escapeHtml(driver.id)}" data-mission-platform="combined" data-options-loaded="0" class="inline-select"${combinedDisabled}>
+              ${missionSelectInitialHtml('combined', draft.combined)}
             </select>
-            ${missionHintHtml(draft.combined)}
           </td>
           <td>
             <button type="button" class="small-btn primary-btn" data-save-driver-mission="${escapeHtml(driver.id)}"${isDirty ? '' : ' disabled'}>저장</button>
@@ -375,6 +496,12 @@
         </tr>
       `;
     }).join('');
+
+    applyAssignmentRowVisibility();
+  }
+
+  function renderDriverMissionAssignments() {
+    renderDriverMissionAssignmentRows();
   }
 
   async function exportMissionAssignmentsToExcel() {
@@ -384,7 +511,7 @@
     }
 
     const rows = BremStorage.drivers.getAll().map(driver => {
-      const assignment = getSavedAssignment(driver);
+      const assignment = catalog().normalizeAssignmentDraft(getSavedAssignment(driver));
       return [
         driver.name || '',
         driver.phone || '',
@@ -408,14 +535,18 @@
   }
 
   function renderMissionSection() {
+    populateMissionFilterSelect();
+    invalidateMissionOptionsCache();
+    invalidateDriverSearchIndex();
     renderMissionCards();
-    renderDriverMissionAssignments();
+    renderDriverMissionAssignmentRows();
   }
 
   async function refresh(options = {}) {
     const force = options.force === true;
     state.drafts.clear();
     state.dirty.clear();
+    invalidateDriverSearchIndex();
 
     try {
       await BremStorage.ensureSectionLoaded?.('mission-management', { force });
@@ -425,6 +556,10 @@
 
     renderMissionSection();
   }
+
+  const debouncedAssignmentSearchFilter = window.BremPerf?.debounce
+    ? window.BremPerf.debounce(() => applyAssignmentRowVisibility(), 100)
+    : () => applyAssignmentRowVisibility();
 
   function bindEvents() {
     if (bindEvents.bound) return;
@@ -440,17 +575,17 @@
 
     $('missionAssignmentSearch')?.addEventListener('input', event => {
       state.assignmentSearch = event.target.value;
-      renderDriverMissionAssignments();
+      debouncedAssignmentSearchFilter();
     });
 
     $('missionAssignmentPlatformFilter')?.addEventListener('change', event => {
       state.assignmentPlatform = event.target.value || 'all';
-      renderDriverMissionAssignments();
+      applyAssignmentRowVisibility();
     });
 
     $('missionAssignmentMissionFilter')?.addEventListener('change', event => {
       state.assignmentMissionFilter = event.target.value || 'all';
-      renderDriverMissionAssignments();
+      applyAssignmentRowVisibility();
     });
 
     $('missionAssignmentSearchClear')?.addEventListener('click', () => {
@@ -463,7 +598,13 @@
       if (searchInput) searchInput.value = '';
       if (platformSelect) platformSelect.value = 'all';
       if (missionSelect) missionSelect.value = 'all';
-      renderDriverMissionAssignments();
+      applyAssignmentRowVisibility();
+    });
+
+    $('missionDriverRows')?.addEventListener('focusin', event => {
+      const select = event.target.closest('[data-driver-mission-baemin], [data-driver-mission-coupang], [data-driver-mission-combined]');
+      if (!select) return;
+      ensureMissionSelectOptions(select);
     });
 
     $('missionDriverRows')?.addEventListener('change', event => {
@@ -475,18 +616,17 @@
       const driverId = baeminSelect?.dataset.driverMissionBaemin
         || coupangSelect?.dataset.driverMissionCoupang
         || combinedSelect?.dataset.driverMissionCombined;
-      const driver = BremStorage.drivers.getById(driverId);
-      if (!driver) return;
 
-      const current = getDriverDraft(driver);
-      state.drafts.set(driverId, {
-        baemin: baeminSelect ? baeminSelect.value : current.baemin,
-        coupang: coupangSelect ? coupangSelect.value : current.coupang,
-        combined: combinedSelect ? combinedSelect.value : current.combined
+      const next = commitDriverAssignmentDraft(driverId, {
+        baemin: baeminSelect ? baeminSelect.value : undefined,
+        coupang: coupangSelect ? coupangSelect.value : undefined,
+        combined: combinedSelect ? combinedSelect.value : undefined
       });
-      syncDirtyState(driverId);
-      updateAssignmentSearchStatus();
+      if (!next) return;
+
       const row = event.target.closest('tr[data-driver-id]');
+      applyDraftToRow(row, next);
+      applyAssignmentRowVisibility();
       const saveBtn = row?.querySelector('[data-save-driver-mission]');
       if (saveBtn) saveBtn.disabled = !state.dirty.has(driverId);
       row?.classList.toggle('mission-row-dirty', state.dirty.has(driverId));
@@ -504,8 +644,12 @@
         write: () => saveDriverAssignment(driverId),
         render: () => renderDriverMissionAssignments()
       })
-        .then(() => {
-          showToast('미션 배정이 저장되었습니다.');
+        .then((result) => {
+          if (result?.warning) {
+            showToast(result.warning);
+          } else if (result?.saved !== false) {
+            showToast('미션 배정이 저장되었습니다.');
+          }
         })
         .catch(error => {
           showToast(error.message || '미션 배정 저장에 실패했습니다.');
@@ -519,7 +663,7 @@
 
     document.addEventListener('brem-cache-status-changed', () => {
       if (document.getElementById('mission-management')?.classList.contains('active')) {
-        invalidateMissionOptionsCache();
+        invalidateDriverSearchIndex();
         renderMissionSection();
       }
     });

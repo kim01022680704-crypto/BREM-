@@ -7,6 +7,7 @@ const {
   RIDER_DETAIL_SELECT_VARIANTS,
   RIDER_PATCH_RETURN_SELECT,
   isMissingColumnError,
+  parseMissingRiderColumn,
   queryRidersWithSelectFallback
 } = require('./rider-select-columns');
 
@@ -1195,28 +1196,91 @@ function normalizeMissionPatchFields(fields = {}) {
   return next;
 }
 
+async function readRiderRawData(supabase, riderId) {
+  const { data, error } = await supabase
+    .from('riders')
+    .select('raw_data')
+    .eq('id', riderId)
+    .maybeSingle();
+  if (error) return {};
+  const raw = data?.raw_data;
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...raw } : {};
+}
+
+function mergeMissionFieldsIntoRaw(raw, fields = {}, normalized = {}) {
+  const next = { ...raw };
+  if (normalized.selected_mission_id_combined !== undefined) {
+    next.selectedMissionIdCombined = String(normalized.selected_mission_id_combined || '').trim();
+  }
+  if (fields.promotionRuleIdCombined !== undefined) {
+    next.promotionRuleIdCombined = String(fields.promotionRuleIdCombined || '').trim();
+  }
+  if (fields.promotionSelectorCombined !== undefined) {
+    next.promotionSelectorCombined = String(fields.promotionSelectorCombined || '').trim();
+  }
+  return next;
+}
+
 async function patchRiderMissionFields(supabase, riderId, fields = {}) {
+  const normalized = normalizeMissionPatchFields(fields);
   const updatePayload = {
-    ...normalizeMissionPatchFields(fields),
+    ...normalized,
     updated_at: new Date().toISOString()
   };
   if (Object.keys(updatePayload).length <= 1) {
     return { ok: false, status: 400, error: '저장할 미션 정보가 없습니다.' };
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('riders')
     .update(updatePayload)
     .eq('id', riderId)
     .select(RIDER_PATCH_RETURN_SELECT)
     .maybeSingle();
 
+  if (error && isMissingColumnError(error)) {
+    const missingColumn = parseMissingRiderColumn(error);
+    const retryPayload = { ...updatePayload };
+    let usedRawFallback = false;
+
+    if (missingColumn === 'selected_mission_id_combined') {
+      delete retryPayload.selected_mission_id_combined;
+      const raw = await readRiderRawData(supabase, riderId);
+      retryPayload.raw_data = mergeMissionFieldsIntoRaw(raw, fields, normalized);
+      usedRawFallback = true;
+    } else {
+      stripOptionalRiderColumns(retryPayload);
+      if (normalized.selected_mission_id_combined !== undefined) {
+        const raw = await readRiderRawData(supabase, riderId);
+        retryPayload.raw_data = mergeMissionFieldsIntoRaw(raw, fields, normalized);
+        usedRawFallback = true;
+      }
+    }
+
+    ({ data, error } = await supabase
+      .from('riders')
+      .update(retryPayload)
+      .eq('id', riderId)
+      .select(RIDER_PATCH_RETURN_SELECT)
+      .maybeSingle());
+
+    if (!error) {
+      return {
+        ok: true,
+        rider: data,
+        warning: usedRawFallback
+          ? '합산 미션 컬럼이 DB에 없어 raw_data에 임시 저장했습니다. Supabase SQL Editor에서 supabase/riders_mission_combined_migration.sql 을 실행하세요.'
+          : undefined
+      };
+    }
+  }
+
   if (error) {
     if (isMissingColumnError(error)) {
       return {
         ok: false,
         status: 400,
-        error: '미션 컬럼이 없습니다. Supabase SQL Editor에서 supabase/missions_migration.sql 을 실행하세요.'
+        error: '미션 컬럼이 없습니다. Supabase SQL Editor에서 supabase/riders_schema_sync_migration.sql 과 supabase/riders_mission_combined_migration.sql 을 실행하세요.'
       };
     }
     return { ok: false, status: 400, error: error.message || '미션 저장에 실패했습니다.' };
@@ -1458,6 +1522,7 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
   const supabase = getServiceClient();
   const failed = [];
   let updated = 0;
+  let warning = '';
 
   for (const patch of list) {
     const riderId = String(patch.id || '').trim();
@@ -1466,6 +1531,7 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
       failed.push({ id: riderId, error: result.error || '저장 실패' });
       continue;
     }
+    if (result.warning && !warning) warning = result.warning;
     updated += 1;
   }
 
@@ -1483,7 +1549,8 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
     ok: true,
     updated,
     failed,
-    total: list.length
+    total: list.length,
+    warning: warning || undefined
   };
 }
 

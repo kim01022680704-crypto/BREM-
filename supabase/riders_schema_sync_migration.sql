@@ -40,10 +40,12 @@ alter table public.riders add column if not exists updated_at timestamptz not nu
 alter table public.riders add column if not exists selected_mission_id text not null default '';
 alter table public.riders add column if not exists selected_mission_id_baemin text not null default '';
 alter table public.riders add column if not exists selected_mission_id_coupang text not null default '';
+alter table public.riders add column if not exists selected_mission_id_combined text not null default '';
 
 create index if not exists idx_brem_riders_selected_mission on public.riders (selected_mission_id);
 create index if not exists idx_brem_riders_mission_baemin on public.riders (selected_mission_id_baemin);
 create index if not exists idx_brem_riders_mission_coupang on public.riders (selected_mission_id_coupang);
+create index if not exists idx_brem_riders_mission_combined on public.riders (selected_mission_id_combined);
 
 -- ---------------------------------------------------------------------------
 -- 3) 기존 행 기본값 보정 (null 방지)
@@ -83,6 +85,7 @@ with expected(column_name) as (
     ('selected_mission_id'),
     ('selected_mission_id_baemin'),
     ('selected_mission_id_coupang'),
+    ('selected_mission_id_combined'),
     ('raw_data'),
     ('created_at'),
     ('updated_at')
