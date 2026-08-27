@@ -1,4 +1,5 @@
 // 세무관리 — 원천세 신고용 월별 지급합계 집계
+// 엑셀 양식 v2: 이름·지급합계·ERPID·쿠팡ID·배민ID (주민번호 없음)
 const BremTaxManagementAdmin = (function () {
   const $ = selector => document.querySelector(selector);
   const Calc = () => window.BremDirectSettlementCalc;
@@ -289,10 +290,11 @@ const BremTaxManagementAdmin = (function () {
       ['이름', '지급합계', 'ERPID', '쿠팡ID', '배민ID'],
       ...sheetRows
     ]);
+    ws['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, ws, '원천세신고');
     window.XLSX.writeFile(wb, `원천세신고_${month}.xlsx`);
-    showToast(`엑셀 ${formatNumber(rows.length)}명보냈습니다.`);
+    showToast(`엑셀 ${formatNumber(rows.length)}명 · 이름·지급합계·ID 5열`);
   }
 
   function setupMonthPicker() {
