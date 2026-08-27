@@ -601,7 +601,35 @@ const BremPromotionApplyAdmin = (function () {
 
     const catalog = window.BremMissionPromotionCatalog;
     const drivers = BremStorage.drivers.getAll();
-    const field = platform === 'baemin' ? 'baemin' : (platform === 'combined' ? 'combined' : 'coupang');
+
+    if (platform === 'combined') {
+      let combinedCount = 0;
+      let coupangOnlyCount = 0;
+      let baeminOnlyCount = 0;
+      let splitCount = 0;
+      drivers.forEach(driver => {
+        const assignment = catalog?.getDriverAssignment?.(driver) || {};
+        if (assignment.combined) combinedCount += 1;
+        else if (assignment.coupang && assignment.baemin) splitCount += 1;
+        else if (assignment.coupang) coupangOnlyCount += 1;
+        else if (assignment.baemin) baeminOnlyCount += 1;
+      });
+      const assignedTotal = combinedCount + splitCount + coupangOnlyCount + baeminOnlyCount;
+      const missions = catalog?.getForPlatform?.('combined') || [];
+      const baeminMissions = catalog?.getForPlatform?.('baemin') || [];
+      const coupangMissions = catalog?.getForPlatform?.('coupang') || [];
+      container.innerHTML = `
+        <p class="form-help promotion-apply-mission-summary">
+          <strong>미션 관리</strong>에서 배정한 조건을 기사별로 자동 적용합니다.
+          합산 미션이 있으면 쿠팡+배민 합산으로, 없으면 쿠팡·배민 개별 미션을 각각 적용합니다.
+        </p>
+        <p class="form-help">배정 현황: 합산 <strong>${combinedCount}</strong>명 · 쿠팡+배민 분리 <strong>${splitCount}</strong>명 · 쿠팡만 <strong>${coupangOnlyCount}</strong>명 · 배민만 <strong>${baeminOnlyCount}</strong>명 (총 ${assignedTotal}명 / 전체 ${drivers.length}명)</p>
+        <p class="form-help">합산 미션 ${missions.length}개 · 쿠팡 ${coupangMissions.length}개 · 배민 ${baeminMissions.length}개</p>
+      `;
+      return;
+    }
+
+    const field = platform === 'baemin' ? 'baemin' : 'coupang';
     const assigned = drivers.filter(driver => {
       const assignment = catalog?.getDriverAssignment?.(driver) || {};
       return Boolean(assignment[field]);
@@ -1205,7 +1233,7 @@ const BremPromotionApplyAdmin = (function () {
       button.addEventListener('click', () => setPlatform(button.dataset.promotionApplyPlatform));
     });
 
-    ['coupang', 'baemin'].forEach(platform => {
+    ['coupang', 'baemin', 'combined'].forEach(platform => {
       $$(`input[name="promotionApplyMode-${platform}"]`).forEach(input => {
         input.addEventListener('change', () => syncApplyModeUI(platform));
       });
