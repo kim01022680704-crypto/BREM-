@@ -2183,18 +2183,13 @@ const BremStorage = (function () {
     const merged = { ...prev, ...incoming };
     const prevHasMissions = driverHasMissionFields(prev);
     const incomingHasMissions = driverHasMissionFields(incoming);
-    if (!prevHasMissions || incomingHasMissions) return merged;
-
-    const prevUpdated = Date.parse(prev.updatedAt || prev.createdAt || 0);
-    const incomingUpdated = Date.parse(incoming.updatedAt || incoming.createdAt || 0);
-    const incomingIsNewer = !Number.isNaN(incomingUpdated)
-      && (Number.isNaN(prevUpdated) || incomingUpdated > prevUpdated);
-    if (incomingIsNewer) return merged;
-
-    MISSION_DRIVER_MERGE_KEYS.forEach(key => {
-      const prevVal = String(prev[key] || '').trim();
-      if (prevVal) merged[key] = prev[key];
-    });
+    // 서버/목록 동기화에 미션 컬럼이 없으면 방금 저장한 배정을 지우지 않는다.
+    if (prevHasMissions && !incomingHasMissions) {
+      MISSION_DRIVER_MERGE_KEYS.forEach(key => {
+        const prevVal = String(prev[key] || '').trim();
+        if (prevVal) merged[key] = prev[key];
+      });
+    }
     return merged;
   }
 

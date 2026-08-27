@@ -85,11 +85,15 @@ window.BremSupabaseMapper = (function () {
     if (isBaemin) {
       const direct = String(row.selected_mission_id_baemin || row.promotion_rule_id_baemin || '').trim();
       if (direct) return direct;
+      const fromRaw = String(raw.selectedMissionIdBaemin || raw.promotionRuleIdBaemin || '').trim();
+      if (fromRaw) return fromRaw;
       const legacy = String(row.selected_mission_id || '').trim();
       return row.platform_baemin !== false && legacy ? legacy : '';
     }
     const direct = String(row.selected_mission_id_coupang || row.promotion_rule_id_coupang || '').trim();
     if (direct) return direct;
+    const fromRaw = String(raw.selectedMissionIdCoupang || raw.promotionRuleIdCoupang || '').trim();
+    if (fromRaw) return fromRaw;
     const legacy = String(row.selected_mission_id || '').trim();
     return row.platform_coupang !== false && !row.platform_baemin && legacy ? legacy : '';
   }

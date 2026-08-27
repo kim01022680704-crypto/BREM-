@@ -148,6 +148,67 @@ const BremPromotionApply = (function () {
     return getResultRowBaeminRiderId(row) || '-';
   }
 
+  function describePerDriverMissionFailure(driver, platform, assignment = null) {
+    const catalog = window.BremMissionPromotionCatalog;
+    const issues = catalog?.describeInvalidMissionFields?.(driver) || [];
+    if (issues.length) {
+      return `미션 배정 오류 — ${issues.join(' · ')}. 미션 관리에서 다시 저장하세요.`;
+    }
+
+    const assigned = catalog?.getDriverAssignment?.(driver, { strict: true }) || {};
+    const p = normalizePlatform(platform);
+
+    if (p === 'combined' && assignment) {
+      const hasCoupang = Boolean(assignment.coupangRider);
+      const hasBaemin = Boolean(assignment.baeminRider);
+      if (assigned.baemin && !assigned.coupang && hasCoupang && !hasBaemin) {
+        const rule = BremStorage.promotionRules.getById(assigned.baemin);
+        return rule
+          ? `쿠팡 미션 없음 (배민「${rule.name}」만 배정 · 쿠팡 정산/쿠팡 미션 필요)`
+          : '쿠팡 미션 없음 (배민 미션만 배정됨)';
+      }
+      if (assigned.coupang && !assigned.baemin && hasBaemin && !hasCoupang) {
+        const rule = BremStorage.promotionRules.getById(assigned.coupang);
+        return rule
+          ? `배민 미션 없음 (쿠팡「${rule.name}」만 배정 · 배민 정산/배민 미션 필요)`
+          : '배민 미션 없음 (쿠팡 미션만 배정됨)';
+      }
+      if (assigned.coupang && !assigned.baemin && hasBaemin && hasCoupang) {
+        const rule = BremStorage.promotionRules.getById(assigned.coupang);
+        return rule
+          ? `배민 미션 없음 (쿠팡「${rule.name}」만 배정 · 배민 칸 미션 추가 또는 쿠팡 정산만 적용)`
+          : '배민 미션 없음 (쿠팡 미션만 배정됨)';
+      }
+      if (assigned.baemin && !assigned.coupang && hasBaemin && hasCoupang) {
+        const rule = BremStorage.promotionRules.getById(assigned.baemin);
+        return rule
+          ? `쿠팡 미션 없음 (배민「${rule.name}」만 배정 · 쿠팡 칸 미션 추가 또는 배민 정산만 적용)`
+          : '쿠팡 미션 없음 (배민 미션만 배정됨)';
+      }
+    }
+
+    if (p === 'baemin' && !assigned.baemin && assigned.coupang) {
+      const rule = BremStorage.promotionRules.getById(assigned.coupang);
+      return rule
+        ? `배민 미션 없음 (쿠팡「${rule.name}」만 배정됨 · 미션관리에서 배민 미션 추가)`
+        : '배민 미션 없음 (쿠팡 미션만 배정됨)';
+    }
+    if (p === 'coupang' && !assigned.coupang && assigned.baemin) {
+      const rule = BremStorage.promotionRules.getById(assigned.baemin);
+      return rule
+        ? `쿠팡 미션 없음 (배민「${rule.name}」만 배정됨 · 미션관리에서 쿠팡 미션 추가)`
+        : '쿠팡 미션 없음 (배민 미션만 배정됨)';
+    }
+
+    const slot = p === 'combined' ? 'combined' : p;
+    if (assigned[slot]) {
+      return '배정된 미션이 비활성화되었거나 플랫폼이 맞지 않습니다';
+    }
+    return p === 'combined'
+      ? '미션 미배정 (미션 관리에서 합산·쿠팡·배민 미션 배정)'
+      : '미션 미배정 (미션 관리에서 기사별 배정)';
+  }
+
   function pickPromotionRule(driver, platform, selectedPromotionRuleIds = [], options = {}) {
     const p = normalizePlatform(platform);
     const selected = (selectedPromotionRuleIds || []).filter(Boolean);
@@ -157,7 +218,7 @@ const BremPromotionApply = (function () {
       if (assignmentMode === 'per_driver') {
         const catalog = window.BremMissionPromotionCatalog;
         if (catalog?.getDriverAssignment) {
-          const assigned = catalog.getDriverAssignment(driver);
+          const assigned = catalog.getDriverAssignment(driver, { strict: true });
           if (assigned.combined) {
             const rule = BremStorage.promotionRules.getById(assigned.combined);
             if (rule && rule.enabled !== false && normalizePlatform(rule.platform) === 'combined') return rule;
@@ -199,14 +260,12 @@ const BremPromotionApply = (function () {
     const driverRuleId = (() => {
       const catalog = window.BremMissionPromotionCatalog;
       if (catalog?.getDriverAssignment) {
-        const assigned = catalog.getDriverAssignment(driver);
-        const fromMission = p === 'baemin' ? assigned.baemin : assigned.coupang;
-        if (fromMission) return fromMission;
+        const assigned = catalog.getDriverAssignment(driver, { strict: true });
+        if (p === 'baemin') return assigned.baemin;
+        if (p === 'coupang') return assigned.coupang;
+        return assigned.combined;
       }
-      // 미션관리와 동일: selectedMissionId* 우선 (레거시 promotionRuleId* 는 뒤)
-      return p === 'baemin'
-        ? String(driver?.selectedMissionIdBaemin || driver?.promotionRuleIdBaemin || driver?.promotionSelectorBaemin || driver?.selectedMissionId || '').trim()
-        : String(driver?.selectedMissionIdCoupang || driver?.promotionRuleIdCoupang || driver?.promotionSelectorCoupang || driver?.selectedMissionId || '').trim();
+      return '';
     })();
 
     if (!driverRuleId) return null;
@@ -233,7 +292,7 @@ const BremPromotionApply = (function () {
       return rule ? { kind: 'combined', rule } : { kind: 'none' };
     }
 
-    const assigned = window.BremMissionPromotionCatalog?.getDriverAssignment?.(driver) || {};
+    const assigned = window.BremMissionPromotionCatalog?.getDriverAssignment?.(driver, { strict: true }) || {};
     const combinedRule = getEnabledPromotionRule(assigned.combined, 'combined');
     if (combinedRule) return { kind: 'combined', rule: combinedRule };
 
@@ -486,14 +545,9 @@ const BremPromotionApply = (function () {
     const needsDeliveryFee = statsPlatform === 'baemin' && ruleUsesGuarantee(rule);
 
     if (!rule || !rule.enabled || normalizePlatform(rule.platform) !== ruleP) {
-      const assignedId = statsPlatform === 'baemin'
-        ? String(driver.selectedMissionIdBaemin || driver.promotionRuleIdBaemin || '').trim()
-        : String(driver.selectedMissionIdCoupang || driver.promotionRuleIdCoupang || '').trim();
       const failureReasons = ruleMode === 'selected_rules'
         ? ['선택한 프로모션 조건을 찾을 수 없거나 비활성화되었습니다']
-        : [assignedId
-          ? '배정된 미션이 비활성화되었거나 플랫폼이 맞지 않습니다'
-          : '미션 미배정 (미션 관리에서 기사별 배정)'];
+        : [describePerDriverMissionFailure(driver, ruleP)];
       return {
         riderName: rider.riderName,
         driverName: driver.name,
@@ -688,6 +742,56 @@ const BremPromotionApply = (function () {
         riderCount: results.length,
         totalPromotionAmount
       }
+    };
+  }
+
+  function tagCombinedSplitRow(row, platform) {
+    const p = normalizePlatform(platform);
+    return {
+      ...row,
+      appliedPlatform: p,
+      assignmentSource: p === 'coupang' ? '쿠팡' : '배민'
+    };
+  }
+
+  function normalizeCombinedPromotionRows(rowOrRows) {
+    const list = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows];
+    return list.filter(Boolean).map(item => assignCombinedAttachAmounts(item));
+  }
+
+  function summarizeCombinedAssignmentResults(results = []) {
+    const byDriver = new Map();
+    results.forEach(row => {
+      const id = String(row.matchedRiderId || row.driverName || '').trim();
+      if (!id) return;
+      if (!byDriver.has(id)) {
+        byDriver.set(id, { combined: false, coupang: false, baemin: false });
+      }
+      const bucket = byDriver.get(id);
+      const src = String(row.assignmentSource || '').trim();
+      if (src === '쿠팡+배민') bucket.combined = true;
+      else if (src === '쿠팡' || normalizePlatform(row.appliedPlatform) === 'coupang') bucket.coupang = true;
+      else if (src === '배민' || normalizePlatform(row.appliedPlatform) === 'baemin') bucket.baemin = true;
+    });
+
+    let overlapAssigned = 0;
+    let splitAssigned = 0;
+    let coupangAssigned = 0;
+    let baeminAssigned = 0;
+    byDriver.forEach(bucket => {
+      if (bucket.combined) overlapAssigned += 1;
+      else if (bucket.coupang && bucket.baemin) splitAssigned += 1;
+      else if (bucket.coupang) coupangAssigned += 1;
+      else if (bucket.baemin) baeminAssigned += 1;
+    });
+
+    return {
+      riderCount: byDriver.size,
+      resultRowCount: results.length,
+      overlapAssigned,
+      splitAssigned,
+      coupangAssigned,
+      baeminAssigned
     };
   }
 
@@ -963,7 +1067,7 @@ const BremPromotionApply = (function () {
 
     if (plan.kind === 'baemin') {
       const baeminRider = assignment.baeminRider || displayRider;
-      return calculateRiderPromotion({
+      return tagCombinedSplitRow(calculateRiderPromotion({
         rider: baeminRider,
         driver,
         appliedPlatform: 'baemin',
@@ -971,16 +1075,16 @@ const BremPromotionApply = (function () {
         settlement: baeminSettlement,
         selectedRuleIds: [plan.rule.id],
         promotionSettings,
-        assignmentSource: assignment.assignmentSource,
+        assignmentSource: '배민',
         assignmentMode: 'selected_rules',
         deliveryFeeIndex,
         ignoreMissingRates,
         rainApply
-      });
+      }), 'baemin');
     }
 
     if (plan.kind === 'coupang') {
-      return calculateCoupangPortionInCombined({
+      return tagCombinedSplitRow(calculateCoupangPortionInCombined({
         rule: plan.rule,
         assignment,
         driver,
@@ -989,12 +1093,12 @@ const BremPromotionApply = (function () {
         coupangDeliveryFeeIndex,
         ignoreMissingRates,
         rainApply
-      });
+      }), 'coupang');
     }
 
     if (plan.kind === 'split') {
-      return mergeCombinedDriverResults([
-        calculateCoupangPortionInCombined({
+      return [
+        tagCombinedSplitRow(calculateCoupangPortionInCombined({
           rule: plan.coupangRule,
           assignment,
           driver,
@@ -1003,8 +1107,8 @@ const BremPromotionApply = (function () {
           coupangDeliveryFeeIndex,
           ignoreMissingRates,
           rainApply
-        }),
-        calculateRiderPromotion({
+        }), 'coupang'),
+        tagCombinedSplitRow(calculateRiderPromotion({
           rider: assignment.baeminRider || displayRider,
           driver,
           appliedPlatform: 'baemin',
@@ -1012,23 +1116,19 @@ const BremPromotionApply = (function () {
           settlement: baeminSettlement,
           selectedRuleIds: [plan.baeminRule.id],
           promotionSettings,
-          assignmentSource: assignment.assignmentSource,
+          assignmentSource: '배민',
           assignmentMode: 'selected_rules',
           deliveryFeeIndex,
           ignoreMissingRates,
           rainApply
-        })
-      ], { driver, assignment, displayRider, ratePlatform });
+        }), 'baemin')
+      ];
     }
 
     if (plan.kind === 'none') {
-      const assigned = window.BremMissionPromotionCatalog?.getDriverAssignment?.(driver) || {};
-      const hasAnyMission = assigned.combined || assigned.coupang || assigned.baemin;
       const failureReasons = ruleMode === 'selected_rules'
         ? ['선택한 프로모션 조건을 찾을 수 없거나 비활성화되었습니다']
-        : [hasAnyMission
-          ? '배정된 미션이 비활성화되었거나 플랫폼이 맞지 않습니다'
-          : '미션 미배정 (미션 관리에서 합산·쿠팡·배민 미션 배정)'];
+        : [describePerDriverMissionFailure(driver, 'combined', assignment)];
       return {
         riderName: displayRider?.riderName || driver.name,
         driverName: driver.name,
@@ -1290,9 +1390,9 @@ const BremPromotionApply = (function () {
       throw new Error('단가보장 프로모션은 쿠팡 배달처리비 정산서 업로드가 필요합니다.');
     }
 
-    const results = assignments.map(item => {
+    const results = assignments.flatMap(item => {
       const driver = BremStorage.drivers.getById(item.driverId);
-      return assignCombinedAttachAmounts(calculateCombinedRiderPromotion({
+      return normalizeCombinedPromotionRows(calculateCombinedRiderPromotion({
         assignment: item,
         driver,
         coupangSettlement,
@@ -1310,6 +1410,7 @@ const BremPromotionApply = (function () {
     const totalPromotionAmount = results.reduce((sum, item) => sum + item.totalPromotionAmount, 0);
     const baeminAttachTotal = results.reduce((sum, item) => sum + Number(item.baeminAttachAmount || 0), 0);
     const coupangAttachTotal = results.reduce((sum, item) => sum + Number(item.coupangAttachAmount || 0), 0);
+    const assignmentSummary = summarizeCombinedAssignmentResults(results);
     const startDate = [coupangSettlement.startDate, baeminSettlement.startDate].filter(Boolean).sort()[0] || '';
     const endDate = [coupangSettlement.endDate, baeminSettlement.endDate].filter(Boolean).sort().slice(-1)[0] || '';
 
@@ -1347,13 +1448,10 @@ const BremPromotionApply = (function () {
       rainApply: options.rainApply === true,
       results,
       summary: {
-        riderCount: results.length,
+        ...assignmentSummary,
         totalPromotionAmount,
         baeminAttachTotal,
-        coupangAttachTotal,
-        coupangAssigned: results.filter(item => item.assignmentSource === '쿠팡').length,
-        baeminAssigned: results.filter(item => item.assignmentSource === '배민').length,
-        overlapAssigned: results.filter(item => item.assignmentSource === '쿠팡+배민').length
+        coupangAttachTotal
       }
     };
   }
@@ -1486,7 +1584,8 @@ const BremPromotionApply = (function () {
         ['배민 정산서 ID', record.baeminSettlementId || ''],
         ['쿠팡 적용', record.summary?.coupangAssigned ?? ''],
         ['배민 적용', record.summary?.baeminAssigned ?? ''],
-        ['겹침→배민(1순위)', record.summary?.overlapAssigned ?? ''],
+        ['분리(쿠팡+배민 각각)', record.summary?.splitAssigned ?? ''],
+        ['합산 미션', record.summary?.overlapAssigned ?? ''],
         ['배민 정산서 합계', record.summary?.baeminAttachTotal ?? ''],
         ['쿠팡 정산서 합계', record.summary?.coupangAttachTotal ?? '']
       ] : []),

@@ -1209,14 +1209,23 @@ async function readRiderRawData(supabase, riderId) {
 
 function mergeMissionFieldsIntoRaw(raw, fields = {}, normalized = {}) {
   const next = { ...raw };
+  if (normalized.selected_mission_id_baemin !== undefined) {
+    next.selectedMissionIdBaemin = String(normalized.selected_mission_id_baemin || '').trim();
+    next.promotionRuleIdBaemin = String(fields.promotionRuleIdBaemin ?? normalized.selected_mission_id_baemin ?? '').trim();
+    next.promotionSelectorBaemin = String(fields.promotionSelectorBaemin ?? normalized.selected_mission_id_baemin ?? '').trim();
+  }
+  if (normalized.selected_mission_id_coupang !== undefined) {
+    next.selectedMissionIdCoupang = String(normalized.selected_mission_id_coupang || '').trim();
+    next.promotionRuleIdCoupang = String(fields.promotionRuleIdCoupang ?? normalized.selected_mission_id_coupang ?? '').trim();
+    next.promotionSelectorCoupang = String(fields.promotionSelectorCoupang ?? normalized.selected_mission_id_coupang ?? '').trim();
+  }
   if (normalized.selected_mission_id_combined !== undefined) {
     next.selectedMissionIdCombined = String(normalized.selected_mission_id_combined || '').trim();
+    next.promotionRuleIdCombined = String(fields.promotionRuleIdCombined ?? normalized.selected_mission_id_combined ?? '').trim();
+    next.promotionSelectorCombined = String(fields.promotionSelectorCombined ?? normalized.selected_mission_id_combined ?? '').trim();
   }
-  if (fields.promotionRuleIdCombined !== undefined) {
-    next.promotionRuleIdCombined = String(fields.promotionRuleIdCombined || '').trim();
-  }
-  if (fields.promotionSelectorCombined !== undefined) {
-    next.promotionSelectorCombined = String(fields.promotionSelectorCombined || '').trim();
+  if (normalized.selected_mission_id !== undefined) {
+    next.selectedMissionId = String(normalized.selected_mission_id || '').trim();
   }
   return next;
 }
@@ -1284,6 +1293,15 @@ async function patchRiderMissionFields(supabase, riderId, fields = {}) {
       };
     }
     return { ok: false, status: 400, error: error.message || '미션 저장에 실패했습니다.' };
+  }
+
+  // raw_data 미션 필드도 컬럼과 맞춰 둔다 (목록 동기화 시 쿠팡/배민 배정이 사라지지 않게).
+  try {
+    const raw = await readRiderRawData(supabase, riderId);
+    const rawPatch = mergeMissionFieldsIntoRaw(raw, fields, normalized);
+    await supabase.from('riders').update({ raw_data: rawPatch }).eq('id', riderId);
+  } catch (_) {
+    // raw_data 동기화 실패는 본 저장 성공을 막지 않는다.
   }
 
   return { ok: true, rider: data };
@@ -1499,6 +1517,7 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
         normalized.selected_mission_id !== undefined
         || normalized.selected_mission_id_baemin !== undefined
         || normalized.selected_mission_id_coupang !== undefined
+        || normalized.selected_mission_id_combined !== undefined
         || normalized.promotion_rule_id_baemin !== undefined
         || normalized.promotion_rule_id_coupang !== undefined
         || normalized.promotion_selector_baemin !== undefined

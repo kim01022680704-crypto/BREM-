@@ -18,6 +18,8 @@
 
   let driverSearchIndex = null;
   let missionTitleCache = new Map();
+  let missionSectionRenderTimer = null;
+  let missionSaveCooldownUntil = 0;
 
   function $(id) {
     return document.getElementById(id);
@@ -73,6 +75,14 @@
     driverSearchIndex = null;
   }
 
+  /** 검색 인덱스는 기사 스냅샷을 들고 있어 미션 저장 후 stale 될 수 있다. */
+  function resolveDriver(driverOrId) {
+    if (!driverOrId) return null;
+    const id = typeof driverOrId === 'object' ? driverOrId.id : driverOrId;
+    if (!id) return typeof driverOrId === 'object' ? driverOrId : null;
+    return BremStorage.drivers.getById(id) || (typeof driverOrId === 'object' ? driverOrId : null);
+  }
+
   function buildDriverSearchIndex() {
     driverSearchIndex = BremStorage.drivers.getAll().map(driver => {
       const coupangId = getCoupangLoginId(driver);
@@ -87,11 +97,13 @@
   }
 
   function getSavedAssignment(driver) {
-    return catalog().getDriverAssignment(driver);
+    return catalog().getDriverAssignment(resolveDriver(driver));
   }
 
   function getDriverDraft(driver) {
-    const raw = state.drafts.get(driver.id) || getSavedAssignment(driver);
+    const fresh = resolveDriver(driver);
+    if (!fresh) return catalog().normalizeAssignmentDraft({});
+    const raw = state.drafts.get(fresh.id) || getSavedAssignment(fresh);
     return catalog().normalizeAssignmentDraft(raw);
   }
 
@@ -230,7 +242,8 @@
   }
 
   function matchesAssignmentFilter(entry) {
-    const driver = entry.driver;
+    const driver = resolveDriver(entry.driver);
+    if (!driver) return false;
     const query = state.assignmentSearch.trim().toLowerCase();
     if (query) {
       const phoneQuery = query.replace(/\D/g, '');
@@ -335,6 +348,21 @@
     return persistDriverAssignment(driverId);
   }
 
+  function refreshSavedAssignmentRow(driverId) {
+    const driver = resolveDriver(driverId);
+    const row = document.querySelector(`tr[data-driver-id="${driverId}"]`);
+    if (!driver || !row) {
+      renderDriverMissionAssignments();
+      return;
+    }
+    applyDraftToRow(row, catalog().normalizeAssignmentDraft(catalog().getDriverAssignment(driver)));
+    const saveBtn = row.querySelector('[data-save-driver-mission]');
+    if (saveBtn) saveBtn.disabled = true;
+    row.classList.remove('mission-row-dirty');
+    applyAssignmentRowVisibility();
+    updateAssignmentSearchStatus();
+  }
+
   async function persistDriverAssignment(driverId) {
     const driver = BremStorage.drivers.getById(driverId);
     if (!driver) throw new Error('기사를 찾을 수 없습니다.');
@@ -351,9 +379,17 @@
     }
 
     const changes = catalog().buildAssignmentPatch(draft);
+    if (draft.coupang && !changes.selectedMissionIdCoupang) {
+      throw new Error('쿠팡 미션이 저장되지 않았습니다. 쿠팡 탭 프로모션인지 확인한 뒤 다시 선택하세요.');
+    }
+    if (draft.baemin && !changes.selectedMissionIdBaemin) {
+      throw new Error('배민 미션이 저장되지 않았습니다. 배민 탭 프로모션인지 확인한 뒤 다시 선택하세요.');
+    }
     const result = await BremStorage.drivers.batchPatch([{ id: driverId, changes }]);
     state.drafts.delete(driverId);
     state.dirty.delete(driverId);
+    invalidateDriverSearchIndex();
+    missionSaveCooldownUntil = Date.now() + 2500;
     return { saved: true, warning: result?.warning || '' };
   }
 
@@ -389,6 +425,7 @@
               state.drafts.delete(id);
               state.dirty.delete(id);
             });
+            invalidateDriverSearchIndex();
             renderDriverMissionAssignmentRows();
           }
         });
@@ -453,7 +490,8 @@
 
     if (!driverSearchIndex) buildDriverSearchIndex();
     const drivers = driverSearchIndex
-      .map(entry => entry.driver)
+      .map(entry => resolveDriver(entry.driver))
+      .filter(Boolean)
       .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
 
     rowsEl.innerHTML = drivers.map(driver => {
@@ -640,11 +678,10 @@
       saveBtn.disabled = true;
       saveBtn.textContent = '저장 중…';
 
-      void window.BremPerf.runSave(`missions.assignment.${driverId}`, {
-        write: () => saveDriverAssignment(driverId),
-        render: () => renderDriverMissionAssignments()
-      })
+      void saveDriverAssignment(driverId)
         .then((result) => {
+          invalidateDriverSearchIndex();
+          refreshSavedAssignmentRow(driverId);
           if (result?.warning) {
             showToast(result.warning);
           } else if (result?.saved !== false) {
@@ -653,19 +690,25 @@
         })
         .catch(error => {
           showToast(error.message || '미션 배정 저장에 실패했습니다.');
-          renderDriverMissionAssignments();
+          refreshSavedAssignmentRow(driverId);
         })
         .finally(() => {
-          saveBtn.disabled = false;
-          saveBtn.textContent = '저장';
+          const row = document.querySelector(`tr[data-driver-id="${driverId}"]`);
+          const btn = row?.querySelector('[data-save-driver-mission]') || saveBtn;
+          btn.disabled = !state.dirty.has(driverId);
+          btn.textContent = '저장';
         });
     });
 
     document.addEventListener('brem-cache-status-changed', () => {
-      if (document.getElementById('mission-management')?.classList.contains('active')) {
+      if (!document.getElementById('mission-management')?.classList.contains('active')) return;
+      if (Date.now() < missionSaveCooldownUntil) return;
+      clearTimeout(missionSectionRenderTimer);
+      missionSectionRenderTimer = setTimeout(() => {
+        if (Date.now() < missionSaveCooldownUntil) return;
         invalidateDriverSearchIndex();
         renderMissionSection();
-      }
+      }, 400);
     });
 
     window.addEventListener('beforeunload', event => {

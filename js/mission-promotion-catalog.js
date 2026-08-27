@@ -71,40 +71,93 @@ window.BremMissionPromotionCatalog = (function () {
     return getAll().filter(item => item.platform === p);
   }
 
-  function resolveLegacyMissionIdForPlatform(driver, platform) {
+  function resolveLegacyMissionIdForPlatform(driver, platform, pick = resolveMissionIdForPlatform) {
     const legacy = String(driver?.selectedMissionId || '').trim();
     if (!legacy) return '';
-    const rule = BremStorage?.promotionRules?.getById?.(legacy);
-    if (!rule || rule.enabled === false) return '';
-    if (normalizePlatform(rule.platform) !== normalizePlatform(platform)) return '';
-    return legacy;
+    return pick(legacy, platform);
   }
 
-  function getDriverAssignment(driver) {
+  /** DB에 다른 플랫폼 미션 ID가 섞여 있으면 무시한다. (프로모션 적용용 strict) */
+  function resolveMissionIdForPlatform(rawId, platform) {
+    const id = String(rawId || '').trim();
+    if (!id) return '';
+    const rule = BremStorage?.promotionRules?.getById?.(id);
+    if (!rule || rule.enabled === false) return '';
+    if (normalizePlatform(rule.platform) !== normalizePlatform(platform)) return '';
+    return id;
+  }
+
+  /** 미션관리 표시용: 규칙 캐시가 비어 있어도 DB/캐시에 있는 ID는 그대로 보여준다. */
+  function resolveStoredMissionId(rawId, platform) {
+    const id = String(rawId || '').trim();
+    if (!id) return '';
+    const rule = BremStorage?.promotionRules?.getById?.(id);
+    if (!rule) return id;
+    if (rule.enabled === false) return '';
+    if (normalizePlatform(rule.platform) !== normalizePlatform(platform)) return '';
+    return id;
+  }
+
+  /** 저장 시: 규칙 캐시가 비어 있어도 드롭다운에서 고른 ID는 유지, 플랫폼만 막는다. */
+  function sanitizeMissionIdForSave(rawId, platform) {
+    const id = String(rawId || '').trim();
+    if (!id) return '';
+    const rule = BremStorage?.promotionRules?.getById?.(id);
+    if (!rule) return id;
+    if (rule.enabled === false) return '';
+    if (normalizePlatform(rule.platform) !== normalizePlatform(platform)) return '';
+    return id;
+  }
+
+  function describeInvalidMissionFields(driver) {
+    if (!driver) return [];
+    const issues = [];
+    const checks = [
+      ['baemin', driver.selectedMissionIdBaemin || driver.promotionRuleIdBaemin || driver.promotionSelectorBaemin],
+      ['coupang', driver.selectedMissionIdCoupang || driver.promotionRuleIdCoupang || driver.promotionSelectorCoupang],
+      ['combined', driver.selectedMissionIdCombined || driver.promotionRuleIdCombined || driver.promotionSelectorCombined]
+    ];
+    checks.forEach(([platform, rawId]) => {
+      const id = String(rawId || '').trim();
+      if (!id) return;
+      if (resolveMissionIdForPlatform(id, platform)) return;
+      const rule = BremStorage?.promotionRules?.getById?.(id);
+      if (!rule) {
+        issues.push(`${BremPlatforms.label(platform)} 칸: 삭제된 프로모션 ID`);
+      } else if (rule.enabled === false) {
+        issues.push(`${BremPlatforms.label(platform)} 칸: 중지된 프로모션「${rule.name}」`);
+      } else {
+        issues.push(`${BremPlatforms.label(platform)} 칸: ${BremPlatforms.label(rule.platform)} 프로모션「${rule.name}」`);
+      }
+    });
+    return issues;
+  }
+
+  function getDriverAssignment(driver, options = {}) {
     if (!driver) return { baemin: '', coupang: '', combined: '' };
+    const pick = options.strict ? resolveMissionIdForPlatform : resolveStoredMissionId;
     const raw = {
-      // 미션관리 저장값(selectedMissionId*)을 우선. 없으면 프로모션 배정 레거시 필드.
-      baemin: String(
+      baemin: pick(
         driver.selectedMissionIdBaemin
         || driver.promotionRuleIdBaemin
         || driver.promotionSelectorBaemin
-        || resolveLegacyMissionIdForPlatform(driver, 'baemin')
-        || ''
-      ).trim(),
-      coupang: String(
+        || resolveLegacyMissionIdForPlatform(driver, 'baemin', pick),
+        'baemin'
+      ),
+      coupang: pick(
         driver.selectedMissionIdCoupang
         || driver.promotionRuleIdCoupang
         || driver.promotionSelectorCoupang
-        || resolveLegacyMissionIdForPlatform(driver, 'coupang')
-        || ''
-      ).trim(),
-      combined: String(
+        || resolveLegacyMissionIdForPlatform(driver, 'coupang', pick),
+        'coupang'
+      ),
+      combined: pick(
         driver.selectedMissionIdCombined
         || driver.promotionRuleIdCombined
         || driver.promotionSelectorCombined
-        || resolveLegacyMissionIdForPlatform(driver, 'combined')
-        || ''
-      ).trim()
+        || resolveLegacyMissionIdForPlatform(driver, 'combined', pick),
+        'combined'
+      )
     };
     return normalizeAssignmentDraft(raw);
   }
@@ -126,7 +179,11 @@ window.BremMissionPromotionCatalog = (function () {
   }
 
   function buildAssignmentPatch(draft) {
-    const normalized = normalizeAssignmentDraft(draft);
+    const normalized = normalizeAssignmentDraft({
+      baemin: sanitizeMissionIdForSave(draft.baemin, 'baemin'),
+      coupang: sanitizeMissionIdForSave(draft.coupang, 'coupang'),
+      combined: sanitizeMissionIdForSave(draft.combined, 'combined')
+    });
     const baemin = normalized.baemin;
     const coupang = normalized.coupang;
     const combined = normalized.combined;
@@ -154,6 +211,9 @@ window.BremMissionPromotionCatalog = (function () {
     getById,
     getForPlatform,
     getDriverAssignment,
+    describeInvalidMissionFields,
+    resolveMissionIdForPlatform,
+    resolveStoredMissionId,
     normalizeAssignmentDraft,
     buildAssignmentPatch,
     promotionToMissionItem

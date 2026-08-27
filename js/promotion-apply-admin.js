@@ -608,7 +608,7 @@ const BremPromotionApplyAdmin = (function () {
       let baeminOnlyCount = 0;
       let splitCount = 0;
       drivers.forEach(driver => {
-        const assignment = catalog?.getDriverAssignment?.(driver) || {};
+        const assignment = catalog?.getDriverAssignment?.(driver, { strict: true }) || {};
         if (assignment.combined) combinedCount += 1;
         else if (assignment.coupang && assignment.baemin) splitCount += 1;
         else if (assignment.coupang) coupangOnlyCount += 1;
@@ -631,7 +631,7 @@ const BremPromotionApplyAdmin = (function () {
 
     const field = platform === 'baemin' ? 'baemin' : 'coupang';
     const assigned = drivers.filter(driver => {
-      const assignment = catalog?.getDriverAssignment?.(driver) || {};
+      const assignment = catalog?.getDriverAssignment?.(driver, { strict: true }) || {};
       return Boolean(assignment[field]);
     }).length;
     const missions = catalog?.getForPlatform?.(platform) || [];
@@ -701,7 +701,7 @@ const BremPromotionApplyAdmin = (function () {
       : '';
     const isCombined = BremPlatforms.normalize(result.platform) === 'combined';
     const combinedSummary = isCombined
-      ? `<p>적용 구분: 쿠팡만 <strong>${formatNumber(result.summary?.coupangAssigned)}</strong>명 · 배민만 <strong>${formatNumber(result.summary?.baeminAssigned)}</strong>명 · 쿠팡+배민 합산 <strong>${formatNumber(result.summary?.overlapAssigned)}</strong>명</p>
+      ? `<p>적용 구분: 쿠팡만 <strong>${formatNumber(result.summary?.coupangAssigned)}</strong>명 · 배민만 <strong>${formatNumber(result.summary?.baeminAssigned)}</strong>명 · 분리(쿠팡+배민 각각) <strong>${formatNumber(result.summary?.splitAssigned)}</strong>명 · 합산 미션 <strong>${formatNumber(result.summary?.overlapAssigned)}</strong>명</p>
         <p class="form-help">정산서 붙이기: 배민 <strong>${formatMoney(result.summary?.baeminAttachTotal ?? result.summary?.totalPromotionAmount)}</strong> (1순위) · 쿠팡 <strong>${formatMoney(result.summary?.coupangAttachTotal ?? 0)}</strong> (2순위, 쿠팡-only)</p>`
       : '';
     const deliveryFeeSummary = result.deliveryFeeLabel

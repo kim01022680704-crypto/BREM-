@@ -94,7 +94,7 @@ const BremPromotionEngine = (function () {
     const p = normalizePlatform(platform);
     const catalog = window.BremMissionPromotionCatalog;
     if (catalog?.getDriverAssignment) {
-      const assigned = catalog.getDriverAssignment(driver);
+      const assigned = catalog.getDriverAssignment(driver, { strict: true });
       const fromMission = p === 'baemin' ? assigned.baemin : assigned.coupang;
       if (fromMission) return fromMission;
     }
