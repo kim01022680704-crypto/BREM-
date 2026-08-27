@@ -691,13 +691,58 @@ const BremPromotionApply = (function () {
     };
   }
 
+  /** 합산 결과를 정산서에 붙일 때: 1순위 배민, 2순위 쿠팡(배민-only·쿠팡-only·양쪽 겹침 규칙) */
+  function assignCombinedAttachAmounts(row = {}) {
+    const total = Number(row.totalPromotionAmount || 0);
+    if (row.baeminAttachAmount != null && row.coupangAttachAmount != null) {
+      return {
+        ...row,
+        baeminAttachAmount: Number(row.baeminAttachAmount || 0),
+        coupangAttachAmount: Number(row.coupangAttachAmount || 0)
+      };
+    }
+
+    const source = String(row.assignmentSource || '').trim();
+    let baeminAttachAmount = 0;
+    let coupangAttachAmount = 0;
+    if (source === '배민') {
+      baeminAttachAmount = total;
+    } else if (source === '쿠팡') {
+      coupangAttachAmount = total;
+    } else if (source === '쿠팡+배민') {
+      baeminAttachAmount = total;
+    } else {
+      const applied = normalizePlatform(row.appliedPlatform || '');
+      if (applied === 'coupang') coupangAttachAmount = total;
+      else baeminAttachAmount = total;
+    }
+    return { ...row, baeminAttachAmount, coupangAttachAmount };
+  }
+
+  function resolveCombinedRowAttachAmount(row, settlementPlatform) {
+    const attach = assignCombinedAttachAmounts(row);
+    return normalizePlatform(settlementPlatform) === 'coupang'
+      ? Number(attach.coupangAttachAmount || 0)
+      : Number(attach.baeminAttachAmount || 0);
+  }
+
   function mergeCombinedDriverResults(rows, context = {}) {
     const parts = (Array.isArray(rows) ? rows : []).filter(Boolean);
     if (!parts.length) return null;
-    if (parts.length === 1) return parts[0];
+    if (parts.length === 1) return assignCombinedAttachAmounts(parts[0]);
 
     const { driver, assignment, displayRider, ratePlatform } = context;
     const totalPromotionAmount = parts.reduce((sum, row) => sum + Number(row.totalPromotionAmount || 0), 0);
+    const baeminAttachAmount = parts.reduce((sum, row) => (
+      normalizePlatform(row.appliedPlatform) === 'baemin'
+        ? sum + Number(row.totalPromotionAmount || 0)
+        : sum
+    ), 0);
+    const coupangAttachAmount = parts.reduce((sum, row) => (
+      normalizePlatform(row.appliedPlatform) === 'coupang'
+        ? sum + Number(row.totalPromotionAmount || 0)
+        : sum
+    ), 0);
     const failureReasons = totalPromotionAmount > 0
       ? []
       : [...new Set(parts.flatMap(row => row.failureReasons || []).filter(Boolean))];
@@ -733,7 +778,9 @@ const BremPromotionApply = (function () {
       totalPromotionAmount,
       appliedConditions: [...new Set(parts.flatMap(row => row.appliedConditions || []))],
       failedConditions: [...new Set(parts.flatMap(row => row.failedConditions || []))],
-      failureReasons
+      failureReasons,
+      baeminAttachAmount,
+      coupangAttachAmount
     };
   }
 
@@ -1245,7 +1292,7 @@ const BremPromotionApply = (function () {
 
     const results = assignments.map(item => {
       const driver = BremStorage.drivers.getById(item.driverId);
-      return calculateCombinedRiderPromotion({
+      return assignCombinedAttachAmounts(calculateCombinedRiderPromotion({
         assignment: item,
         driver,
         coupangSettlement,
@@ -1257,10 +1304,12 @@ const BremPromotionApply = (function () {
         ignoreMissingRates: options.ignoreMissingRates === true,
         rainApply: options.rainApply === true,
         assignmentMode
-      });
+      }));
     });
 
     const totalPromotionAmount = results.reduce((sum, item) => sum + item.totalPromotionAmount, 0);
+    const baeminAttachTotal = results.reduce((sum, item) => sum + Number(item.baeminAttachAmount || 0), 0);
+    const coupangAttachTotal = results.reduce((sum, item) => sum + Number(item.coupangAttachAmount || 0), 0);
     const startDate = [coupangSettlement.startDate, baeminSettlement.startDate].filter(Boolean).sort()[0] || '';
     const endDate = [coupangSettlement.endDate, baeminSettlement.endDate].filter(Boolean).sort().slice(-1)[0] || '';
 
@@ -1300,6 +1349,8 @@ const BremPromotionApply = (function () {
       summary: {
         riderCount: results.length,
         totalPromotionAmount,
+        baeminAttachTotal,
+        coupangAttachTotal,
         coupangAssigned: results.filter(item => item.assignmentSource === '쿠팡').length,
         baeminAssigned: results.filter(item => item.assignmentSource === '배민').length,
         overlapAssigned: results.filter(item => item.assignmentSource === '쿠팡+배민').length
@@ -1435,7 +1486,9 @@ const BremPromotionApply = (function () {
         ['배민 정산서 ID', record.baeminSettlementId || ''],
         ['쿠팡 적용', record.summary?.coupangAssigned ?? ''],
         ['배민 적용', record.summary?.baeminAssigned ?? ''],
-        ['겹침→쿠팡', record.summary?.overlapAssigned ?? '']
+        ['겹침→배민(1순위)', record.summary?.overlapAssigned ?? ''],
+        ['배민 정산서 합계', record.summary?.baeminAttachTotal ?? ''],
+        ['쿠팡 정산서 합계', record.summary?.coupangAttachTotal ?? '']
       ] : []),
       ['적용 프로모션', record.appliedRuleLabel || (record.selectedPromotionRuleNames || []).join(', ')],
       ...(record.deliveryFeeLabel ? [['배달처리비', record.deliveryFeeLabel]] : []),
@@ -1721,7 +1774,9 @@ const BremPromotionApply = (function () {
     getSavedResults,
     getSavedResultById,
     deleteSavedResult,
-    exportResultToExcel
+    exportResultToExcel,
+    assignCombinedAttachAmounts,
+    resolveCombinedRowAttachAmount
   };
 })();
 

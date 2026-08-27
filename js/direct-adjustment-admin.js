@@ -796,6 +796,25 @@ const BremDirectAdjustmentAdmin = (function () {
     return erpChannelOf(item) === 'direct' ? '직계약' : '브로';
   }
 
+  function erpRowAttachAmount(row, savedItem) {
+    const savedPlatform = String(savedItem?.platform || '').trim();
+    if (savedPlatform !== 'combined') {
+      return Number(row.totalPromotionAmount || 0);
+    }
+    const resolver = window.BremPromotionApply?.resolveCombinedRowAttachAmount;
+    if (typeof resolver === 'function') {
+      return resolver(row, state.platform);
+    }
+    const source = String(row.assignmentSource || '').trim();
+    const total = Number(row.totalPromotionAmount || 0);
+    if (state.platform === 'coupang') {
+      if (source === '배민' || source === '쿠팡+배민') return 0;
+      return total;
+    }
+    if (source === '쿠팡') return 0;
+    return total;
+  }
+
   function erpSavedResults() {
     const all = window.BremStorage?.promotionApplyResults?.getAll?.() || [];
     const settlement = currentSettlement();
@@ -805,8 +824,12 @@ const BremDirectAdjustmentAdmin = (function () {
     const matched = all.filter(item => {
       const itemWeek = weekStartKey(String(item.startDate || '').slice(0, 10) || week);
       if (itemWeek !== week) return false;
-      if (platform && String(item.platform || '') !== platform) return false;
-      return true;
+      const itemPlatform = String(item.platform || '').trim();
+      if (!platform) return true;
+      if (itemPlatform === platform) return true;
+      // 합산 결과는 배민·쿠팡 정산서 탭에서도 보여 준다(1순위 배민 / 2순위 쿠팡).
+      if (itemPlatform === 'combined' && (platform === 'baemin' || platform === 'coupang')) return true;
+      return false;
     });
 
     const groups = new Map();
@@ -860,7 +883,7 @@ const BremDirectAdjustmentAdmin = (function () {
     selected.forEach(item => {
       (Array.isArray(item.results) ? item.results : []).forEach(row => {
         const driverId = String(row.matchedRiderId || '').trim();
-        const amount = Number(row.totalPromotionAmount || 0);
+        const amount = erpRowAttachAmount(row, item);
         if (!driverId) { skippedUnmatched += 1; return; }
         if (!amount) return;
         const prev = perDriver.get(driverId)
@@ -997,6 +1020,9 @@ const BremDirectAdjustmentAdmin = (function () {
       const conditions = Array.isArray(item.selectedPromotionRuleNames) ? item.selectedPromotionRuleNames.join(', ') : '';
       const riderCount = item.summary?.riderCount ?? (Array.isArray(item.results) ? item.results.length : 0);
       const total = item.summary?.totalPromotionAmount ?? 0;
+      const attachNote = String(item.platform || '') === 'combined'
+        ? `<br><span class="hint">배민 ${formatNumber(item.summary?.baeminAttachTotal ?? total)} · 쿠팡 ${formatNumber(item.summary?.coupangAttachTotal ?? 0)}</span>`
+        : '';
       const badge = item.isStale
         ? '<span class="direct-erp-badge stale">이전 저장본</span>'
         : (item.siblingCount > 1 ? '<span class="direct-erp-badge latest">최신</span>' : '-');
@@ -1008,7 +1034,7 @@ const BremDirectAdjustmentAdmin = (function () {
         <td>${escapeHtml(item.settlementLabel || formatDate(item.startDate))}</td>
         <td>${escapeHtml(item.region || '-')}</td>
         <td class="weekly-amount-cell">${formatNumber(riderCount)}</td>
-        <td class="weekly-amount-cell">${formatNumber(total)}</td>
+        <td class="weekly-amount-cell">${formatNumber(total)}${attachNote}</td>
         <td>${escapeHtml(conditions || '-')}</td>
         <td>${escapeHtml(String(item.savedAt || '').slice(0, 10))}</td>
       </tr>`;

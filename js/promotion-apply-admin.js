@@ -701,7 +701,8 @@ const BremPromotionApplyAdmin = (function () {
       : '';
     const isCombined = BremPlatforms.normalize(result.platform) === 'combined';
     const combinedSummary = isCombined
-      ? `<p>적용 구분: 쿠팡만 <strong>${formatNumber(result.summary?.coupangAssigned)}</strong>명 · 배민만 <strong>${formatNumber(result.summary?.baeminAssigned)}</strong>명 · 쿠팡+배민 합산 <strong>${formatNumber(result.summary?.overlapAssigned)}</strong>명</p>`
+      ? `<p>적용 구분: 쿠팡만 <strong>${formatNumber(result.summary?.coupangAssigned)}</strong>명 · 배민만 <strong>${formatNumber(result.summary?.baeminAssigned)}</strong>명 · 쿠팡+배민 합산 <strong>${formatNumber(result.summary?.overlapAssigned)}</strong>명</p>
+        <p class="form-help">정산서 붙이기: 배민 <strong>${formatMoney(result.summary?.baeminAttachTotal ?? result.summary?.totalPromotionAmount)}</strong> (1순위) · 쿠팡 <strong>${formatMoney(result.summary?.coupangAttachTotal ?? 0)}</strong> (2순위, 쿠팡-only)</p>`
       : '';
     const deliveryFeeSummary = result.deliveryFeeLabel
       ? `<p>배달처리비: <strong>${escapeHtml(result.deliveryFeeLabel)}</strong>${result.deliveryFeeFileName ? ` · ${escapeHtml(result.deliveryFeeFileName)}` : ''}</p>`
