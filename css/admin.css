@@ -11573,6 +11573,14 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   background: rgba(34, 197, 94, 0.06);
 }
 
+.payroll-daily-settlement-driver-list tr.is-blocked,
+.payroll-daily-settlement-roster-list tr.is-blocked,
+#payrollDailyBlockBody tr.is-blocked,
+#payrollDailyBlockPickerBody tr.is-blocked,
+#payrollDailyAvailableBody tr.is-blocked {
+  background: rgba(239, 68, 68, 0.06);
+}
+
 .payroll-daily-settlement-roster-list tr.is-selected {
   background: rgba(59, 130, 246, 0.1);
 }

@@ -61,6 +61,7 @@ const BremStorage = (function () {
     payrollDailySettlementFees: 'brem_payroll_daily_settlement_fees_v1',
     payrollWithdrawalRequests: 'brem_payroll_withdrawal_requests_v1',
     payrollDailyExcludedSettlements: 'brem_payroll_daily_excluded_settlements_v1',
+    payrollDailySettlementBlocked: 'brem_payroll_daily_settlement_blocked_v1',
     payrollWeekFinalized: 'brem_payroll_week_finalized_v1',
     payrollWithdrawalPaused: 'brem_payroll_withdrawal_paused_v1',
     preservedUnknown: 'brem_preserved_unknown_storage',
@@ -1519,6 +1520,7 @@ const BremStorage = (function () {
       KEYS.payrollDailySettlementFees,
       KEYS.payrollWithdrawalRequests,
       KEYS.payrollDailyExcludedSettlements,
+      KEYS.payrollDailySettlementBlocked,
       KEYS.payrollWeekFinalized,
       KEYS.payrollWithdrawalPaused,
       KEYS.drivers,
@@ -7934,11 +7936,12 @@ const BremStorage = (function () {
         return payrollDailySettlement.getAll();
       }
       try {
-        const [rosterValue, regionsValue, feesValue, excludedValue, finalizedValue, pauseValue] = await Promise.all([
+        const [rosterValue, regionsValue, feesValue, excludedValue, blockedValue, finalizedValue, pauseValue] = await Promise.all([
           activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRoster),
           activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRegions),
           activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementFees),
           activeStorageAdapter.reloadSettingKey(KEYS.payrollDailyExcludedSettlements),
+          activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementBlocked),
           activeStorageAdapter.reloadSettingKey(KEYS.payrollWeekFinalized),
           activeStorageAdapter.reloadSettingKey(KEYS.payrollWithdrawalPaused)
         ]);
@@ -7948,12 +7951,14 @@ const BremStorage = (function () {
         const excluded = Array.isArray(excludedValue)
           ? [...new Set(excludedValue.map(item => String(item || '').trim()).filter(Boolean))]
           : [];
+        const blocked = payrollDailySettlement.normalizeBlockedDrivers(blockedValue || []);
         const finalized = payrollDailySettlement.normalizeFinalizedWeeks(finalizedValue || []);
         const pauseState = payrollDailySettlement.normalizeWithdrawalPause(pauseValue || {});
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementRoster, normalized, { source: 'server' });
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementRegions, regions, { source: 'server' });
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementFees, fees, { source: 'server' });
         window.BremDataCache?.set?.(KEYS.payrollDailyExcludedSettlements, excluded, { source: 'server' });
+        window.BremDataCache?.set?.(KEYS.payrollDailySettlementBlocked, blocked, { source: 'server' });
         window.BremDataCache?.set?.(KEYS.payrollWeekFinalized, finalized, { source: 'server' });
         window.BremDataCache?.set?.(KEYS.payrollWithdrawalPaused, pauseState, { source: 'server' });
         return normalized;
@@ -8296,6 +8301,101 @@ const BremStorage = (function () {
         await flushActiveStorage();
       }
       return { ok: true, ...next };
+    },
+
+    normalizeBlockedDriver(item) {
+      if (!item || typeof item !== 'object') return null;
+      const driverId = String(item.driverId || '').trim();
+      if (!driverId) return null;
+      return {
+        driverId,
+        driverName: String(item.driverName || '').trim(),
+        note: String(item.note || '').trim(),
+        blockedAt: String(item.blockedAt || '').trim(),
+        blockedBy: String(item.blockedBy || '').trim()
+      };
+    },
+
+    normalizeBlockedDrivers(list) {
+      const seen = new Set();
+      return (Array.isArray(list) ? list : [])
+        .map(payrollDailySettlement.normalizeBlockedDriver)
+        .filter(item => {
+          if (!item || seen.has(item.driverId)) return false;
+          seen.add(item.driverId);
+          return true;
+        });
+    },
+
+    getBlockedDrivers() {
+      const raw = storageAdapter.read(KEYS.payrollDailySettlementBlocked, []);
+      return payrollDailySettlement.normalizeBlockedDrivers(raw);
+    },
+
+    getBlockedDriverIdSet() {
+      return new Set(payrollDailySettlement.getBlockedDrivers().map(item => item.driverId));
+    },
+
+    isDriverWithdrawalBlocked(driverId) {
+      return payrollDailySettlement.getBlockedDriverIdSet().has(String(driverId || '').trim());
+    },
+
+    persistBlockedDrivers(list) {
+      const normalized = payrollDailySettlement.normalizeBlockedDrivers(list);
+      storageAdapter.write(KEYS.payrollDailySettlementBlocked, normalized);
+      window.BremDataCache?.set?.(KEYS.payrollDailySettlementBlocked, normalized, { source: 'write' });
+      return normalized;
+    },
+
+    async reloadBlockedDriversFromServer() {
+      if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.reloadSettingKey) {
+        return payrollDailySettlement.getBlockedDrivers();
+      }
+      try {
+        const value = await activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementBlocked);
+        const normalized = payrollDailySettlement.normalizeBlockedDrivers(value || []);
+        window.BremDataCache?.set?.(KEYS.payrollDailySettlementBlocked, normalized, { source: 'server' });
+        return normalized;
+      } catch (error) {
+        console.warn('[BREM] payroll daily blocked drivers reload failed:', error);
+        return payrollDailySettlement.getBlockedDrivers();
+      }
+    },
+
+    async blockDriverWithdrawal(driverId, { driverName = '', note = '' } = {}) {
+      const id = String(driverId || '').trim();
+      if (!id) return payrollDailySettlement.getBlockedDrivers();
+      await payrollDailySettlement.reloadBlockedDriversFromServer();
+      const list = payrollDailySettlement.getBlockedDrivers().filter(item => item.driverId !== id);
+      list.push({
+        driverId: id,
+        driverName: String(driverName || '').trim(),
+        note: String(note || '').trim(),
+        blockedAt: new Date().toISOString(),
+        blockedBy: String(
+          activeSupabaseProfile?.name
+          || activeSupabaseProfile?.login_id
+          || 'admin'
+        ).trim()
+      });
+      const next = payrollDailySettlement.persistBlockedDrivers(list);
+      if (typeof flushActiveStorage === 'function') {
+        await flushActiveStorage();
+      }
+      return next;
+    },
+
+    async unblockDriverWithdrawal(driverId) {
+      const id = String(driverId || '').trim();
+      if (!id) return payrollDailySettlement.getBlockedDrivers();
+      await payrollDailySettlement.reloadBlockedDriversFromServer();
+      const next = payrollDailySettlement.persistBlockedDrivers(
+        payrollDailySettlement.getBlockedDrivers().filter(item => item.driverId !== id)
+      );
+      if (typeof flushActiveStorage === 'function') {
+        await flushActiveStorage();
+      }
+      return next;
     },
 
     /** 등록 기사 + 일정산 업로드 금액으로 급여 일정산 행 계산 */

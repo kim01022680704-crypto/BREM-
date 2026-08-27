@@ -213,7 +213,7 @@
   // 플랫폼 자동선택이 끝난 뒤에 그려야 "플랫폼을 선택하세요" 가 남지 않는다.
   function renderPlatformHint() {
     if (!hintEl) return;
-    if (state.withdrawalPaused || state.weekFinalized || state.enrolled === false) return;
+    if (state.withdrawalPaused || state.driverWithdrawalBlocked || state.weekFinalized || state.enrolled === false) return;
     const by = state.netPayByPlatform || {};
     const avail = state.availableByPlatform || {};
     const requestable = key => {
@@ -248,6 +248,8 @@
     };
     state.weekFinalized = payload.weekFinalized === true;
     state.withdrawalPaused = payload.withdrawalPaused === true;
+    state.driverWithdrawalBlocked = payload.driverWithdrawalBlocked === true;
+    state.driverWithdrawalBlockedNote = String(payload.driverWithdrawalBlockedNote || '').trim();
     state.enrolled = payload.enrolled;
     state.feesByPlatform = payload.feesByPlatform || state.feesByPlatform || {};
     const lease = payload.lease || {};
@@ -293,7 +295,12 @@
     }
     const pausedBanner = document.getElementById('driverWithdrawalPausedBanner');
     if (pausedBanner) {
-      if (payload.withdrawalPaused) {
+      if (payload.driverWithdrawalBlocked) {
+        pausedBanner.hidden = false;
+        pausedBanner.textContent = payload.driverWithdrawalBlockedNote
+          ? `일정산 출금신청 중지 · ${payload.driverWithdrawalBlockedNote}`
+          : '일정산 출금신청이 중지되었습니다. 관리자에게 문의하세요.';
+      } else if (payload.withdrawalPaused) {
         pausedBanner.hidden = false;
         pausedBanner.textContent = '정산중엔 출금신청정지';
       } else {
@@ -305,7 +312,11 @@
     // 힌트에 "플랫폼을 선택하세요" 가 그대로 남는다.
     syncPlatformOptions(payload.enrolledPlatforms || {});
     if (hintEl) {
-      if (payload.withdrawalPaused) {
+      if (payload.driverWithdrawalBlocked) {
+        hintEl.textContent = payload.driverWithdrawalBlockedNote
+          ? `일정산 출금신청이 중지되었습니다. (${payload.driverWithdrawalBlockedNote})`
+          : '일정산 출금신청이 중지되었습니다. 관리자에게 문의하세요.';
+      } else if (payload.withdrawalPaused) {
         hintEl.textContent = '정산 처리 중입니다. 출금신청이 일시 정지되어 있습니다.';
       } else if (payload.weekFinalized) {
         hintEl.textContent = `주정산 마무리됨 · 출금가능금액 0원 (${payload.weekStart || '-'} ~ ${payload.weekEnd || '-'})`;
@@ -464,11 +475,15 @@
   // 기사는 눌러도 반응이 없는 것으로 보고 연타한다.
   function applySubmitButtonState() {
     if (!submitBtn || state.submitting) return;
-    const blocked = state.withdrawalPaused === true || state.weekFinalized === true;
+    const blocked = state.withdrawalPaused === true
+      || state.driverWithdrawalBlocked === true
+      || state.weekFinalized === true;
     submitBtn.disabled = blocked;
-    submitBtn.textContent = state.withdrawalPaused
-      ? '정산중엔 출금신청정지'
-      : (state.weekFinalized ? '주정산 마무리됨' : '출금 신청하기');
+    submitBtn.textContent = state.driverWithdrawalBlocked
+      ? '출금신청 중지'
+      : (state.withdrawalPaused
+        ? '정산중엔 출금신청정지'
+        : (state.weekFinalized ? '주정산 마무리됨' : '출금 신청하기'));
   }
 
   function setUnconfirmedUi(message) {
@@ -555,11 +570,15 @@
       if (result.enrolled === false && emptyTextEl) {
         emptyTextEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else if (noDays && emptyTextEl) {
-        emptyTextEl.textContent = result.withdrawalPaused
-          ? '정산중엔 출금신청정지'
-          : (result.weekFinalized
-            ? `주정산 마무리됨 · 출금가능금액 0원 (${result.weekStart || '-'} ~ ${result.weekEnd || '-'})`
-            : '해당 주차에 매칭된 일정산 내역이 없습니다.');
+        emptyTextEl.textContent = result.driverWithdrawalBlocked
+          ? (result.driverWithdrawalBlockedNote
+            ? `일정산 출금신청 중지 · ${result.driverWithdrawalBlockedNote}`
+            : '일정산 출금신청이 중지되었습니다.')
+          : (result.withdrawalPaused
+            ? '정산중엔 출금신청정지'
+            : (result.weekFinalized
+              ? `주정산 마무리됨 · 출금가능금액 0원 (${result.weekStart || '-'} ~ ${result.weekEnd || '-'})`
+              : '해당 주차에 매칭된 일정산 내역이 없습니다.'));
       }
     }
     if (contentEl) contentEl.hidden = result.enrolled === false;
@@ -617,6 +636,12 @@
     }
     if (state.withdrawalPaused) {
       showToast('정산중엔 출금신청정지 · 정산 처리가 끝난 뒤 다시 신청해 주세요.');
+      return;
+    }
+    if (state.driverWithdrawalBlocked) {
+      showToast(state.driverWithdrawalBlockedNote
+        ? `일정산 출금신청이 중지되었습니다. (${state.driverWithdrawalBlockedNote})`
+        : '일정산 출금신청이 중지되었습니다. 관리자에게 문의하세요.');
       return;
     }
     if (state.weekFinalized) {
@@ -710,6 +735,8 @@
     state.netPayByPlatform = { coupang: 0, baemin: 0 };
     state.weekFinalized = false;
     state.withdrawalPaused = false;
+    state.driverWithdrawalBlocked = false;
+    state.driverWithdrawalBlockedNote = '';
     state.enrolledPlatforms = { coupang: false, baemin: false };
     state.feesByPlatform = { coupang: null, baemin: null };
     state.enrolled = null;

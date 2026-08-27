@@ -12,6 +12,7 @@ const REQUESTS_KEY = 'brem_payroll_withdrawal_requests_v1';
 const EXCLUDED_SETTLEMENTS_KEY = 'brem_payroll_daily_excluded_settlements_v1';
 const FINALIZED_WEEKS_KEY = 'brem_payroll_week_finalized_v1';
 const WITHDRAWAL_PAUSE_KEY = 'brem_payroll_withdrawal_paused_v1';
+const BLOCKED_DRIVERS_KEY = 'brem_payroll_daily_settlement_blocked_v1';
 
 const ACTIVE_LEASE_STATUSES = ['active', 'operating', 'rented'];
 const COMPLETED_ARREAR_STATUSES = new Set(['completed', 'recovered', 'done', 'paid', 'closed']);
@@ -964,19 +965,43 @@ function normalizeWithdrawalPauseState(raw) {
   };
 }
 
+function normalizeBlockedDrivers(raw) {
+  const map = new Map();
+  (Array.isArray(raw) ? raw : []).forEach(item => {
+    if (!item || typeof item !== 'object') return;
+    const driverId = String(item.driverId || '').trim();
+    if (!driverId || map.has(driverId)) return;
+    map.set(driverId, {
+      driverId,
+      driverName: String(item.driverName || '').trim(),
+      note: String(item.note || '').trim(),
+      blockedAt: String(item.blockedAt || '').trim(),
+      blockedBy: String(item.blockedBy || '').trim()
+    });
+  });
+  return map;
+}
+
+function getDriverWithdrawalBlock(blockedMap, driverId) {
+  const id = String(driverId || '').trim();
+  if (!id || !blockedMap || typeof blockedMap.get !== 'function') return null;
+  return blockedMap.get(id) || null;
+}
+
 async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   const weekStart = normalizeSettlementWeekStart(weekStartInput || new Date());
   const weekEnd = settlementWeekEnd(weekStart);
   const driverId = String(rider.id || '');
   const driverName = String(rider.name || '').trim();
 
-  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw, pauseRaw] = await Promise.all([
+  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw, pauseRaw, blockedRaw] = await Promise.all([
     readSettingValue(supabase, ROSTER_KEY, []),
     readSettingValue(supabase, FEES_KEY, {}),
     readSettingValue(supabase, REQUESTS_KEY, []),
     readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, []),
     readSettingValue(supabase, FINALIZED_WEEKS_KEY, []),
-    readSettingValue(supabase, WITHDRAWAL_PAUSE_KEY, {})
+    readSettingValue(supabase, WITHDRAWAL_PAUSE_KEY, {}),
+    readSettingValue(supabase, BLOCKED_DRIVERS_KEY, [])
   ]);
   const rosterItem = findRosterEntry(rosterRaw, driverId);
   const feesByPlatform = normalizeFees(feesRaw);
@@ -989,6 +1014,10 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   const weekFinalized = Boolean(finalizedEntry);
   const pauseState = normalizeWithdrawalPauseState(pauseRaw);
   const withdrawalPaused = pauseState.paused === true;
+  const blockedMap = normalizeBlockedDrivers(blockedRaw);
+  const blockEntry = getDriverWithdrawalBlock(blockedMap, driverId);
+  const driverWithdrawalBlocked = Boolean(blockEntry);
+  const driverWithdrawalBlockedNote = blockEntry?.note || '';
   const allRequests = normalizeRequestList(requestsRaw);
   const myWeekRequests = allRequests.filter(item => (
     item.driverId === driverId && item.weekStart === weekStart
@@ -1058,7 +1087,12 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   // 리스·대여·미납은 최우선 차감. 홀드액은 정산일별 실적용분(+미납장부 잔액).
   applyDeductionHoldAcrossPlatforms(netPayByPlatform, leaseDeduction);
   const availableByPlatform = computeAvailableByPlatform(netPayByPlatform, requestBuckets, weekFinalized);
-  const availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
+  let availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
+  if (driverWithdrawalBlocked) {
+    availableByPlatform.coupang = 0;
+    availableByPlatform.baemin = 0;
+    availableAmount = 0;
+  }
 
   return {
     ok: true,
@@ -1089,6 +1123,9 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     weekFinalizedAt: finalizedEntry?.finalizedAt || '',
     withdrawalPaused,
     withdrawalPausedAt: pauseState.updatedAt || '',
+    driverWithdrawalBlocked,
+    driverWithdrawalBlockedAt: blockEntry?.blockedAt || '',
+    driverWithdrawalBlockedNote,
     lease: {
       hasLease: Boolean(lease?.hasLease),
       dailyRent: Math.max(0, Math.round(Number(lease?.dailyRent || 0))),
@@ -1154,6 +1191,16 @@ async function createWithdrawalRequest(accessToken, body = {}) {
 
   const summary = await buildDriverWeekSummary(supabase, me.rider, body.weekStart);
   if (!summary.ok) return summary;
+
+  if (summary.driverWithdrawalBlocked) {
+    return {
+      ok: false,
+      status: 403,
+      error: summary.driverWithdrawalBlockedNote
+        ? `일정산 출금신청이 중지되었습니다. (${summary.driverWithdrawalBlockedNote})`
+        : '일정산 출금신청이 중지되었습니다. 관리자에게 문의하세요.'
+    };
+  }
 
   if (summary.weekFinalized) {
     return {
@@ -1779,13 +1826,14 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
   const weekStart = normalizeSettlementWeekStart(weekStartInput || new Date());
   const weekEnd = settlementWeekEnd(weekStart);
 
-  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw, pauseRaw] = await Promise.all([
+  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw, pauseRaw, blockedRaw] = await Promise.all([
     readSettingValue(supabase, ROSTER_KEY, []),
     readSettingValue(supabase, FEES_KEY, {}),
     readSettingValue(supabase, REQUESTS_KEY, []),
     readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, []),
     readSettingValue(supabase, FINALIZED_WEEKS_KEY, []),
-    readSettingValue(supabase, WITHDRAWAL_PAUSE_KEY, {})
+    readSettingValue(supabase, WITHDRAWAL_PAUSE_KEY, {}),
+    readSettingValue(supabase, BLOCKED_DRIVERS_KEY, [])
   ]);
 
   const rosterList = Array.isArray(rosterRaw) ? rosterRaw : [];
@@ -1798,6 +1846,7 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
   const finalizedEntry = findFinalizedWeekEntry(finalizedRaw, weekStart);
   const weekFinalized = Boolean(finalizedEntry);
   const pauseState = normalizeWithdrawalPauseState(pauseRaw);
+  const blockedMap = normalizeBlockedDrivers(blockedRaw);
   const allRequests = normalizeRequestList(requestsRaw);
 
   // 기사 기본정보(이름/전화/계좌) 1회 조회
@@ -1896,7 +1945,14 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
     const deductionPlatform = normalizeDeductionPlatform(lease.deductionPlatform);
     applyDeductionHoldAcrossPlatforms(netPayByPlatform, leaseDeduction);
     const availableByPlatform = computeAvailableByPlatform(netPayByPlatform, requestBuckets, weekFinalized);
-    const availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
+    let availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
+    const blockEntry = getDriverWithdrawalBlock(blockedMap, driverId);
+    const driverWithdrawalBlocked = Boolean(blockEntry);
+    if (driverWithdrawalBlocked) {
+      availableByPlatform.coupang = 0;
+      availableByPlatform.baemin = 0;
+      availableAmount = 0;
+    }
 
     return {
       driverId,
@@ -1918,7 +1974,9 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
       leaseDeduction,
       leaseArrearReason: lease.arrearReason || '',
       availableAmount,
-      hasSettlement: days.length > 0
+      hasSettlement: days.length > 0,
+      driverWithdrawalBlocked,
+      driverWithdrawalBlockedNote: blockEntry?.note || ''
     };
   });
 
@@ -1994,6 +2052,16 @@ async function adminCreateWithdrawalForDriver(accessToken, body = {}) {
 
   const summary = await buildDriverWeekSummary(supabase, rider, body.weekStart);
   if (!summary.ok) return summary;
+
+  if (summary.driverWithdrawalBlocked) {
+    return {
+      ok: false,
+      status: 403,
+      error: summary.driverWithdrawalBlockedNote
+        ? `일정산 출금신청이 중지된 기사입니다. (${summary.driverWithdrawalBlockedNote})`
+        : '일정산 출금신청이 중지된 기사입니다. 일정산 차단을 해제한 뒤 진행하세요.'
+    };
+  }
 
   if (!summary.enrolledPlatforms?.[platform]) {
     return {

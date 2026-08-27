@@ -22,7 +22,9 @@
     availableFees: null,
     adminWithdrawalDriver: null,
     finalRows: [],
-    finalSearch: ''
+    finalSearch: '',
+    blockListSearch: '',
+    blockPickerSearch: ''
   };
 
   function $(id) {
@@ -284,6 +286,7 @@
     else if (tab === 'completed') state.subTab = 'completed';
     else if (tab === 'week-withdrawals') state.subTab = 'week-withdrawals';
     else if (tab === 'available') state.subTab = 'available';
+    else if (tab === 'block') state.subTab = 'block';
     else if (tab === 'final') state.subTab = 'final';
     else state.subTab = 'payout';
     syncSubTabs();
@@ -1276,7 +1279,9 @@
     if (summary) {
       const finalizedNote = result.weekFinalized ? ' · ⚠ 주정산 마무리됨(출금가능 0원)' : '';
       const pauseNote = result.withdrawalPaused ? ' · ⏸ 출금신청 정지중' : '';
-      summary.textContent = `정산주 ${weekStart} ~ ${weekEnd} · 정산반영 ${rows.length}명 · 출금가능 ${withMoney}명 · 합계 ${formatWon(totalAvailable)} (쿠팡/배민 분리)${finalizedNote}${pauseNote}`;
+      const blockedCount = rows.filter(row => row.driverWithdrawalBlocked).length;
+      const blockedNote = blockedCount ? ` · 🚫 개별차단 ${blockedCount}명` : '';
+      summary.textContent = `정산주 ${weekStart} ~ ${weekEnd} · 정산반영 ${rows.length}명 · 출금가능 ${withMoney}명 · 합계 ${formatWon(totalAvailable)} (쿠팡/배민 분리)${finalizedNote}${pauseNote}${blockedNote}`;
     }
 
     if (!visible.length) {
@@ -1287,11 +1292,15 @@
     body.innerHTML = visible.map(row => {
       const coupangAvail = Number(driverPlatformAvailable(row, 'coupang') || 0);
       const baeminAvail = Number(driverPlatformAvailable(row, 'baemin') || 0);
-      const canAct = row.enrolledPlatforms?.coupang || row.enrolledPlatforms?.baemin;
+      const canAct = (row.enrolledPlatforms?.coupang || row.enrolledPlatforms?.baemin)
+        && !row.driverWithdrawalBlocked;
+      const blockedLabel = row.driverWithdrawalBlocked
+        ? `<span class="text-danger" title="${escapeHtml(row.driverWithdrawalBlockedNote || '일정산 차단')}">차단</span>`
+        : '';
       const negClass = (n) => (n < 0 ? ' class="pds-net-col is-negative"' : ' class="pds-net-col"');
       return `
-      <tr>
-        <td><strong>${escapeHtml(row.driverName || '-')}</strong></td>
+      <tr${row.driverWithdrawalBlocked ? ' class="is-blocked"' : ''}>
+        <td><strong>${escapeHtml(row.driverName || '-')}</strong>${blockedLabel ? ` ${blockedLabel}` : ''}</td>
         <td>${escapeHtml(row.baeminId || '-')}</td>
         <td>${escapeHtml(row.coupangId || '-')}</td>
         <td>${formatWon(row.totalNetPay)}</td>
@@ -1301,9 +1310,11 @@
         <td${negClass(coupangAvail)}><strong>${formatWon(coupangAvail)}</strong></td>
         <td${negClass(baeminAvail)}><strong>${formatWon(baeminAvail)}</strong></td>
         <td>
-          ${canAct
-            ? `<button type="button" class="small-btn primary-btn" data-pds-admin-withdraw="${escapeHtml(row.driverId)}">출금</button>`
-            : '<span class="form-help">정산없음</span>'}
+          ${row.driverWithdrawalBlocked
+            ? '<span class="form-help">차단</span>'
+            : (canAct
+              ? `<button type="button" class="small-btn primary-btn" data-pds-admin-withdraw="${escapeHtml(row.driverId)}">출금</button>`
+              : '<span class="form-help">정산없음</span>')}
         </td>
       </tr>`;
     }).join('');
@@ -2009,17 +2020,154 @@
   function filterDrivers(list) {
     const keyword = String(state.driverSearchKeyword || '').trim().toLowerCase();
     if (!keyword) return list;
-    return list.filter(driver => {
+    return list.filter(driver => driverMatchesKeyword(driver, keyword));
+  }
+
+  function driverMatchesKeyword(driver, keyword) {
+    const haystack = [
+      driver.name,
+      driver.baeminId,
+      driver.coupangId,
+      driver.coupangLoginKey,
+      driver.phone,
+      driver.employeeNo
+    ].join(' ').toLowerCase();
+    return haystack.includes(keyword);
+  }
+
+  function filterBlockPickerDrivers(list) {
+    const keyword = String(state.blockPickerSearch || '').trim().toLowerCase();
+    if (!keyword) return list;
+    return list.filter(driver => driverMatchesKeyword(driver, keyword));
+  }
+
+  function filterBlockedRows(list) {
+    const keyword = String(state.blockListSearch || '').trim().toLowerCase();
+    if (!keyword) return list;
+    return list.filter(item => {
+      const driver = getDrivers().find(d => d.id === item.driverId) || {};
       const haystack = [
+        item.driverName,
+        item.note,
         driver.name,
-        driver.baeminId,
-        driver.coupangId,
-        driver.coupangLoginKey,
-        driver.phone,
-        driver.employeeNo
+        resolveBaeminId(driver),
+        resolveCoupangId(driver),
+        driver.phone
       ].join(' ').toLowerCase();
       return haystack.includes(keyword);
     });
+  }
+
+  function readBlockedDrivers() {
+    return BremStorage?.payrollDailySettlement?.getBlockedDrivers?.() || [];
+  }
+
+  function readBlockedDriverIdSet() {
+    return BremStorage?.payrollDailySettlement?.getBlockedDriverIdSet?.() || new Set();
+  }
+
+  function renderBlockTab() {
+    const blockedBody = $('payrollDailyBlockBody');
+    const pickerBody = $('payrollDailyBlockPickerBody');
+    const summary = $('payrollDailyBlockSummary');
+    if (!blockedBody || !pickerBody) return;
+
+    const blocked = filterBlockedRows(readBlockedDrivers());
+    if (summary) {
+      summary.textContent = `차단 ${readBlockedDrivers().length}명 · 표시 ${blocked.length}명 · 차단된 기사는 기사앱 출금신청 불가`;
+    }
+
+    if (!blocked.length) {
+      blockedBody.innerHTML = '<tr><td colspan="7" class="empty">차단된 기사가 없습니다.</td></tr>';
+    } else {
+      blockedBody.innerHTML = blocked.map(item => {
+        const driver = getDrivers().find(d => d.id === item.driverId) || {};
+        const blockedAt = item.blockedAt
+          ? new Date(item.blockedAt).toLocaleString('ko-KR')
+          : '-';
+        return `
+          <tr class="is-blocked">
+            <td><strong>${escapeHtml(item.driverName || driver.name || '-')}</strong></td>
+            <td>${escapeHtml(resolveBaeminId(driver) || '-')}</td>
+            <td>${escapeHtml(resolveCoupangId(driver) || '-')}</td>
+            <td>${escapeHtml(driver.phone || '-')}</td>
+            <td>${escapeHtml(item.note || '-')}</td>
+            <td>${escapeHtml(blockedAt)}</td>
+            <td>
+              <button type="button" class="small-btn primary-btn" data-pds-unblock-driver="${escapeHtml(item.driverId)}">차단 해제</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    const blockedIds = readBlockedDriverIdSet();
+    const drivers = filterBlockPickerDrivers(getDrivers()).slice(0, 500);
+    if (!drivers.length) {
+      pickerBody.innerHTML = '<tr><td colspan="6" class="empty">검색된 라이더가 없습니다.</td></tr>';
+      return;
+    }
+
+    pickerBody.innerHTML = drivers.map(driver => {
+      const isBlocked = blockedIds.has(driver.id);
+      return `
+        <tr class="${isBlocked ? 'is-blocked' : ''}">
+          <td>${escapeHtml(driver.name || '-')}</td>
+          <td>${escapeHtml(resolveBaeminId(driver) || '-')}</td>
+          <td>${escapeHtml(resolveCoupangId(driver) || '-')}</td>
+          <td>${escapeHtml(driver.phone || '-')}</td>
+          <td class="${isBlocked ? 'text-danger' : 'text-muted'}">${isBlocked ? '차단중' : '정상'}</td>
+          <td>
+            ${isBlocked
+              ? `<button type="button" class="small-btn" data-pds-unblock-driver="${escapeHtml(driver.id)}">해제</button>`
+              : `<button type="button" class="small-btn danger-btn" data-pds-block-driver="${escapeHtml(driver.id)}">차단</button>`}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function blockDriverById(driverId) {
+    const driver = getDrivers().find(item => item.id === driverId);
+    if (!driver) {
+      showToast('기사를 찾을 수 없습니다.');
+      return;
+    }
+    const note = String($('payrollDailyBlockNote')?.value || '').trim();
+    void (async () => {
+      try {
+        await BremStorage.payrollDailySettlement.blockDriverWithdrawal(driver.id, {
+          driverName: driver.name || '',
+          note
+        });
+        renderBlockTab();
+        if (state.subTab === 'available') {
+          void renderAvailableDrivers();
+        }
+        showToast(`${driver.name || '기사'} 일정산 출금신청 차단`);
+      } catch (error) {
+        console.error('[daily settlement block]', error);
+        showToast(error.message || '차단 저장에 실패했습니다.');
+      }
+    })();
+  }
+
+  function unblockDriverById(driverId) {
+    const id = String(driverId || '').trim();
+    if (!id) return;
+    void (async () => {
+      try {
+        await BremStorage.payrollDailySettlement.unblockDriverWithdrawal(id);
+        renderBlockTab();
+        if (state.subTab === 'available') {
+          void renderAvailableDrivers();
+        }
+        showToast('일정산 출금신청 차단을 해제했습니다.');
+      } catch (error) {
+        console.error('[daily settlement unblock]', error);
+        showToast(error.message || '차단 해제에 실패했습니다.');
+      }
+    })();
   }
 
   function filterRoster(list) {
@@ -2344,6 +2492,9 @@
     }
     if (state.subTab === 'available') {
       void renderAvailableDrivers();
+    }
+    if (state.subTab === 'block') {
+      renderBlockTab();
     }
     if (state.subTab === 'final') {
       void renderFinalSettlement();
@@ -2828,6 +2979,28 @@
     $('payrollDailySettlementDriverSearch')?.addEventListener('input', event => {
       state.driverSearchKeyword = String(event.target.value || '').trim();
       renderDriverPicker();
+    });
+
+    $('payrollDailyBlockDriverSearch')?.addEventListener('input', event => {
+      state.blockPickerSearch = String(event.target.value || '').trim();
+      renderBlockTab();
+    });
+    $('payrollDailyBlockListSearch')?.addEventListener('input', event => {
+      state.blockListSearch = String(event.target.value || '').trim();
+      renderBlockTab();
+    });
+    $('payrollDailyBlockBody')?.addEventListener('click', event => {
+      const btn = event.target.closest('[data-pds-unblock-driver]');
+      if (btn) unblockDriverById(btn.dataset.pdsUnblockDriver);
+    });
+    $('payrollDailyBlockPickerBody')?.addEventListener('click', event => {
+      const blockBtn = event.target.closest('[data-pds-block-driver]');
+      if (blockBtn) {
+        blockDriverById(blockBtn.dataset.pdsBlockDriver);
+        return;
+      }
+      const unblockBtn = event.target.closest('[data-pds-unblock-driver]');
+      if (unblockBtn) unblockDriverById(unblockBtn.dataset.pdsUnblockDriver);
     });
 
     $('payrollDailySettlementRosterSearch')?.addEventListener('input', event => {
