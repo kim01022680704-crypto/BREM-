@@ -74,6 +74,13 @@ window.BremSupabaseMapper = (function () {
   }
 
   function resolvePlatformMissionIdFromRow(row, platform) {
+    const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+    const combinedMission = String(row.selected_mission_id_combined || raw.selectedMissionIdCombined || '').trim();
+    // 합산 미션이 있으면 selected_mission_id 레거시 값이 배민/쿠팡 칸으로 새지 않게 한다.
+    if (combinedMission && (platform === 'baemin' || platform === 'coupang')) {
+      return '';
+    }
+
     const isBaemin = platform === 'baemin';
     if (isBaemin) {
       const direct = String(row.selected_mission_id_baemin || row.promotion_rule_id_baemin || '').trim();

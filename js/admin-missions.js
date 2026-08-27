@@ -543,13 +543,13 @@
   }
 
   async function refresh(options = {}) {
-    const force = options.force === true;
+    const force = options.force !== false;
     state.drafts.clear();
     state.dirty.clear();
     invalidateDriverSearchIndex();
 
     try {
-      await BremStorage.ensureSectionLoaded?.('mission-management', { force });
+      await BremStorage.ensureSectionLoaded?.('mission-management', { force, forceDrivers: force });
     } catch (error) {
       showToast(error.message || '데이터를 불러오지 못했습니다.');
     }
@@ -666,6 +666,12 @@
         invalidateDriverSearchIndex();
         renderMissionSection();
       }
+    });
+
+    window.addEventListener('beforeunload', event => {
+      if (!state.dirty.size) return;
+      event.preventDefault();
+      event.returnValue = '';
     });
   }
 

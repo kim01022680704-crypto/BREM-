@@ -7060,7 +7060,7 @@
       void window.BremAdminPayrollDailySettlement.refresh();
     }
     if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
-      void window.BremAdminMissions.refresh({ renderOnly: true });
+      void window.BremAdminMissions.refresh({ force: true });
     }
     if (sectionId === 'baemin-biz-status' || sectionId === 'baemin-status') {
       void window.BremBaeminDeliveryStatusAdmin.refresh(sectionId);

@@ -1882,8 +1882,9 @@ const BremStorage = (function () {
       } else if (!force && looksComplete && window.BremDataCache?.isValid?.(KEYS.drivers)) {
         logDataSource('riders', true, sectionId);
       } else if (needsFullDrivers) {
+        const forceMissionDrivers = sectionId === 'mission-management' && (force || options.forceDrivers);
         tasks.push(
-          reloadDrivers(Boolean(options.forceDrivers || options.force))
+          reloadDrivers(Boolean(forceMissionDrivers || options.forceDrivers || options.force))
             .then(() => awaitDriversFullyLoaded())
         );
       } else {
@@ -2161,11 +2162,48 @@ const BremStorage = (function () {
     return refetchDataKey(key, options);
   }
 
+  const MISSION_DRIVER_MERGE_KEYS = [
+    'selectedMissionId',
+    'selectedMissionIdBaemin',
+    'selectedMissionIdCoupang',
+    'selectedMissionIdCombined',
+    'promotionRuleIdBaemin',
+    'promotionRuleIdCoupang',
+    'promotionRuleIdCombined',
+    'promotionSelectorBaemin',
+    'promotionSelectorCoupang',
+    'promotionSelectorCombined'
+  ];
+
+  function driverHasMissionFields(driver) {
+    return MISSION_DRIVER_MERGE_KEYS.some(key => String(driver?.[key] || '').trim());
+  }
+
+  function mergeDriverMissionFields(prev = {}, incoming = {}) {
+    const merged = { ...prev, ...incoming };
+    const prevHasMissions = driverHasMissionFields(prev);
+    const incomingHasMissions = driverHasMissionFields(incoming);
+    if (!prevHasMissions || incomingHasMissions) return merged;
+
+    const prevUpdated = Date.parse(prev.updatedAt || prev.createdAt || 0);
+    const incomingUpdated = Date.parse(incoming.updatedAt || incoming.createdAt || 0);
+    const incomingIsNewer = !Number.isNaN(incomingUpdated)
+      && (Number.isNaN(prevUpdated) || incomingUpdated > prevUpdated);
+    if (incomingIsNewer) return merged;
+
+    MISSION_DRIVER_MERGE_KEYS.forEach(key => {
+      const prevVal = String(prev[key] || '').trim();
+      if (prevVal) merged[key] = prev[key];
+    });
+    return merged;
+  }
+
   function scoreDriverRecord(driver) {
     let score = 0;
     if (String(driver?.baeminId || '').trim()) score += 4;
     if (String(driver?.bankName || '').trim()) score += 2;
     if (String(driver?.accountNumber || '').trim()) score += 1;
+    if (driverHasMissionFields(driver)) score += 1;
     const updatedAt = Date.parse(driver?.updatedAt || driver?.createdAt || 0);
     if (!Number.isNaN(updatedAt)) score += updatedAt / 1e12;
     return score;
@@ -2179,6 +2217,8 @@ const BremStorage = (function () {
       const existing = byId.get(driver.id);
       if (!existing || scoreDriverRecord(driver) > scoreDriverRecord(existing)) {
         byId.set(driver.id, driver);
+      } else if (scoreDriverRecord(driver) === scoreDriverRecord(existing)) {
+        byId.set(driver.id, mergeDriverMissionFields(existing, driver));
       }
     });
     return Array.from(byId.values()).sort((a, b) => (
@@ -2587,7 +2627,10 @@ const BremStorage = (function () {
     const riderRows = (result.riders || []).map(row => mapper.rowToRider(row));
     if (options.append) {
       const merged = new Map(drivers.getAll().map(item => [item.id, item]));
-      riderRows.forEach(item => merged.set(item.id, item));
+      riderRows.forEach(item => {
+        const prev = merged.get(item.id);
+        merged.set(item.id, prev ? mergeDriverMissionFields(prev, item) : item);
+      });
       markDriversCache(Array.from(merged.values()), { source: 'network' });
     } else {
       markDriversCache(riderRows, { source: 'network' });
@@ -5991,7 +6034,22 @@ const BremStorage = (function () {
               maxBatch: options.maxBatch || 300
             });
         return persist
-          .then(result => {
+          .then(async result => {
+            if (missionOnly && Array.isArray(result?.failed) && result.failed.length) {
+              const failedIds = new Set(result.failed.map(item => String(item?.id || '').trim()).filter(Boolean));
+              if (failedIds.size) {
+                const reverted = drivers.getAll().map(driver => {
+                  if (!failedIds.has(driver.id)) return driver;
+                  return prevList.find(item => item.id === driver.id) || driver;
+                });
+                setDriversCache(reverted);
+              }
+              throw new Error(
+                result.failed.length === 1
+                  ? (result.failed[0].error || '미션 저장에 실패했습니다.')
+                  : `${result.failed.length}명 미션 저장에 실패했습니다.`
+              );
+            }
             markDriversCache(drivers.getAll(), { source: 'write' });
             return { ...result, updated: updatedRiders.length };
           })

@@ -82,7 +82,7 @@ window.BremMissionPromotionCatalog = (function () {
 
   function getDriverAssignment(driver) {
     if (!driver) return { baemin: '', coupang: '', combined: '' };
-    return {
+    const raw = {
       // 미션관리 저장값(selectedMissionId*)을 우선. 없으면 프로모션 배정 레거시 필드.
       baemin: String(
         driver.selectedMissionIdBaemin
@@ -106,6 +106,7 @@ window.BremMissionPromotionCatalog = (function () {
         || ''
       ).trim()
     };
+    return normalizeAssignmentDraft(raw);
   }
 
   function normalizeAssignmentDraft(draft = {}) {
