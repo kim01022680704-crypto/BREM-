@@ -11726,7 +11726,32 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   white-space: nowrap;
 }
 
+.pds-hold-apply-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pds-hold-apply-cell input[type="number"] {
+  width: 118px;
+  height: 32px;
+  padding: 4px 8px;
+}
+
+.pds-hold-paste {
+  width: 100%;
+  min-height: 96px;
+  margin-top: 4px;
+  padding: 8px 10px;
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+
 .payroll-daily-inline-field input[type="search"],
+.payroll-daily-inline-field input[type="text"],
+.payroll-daily-inline-field input[type="number"],
 .payroll-daily-inline-field select {
   height: 34px;
   padding: 6px 10px;

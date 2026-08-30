@@ -26,7 +26,8 @@
     blockListSearch: '',
     blockPickerSearch: '',
     holdListSearch: '',
-    holdPickerSearch: ''
+    holdPickerSearch: '',
+    holdBulkRows: []
   };
 
   function $(id) {
@@ -61,6 +62,68 @@
 
   function resolveCoupangId(driver) {
     return roster.resolveDriverPlatformId?.(driver, 'coupang') || driver.coupangId || '';
+  }
+
+  function driverErpId(driver) {
+    const utils = window.BremDriverUtils;
+    return String(
+      utils?.makeDriverLoginId?.(driver)
+      || utils?.getErpCoupangId?.(driver)
+      || resolveCoupangId(driver)
+      || resolveBaeminId(driver)
+      || ''
+    ).replace(/\s/g, '');
+  }
+
+  function normalizeHoldErpKey(value) {
+    return String(value || '')
+      .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '')
+      .replace(/\s+/g, '')
+      .trim()
+      .toLowerCase();
+  }
+
+  function parseHoldMoney(value) {
+    const raw = String(value ?? '').replace(/[^\d.-]/g, '');
+    return Math.round(Number(raw) || 0);
+  }
+
+  function matchDriverByHoldErpId(rawId, drivers) {
+    const raw = String(rawId || '').trim();
+    const key = normalizeHoldErpKey(raw);
+    if (!key) return null;
+    const utils = window.BremDriverUtils;
+    const list = Array.isArray(drivers) ? drivers : getDrivers();
+
+    const byLogin = list.find(driver => normalizeHoldErpKey(utils?.makeDriverLoginId?.(driver)) === key);
+    if (byLogin) return byLogin;
+
+    const byCoupang = utils?.matchDriverByCoupangErpId?.(raw, list)
+      || utils?.resolveCoupangErpDriver?.(raw, list)?.driver;
+    if (byCoupang) return byCoupang;
+
+    const parsed = utils?.buildCoupangErpIdFromCell?.(raw);
+    const loginIds = Array.isArray(parsed?.loginIds) ? parsed.loginIds : [];
+    for (const lid of loginIds) {
+      const lidKey = normalizeHoldErpKey(lid);
+      if (!lidKey) continue;
+      const hit = utils?.matchDriverByCoupangErpId?.(lid, list)
+        || list.find(driver => (
+          normalizeHoldErpKey(utils?.makeDriverLoginId?.(driver)) === lidKey
+          || normalizeHoldErpKey(utils?.getErpCoupangId?.(driver)) === lidKey
+        ));
+      if (hit) return hit;
+    }
+
+    const byBaemin = utils?.matchDriverByBaeminErpId?.(raw, list);
+    if (byBaemin) return byBaemin;
+
+    return list.find(driver => (
+      normalizeHoldErpKey(resolveCoupangId(driver)) === key
+      || normalizeHoldErpKey(resolveBaeminId(driver)) === key
+      || normalizeHoldErpKey(driver.coupangLoginKey) === key
+      || normalizeHoldErpKey(driver.phone) === key
+    )) || null;
   }
 
   function formatWon(value) {
@@ -2033,6 +2096,7 @@
   function driverMatchesKeyword(driver, keyword) {
     const haystack = [
       driver.name,
+      driverErpId(driver),
       driver.baeminId,
       driver.coupangId,
       driver.coupangLoginKey,
@@ -2312,6 +2376,7 @@
         item.driverName,
         item.note,
         driver.name,
+        driverErpId(driver),
         resolveBaeminId(driver),
         resolveCoupangId(driver),
         driver.phone
@@ -2345,7 +2410,7 @@
     }
 
     if (!weekHolds.length) {
-      holdBody.innerHTML = '<tr><td colspan="8" class="empty">이 정산주에 홀딩한 기사가 없습니다.</td></tr>';
+      holdBody.innerHTML = '<tr><td colspan="9" class="empty">이 정산주에 홀딩한 기사가 없습니다.</td></tr>';
     } else {
       holdBody.innerHTML = weekHolds.map(item => {
         const driver = getDrivers().find(d => d.id === item.driverId) || {};
@@ -2355,6 +2420,7 @@
         return `
           <tr>
             <td><strong>${escapeHtml(item.driverName || driver.name || '-')}</strong></td>
+            <td>${escapeHtml(driverErpId(driver) || '-')}</td>
             <td>${escapeHtml(resolveBaeminId(driver) || '-')}</td>
             <td>${escapeHtml(resolveCoupangId(driver) || '-')}</td>
             <td>${escapeHtml(driver.phone || '-')}</td>
@@ -2371,51 +2437,46 @@
 
     const drivers = filterHoldPickerDrivers(getDrivers()).slice(0, 500);
     if (!drivers.length) {
-      pickerBody.innerHTML = '<tr><td colspan="6" class="empty">검색된 라이더가 없습니다.</td></tr>';
+      pickerBody.innerHTML = '<tr><td colspan="7" class="empty">검색된 라이더가 없습니다.</td></tr>';
       return;
     }
 
     pickerBody.innerHTML = drivers.map(driver => {
       const hold = holdMap.get(driver.id);
+      const amountValue = hold ? String(hold.amount) : '';
       return `
         <tr${hold ? ' class="is-blocked"' : ''}>
           <td>${escapeHtml(driver.name || '-')}</td>
+          <td>${escapeHtml(driverErpId(driver) || '-')}</td>
           <td>${escapeHtml(resolveBaeminId(driver) || '-')}</td>
           <td>${escapeHtml(resolveCoupangId(driver) || '-')}</td>
           <td>${escapeHtml(driver.phone || '-')}</td>
           <td class="${hold ? 'text-danger' : 'text-muted'}">${hold ? formatWon(hold.amount) : '없음'}</td>
           <td>
-            ${hold
-              ? `<button type="button" class="small-btn primary-btn" data-pds-hold-apply="${escapeHtml(driver.id)}">금액 변경</button>
-                 <button type="button" class="small-btn" data-pds-hold-remove="${escapeHtml(hold.id)}">해제</button>`
-              : `<button type="button" class="small-btn danger-btn" data-pds-hold-apply="${escapeHtml(driver.id)}">홀딩</button>`}
+            <span class="pds-hold-apply-cell">
+              <input type="number" min="1" step="1000" placeholder="금액" data-pds-hold-amount="${escapeHtml(driver.id)}" value="${escapeHtml(amountValue)}">
+              <button type="button" class="small-btn ${hold ? 'primary-btn' : 'danger-btn'}" data-pds-hold-apply="${escapeHtml(driver.id)}">${hold ? '변경' : '홀딩'}</button>
+              ${hold ? `<button type="button" class="small-btn" data-pds-hold-remove="${escapeHtml(hold.id)}">해제</button>` : ''}
+            </span>
           </td>
         </tr>
       `;
     }).join('');
   }
 
-  function applyHoldToDriver(driverId) {
+  function applyHoldToDriver(driverId, amountValue) {
     const driver = getDrivers().find(item => item.id === driverId);
     if (!driver) {
       showToast('기사를 찾을 수 없습니다.');
       return;
     }
     const weekStart = ensureHoldWeekDefault();
-    const amount = Math.round(Number($('payrollDailyHoldAmount')?.value || 0));
+    const amount = parseHoldMoney(amountValue);
     if (!(amount > 0)) {
       showToast('홀딩 금액을 입력하세요.');
       return;
     }
     const note = String($('payrollDailyHoldNote')?.value || '').trim();
-    const existing = readWithdrawalHolds().find(item => (
-      item.driverId === driver.id && item.weekStart === weekStart
-    ));
-    if (existing && existing.amount !== amount) {
-      if (!window.confirm(`${driver.name || '기사'} 이번주 홀딩이 ${formatWon(existing.amount)} 있습니다. ${formatWon(amount)}으로 바꿀까요?`)) {
-        return;
-      }
-    }
     void (async () => {
       try {
         await BremStorage.payrollDailySettlement.upsertWithdrawalHold({
@@ -2429,7 +2490,7 @@
         if (state.subTab === 'available') {
           void renderAvailableDrivers();
         }
-        showToast(`${driver.name || '기사'} ${formatWeekPeriodLabel(weekStart)} 홀딩 ${formatWon(amount)}`);
+        showToast(`${driver.name || '기사'} · ${driverErpId(driver) || ''} 홀딩 ${formatWon(amount)}`);
       } catch (error) {
         console.error('[daily settlement hold]', error);
         showToast(error.message || '홀딩 저장에 실패했습니다.');
@@ -2500,7 +2561,7 @@
     try {
       const driverMap = new Map(getDrivers().map(driver => [String(driver.id || ''), driver]));
       const data = [
-        ['정산주시작', '정산주종료', '기사명', '전화번호', '배민ID', '쿠팡ID', '홀딩금액', '사유', '등록일', '처리자'],
+        ['정산주시작', '정산주종료', '기사명', 'ERP ID', '전화번호', '배민ID', '쿠팡ID', '홀딩금액', '사유', '등록일', '처리자'],
         ...rows.map(item => {
           const driver = driverMap.get(String(item.driverId || '')) || {};
           const createdAt = item.updatedAt || item.createdAt
@@ -2510,6 +2571,7 @@
             item.weekStart || weekStart,
             item.weekEnd || weekEndKey(weekStart),
             item.driverName || driver.name || '',
+            driverErpId(driver) || '',
             formatBlockExcelPhone(driver.phone),
             resolveBaeminId(driver) || '',
             resolveCoupangId(driver) || '',
@@ -2522,7 +2584,7 @@
       ];
       const worksheet = window.XLSX.utils.aoa_to_sheet(data);
       worksheet['!cols'] = [
-        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 16 },
+        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 16 },
         { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 24 },
         { wch: 20 }, { wch: 14 }
       ];
@@ -2536,6 +2598,157 @@
       console.error('[hold excel]', error);
       showToast(error.message || '엑셀 내보내기에 실패했습니다.');
     }
+  }
+
+  function isHoldBulkHeader(erpId, amount) {
+    const id = String(erpId || '').toLowerCase();
+    const won = String(amount || '').toLowerCase();
+    return /erp|아이디|id|이름/.test(id) || /금액|amount|원/.test(won);
+  }
+
+  function parseHoldBulkRows(rows) {
+    const parsed = [];
+    (Array.isArray(rows) ? rows : []).forEach((row, index) => {
+      const cells = Array.isArray(row) ? row : [row];
+      const erpId = String(cells[0] ?? '').trim();
+      const amount = parseHoldMoney(cells[1]);
+      if (!erpId) return;
+      if (index === 0 && isHoldBulkHeader(erpId, cells[1])) return;
+      parsed.push({ erpId, amount, line: index + 1 });
+    });
+    return parsed;
+  }
+
+  function parseHoldPasteText(text) {
+    const lines = String(text || '')
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => line.split(/\t|,|;/).map(cell => cell.trim()));
+    return parseHoldBulkRows(lines);
+  }
+
+  function collectHoldBulkRows() {
+    const pasted = parseHoldPasteText($('payrollDailyHoldBulkPaste')?.value || '');
+    if (pasted.length) return pasted;
+    return Array.isArray(state.holdBulkRows) ? state.holdBulkRows : [];
+  }
+
+  function previewHoldBulkRows(rows) {
+    const summary = $('payrollDailyHoldBulkSummary');
+    if (!summary) return;
+    if (!rows.length) {
+      summary.textContent = '파일을 올리거나 붙여넣은 뒤 「일괄 적용」을 누르세요.';
+      return;
+    }
+    const drivers = getDrivers();
+    const matched = rows.filter(row => matchDriverByHoldErpId(row.erpId, drivers) && row.amount > 0).length;
+    const noAmount = rows.filter(row => row.amount <= 0).length;
+    const missing = rows.filter(row => !matchDriverByHoldErpId(row.erpId, drivers)).length;
+    summary.textContent = `미리보기 ${rows.length}건 · 매칭 ${matched}건 · 금액없음 ${noAmount}건 · 미매칭 ${missing}건`;
+  }
+
+  function downloadHoldBulkTemplate() {
+    if (!window.XLSX) {
+      showToast('엑셀 라이브러리를 불러오지 못했습니다.');
+      return;
+    }
+    const worksheet = window.XLSX.utils.aoa_to_sheet([
+      ['ERP ID', '금액'],
+      ['박준혁4453', 200000]
+    ]);
+    worksheet['!cols'] = [{ wch: 18 }, { wch: 12 }];
+    const workbook = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, '금액홀딩');
+    window.XLSX.writeFile(workbook, 'BREM_금액홀딩_일괄_양식.xlsx');
+    showToast('양식 저장: BREM_금액홀딩_일괄_양식.xlsx');
+  }
+
+  function handleHoldBulkFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!window.XLSX) {
+      showToast('엑셀 라이브러리를 불러오지 못했습니다.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const workbook = window.XLSX.read(reader.result, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+        state.holdBulkRows = parseHoldBulkRows(rows);
+        previewHoldBulkRows(state.holdBulkRows);
+        showToast(`엑셀 ${state.holdBulkRows.length}건 읽음`);
+      } catch (error) {
+        console.error('[hold bulk file]', error);
+        showToast(error.message || '엑셀을 읽지 못했습니다.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function applyHoldBulkRows() {
+    const rows = collectHoldBulkRows();
+    if (!rows.length) {
+      showToast('엑셀을 올리거나 ERP ID·금액을 붙여넣으세요.');
+      return;
+    }
+    const weekStart = ensureHoldWeekDefault();
+    const note = String($('payrollDailyHoldNote')?.value || '').trim();
+    const drivers = getDrivers();
+    const entries = [];
+    const unmatched = [];
+    const noAmount = [];
+    const seen = new Set();
+    rows.forEach(row => {
+      if (!(row.amount > 0)) {
+        noAmount.push(row.erpId);
+        return;
+      }
+      const driver = matchDriverByHoldErpId(row.erpId, drivers);
+      if (!driver) {
+        unmatched.push(row.erpId);
+        return;
+      }
+      if (seen.has(driver.id)) {
+        const existing = entries.find(item => item.driverId === driver.id);
+        if (existing) existing.amount = row.amount;
+        return;
+      }
+      seen.add(driver.id);
+      entries.push({
+        driverId: driver.id,
+        driverName: driver.name || '',
+        amount: row.amount,
+        note
+      });
+    });
+    if (!entries.length) {
+      previewHoldBulkRows(rows);
+      showToast(unmatched.length
+        ? `매칭된 기사가 없습니다. 미매칭: ${unmatched.slice(0, 8).join(', ')}`
+        : '적용할 금액이 없습니다.');
+      return;
+    }
+    if (!window.confirm(`${formatWeekPeriodLabel(weekStart)}에 ${entries.length}명 홀딩을 넣을까요?${unmatched.length ? ` (미매칭 ${unmatched.length}건은 건너뜀)` : ''}`)) {
+      return;
+    }
+    void (async () => {
+      try {
+        const result = await BremStorage.payrollDailySettlement.upsertWithdrawalHoldsBulk(entries, {
+          weekStart,
+          note
+        });
+        renderHoldTab();
+        previewHoldBulkRows(rows);
+        const extra = unmatched.length ? ` · 미매칭 ${unmatched.length}건` : '';
+        showToast(`일괄 홀딩 ${result.applied || entries.length}명${extra}`);
+      } catch (error) {
+        console.error('[hold bulk apply]', error);
+        showToast(error.message || '일괄 홀딩에 실패했습니다.');
+      }
+    })();
   }
 
   function unblockDriverById(driverId) {
@@ -3390,11 +3603,32 @@
     $('payrollDailyHoldPickerBody')?.addEventListener('click', event => {
       const applyBtn = event.target.closest('[data-pds-hold-apply]');
       if (applyBtn) {
-        applyHoldToDriver(applyBtn.dataset.pdsHoldApply);
+        const input = applyBtn.closest('tr')?.querySelector('[data-pds-hold-amount]');
+        applyHoldToDriver(applyBtn.dataset.pdsHoldApply, input?.value);
         return;
       }
       const removeBtn = event.target.closest('[data-pds-hold-remove]');
       if (removeBtn) removeHoldById(removeBtn.dataset.pdsHoldRemove);
+    });
+    $('payrollDailyHoldPickerBody')?.addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return;
+      const input = event.target.closest('[data-pds-hold-amount]');
+      if (!input) return;
+      event.preventDefault();
+      applyHoldToDriver(input.dataset.pdsHoldAmount, input.value);
+    });
+    $('payrollDailyHoldBulkTemplateBtn')?.addEventListener('click', downloadHoldBulkTemplate);
+    $('payrollDailyHoldBulkApplyBtn')?.addEventListener('click', applyHoldBulkRows);
+    $('payrollDailyHoldBulkFile')?.addEventListener('change', handleHoldBulkFile);
+    $('payrollDailyHoldBulkPaste')?.addEventListener('input', event => {
+      previewHoldBulkRows(parseHoldPasteText(event.target.value));
+    });
+    $('payrollDailyHoldBulkPaste')?.addEventListener('paste', event => {
+      const text = event.clipboardData?.getData?.('text') || '';
+      if (!text) return;
+      window.setTimeout(() => {
+        previewHoldBulkRows(parseHoldPasteText($('payrollDailyHoldBulkPaste')?.value || text));
+      }, 0);
     });
     $('payrollDailyBlockDriverSearch')?.addEventListener('input', event => {
       state.blockPickerSearch = String(event.target.value || '').trim();

@@ -8502,6 +8502,49 @@ const BremStorage = (function () {
       return next;
     },
 
+    async upsertWithdrawalHoldsBulk(entries, { weekStart = '', note = '' } = {}) {
+      const week = weekStartKeyFromDate(weekStart);
+      if (!week || !Array.isArray(entries) || !entries.length) {
+        return { applied: 0, holds: payrollDailySettlement.getWithdrawalHolds() };
+      }
+      await payrollDailySettlement.reloadWithdrawalHoldsFromServer();
+      const list = payrollDailySettlement.getWithdrawalHolds()
+        .filter(item => !(item.weekStart === week && entries.some(entry => (
+          String(entry?.driverId || '').trim() === item.driverId
+        ))));
+      const now = new Date().toISOString();
+      const actor = String(
+        activeSupabaseProfile?.name
+        || activeSupabaseProfile?.login_id
+        || 'admin'
+      ).trim();
+      const sharedNote = String(note || '').trim();
+      let applied = 0;
+      entries.forEach(entry => {
+        const driverId = String(entry?.driverId || '').trim();
+        const amount = Math.max(0, Math.round(Number(entry?.amount || 0)));
+        if (!driverId || amount <= 0) return;
+        list.push({
+          id: `hold_${driverId}_${week}`,
+          driverId,
+          driverName: String(entry?.driverName || '').trim(),
+          weekStart: week,
+          weekEnd: weekEndKeyFromDate(week),
+          amount,
+          note: String(entry?.note || sharedNote).trim(),
+          createdAt: now,
+          updatedAt: now,
+          createdBy: actor
+        });
+        applied += 1;
+      });
+      const next = payrollDailySettlement.persistWithdrawalHolds(list);
+      if (typeof flushActiveStorage === 'function') {
+        await flushActiveStorage();
+      }
+      return { applied, holds: next };
+    },
+
     async removeWithdrawalHold(holdId) {
       const id = String(holdId || '').trim();
       if (!id) return payrollDailySettlement.getWithdrawalHolds();
