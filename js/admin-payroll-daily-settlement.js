@@ -25,6 +25,7 @@
     finalSearch: '',
     blockListSearch: '',
     blockPickerSearch: '',
+    blockSelectedIds: new Set(),
     holdListSearch: '',
     holdPickerSearch: '',
     holdBulkRows: []
@@ -2144,20 +2145,28 @@
     if (!blockedBody || !pickerBody) return;
 
     const blocked = filterBlockedRows(readBlockedDrivers());
+    const liveIds = new Set(readBlockedDrivers().map(item => item.driverId));
+    [...state.blockSelectedIds].forEach(id => {
+      if (!liveIds.has(id)) state.blockSelectedIds.delete(id);
+    });
     if (summary) {
-      summary.textContent = `차단 ${readBlockedDrivers().length}명 · 표시 ${blocked.length}명 · 차단된 기사는 기사앱 출금신청 불가`;
+      const selectedCount = state.blockSelectedIds.size;
+      summary.textContent = `차단 ${readBlockedDrivers().length}명 · 표시 ${blocked.length}명 · 선택 ${selectedCount}명 · 차단된 기사는 기사앱 출금신청 불가`;
     }
+    syncBlockSelectAll(blocked);
 
     if (!blocked.length) {
-      blockedBody.innerHTML = '<tr><td colspan="7" class="empty">차단된 기사가 없습니다.</td></tr>';
+      blockedBody.innerHTML = '<tr><td colspan="8" class="empty">차단된 기사가 없습니다.</td></tr>';
     } else {
       blockedBody.innerHTML = blocked.map(item => {
         const driver = getDrivers().find(d => d.id === item.driverId) || {};
         const blockedAt = item.blockedAt
           ? new Date(item.blockedAt).toLocaleString('ko-KR')
           : '-';
+        const checked = state.blockSelectedIds.has(item.driverId) ? ' checked' : '';
         return `
           <tr class="is-blocked">
+            <td><input type="checkbox" data-pds-block-select="${escapeHtml(item.driverId)}"${checked}></td>
             <td><strong>${escapeHtml(item.driverName || driver.name || '-')}</strong></td>
             <td>${escapeHtml(resolveBaeminId(driver) || '-')}</td>
             <td>${escapeHtml(resolveCoupangId(driver) || '-')}</td>
@@ -2196,6 +2205,66 @@
         </tr>
       `;
     }).join('');
+  }
+
+  function syncBlockSelectAll(visible) {
+    const selectAll = $('payrollDailyBlockSelectAll');
+    if (!selectAll) return;
+    const rows = Array.isArray(visible) ? visible : filterBlockedRows(readBlockedDrivers());
+    if (!rows.length) {
+      selectAll.checked = false;
+      selectAll.indeterminate = false;
+      return;
+    }
+    const selectedCount = rows.filter(item => state.blockSelectedIds.has(item.driverId)).length;
+    selectAll.checked = selectedCount === rows.length;
+    selectAll.indeterminate = selectedCount > 0 && selectedCount < rows.length;
+  }
+
+  function unblockSelectedBlockedDrivers() {
+    const ids = [...state.blockSelectedIds];
+    if (!ids.length) {
+      showToast('해제할 기사를 선택하세요.');
+      return;
+    }
+    if (!window.confirm(`선택한 ${ids.length}명 차단을 해제할까요?`)) return;
+    void (async () => {
+      try {
+        await BremStorage.payrollDailySettlement.unblockDriverWithdrawals(ids);
+        state.blockSelectedIds.clear();
+        renderBlockTab();
+        if (state.subTab === 'available') {
+          void renderAvailableDrivers();
+        }
+        showToast(`선택 ${ids.length}명 차단 해제`);
+      } catch (error) {
+        console.error('[daily settlement unblock selected]', error);
+        showToast(error.message || '선택 차단해제에 실패했습니다.');
+      }
+    })();
+  }
+
+  function unblockAllBlockedDrivers() {
+    const all = readBlockedDrivers();
+    if (!all.length) {
+      showToast('차단된 기사가 없습니다.');
+      return;
+    }
+    if (!window.confirm(`차단된 ${all.length}명 전부를 해제할까요?`)) return;
+    void (async () => {
+      try {
+        await BremStorage.payrollDailySettlement.unblockAllDriverWithdrawals();
+        state.blockSelectedIds.clear();
+        renderBlockTab();
+        if (state.subTab === 'available') {
+          void renderAvailableDrivers();
+        }
+        showToast(`전체 ${all.length}명 차단 해제`);
+      } catch (error) {
+        console.error('[daily settlement unblock all]', error);
+        showToast(error.message || '전체 차단해제에 실패했습니다.');
+      }
+    })();
   }
 
   function blockDriverById(driverId) {
@@ -3584,6 +3653,16 @@
     });
 
     $('payrollDailyBlockExcelBtn')?.addEventListener('click', exportBlockedDriversExcel);
+    $('payrollDailyBlockUnblockSelectedBtn')?.addEventListener('click', unblockSelectedBlockedDrivers);
+    $('payrollDailyBlockUnblockAllBtn')?.addEventListener('click', unblockAllBlockedDrivers);
+    $('payrollDailyBlockSelectAll')?.addEventListener('change', event => {
+      const checked = event.target.checked;
+      filterBlockedRows(readBlockedDrivers()).forEach(item => {
+        if (checked) state.blockSelectedIds.add(item.driverId);
+        else state.blockSelectedIds.delete(item.driverId);
+      });
+      renderBlockTab();
+    });
     $('payrollDailyHoldExcelBtn')?.addEventListener('click', exportHoldExcel);
     $('payrollDailyHoldCopyPrevBtn')?.addEventListener('click', copyPreviousWeekHolds);
     $('payrollDailyHoldPrevBtn')?.addEventListener('click', () => shiftHoldWeek(-1));
@@ -3641,6 +3720,18 @@
     $('payrollDailyBlockBody')?.addEventListener('click', event => {
       const btn = event.target.closest('[data-pds-unblock-driver]');
       if (btn) unblockDriverById(btn.dataset.pdsUnblockDriver);
+    });
+    $('payrollDailyBlockBody')?.addEventListener('change', event => {
+      const checkbox = event.target.closest('[data-pds-block-select]');
+      if (!checkbox) return;
+      const id = checkbox.dataset.pdsBlockSelect;
+      if (checkbox.checked) state.blockSelectedIds.add(id);
+      else state.blockSelectedIds.delete(id);
+      syncBlockSelectAll();
+      const summary = $('payrollDailyBlockSummary');
+      if (summary) {
+        summary.textContent = `차단 ${readBlockedDrivers().length}명 · 표시 ${filterBlockedRows(readBlockedDrivers()).length}명 · 선택 ${state.blockSelectedIds.size}명 · 차단된 기사는 기사앱 출금신청 불가`;
+      }
     });
     $('payrollDailyBlockPickerBody')?.addEventListener('click', event => {
       const blockBtn = event.target.closest('[data-pds-block-driver]');

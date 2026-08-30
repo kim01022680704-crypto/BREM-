@@ -8393,10 +8393,29 @@ const BremStorage = (function () {
     async unblockDriverWithdrawal(driverId) {
       const id = String(driverId || '').trim();
       if (!id) return payrollDailySettlement.getBlockedDrivers();
+      return payrollDailySettlement.unblockDriverWithdrawals([id]);
+    },
+
+    async unblockDriverWithdrawals(driverIds) {
+      const ids = new Set(
+        (Array.isArray(driverIds) ? driverIds : [])
+          .map(id => String(id || '').trim())
+          .filter(Boolean)
+      );
+      if (!ids.size) return payrollDailySettlement.getBlockedDrivers();
       await payrollDailySettlement.reloadBlockedDriversFromServer();
       const next = payrollDailySettlement.persistBlockedDrivers(
-        payrollDailySettlement.getBlockedDrivers().filter(item => item.driverId !== id)
+        payrollDailySettlement.getBlockedDrivers().filter(item => !ids.has(item.driverId))
       );
+      if (typeof flushActiveStorage === 'function') {
+        await flushActiveStorage();
+      }
+      return next;
+    },
+
+    async unblockAllDriverWithdrawals() {
+      await payrollDailySettlement.reloadBlockedDriversFromServer();
+      const next = payrollDailySettlement.persistBlockedDrivers([]);
       if (typeof flushActiveStorage === 'function') {
         await flushActiveStorage();
       }
