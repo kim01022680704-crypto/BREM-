@@ -76,6 +76,26 @@ const BremTaxManagementAdmin = (function () {
     return allSettlements().filter(record => recordMonthKey(record) === month);
   }
 
+  function addDays(dateStr, n) {
+    const date = new Date(`${String(dateStr).slice(0, 10)}T00:00:00`);
+    date.setDate(date.getDate() + n);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function recordWeekKey(record) {
+    return Calc().settlementWeek(record);
+  }
+
+  function compactDate(value) {
+    const raw = String(value || '').slice(0, 10);
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return formatDate(value);
+    return `${Number(match[2])}/${Number(match[3])}`;
+  }
+
   function checkedSettlements() {
     return monthSettlements().filter(record => !state.excludedSettlementIds.has(String(record.id)));
   }
@@ -146,9 +166,10 @@ const BremTaxManagementAdmin = (function () {
 
     const list = monthSettlements();
     const monthLabel = formatMonthLabel(ensureMonth());
+    const weekKeys = [...new Set(list.map(recordWeekKey))].filter(Boolean).sort();
     if (rangeEl) {
       rangeEl.textContent = list.length
-        ? `${monthLabel} · 직계약 정산서 ${list.length}건 — 신고에 포함할 정산서를 고르세요`
+        ? `${monthLabel} · 직계약 정산서 ${list.length}건 · ${weekKeys.length}주`
         : `${monthLabel}에 해당하는 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」을 확인하세요.`;
     }
 
@@ -163,33 +184,40 @@ const BremTaxManagementAdmin = (function () {
       const id = String(record.id);
       const checked = !state.excludedSettlementIds.has(id);
       const riders = Array.isArray(record.riders) ? record.riders.length : 0;
-      const region = record.region ? ` · ${escapeHtml(record.region)}` : '';
-      const file = record.fileName ? `<span class="muted-inline">${escapeHtml(record.fileName)}</span>` : '';
-      const payNote = record.paymentDate
-        ? `<span class="muted-inline">지급 ${formatDate(record.paymentDate)}</span>`
-        : '';
       return `
         <label class="final-deposit-settlement">
           <input type="checkbox" data-tax-settlement="${escapeHtml(id)}"${checked ? ' checked' : ''}>
           <span class="final-deposit-settlement-body">
-            <strong>${escapeHtml(platformLabel(record.platform))}</strong>${region}
-            <span class="muted-inline">${formatDate(record.startDate)} ~ ${formatDate(record.endDate)} · ${formatNumber(riders)}명</span>
-            ${payNote}
-            ${file}
+            <strong>${escapeHtml(record.region || platformLabel(record.platform))}</strong>
+            <span class="muted-inline">${formatNumber(riders)}명</span>
           </span>
         </label>`;
     };
 
-    const groupHtml = (platform, label) => {
-      const items = list.filter(r => Calc().normalizePlatform(r.platform) === platform);
+    const platformBlock = (items, label) => {
       if (!items.length) return '';
       return `
         <div class="final-deposit-settlement-group">
-          <p class="final-deposit-settlement-group-head">${label} 정산서 · ${items.length}건</p>
+          <p class="tax-management-week-platform">${label} · ${items.length}건</p>
           <div class="final-deposit-settlement-grid">${items.map(cardHtml).join('')}</div>
         </div>`;
     };
-    listEl.innerHTML = groupHtml('coupang', '쿠팡') + groupHtml('baemin', '배민');
+
+    const weekHtml = weekStart => {
+      const weekRows = list.filter(record => recordWeekKey(record) === weekStart)
+        .sort((a, b) => String(a.region || '').localeCompare(String(b.region || ''), 'ko-KR'));
+      const baemin = weekRows.filter(r => Calc().normalizePlatform(r.platform) === 'baemin');
+      const coupang = weekRows.filter(r => Calc().normalizePlatform(r.platform) === 'coupang');
+      const end = addDays(weekStart, 6);
+      return `
+        <div class="tax-management-week">
+          <p class="final-deposit-settlement-group-head">${compactDate(weekStart)}(수) ~ ${compactDate(end)}(화) · ${weekRows.length}건</p>
+          ${platformBlock(baemin, '배민')}
+          ${platformBlock(coupang, '쿠팡')}
+        </div>`;
+    };
+
+    listEl.innerHTML = weekKeys.map(weekHtml).join('');
 
     const allChk = $('#taxManagementSettlementAll');
     if (allChk) allChk.checked = list.every(record => !state.excludedSettlementIds.has(String(record.id)));

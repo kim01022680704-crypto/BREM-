@@ -6686,6 +6686,21 @@ tr.direct-registry-active > td:first-child {
   font-weight: 800;
   font-size: 12px;
 }
+.tax-management-week {
+  display: grid;
+  gap: 8px;
+}
+.tax-management-week + .tax-management-week {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border, #2a3350);
+}
+.tax-management-week-platform {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted, #94a3b8);
+}
 .final-deposit-settlement-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
