@@ -48,12 +48,8 @@ const BremTaxManagementAdmin = (function () {
       || new Date().toISOString().slice(0, 7);
   }
 
-  /** 신고월 — 지급일 우선, 없으면 정산 종료일, 없으면 정산주 */
+  /** 정산주(수요일)가 속한 달. 지급일이 다음 달이어도 그 주로 묶는다. */
   function recordMonthKey(record) {
-    const payment = String(record.paymentDate || '').slice(0, 7);
-    if (/^\d{4}-\d{2}$/.test(payment)) return payment;
-    const end = String(record.endDate || '').slice(0, 7);
-    if (/^\d{4}-\d{2}$/.test(end)) return end;
     const week = Calc().settlementWeek(record).slice(0, 7);
     return /^\d{4}-\d{2}$/.test(week) ? week : '';
   }

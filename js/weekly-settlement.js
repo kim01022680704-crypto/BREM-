@@ -683,23 +683,36 @@ const BremWeeklySettlement = (function () {
     return { byKey, byName };
   }
 
-  function resolveCoupangDriverFromLookup(rider, lookup) {
-    const manual = resolveDriverByManualMapping(rider.originalName, rider.riderName, 'coupang');
-    if (manual) return manual;
+  function sheetPhoneTail(rawName) {
+    return (String(rawName || '').match(/(\d{4})\s*$/) || [])[1] || '';
+  }
 
+  function driverPhoneTail(driver) {
+    return String(driver?.phone || '').replace(/[^0-9]/g, '').slice(-4);
+  }
+
+  function resolveCoupangDriverFromLookup(rider, lookup) {
     const loginKey = normalizeCoupangLoginKey(rider.coupangLoginKey || rider.originalName);
     if (loginKey && lookup?.byKey) {
       const hit = lookup.byKey.get(loginKey);
       if (hit && hit !== 'ambiguous') return hit;
-      // 이름+뒤4 쿠팡ID 가 있는데 목록에 없으면, 이름만으로 동명이인에게 붙이지 않는다.
-      if (/\d{4}$/.test(loginKey)) return null;
     }
 
-    // 이름-only는 동명이인 1명일 때만 (쿠팡 본키는 이름+뒤4)
+    // 정확한 키 기사가 없을 때만 수동매핑 (같은 사람·번호만 다른 경우)
+    const manual = resolveDriverByManualMapping(rider.originalName, rider.riderName, 'coupang');
+    if (manual) return manual;
+
+    // 이름+뒤4 쿠팡ID 가 있는데 목록에 없으면, 이름만으로 동명이인에게 붙이지 않는다.
+    if (loginKey && /\d{4}$/.test(loginKey)) return null;
+
     const nameKey = normalizeCoupangName(rider.riderName || rider.originalName);
     if (nameKey && lookup?.byName) {
       const list = lookup.byName.get(nameKey) || [];
-      if (list.length === 1) return list[0];
+      if (list.length === 1) {
+        const sheetTail = sheetPhoneTail(rider.coupangLoginKey || rider.originalName);
+        const ownTail = driverPhoneTail(list[0]);
+        if (!sheetTail || !ownTail || sheetTail === ownTail) return list[0];
+      }
     }
     return null;
   }
@@ -1350,7 +1363,11 @@ const BremWeeklySettlement = (function () {
         const driver = BremStorage.drivers.getById(driverId);
         if (driver && normalizeCoupangName(driver.name) === normalizedTarget) nameHits.push(driver);
       }
-      if (nameHits.length === 1) return nameHits[0];
+      if (nameHits.length === 1) {
+        const sheetTail = sheetPhoneTail(rider.coupangLoginKey || rider.originalName);
+        const ownTail = driverPhoneTail(nameHits[0]);
+        if (!sheetTail || !ownTail || sheetTail === ownTail) return nameHits[0];
+      }
     }
     return null;
   }

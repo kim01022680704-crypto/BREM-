@@ -761,19 +761,10 @@ const BremSettlementParser = (function () {
       let driver = null;
       let unmatchedReason = '';
 
-      // 수동 지정 매핑이 자동 키보다 우선한다. (관리자가 잘못된 자동매칭도 고칠 수 있어야 한다)
-      if (manualIndex.byIdKey.size || manualIndex.byNameKey.size) {
-        const manualIdKey = isBaemin
-          ? baeminIdMatchKey(normalizedRiderId || row.riderId)
-          : normalizeCoupangLoginKey(row.rawName || row.name);
-        // ID 키가 아예 없는 행만 이름 매핑으로 보조한다.
-        const manualDriverId = manualIdKey
-          ? (manualIndex.byIdKey.get(manualIdKey) || '')
-          : (normalizedRowName ? (manualIndex.byNameKey.get(normalizedRowName) || '') : '');
-        if (manualDriverId) driver = byDriverId.get(String(manualDriverId)) || null;
-      }
-
-      if (!driver && isBaemin) {
+      // 1) 정확한 쿠팡ID/배민ID. 키가 맞는 기사가 있으면 수동매핑보다 우선한다.
+      //    매핑을 먼저 쓰면, 아직 등록 안 된 동명이인을 기존 1명에게 붙인 뒤
+      //    진짜 주인이 등록돼도 계속 잘못된 쪽에 간다 (박준혁4453 → 8013).
+      if (isBaemin) {
         const riderKey = baeminIdMatchKey(normalizedRiderId || row.riderId);
         if (!riderKey) {
           unmatchedReason = '정산서에 배민 User ID 가 없습니다.';
@@ -783,35 +774,46 @@ const BremSettlementParser = (function () {
           driver = byBaeminKey.get(riderKey) || null;
           if (!driver) unmatchedReason = `배민ID ${riderKey} 로 등록된 기사가 없습니다.`;
         }
-      } else if (!driver) {
-        // 쿠팡 정산서의 성함칸은 "이름+전화뒷4자리"(쿠팡ID, 예: "정우성8281") 형식이다.
-        // → 쿠팡ID로 매칭하는 것을 최우선으로 한다.
+      } else {
         const loginKey = normalizeCoupangLoginKey(row.rawName || row.name);
         if (loginKey && ambiguousCoupangKeys.has(loginKey)) {
           unmatchedReason = `쿠팡ID ${loginKey} 가 여러 기사에 등록돼 있습니다. 중복 등록을 정리해 주세요.`;
         } else if (loginKey) {
           driver = byCoupangKey.get(loginKey) || null;
         }
-        // 이름 백업. 성함칸에 전화 뒤4자리가 이미 들어 있으므로 그걸 버리고 이름만
-        // 보면, 아직 등록되지 않은 기사의 정산이 같은 이름의 다른 기사에게 붙는다.
-        // 뒤4자리가 맞을 때만 붙이고, 다르면 미매칭으로 남겨 사람이 확인하게 한다.
-        if (!driver && !unmatchedReason && normalizedRowName) {
-          const sheetTail = sheetPhoneTail(row.rawName || row.name);
-          const nameMatches = byName.get(normalizedRowName) || [];
-          if (nameMatches.length === 1) {
-            const only = nameMatches[0];
-            const ownTail = driverPhoneTail(only);
-            if (!sheetTail || !ownTail || sheetTail === ownTail) {
-              driver = only;
-            } else {
-              unmatchedReason = `이름은 같지만 전화 뒤4자리가 다릅니다 (정산서 ${sheetTail} / 등록 ${ownTail}).`
-                + ' 미등록 기사이거나 등록 번호가 플랫폼 계정과 다릅니다.';
-            }
-          } else if (nameMatches.length > 1) {
-            unmatchedReason = `이름이 같은 기사가 ${nameMatches.length}명 있어 특정할 수 없습니다.`;
+      }
+
+      // 2) 키가 안 맞을 때만 수동매핑 (같은 사람·쿠팡 번호만 다른 경우)
+      if (!driver && (manualIndex.byIdKey.size || manualIndex.byNameKey.size)) {
+        const manualIdKey = isBaemin
+          ? baeminIdMatchKey(normalizedRiderId || row.riderId)
+          : normalizeCoupangLoginKey(row.rawName || row.name);
+        const manualDriverId = manualIdKey
+          ? (manualIndex.byIdKey.get(manualIdKey) || '')
+          : (normalizedRowName ? (manualIndex.byNameKey.get(normalizedRowName) || '') : '');
+        if (manualDriverId) {
+          driver = byDriverId.get(String(manualDriverId)) || null;
+          if (driver) unmatchedReason = '';
+        }
+      }
+
+      // 3) 쿠팡 이름 백업. 뒤4가 맞을 때만. 다르면 미매칭으로 남겨 사람이 확인한다.
+      if (!driver && !isBaemin && !unmatchedReason && normalizedRowName) {
+        const sheetTail = sheetPhoneTail(row.rawName || row.name);
+        const nameMatches = byName.get(normalizedRowName) || [];
+        if (nameMatches.length === 1) {
+          const only = nameMatches[0];
+          const ownTail = driverPhoneTail(only);
+          if (!sheetTail || !ownTail || sheetTail === ownTail) {
+            driver = only;
           } else {
-            unmatchedReason = '등록된 기사와 매칭되지 않습니다.';
+            unmatchedReason = `이름은 같지만 전화 뒤4자리가 다릅니다 (정산서 ${sheetTail} / 등록 ${ownTail}).`
+              + ' 미등록 기사이거나 등록 번호가 플랫폼 계정과 다릅니다.';
           }
+        } else if (nameMatches.length > 1) {
+          unmatchedReason = `이름이 같은 기사가 ${nameMatches.length}명 있어 특정할 수 없습니다.`;
+        } else {
+          unmatchedReason = '등록된 기사와 매칭되지 않습니다.';
         }
       }
 

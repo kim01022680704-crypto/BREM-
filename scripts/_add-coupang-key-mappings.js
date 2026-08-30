@@ -95,6 +95,12 @@ const TARGETS = ['정의현8833', '박준혁4453', '김현수1385', '김주영14
       continue;
     }
     const rider = riders[0];
+    const riderTail = dg(rider.phone).slice(-4);
+    if (riderTail && riderTail !== tail) {
+      console.log(`   등록 뒤4(${riderTail}) ≠ 쿠팡 키 뒤4(${tail}). 동명이인일 수 있어 건너뜁니다.`);
+      console.log('   같은 사람이면 관리자 미매칭 화면에서 직접 연결하세요.');
+      continue;
+    }
 
     // 크롤 데이터로 그 키가 실제로 이 이름의 쿠팡 계정인지 확인
     const { data: crawl } = await supabase

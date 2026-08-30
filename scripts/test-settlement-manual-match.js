@@ -79,14 +79,14 @@ out = BremSettlementParser.matchDrivers(
 );
 check('배민 수동 매핑 대상', out.matched[0]?.driverId, 'd3');
 
-// 5) 수동 매핑이 자동 키보다 우선한다 (잘못된 자동매칭 교정)
+// 5) 정확한 쿠팡ID 기사가 있으면 낡은 매핑보다 우선한다 (박준혁4453 사고)
 out = BremSettlementParser.matchDrivers(
   [{ rawName: '정우성8281', name: '정우성', riderId: '' }],
   drivers,
   coupangFormat,
   { manualMappings: [{ platform: 'coupang', originalName: '정우성8281', driverId: 'd2' }] }
 );
-check('수동 매핑 우선', out.matched[0]?.driverId, 'd2');
+check('정확한 키 > 낡은 매핑', out.matched[0]?.driverId, 'd1');
 
 // 6) 매핑 대상 기사가 삭제된 경우 자동 키로 되돌아간다
 out = BremSettlementParser.matchDrivers(

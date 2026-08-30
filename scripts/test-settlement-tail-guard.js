@@ -121,7 +121,7 @@ const match = (rows, drivers, format, manualMappings = []) =>
   check('뒤4 공유 → 올바른 대상', out.matched[0]?.driverId, 'x');
 }
 
-// ── 9) 수동 매핑은 뒤4 불일치를 이긴다 (정의현·김인섭 처리 경로) ───────────
+// ── 9) 키가 맞는 기사가 없으면 수동 매핑이 뒤4 불일치를 이긴다 ───────────
 {
   const drivers = [{ id: 'same', name: '정의현', phone: '010-3344-3269', baeminId: '' }];
   const out = match(
@@ -130,8 +130,24 @@ const match = (rows, drivers, format, manualMappings = []) =>
     coupang,
     [{ platform: 'coupang', originalName: '정의현8833', driverId: 'same' }]
   );
-  check('수동 매핑이 뒤4 검증보다 우선', out.matched.length, 1);
-  check('수동 매핑 대상', out.matched[0]?.driverId, 'same');
+  check('키 없는 수동 매핑 유지', out.matched.length, 1);
+  check('키 없는 수동 매핑 대상', out.matched[0]?.driverId, 'same');
+}
+
+// ── 9b) 진짜 키 기사가 등록되면 낡은 매핑은 무시한다 ─────────────────────
+{
+  const drivers = [
+    { id: 'old', name: '박준혁', phone: '010-7638-8013', baeminId: '' },
+    { id: 'right', name: '박준혁', phone: '010-5885-4453', baeminId: '' }
+  ];
+  const out = match(
+    [{ rawName: '박준혁4453', name: '박준혁', riderId: '' }],
+    drivers,
+    coupang,
+    [{ platform: 'coupang', originalName: '박준혁4453', driverId: 'old' }]
+  );
+  check('등록 후 낡은 매핑 무시', out.matched.length, 1);
+  check('등록 후 키 주인', out.matched[0]?.driverId, 'right');
 }
 
 // ── 10) 배민은 User ID 로만 붙는다 ───────────────────────────────────────
@@ -163,4 +179,4 @@ if (failures.length) {
   failures.forEach(f => console.error('  ' + f));
   process.exit(1);
 }
-console.log('OK: 뒤4 검증 + 키 충돌 방어 11개 케이스 통과 (사고 재현 2건 차단 확인)');
+console.log('OK: 뒤4 검증 + 키 충돌 방어 + 낡은 매핑 차단 통과');
