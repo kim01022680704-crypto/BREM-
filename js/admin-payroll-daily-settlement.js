@@ -867,7 +867,7 @@
       } else {
         rows = (BremStorage?.payrollWithdrawal?.getAll?.() || []).filter(item => {
           if (item.status !== 'completed') return false;
-          if (completedDate && String(item.completedAt || item.updatedAt || '').slice(0, 10) !== completedDate) return false;
+          if (completedDate && String(item.requestDate || item.createdAt || '').slice(0, 10) !== completedDate) return false;
           return true;
         });
       }
@@ -888,10 +888,10 @@
     });
     state.completedRows = rows;
 
-    // 처리일(completedAt) 기준으로 그룹핑
+    // 신청일 기준으로 그룹핑. 출금완료를 나중에 눌러도 신청한 날에 들어간다.
     const groups = new Map();
     rows.forEach(row => {
-      const key = String(row.completedAt || row.updatedAt || '').slice(0, 10) || '미상';
+      const key = String(row.requestDate || row.createdAt || '').slice(0, 10) || '미상';
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(row);
     });
@@ -900,7 +900,7 @@
     const totalAmount = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
     if (summary) {
       summary.textContent = completedDate
-        ? `처리일 ${completedDate} · ${rows.length}건 · 합계 ${formatWon(totalAmount)}`
+        ? `신청일 ${completedDate} · ${rows.length}건 · 합계 ${formatWon(totalAmount)}`
         : `전체 처리완료 ${rows.length}건 · ${sortedKeys.length}일 · 합계 ${formatWon(totalAmount)}`;
     }
 
@@ -939,7 +939,7 @@
       return `
         <div class="payroll-completed-group">
           <div class="payroll-completed-group-head">
-            <strong>${escapeHtml(dateKey)}</strong>
+            <strong>신청일 ${escapeHtml(dateKey)}</strong>
             <span class="form-help">${groupRows.length}건 · 합계 ${formatWon(groupAmount)}</span>
           </div>
           <div class="table-wrap bulk-preview-wrap">

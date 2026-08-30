@@ -912,6 +912,10 @@ function normalizeRequest(item = {}) {
   };
 }
 
+function requestDateKey(item) {
+  return String(item?.requestDate || item?.createdAt || '').slice(0, 10);
+}
+
 function normalizeRequestList(raw) {
   return (Array.isArray(raw) ? raw : [])
     .map(normalizeRequest)
@@ -1495,11 +1499,10 @@ async function listWithdrawalRequests(accessToken, query = {}) {
   const completedDate = String(query.completedDate || '').slice(0, 10);
 
   const filtered = list.filter(item => {
-    // 처리완료 내역 뷰: 처리일(completedAt) 기준으로만 조회한다.
+    // 처리완료 내역 뷰: 신청일 기준으로 모은다. 출금완료를 나중에 눌러도 신청한 날에 들어간다.
     if (view === 'completed') {
       if (item.status !== 'completed') return false;
-      if (completedDate
-        && String(item.completedAt || item.updatedAt || '').slice(0, 10) !== completedDate) return false;
+      if (completedDate && requestDateKey(item) !== completedDate) return false;
       return true;
     }
     if (date && String(item.requestDate || item.createdAt || '').slice(0, 10) !== date) return false;
