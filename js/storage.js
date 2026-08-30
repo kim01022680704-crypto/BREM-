@@ -8347,7 +8347,7 @@ const BremStorage = (function () {
 
     persistBlockedDrivers(list) {
       const normalized = payrollDailySettlement.normalizeBlockedDrivers(list);
-      storageAdapter.write(KEYS.payrollDailySettlementBlocked, normalized);
+      storageAdapter.write(KEYS.payrollDailySettlementBlocked, normalized, { allowEmpty: true });
       window.BremDataCache?.set?.(KEYS.payrollDailySettlementBlocked, normalized, { source: 'write' });
       return normalized;
     },
@@ -8467,7 +8467,7 @@ const BremStorage = (function () {
 
     persistWithdrawalHolds(list) {
       const normalized = payrollDailySettlement.normalizeWithdrawalHolds(list);
-      storageAdapter.write(KEYS.payrollDailySettlementHolds, normalized);
+      storageAdapter.write(KEYS.payrollDailySettlementHolds, normalized, { allowEmpty: true });
       window.BremDataCache?.set?.(KEYS.payrollDailySettlementHolds, normalized, { source: 'write' });
       return normalized;
     },

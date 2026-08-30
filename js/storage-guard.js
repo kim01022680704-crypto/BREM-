@@ -55,7 +55,11 @@ window.BremStorageGuard = (function () {
     // (마지막 기사를 급여 포함으로 되돌리면 목록이 비는데, 이때 저장이 막히면 제외가 그대로 남는다.)
     'brem_payroll_daily_excluded_settlements_v1',
     // 주정산 마무리 목록: 마무리를 모두 취소하면 빈 배열이 정상이다.
-    'brem_payroll_week_finalized_v1'
+    'brem_payroll_week_finalized_v1',
+    // 일정산 차단: 마지막 1명을 해제하면 빈 배열이 정상이다.
+    'brem_payroll_daily_settlement_blocked_v1',
+    // 금액 홀딩: 마지막 홀딩을 해제하면 빈 배열이 정상이다.
+    'brem_payroll_daily_settlement_holds_v1'
   ]);
 
   function isProductionMode() {
