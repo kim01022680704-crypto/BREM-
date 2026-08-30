@@ -2033,6 +2033,16 @@
           };
         }
 
+        if (triggerId === 'payroll-week-hold') {
+          return {
+            hiddenInput: $('#payrollDailyHoldWeekStart'),
+            labelEl: $('#payrollDailyHoldWeekBtn'),
+            onSelect(value) {
+              window.BremAdminPayrollDailySettlement?.onHoldWeekPicked?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'payroll-week-final') {
           return {
             hiddenInput: $('#payrollDailyFinalWeekStart'),

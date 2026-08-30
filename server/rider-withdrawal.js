@@ -13,6 +13,7 @@ const EXCLUDED_SETTLEMENTS_KEY = 'brem_payroll_daily_excluded_settlements_v1';
 const FINALIZED_WEEKS_KEY = 'brem_payroll_week_finalized_v1';
 const WITHDRAWAL_PAUSE_KEY = 'brem_payroll_withdrawal_paused_v1';
 const BLOCKED_DRIVERS_KEY = 'brem_payroll_daily_settlement_blocked_v1';
+const HOLDS_KEY = 'brem_payroll_daily_settlement_holds_v1';
 
 const ACTIVE_LEASE_STATUSES = ['active', 'operating', 'rented'];
 const COMPLETED_ARREAR_STATUSES = new Set(['completed', 'recovered', 'done', 'paid', 'closed']);
@@ -992,20 +993,59 @@ function getDriverWithdrawalBlock(blockedMap, driverId) {
   return blockedMap.get(id) || null;
 }
 
+function normalizeWithdrawalHold(item) {
+  const driverId = String(item?.driverId || '').trim();
+  const weekStart = normalizeSettlementWeekStart(item?.weekStart || '');
+  const amount = Math.max(0, Math.round(Number(item?.amount || 0)));
+  if (!driverId || !weekStart || amount <= 0) return null;
+  return {
+    id: String(item.id || `hold_${driverId}_${weekStart}`).trim() || `hold_${driverId}_${weekStart}`,
+    driverId,
+    driverName: String(item.driverName || '').trim(),
+    weekStart,
+    weekEnd: settlementWeekEnd(weekStart),
+    amount,
+    note: String(item.note || '').trim()
+  };
+}
+
+function normalizeWithdrawalHolds(raw) {
+  const seen = new Set();
+  return (Array.isArray(raw) ? raw : [])
+    .map(normalizeWithdrawalHold)
+    .filter(item => {
+      if (!item) return false;
+      const key = `${item.driverId}::${item.weekStart}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function holdForDriverWeek(holds, driverId, weekStart) {
+  const id = String(driverId || '').trim();
+  const week = String(weekStart || '').slice(0, 10);
+  if (!id || !week) return null;
+  return (Array.isArray(holds) ? holds : []).find(item => (
+    item.driverId === id && item.weekStart === week
+  )) || null;
+}
+
 async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   const weekStart = normalizeSettlementWeekStart(weekStartInput || new Date());
   const weekEnd = settlementWeekEnd(weekStart);
   const driverId = String(rider.id || '');
   const driverName = String(rider.name || '').trim();
 
-  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw, pauseRaw, blockedRaw] = await Promise.all([
+  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw, pauseRaw, blockedRaw, holdsRaw] = await Promise.all([
     readSettingValue(supabase, ROSTER_KEY, []),
     readSettingValue(supabase, FEES_KEY, {}),
     readSettingValue(supabase, REQUESTS_KEY, []),
     readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, []),
     readSettingValue(supabase, FINALIZED_WEEKS_KEY, []),
     readSettingValue(supabase, WITHDRAWAL_PAUSE_KEY, {}),
-    readSettingValue(supabase, BLOCKED_DRIVERS_KEY, [])
+    readSettingValue(supabase, BLOCKED_DRIVERS_KEY, []),
+    readSettingValue(supabase, HOLDS_KEY, [])
   ]);
   const rosterItem = findRosterEntry(rosterRaw, driverId);
   const feesByPlatform = normalizeFees(feesRaw);
@@ -1090,6 +1130,11 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   const deductionPlatform = normalizeDeductionPlatform(lease?.deductionPlatform);
   // 리스·대여·미납은 최우선 차감. 홀드액은 정산일별 실적용분(+미납장부 잔액).
   applyDeductionHoldAcrossPlatforms(netPayByPlatform, leaseDeduction);
+  const holdEntry = holdForDriverWeek(normalizeWithdrawalHolds(holdsRaw), driverId, weekStart);
+  const withdrawalHoldAmount = Math.max(0, Math.round(Number(holdEntry?.amount || 0)));
+  if (withdrawalHoldAmount > 0) {
+    applyDeductionHoldAcrossPlatforms(netPayByPlatform, withdrawalHoldAmount);
+  }
   const availableByPlatform = computeAvailableByPlatform(netPayByPlatform, requestBuckets, weekFinalized);
   let availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
   if (driverWithdrawalBlocked) {
@@ -1130,6 +1175,8 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     driverWithdrawalBlocked,
     driverWithdrawalBlockedAt: blockEntry?.blockedAt || '',
     driverWithdrawalBlockedNote,
+    withdrawalHoldAmount,
+    withdrawalHoldNote: holdEntry?.note || '',
     lease: {
       hasLease: Boolean(lease?.hasLease),
       dailyRent: Math.max(0, Math.round(Number(lease?.dailyRent || 0))),
@@ -1814,7 +1861,7 @@ async function deleteWithdrawalRequest(accessToken, requestId) {
 
 /**
  * 관리자용: 한 정산주(week)의 모든 일정산 등록 기사별 출금가능금액을 한 번에 계산한다.
- * 기사앱과 동일한 로직(실지급 − 신청중 − 처리완료 − 리스차감, 주마무리 시 0)을 쓰되
+ * 기사앱과 동일한 로직(실지급 − 신청중 − 처리완료 − 리스차감 − 금액홀딩, 주마무리 시 0)을 쓰되
  * 설정/정산/리스 데이터를 각각 1회씩만 조회해 배치 계산한다.
  */
 async function listWithdrawableDrivers(accessToken, weekStartInput) {
@@ -1829,17 +1876,19 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
   const weekStart = normalizeSettlementWeekStart(weekStartInput || new Date());
   const weekEnd = settlementWeekEnd(weekStart);
 
-  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw, pauseRaw, blockedRaw] = await Promise.all([
+  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw, pauseRaw, blockedRaw, holdsRaw] = await Promise.all([
     readSettingValue(supabase, ROSTER_KEY, []),
     readSettingValue(supabase, FEES_KEY, {}),
     readSettingValue(supabase, REQUESTS_KEY, []),
     readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, []),
     readSettingValue(supabase, FINALIZED_WEEKS_KEY, []),
     readSettingValue(supabase, WITHDRAWAL_PAUSE_KEY, {}),
-    readSettingValue(supabase, BLOCKED_DRIVERS_KEY, [])
+    readSettingValue(supabase, BLOCKED_DRIVERS_KEY, []),
+    readSettingValue(supabase, HOLDS_KEY, [])
   ]);
 
   const rosterList = Array.isArray(rosterRaw) ? rosterRaw : [];
+  const weekHolds = normalizeWithdrawalHolds(holdsRaw).filter(item => item.weekStart === weekStart);
   const feesByPlatform = normalizeFees(feesRaw);
   const excludedSettlementIds = new Set(
     (Array.isArray(excludedRaw) ? excludedRaw : [])
@@ -1905,6 +1954,7 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
   daysByDriver.forEach((_days, id) => driverIdSet.add(id));
   rosterByDriver.forEach((_item, id) => driverIdSet.add(id));
   requestsByDriver.forEach((_req, id) => driverIdSet.add(id));
+  weekHolds.forEach(item => driverIdSet.add(item.driverId));
 
   const rows = [...driverIdSet].map(driverId => {
     const rosterItem = rosterByDriver.get(driverId) || {};
@@ -1947,6 +1997,11 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
     const leaseDeduction = Math.max(0, Math.round(Number(lease.leaseDeductionTotal || 0)));
     const deductionPlatform = normalizeDeductionPlatform(lease.deductionPlatform);
     applyDeductionHoldAcrossPlatforms(netPayByPlatform, leaseDeduction);
+    const holdEntry = holdForDriverWeek(weekHolds, driverId, weekStart);
+    const withdrawalHoldAmount = Math.max(0, Math.round(Number(holdEntry?.amount || 0)));
+    if (withdrawalHoldAmount > 0) {
+      applyDeductionHoldAcrossPlatforms(netPayByPlatform, withdrawalHoldAmount);
+    }
     const availableByPlatform = computeAvailableByPlatform(netPayByPlatform, requestBuckets, weekFinalized);
     let availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
     const blockEntry = getDriverWithdrawalBlock(blockedMap, driverId);
@@ -1976,6 +2031,8 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
       withdrawnTotal,
       leaseDeduction,
       leaseArrearReason: lease.arrearReason || '',
+      withdrawalHoldAmount,
+      withdrawalHoldNote: holdEntry?.note || '',
       availableAmount,
       hasSettlement: days.length > 0,
       driverWithdrawalBlocked,

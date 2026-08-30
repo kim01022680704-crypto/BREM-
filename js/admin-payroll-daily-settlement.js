@@ -24,7 +24,9 @@
     finalRows: [],
     finalSearch: '',
     blockListSearch: '',
-    blockPickerSearch: ''
+    blockPickerSearch: '',
+    holdListSearch: '',
+    holdPickerSearch: ''
   };
 
   function $(id) {
@@ -287,6 +289,7 @@
     else if (tab === 'week-withdrawals') state.subTab = 'week-withdrawals';
     else if (tab === 'available') state.subTab = 'available';
     else if (tab === 'block') state.subTab = 'block';
+    else if (tab === 'hold') state.subTab = 'hold';
     else if (tab === 'final') state.subTab = 'final';
     else state.subTab = 'payout';
     syncSubTabs();
@@ -1253,7 +1256,7 @@
     const weekEnd = weekEndKey(weekStart);
     if (periodLabel) periodLabel.textContent = formatWeekPeriodLabel(weekStart);
 
-    body.innerHTML = '<tr><td colspan="10" class="empty">불러오는 중…</td></tr>';
+    body.innerHTML = '<tr><td colspan="11" class="empty">불러오는 중…</td></tr>';
 
     let result = null;
     try {
@@ -1264,7 +1267,7 @@
     } catch (error) {
       console.warn('[available drivers]', error);
       showToast(error.message || '기사별 출금가능금액을 불러오지 못했습니다.');
-      body.innerHTML = `<tr><td colspan="10" class="empty">${escapeHtml(error.message || '불러오기 실패')}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="11" class="empty">${escapeHtml(error.message || '불러오기 실패')}</td></tr>`;
       return;
     }
 
@@ -1281,11 +1284,13 @@
       const pauseNote = result.withdrawalPaused ? ' · ⏸ 출금신청 정지중' : '';
       const blockedCount = rows.filter(row => row.driverWithdrawalBlocked).length;
       const blockedNote = blockedCount ? ` · 🚫 개별차단 ${blockedCount}명` : '';
-      summary.textContent = `정산주 ${weekStart} ~ ${weekEnd} · 정산반영 ${rows.length}명 · 출금가능 ${withMoney}명 · 합계 ${formatWon(totalAvailable)} (쿠팡/배민 분리)${finalizedNote}${pauseNote}${blockedNote}`;
+      const holdCount = rows.filter(row => Number(row.withdrawalHoldAmount) > 0).length;
+      const holdNote = holdCount ? ` · 홀딩 ${holdCount}명` : '';
+      summary.textContent = `정산주 ${weekStart} ~ ${weekEnd} · 정산반영 ${rows.length}명 · 출금가능 ${withMoney}명 · 합계 ${formatWon(totalAvailable)} (쿠팡/배민 분리)${finalizedNote}${pauseNote}${blockedNote}${holdNote}`;
     }
 
     if (!visible.length) {
-      body.innerHTML = '<tr><td colspan="10" class="empty">표시할 기사가 없습니다.</td></tr>';
+      body.innerHTML = '<tr><td colspan="11" class="empty">표시할 기사가 없습니다.</td></tr>';
       return;
     }
 
@@ -1307,6 +1312,7 @@
         <td>${formatWon(row.requestedAmountTotal)}</td>
         <td>${formatWon(row.withdrawnAmountTotal)}</td>
         <td>${row.leaseDeduction ? formatWon(row.leaseDeduction) : '-'}</td>
+        <td>${row.withdrawalHoldAmount ? formatWon(row.withdrawalHoldAmount) : '-'}</td>
         <td${negClass(coupangAvail)}><strong>${formatWon(coupangAvail)}</strong></td>
         <td${negClass(baeminAvail)}><strong>${formatWon(baeminAvail)}</strong></td>
         <td>
@@ -1335,7 +1341,7 @@
       const stamp = weekStart.replace(/-/g, '');
       const filename = `BREM_기사별출금가능_${stamp}.xlsx`;
       const data = [
-        ['이름', '배민ID', '쿠팡ID', '실지급합계', '신청중', '처리완료', '리스차감', '쿠팡출금가능', '배민출금가능', '출금가능합계'],
+        ['이름', '배민ID', '쿠팡ID', '실지급합계', '신청중', '처리완료', '리스차감', '금액홀딩', '쿠팡출금가능', '배민출금가능', '출금가능합계'],
         ...rows.map(row => [
           row.driverName || '',
           row.baeminId || '',
@@ -1344,6 +1350,7 @@
           Number(row.requestedAmountTotal) || 0,
           Number(row.withdrawnAmountTotal) || 0,
           Number(row.leaseDeduction) || 0,
+          Number(row.withdrawalHoldAmount) || 0,
           Math.max(0, driverPlatformAvailable(row, 'coupang')),
           Math.max(0, driverPlatformAvailable(row, 'baemin')),
           Number(row.availableAmount) || 0
@@ -2214,6 +2221,323 @@
     }
   }
 
+  function readWithdrawalHolds() {
+    return BremStorage?.payrollDailySettlement?.getWithdrawalHolds?.() || [];
+  }
+
+  function holdWeekStartFromDate(value) {
+    return weekStartKey(value || new Date().toISOString().slice(0, 10));
+  }
+
+  function previousHoldWeekStart(weekStart) {
+    const current = holdWeekStartFromDate(weekStart);
+    if (!current) return '';
+    const date = new Date(`${current}T00:00:00`);
+    date.setDate(date.getDate() - 7);
+    return weekStartKey([
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-'));
+  }
+
+  function ensureHoldWeekDefault() {
+    const input = $('payrollDailyHoldWeekStart');
+    if (!input) return '';
+    const todayLocal = [
+      new Date().getFullYear(),
+      String(new Date().getMonth() + 1).padStart(2, '0'),
+      String(new Date().getDate()).padStart(2, '0')
+    ].join('-');
+    if (!input.value) {
+      input.value = weekStartKey(todayLocal);
+    } else {
+      const normalized = weekStartKey(input.value);
+      if (normalized && input.value !== normalized) input.value = normalized;
+    }
+    updateHoldWeekLabel(input.value);
+    return String(input.value || '').slice(0, 10);
+  }
+
+  function updateHoldWeekLabel(weekStart) {
+    const btn = $('payrollDailyHoldWeekBtn');
+    if (!btn) return;
+    const value = String(weekStart || '').slice(0, 10);
+    if (!value) {
+      btn.textContent = '수요일 선택';
+      return;
+    }
+    const utils = window.BremDatePicker || window.BremPayrollSlipUtils;
+    const formatted = utils?.formatDate?.(value) || value;
+    const weekday = utils?.formatWeekdayKo?.(value);
+    btn.textContent = weekday ? `${formatted}(${weekday})` : formatted;
+  }
+
+  function shiftHoldWeek(deltaWeeks) {
+    const current = ensureHoldWeekDefault();
+    if (!current) return;
+    const date = new Date(`${current}T00:00:00`);
+    date.setDate(date.getDate() + (deltaWeeks * 7));
+    const next = weekStartKey([
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-'));
+    const input = $('payrollDailyHoldWeekStart');
+    if (input) input.value = next;
+    updateHoldWeekLabel(next);
+    renderHoldTab();
+  }
+
+  function onHoldWeekPicked(value) {
+    const input = $('payrollDailyHoldWeekStart');
+    const normalized = weekStartKey(value || '');
+    if (input && normalized) input.value = normalized;
+    updateHoldWeekLabel(normalized);
+    renderHoldTab();
+  }
+
+  function filterHoldPickerDrivers(list) {
+    const keyword = String(state.holdPickerSearch || '').trim().toLowerCase();
+    if (!keyword) return list;
+    return list.filter(driver => driverMatchesKeyword(driver, keyword));
+  }
+
+  function filterHoldRows(list) {
+    const keyword = String(state.holdListSearch || '').trim().toLowerCase();
+    if (!keyword) return list;
+    return list.filter(item => {
+      const driver = getDrivers().find(d => d.id === item.driverId) || {};
+      const haystack = [
+        item.driverName,
+        item.note,
+        driver.name,
+        resolveBaeminId(driver),
+        resolveCoupangId(driver),
+        driver.phone
+      ].join(' ').toLowerCase();
+      return haystack.includes(keyword);
+    });
+  }
+
+  function renderHoldTab() {
+    const holdBody = $('payrollDailyHoldBody');
+    const pickerBody = $('payrollDailyHoldPickerBody');
+    const summary = $('payrollDailyHoldSummary');
+    const periodLabel = $('payrollDailyHoldPeriodLabel');
+    if (!holdBody || !pickerBody) return;
+
+    const weekStart = ensureHoldWeekDefault();
+    const weekEnd = weekEndKey(weekStart);
+    if (periodLabel) periodLabel.textContent = formatWeekPeriodLabel(weekStart);
+
+    const weekHolds = filterHoldRows(
+      readWithdrawalHolds().filter(item => item.weekStart === weekStart)
+    );
+    const holdMap = new Map(
+      readWithdrawalHolds()
+        .filter(item => item.weekStart === weekStart)
+        .map(item => [item.driverId, item])
+    );
+    const weekTotal = weekHolds.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    if (summary) {
+      summary.textContent = `정산주 ${weekStart} ~ ${weekEnd} · 홀딩 ${readWithdrawalHolds().filter(item => item.weekStart === weekStart).length}명 · 표시 ${weekHolds.length}명 · 합계 ${formatWon(weekTotal)} · 기사앱 출금가능에서 차감(마이너스 가능)`;
+    }
+
+    if (!weekHolds.length) {
+      holdBody.innerHTML = '<tr><td colspan="8" class="empty">이 정산주에 홀딩한 기사가 없습니다.</td></tr>';
+    } else {
+      holdBody.innerHTML = weekHolds.map(item => {
+        const driver = getDrivers().find(d => d.id === item.driverId) || {};
+        const createdAt = item.createdAt || item.updatedAt
+          ? new Date(item.updatedAt || item.createdAt).toLocaleString('ko-KR')
+          : '-';
+        return `
+          <tr>
+            <td><strong>${escapeHtml(item.driverName || driver.name || '-')}</strong></td>
+            <td>${escapeHtml(resolveBaeminId(driver) || '-')}</td>
+            <td>${escapeHtml(resolveCoupangId(driver) || '-')}</td>
+            <td>${escapeHtml(driver.phone || '-')}</td>
+            <td><strong>${formatWon(item.amount)}</strong></td>
+            <td>${escapeHtml(item.note || '-')}</td>
+            <td>${escapeHtml(createdAt)}</td>
+            <td>
+              <button type="button" class="small-btn danger-btn" data-pds-hold-remove="${escapeHtml(item.id)}">해제</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    const drivers = filterHoldPickerDrivers(getDrivers()).slice(0, 500);
+    if (!drivers.length) {
+      pickerBody.innerHTML = '<tr><td colspan="6" class="empty">검색된 라이더가 없습니다.</td></tr>';
+      return;
+    }
+
+    pickerBody.innerHTML = drivers.map(driver => {
+      const hold = holdMap.get(driver.id);
+      return `
+        <tr${hold ? ' class="is-blocked"' : ''}>
+          <td>${escapeHtml(driver.name || '-')}</td>
+          <td>${escapeHtml(resolveBaeminId(driver) || '-')}</td>
+          <td>${escapeHtml(resolveCoupangId(driver) || '-')}</td>
+          <td>${escapeHtml(driver.phone || '-')}</td>
+          <td class="${hold ? 'text-danger' : 'text-muted'}">${hold ? formatWon(hold.amount) : '없음'}</td>
+          <td>
+            ${hold
+              ? `<button type="button" class="small-btn primary-btn" data-pds-hold-apply="${escapeHtml(driver.id)}">금액 변경</button>
+                 <button type="button" class="small-btn" data-pds-hold-remove="${escapeHtml(hold.id)}">해제</button>`
+              : `<button type="button" class="small-btn danger-btn" data-pds-hold-apply="${escapeHtml(driver.id)}">홀딩</button>`}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function applyHoldToDriver(driverId) {
+    const driver = getDrivers().find(item => item.id === driverId);
+    if (!driver) {
+      showToast('기사를 찾을 수 없습니다.');
+      return;
+    }
+    const weekStart = ensureHoldWeekDefault();
+    const amount = Math.round(Number($('payrollDailyHoldAmount')?.value || 0));
+    if (!(amount > 0)) {
+      showToast('홀딩 금액을 입력하세요.');
+      return;
+    }
+    const note = String($('payrollDailyHoldNote')?.value || '').trim();
+    const existing = readWithdrawalHolds().find(item => (
+      item.driverId === driver.id && item.weekStart === weekStart
+    ));
+    if (existing && existing.amount !== amount) {
+      if (!window.confirm(`${driver.name || '기사'} 이번주 홀딩이 ${formatWon(existing.amount)} 있습니다. ${formatWon(amount)}으로 바꿀까요?`)) {
+        return;
+      }
+    }
+    void (async () => {
+      try {
+        await BremStorage.payrollDailySettlement.upsertWithdrawalHold({
+          driverId: driver.id,
+          driverName: driver.name || '',
+          weekStart,
+          amount,
+          note
+        });
+        renderHoldTab();
+        if (state.subTab === 'available') {
+          void renderAvailableDrivers();
+        }
+        showToast(`${driver.name || '기사'} ${formatWeekPeriodLabel(weekStart)} 홀딩 ${formatWon(amount)}`);
+      } catch (error) {
+        console.error('[daily settlement hold]', error);
+        showToast(error.message || '홀딩 저장에 실패했습니다.');
+      }
+    })();
+  }
+
+  function removeHoldById(holdId) {
+    const id = String(holdId || '').trim();
+    if (!id) return;
+    const current = readWithdrawalHolds().find(item => item.id === id);
+    if (!window.confirm(`${current?.driverName || '이 기사'} 홀딩 ${current ? formatWon(current.amount) : ''}을(를) 해제할까요?`)) {
+      return;
+    }
+    void (async () => {
+      try {
+        await BremStorage.payrollDailySettlement.removeWithdrawalHold(id);
+        renderHoldTab();
+        if (state.subTab === 'available') {
+          void renderAvailableDrivers();
+        }
+        showToast('금액 홀딩을 해제했습니다.');
+      } catch (error) {
+        console.error('[daily settlement hold remove]', error);
+        showToast(error.message || '홀딩 해제에 실패했습니다.');
+      }
+    })();
+  }
+
+  function copyPreviousWeekHolds() {
+    const weekStart = ensureHoldWeekDefault();
+    const fromWeek = previousHoldWeekStart(weekStart);
+    if (!fromWeek) {
+      showToast('지난주를 확인할 수 없습니다.');
+      return;
+    }
+    const prevCount = readWithdrawalHolds().filter(item => item.weekStart === fromWeek).length;
+    if (!prevCount) {
+      showToast(`${formatWeekPeriodLabel(fromWeek)}에 복사할 홀딩이 없습니다.`);
+      return;
+    }
+    if (!window.confirm(`${formatWeekPeriodLabel(fromWeek)} 홀딩 ${prevCount}명을 이번 주(${formatWeekPeriodLabel(weekStart)})로 복사할까요? 이미 있는 기사는 그대로 둡니다.`)) {
+      return;
+    }
+    void (async () => {
+      try {
+        const result = await BremStorage.payrollDailySettlement.copyWithdrawalHoldsToWeek(fromWeek, weekStart);
+        renderHoldTab();
+        showToast(`지난주 홀딩 복사 · 추가 ${result.copied || 0}명 · 유지 ${result.skipped || 0}명`);
+      } catch (error) {
+        console.error('[daily settlement hold copy]', error);
+        showToast(error.message || '지난주 홀딩 복사에 실패했습니다.');
+      }
+    })();
+  }
+
+  function exportHoldExcel() {
+    const weekStart = ensureHoldWeekDefault();
+    const rows = readWithdrawalHolds().filter(item => item.weekStart === weekStart);
+    if (!rows.length) {
+      showToast('내보낼 홀딩 기사가 없습니다.');
+      return;
+    }
+    if (!window.XLSX) {
+      showToast('엑셀 라이브러리를 불러오지 못했습니다.');
+      return;
+    }
+    try {
+      const driverMap = new Map(getDrivers().map(driver => [String(driver.id || ''), driver]));
+      const data = [
+        ['정산주시작', '정산주종료', '기사명', '전화번호', '배민ID', '쿠팡ID', '홀딩금액', '사유', '등록일', '처리자'],
+        ...rows.map(item => {
+          const driver = driverMap.get(String(item.driverId || '')) || {};
+          const createdAt = item.updatedAt || item.createdAt
+            ? new Date(item.updatedAt || item.createdAt).toLocaleString('ko-KR')
+            : '';
+          return [
+            item.weekStart || weekStart,
+            item.weekEnd || weekEndKey(weekStart),
+            item.driverName || driver.name || '',
+            formatBlockExcelPhone(driver.phone),
+            resolveBaeminId(driver) || '',
+            resolveCoupangId(driver) || '',
+            Number(item.amount) || 0,
+            item.note || '',
+            createdAt,
+            item.createdBy || ''
+          ];
+        })
+      ];
+      const worksheet = window.XLSX.utils.aoa_to_sheet(data);
+      worksheet['!cols'] = [
+        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 16 },
+        { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 24 },
+        { wch: 20 }, { wch: 14 }
+      ];
+      const workbook = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(workbook, worksheet, '금액홀딩');
+      const stamp = String(weekStart || '').replace(/-/g, '');
+      const filename = `BREM_금액홀딩_${stamp}.xlsx`;
+      window.XLSX.writeFile(workbook, filename);
+      showToast(`엑셀 저장: ${filename} · ${rows.length}명`);
+    } catch (error) {
+      console.error('[hold excel]', error);
+      showToast(error.message || '엑셀 내보내기에 실패했습니다.');
+    }
+  }
+
   function unblockDriverById(driverId) {
     const id = String(driverId || '').trim();
     if (!id) return;
@@ -2557,6 +2881,9 @@
     }
     if (state.subTab === 'block') {
       renderBlockTab();
+    }
+    if (state.subTab === 'hold') {
+      renderHoldTab();
     }
     if (state.subTab === 'final') {
       void renderFinalSettlement();
@@ -3044,6 +3371,31 @@
     });
 
     $('payrollDailyBlockExcelBtn')?.addEventListener('click', exportBlockedDriversExcel);
+    $('payrollDailyHoldExcelBtn')?.addEventListener('click', exportHoldExcel);
+    $('payrollDailyHoldCopyPrevBtn')?.addEventListener('click', copyPreviousWeekHolds);
+    $('payrollDailyHoldPrevBtn')?.addEventListener('click', () => shiftHoldWeek(-1));
+    $('payrollDailyHoldNextBtn')?.addEventListener('click', () => shiftHoldWeek(1));
+    $('payrollDailyHoldListSearch')?.addEventListener('input', event => {
+      state.holdListSearch = String(event.target.value || '').trim();
+      renderHoldTab();
+    });
+    $('payrollDailyHoldDriverSearch')?.addEventListener('input', event => {
+      state.holdPickerSearch = String(event.target.value || '').trim();
+      renderHoldTab();
+    });
+    $('payrollDailyHoldBody')?.addEventListener('click', event => {
+      const removeBtn = event.target.closest('[data-pds-hold-remove]');
+      if (removeBtn) removeHoldById(removeBtn.dataset.pdsHoldRemove);
+    });
+    $('payrollDailyHoldPickerBody')?.addEventListener('click', event => {
+      const applyBtn = event.target.closest('[data-pds-hold-apply]');
+      if (applyBtn) {
+        applyHoldToDriver(applyBtn.dataset.pdsHoldApply);
+        return;
+      }
+      const removeBtn = event.target.closest('[data-pds-hold-remove]');
+      if (removeBtn) removeHoldById(removeBtn.dataset.pdsHoldRemove);
+    });
     $('payrollDailyBlockDriverSearch')?.addEventListener('input', event => {
       state.blockPickerSearch = String(event.target.value || '').trim();
       renderBlockTab();
@@ -3162,6 +3514,7 @@
       await BremStorage?.payrollDailySettlement?.reloadFromServer?.();
       await BremStorage?.payrollDailySettlement?.reloadFinalizedWeeksFromServer?.();
       await BremStorage?.payrollDailySettlement?.reloadWithdrawalPauseFromServer?.();
+      await BremStorage?.payrollDailySettlement?.reloadWithdrawalHoldsFromServer?.();
     } catch (error) {
       console.warn('[payroll daily settlement]', error);
     }
@@ -3182,6 +3535,7 @@
     setSubTab,
     onWeekWithdrawalPicked,
     onAvailableWeekPicked,
+    onHoldWeekPicked,
     onFinalWeekPicked,
     onWeekFinalizePicked,
     getEnrolledDriverIdSet: () => roster.getEnrolledDriverIdSet(),

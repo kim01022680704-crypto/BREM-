@@ -277,6 +277,13 @@
       );
     }
     if (ledgerCharge > 0) deductParts.push(`대여·차감관리 ${formatMoney(ledgerCharge)}`);
+    const holdAmount = Math.max(0, Number(payload.withdrawalHoldAmount || 0));
+    const holdNote = String(payload.withdrawalHoldNote || '').trim();
+    if (holdAmount > 0) {
+      deductParts.push(holdNote
+        ? `금액홀딩 ${formatMoney(holdAmount)}(${holdNote})`
+        : `금액홀딩 ${formatMoney(holdAmount)}`);
+    }
     // 플랫폼을 바꿀 때도 같은 안내를 다시 그려야 하므로 상태에 남긴다.
     state.leaseText = deductParts.length
       ? ` · ${deductParts.join(' · ')}(실지급 큰 쪽부터 홀드 · 마이너스 가능)`
