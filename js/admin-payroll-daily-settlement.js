@@ -2152,6 +2152,68 @@
     })();
   }
 
+  function formatBlockExcelPhone(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 11) return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+    if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+    return raw;
+  }
+
+  function exportBlockedDriversExcel() {
+    const blocked = readBlockedDrivers();
+    if (!blocked.length) {
+      showToast('내보낼 차단 기사가 없습니다.');
+      return;
+    }
+    if (!window.XLSX) {
+      showToast('엑셀 라이브러리를 불러오지 못했습니다.');
+      return;
+    }
+    try {
+      const driverMap = new Map(getDrivers().map(driver => [String(driver.id || ''), driver]));
+      const data = [
+        ['기사명', '전화번호', '배민ID', '쿠팡ID', '은행', '예금주', '계좌번호', '지역', '차단사유', '차단일', '차단처리자'],
+        ...blocked.map(item => {
+          const driver = driverMap.get(String(item.driverId || '')) || {};
+          const blockedAt = item.blockedAt
+            ? new Date(item.blockedAt).toLocaleString('ko-KR')
+            : '';
+          const region = String(driver.region || driver.regionCoupang || driver.regionBaemin || '').trim();
+          return [
+            item.driverName || driver.name || '',
+            formatBlockExcelPhone(driver.phone),
+            resolveBaeminId(driver) || '',
+            resolveCoupangId(driver) || '',
+            driver.bankName || '',
+            driver.accountHolder || '',
+            driver.accountNumber || '',
+            region,
+            item.note || '',
+            blockedAt,
+            item.blockedBy || ''
+          ];
+        })
+      ];
+      const worksheet = window.XLSX.utils.aoa_to_sheet(data);
+      worksheet['!cols'] = [
+        { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 16 },
+        { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 12 },
+        { wch: 24 }, { wch: 20 }, { wch: 14 }
+      ];
+      const workbook = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(workbook, worksheet, '일정산차단');
+      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const filename = `BREM_일정산차단리스트_${stamp}.xlsx`;
+      window.XLSX.writeFile(workbook, filename);
+      showToast(`엑셀 저장: ${filename} · ${blocked.length}명`);
+    } catch (error) {
+      console.error('[blocked drivers excel]', error);
+      showToast(error.message || '엑셀 내보내기에 실패했습니다.');
+    }
+  }
+
   function unblockDriverById(driverId) {
     const id = String(driverId || '').trim();
     if (!id) return;
@@ -2981,6 +3043,7 @@
       renderDriverPicker();
     });
 
+    $('payrollDailyBlockExcelBtn')?.addEventListener('click', exportBlockedDriversExcel);
     $('payrollDailyBlockDriverSearch')?.addEventListener('input', event => {
       state.blockPickerSearch = String(event.target.value || '').trim();
       renderBlockTab();
