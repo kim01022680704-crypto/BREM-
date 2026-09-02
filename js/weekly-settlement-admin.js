@@ -54,6 +54,57 @@ const BremWeeklySettlementAdmin = (function () {
     return Number(value || 0).toLocaleString('ko-KR');
   }
 
+  function formatCallFeeLogBadge(unit) {
+    if (unit == null || unit === '') return '';
+    const n = Math.max(0, Math.round(Number(unit) || 0));
+    return `<span class="settlement-call-fee-log-badge">콜수수료 ${n.toLocaleString('ko-KR')}원/콜 반영</span>`;
+  }
+
+  function resolveWeeklyLogCallFeeUnit(log) {
+    if (!log || log.channel !== 'direct') return null;
+    if (log.callFeeUnit != null && log.callFeeUnit !== '') {
+      return Math.max(0, Math.round(Number(log.callFeeUnit) || 0));
+    }
+    const rec = log.linkedRecordId
+      ? window.BremStorage?.weeklySettlements?.getById?.(log.linkedRecordId)
+      : null;
+    const rider = (rec?.riders || []).find(item => (
+      item?.amounts?.callFeeUnit != null && item.amounts.callFeeUnit !== ''
+    ) || (item?.callFeeUnit != null && item.callFeeUnit !== ''));
+    if (!rider) return null;
+    const unit = rider.amounts?.callFeeUnit != null ? rider.amounts.callFeeUnit : rider.callFeeUnit;
+    return Math.max(0, Math.round(Number(unit) || 0));
+  }
+
+  function readDirectCallFeeUnit(platform) {
+    const previewEl = q('direct', 'CallFee', platform);
+    const formEl = $(`#weeklySettlementDirectCallFeeForm-${platform}`);
+    const previewCard = q('direct', 'PreviewCard', platform);
+    const previewVisible = previewCard && !previewCard.hidden && previewEl;
+    const previewValue = previewEl && previewEl.value !== '' ? previewEl.value : '';
+    const formValue = formEl && formEl.value !== '' ? formEl.value : '';
+    const raw = previewVisible && previewValue !== ''
+      ? previewValue
+      : (formValue || previewValue);
+    if (raw === '') return 0;
+    return Math.max(0, Math.round(Number(raw) || 0));
+  }
+
+  function prefillDirectCallFeeUnit(platform) {
+    const previewEl = q('direct', 'CallFee', platform);
+    const formEl = $(`#weeklySettlementDirectCallFeeForm-${platform}`);
+    if (previewEl && formEl) {
+      if (previewEl.value === '' && formEl.value !== '') previewEl.value = formEl.value;
+      else if (formEl.value === '' && previewEl.value !== '') formEl.value = previewEl.value;
+    }
+    const unit = Number(window.BremStorage?.payrollDailySettlement?.getFees?.(platform)?.callFee || 0);
+    [previewEl, formEl].forEach(el => {
+      if (!el || el.dataset.prefilled === '1') return;
+      if (el.value === '' && unit > 0) el.value = String(unit);
+      el.dataset.prefilled = '1';
+    });
+  }
+
   // 직계약 정산서 금액/공제 열 (미리보기·상세에 표시).
   // 배민과 쿠팡은 정산서 서식이 달라 뽑는 항목도 다르다.
   const DIRECT_AMOUNT_FIELDS_BAEMIN = [
@@ -518,14 +569,17 @@ const BremWeeklySettlementAdmin = (function () {
             callCountMismatches: refreshed.riders.filter(r => isMismatchRider(r)).length,
             channel: ch
           };
-          const saved = BremWeeklySettlement.saveWeeklySettlement(refreshed);
+          const saved = BremWeeklySettlement.saveWeeklySettlement(refreshed, {
+            callFeeUnit: readDirectCallFeeUnit(platform)
+          });
           if (record.uploadLogId) {
             BremStorage.settlementUploadLogs.update(record.uploadLogId, {
               status: 'saved',
               channel: ch,
               linkedRecordId: saved.id,
               matchedCount: saveRecord.riders.length,
-              fileName: saveRecord.fileName || ''
+              fileName: saveRecord.fileName || '',
+              callFeeUnit: readDirectCallFeeUnit(platform)
             });
           }
           savedCount += 1;
@@ -586,7 +640,8 @@ const BremWeeklySettlementAdmin = (function () {
       callCountMismatches: refreshedRecord.riders.filter(r => isMismatchRider(r)).length,
       channel: ch
     };
-    const saved = BremWeeklySettlement.saveWeeklySettlement(refreshedRecord);
+    const callFeeUnit = ch === 'direct' ? readDirectCallFeeUnit(platform) : undefined;
+    const saved = BremWeeklySettlement.saveWeeklySettlement(refreshedRecord, { callFeeUnit });
     const savedWeek = settlementWeekStartKey(saved.startDate || saveRecord.startDate || record.startDate);
     if (record.uploadLogId) {
       BremStorage.settlementUploadLogs.update(record.uploadLogId, {
@@ -595,7 +650,8 @@ const BremWeeklySettlementAdmin = (function () {
         linkedRecordId: saved.id,
         weekStart: savedWeek,
         matchedCount: saveRecord.riders.length,
-        fileName: saveRecord.fileName || record.fileName || ''
+        fileName: saveRecord.fileName || record.fileName || '',
+        callFeeUnit
       });
     } else {
       BremStorage.settlementUploadLogs.add({
@@ -611,6 +667,7 @@ const BremWeeklySettlementAdmin = (function () {
         status: 'saved',
         matchedCount: saveRecord.riders.length,
         linkedRecordId: saved.id,
+        callFeeUnit,
         uploadedAt: saveRecord.uploadedAt
       });
     }
@@ -931,6 +988,7 @@ const BremWeeklySettlementAdmin = (function () {
     setPreview(ch, platform, record);
 
     card.hidden = false;
+    if (ch === 'direct') prefillDirectCallFeeUnit(platform);
     const unmatched = record.previewUnmatched || [];
     const mismatchCount = record.summary.callCountMismatches || 0;
     const orderLabel = platformWeeklyOrderLabel(platform);
@@ -1262,7 +1320,7 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${formatDate(item.weekStart)} ~ ${formatDate(item.weekEnd)}</td>
         <td>${escapeHtml(item.region || '-')}</td>
         <td>${periodLabel}</td>
-        <td>${escapeHtml(item.fileName || '-')}</td>
+        <td>${escapeHtml(item.fileName || '-')} ${formatCallFeeLogBadge(resolveWeeklyLogCallFeeUnit(item))}</td>
         <td>${escapeHtml(uploadLogStatusLabel(item.status))}</td>
         <td>${formatNumber(item.matchedCount)}명</td>
         <td>${formatDate(String(item.uploadedAt || '').slice(0, 10))}</td>
@@ -1418,6 +1476,7 @@ const BremWeeklySettlementAdmin = (function () {
 
   function bindPlatformEvents(channel, platform) {
     const ch = normChannel(channel);
+    if (ch === 'direct') prefillDirectCallFeeUnit(platform);
     q(ch, 'UploadForm', platform)?.addEventListener('submit', event => {
       event.preventDefault();
       uploadAndMatch(ch, platform);

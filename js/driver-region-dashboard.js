@@ -293,14 +293,21 @@
     }
 
     const metrics = result?.metrics || {};
+    const metricsHidden = result?.metricsHidden === true
+      || result?.viewerMode === 'rank';
+    document.querySelectorAll('.driver-region-dash-metrics').forEach(el => {
+      el.hidden = metricsHidden;
+    });
     const assignedLabelEl = document.getElementById('driverRegionDashAssignedLabel');
     const hasProgress = typeof metrics.progressLabel === 'string';
     if (assignedLabelEl) assignedLabelEl.textContent = hasProgress ? '완료/할당' : '할당';
     if (assignedEl) {
-      assignedEl.textContent = hasProgress ? metrics.progressLabel : formatNumber(metrics.assigned);
+      assignedEl.textContent = metricsHidden
+        ? '-'
+        : (hasProgress ? metrics.progressLabel : formatNumber(metrics.assigned));
     }
-    if (operatingEl) operatingEl.textContent = formatNumber(metrics.operating);
-    if (remainingEl) remainingEl.textContent = formatNumber(metrics.remaining);
+    if (operatingEl) operatingEl.textContent = metricsHidden ? '-' : formatNumber(metrics.operating);
+    if (remainingEl) remainingEl.textContent = metricsHidden ? '-' : formatNumber(metrics.remaining);
 
     const rankingsHidden = result?.rankingsHidden === true
       || result?.viewerMode === 'metrics';
@@ -317,6 +324,22 @@
           metrics.sourceNote || '할당 현황만 표시됩니다',
           '순위 보드는 숨김(본인 설정: 할당만)'
         ].filter(Boolean).join(' · ') + (slot || '');
+      }
+      return;
+    }
+
+    if (metricsHidden) {
+      const realtimeDisabled = result?.realtimeRankingDisabled === true;
+      renderRanking(
+        realtimeList,
+        realtimeDisabled ? [] : (result?.realtimeRanking || []),
+        realtimeDisabled
+          ? (result.realtimeRankingReason || '실시간 순위를 불러오지 못했습니다.')
+          : '집계된 콜수가 없습니다.'
+      );
+      renderRanking(weeklyList, result?.weeklyRanking || []);
+      if (noteEl) {
+        noteEl.textContent = result?.message || '순위만 열람 — 할당은 표시하지 않습니다.';
       }
       return;
     }

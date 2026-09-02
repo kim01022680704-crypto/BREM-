@@ -150,7 +150,29 @@ window.BremSupabaseStorageAdapter = (function () {
 
   const ADMIN_SCHEDULE_SELECT = 'id,date,title,memo,created_by,created_by_id,raw_data,created_at,updated_at';
 
-  const DAILY_SETTLEMENT_SELECT = 'id,driver_id,period,platform,rider_id,order_count,hourly_insurance,deduction_base,delivery_amount,settlement_amount,applied_at';
+  const DAILY_SETTLEMENT_SELECT_BASE = 'id,driver_id,period,platform,rider_id,order_count,hourly_insurance,deduction_base,delivery_amount,settlement_amount,applied_at';
+  const DAILY_SETTLEMENT_SELECT = `${DAILY_SETTLEMENT_SELECT_BASE.replace(',applied_at', '')},call_fee,call_fee_unit,applied_at`;
+  let dailySettlementCallFeeColumnsOk = true;
+
+  function getDailySettlementSelect() {
+    return dailySettlementCallFeeColumnsOk ? DAILY_SETTLEMENT_SELECT : DAILY_SETTLEMENT_SELECT_BASE;
+  }
+
+  function isMissingDailySettlementCallFeeColumnError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    if (!message.includes('call_fee')) return false;
+    return message.includes('schema cache')
+      || message.includes('could not find')
+      || message.includes('does not exist')
+      || message.includes('column');
+  }
+
+  function stripOptionalDailySettlementCallFeeColumns(row) {
+    const next = { ...row };
+    delete next.call_fee;
+    delete next.call_fee_unit;
+    return next;
+  }
   const WEEKLY_SETTLEMENT_SELECT = 'id,platform,region,file_name,base_settlement_date,start_date,end_date,payment_date,settlement_week_label,matched_names_label,summary,riders,uploaded_at';
   const SETTLEMENT_UPLOAD_LOG_SELECT = 'id,kind,platform,file_name,period,week_start,week_end,region,start_date,end_date,status,matched_count,unmatched_count,total_delivery_amount,total_order_count,content_hash,matched_records,unmatched_records,applied_records,duplicate_of_log_id,skip_reason,linked_record_id,uploaded_at,applied_at';
   const SETTLEMENT_UNMATCHED_SELECT = 'id,kind,platform,week_start,period,end_date,region,raw_name,name,rider_id,order_count,delivery_amount,settlement_amount,coupang_login_key,baemin_user_id,match_payload,source_file_name,saved_at';
@@ -316,6 +338,11 @@ window.BremSupabaseStorageAdapter = (function () {
           payload = chunk.map(stripOptionalLeaseVehicleColumns);
           ({ error } = await client.from(tableName).upsert(payload, { onConflict: 'id' }));
         }
+        if (error && tableName === 'daily_settlements' && isMissingDailySettlementCallFeeColumnError(error)) {
+          dailySettlementCallFeeColumnsOk = false;
+          payload = chunk.map(stripOptionalDailySettlementCallFeeColumns);
+          ({ error } = await client.from(tableName).upsert(payload, { onConflict: 'id' }));
+        }
         if (error) throw error;
       }
     }
@@ -392,74 +419,89 @@ window.BremSupabaseStorageAdapter = (function () {
         return empty;
       }
       window.BremDataCache?.logDataSource?.(label, false);
-      const selectColumns = table === 'admin_calls'
-        ? 'id,driver_id,date,platform,count,updated_at,rider_published_at'
-        : table === 'admin_rejection_rates'
-          ? 'id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at'
-          : table === 'admin_targets'
-            ? 'id,driver_id,month,count,updated_at,rider_published_at'
-            : table === 'admin_schedules'
-              ? ADMIN_SCHEDULE_SELECT
-              : table === 'daily_settlements'
-              ? DAILY_SETTLEMENT_SELECT
-              : table === 'weekly_settlements'
-                ? WEEKLY_SETTLEMENT_SELECT
-                : table === 'settlement_upload_logs'
-                  ? SETTLEMENT_UPLOAD_LOG_SELECT
-                  : table === 'settlement_unmatched'
-                    ? SETTLEMENT_UNMATCHED_SELECT
-                    : table === 'promotion_apply_results'
-                      ? PROMOTION_APPLY_RESULT_SELECT
-                      : '*';
-      let query = client.from(table).select(selectColumns);
-      if (table === 'admin_calls' && !options.allHistory) {
-        const sinceDate = String(options.sinceDate || getDefaultCallsSinceDate()).slice(0, 10);
-        if (sinceDate) query = query.gte('date', sinceDate);
-        const untilDate = String(options.untilDate || '').slice(0, 10);
-        if (untilDate) query = query.lte('date', untilDate);
+      const resolveSelectColumns = (dailySelect) => (
+        table === 'admin_calls'
+          ? 'id,driver_id,date,platform,count,updated_at,rider_published_at'
+          : table === 'admin_rejection_rates'
+            ? 'id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at'
+            : table === 'admin_targets'
+              ? 'id,driver_id,month,count,updated_at,rider_published_at'
+              : table === 'admin_schedules'
+                ? ADMIN_SCHEDULE_SELECT
+                : table === 'daily_settlements'
+                  ? dailySelect
+                  : table === 'weekly_settlements'
+                    ? WEEKLY_SETTLEMENT_SELECT
+                    : table === 'settlement_upload_logs'
+                      ? SETTLEMENT_UPLOAD_LOG_SELECT
+                      : table === 'settlement_unmatched'
+                        ? SETTLEMENT_UNMATCHED_SELECT
+                        : table === 'promotion_apply_results'
+                          ? PROMOTION_APPLY_RESULT_SELECT
+                          : '*'
+      );
+      const fetchCollection = async (selectColumns) => {
+        let query = client.from(table).select(selectColumns);
+        if (table === 'admin_calls' && !options.allHistory) {
+          const sinceDate = String(options.sinceDate || getDefaultCallsSinceDate()).slice(0, 10);
+          if (sinceDate) query = query.gte('date', sinceDate);
+          const untilDate = String(options.untilDate || '').slice(0, 10);
+          if (untilDate) query = query.lte('date', untilDate);
+        }
+        if (table === 'daily_settlements' && options.sinceDate) {
+          const sinceDate = String(options.sinceDate || '').slice(0, 10);
+          if (sinceDate) query = query.gte('period', sinceDate);
+          const untilDate = String(options.untilDate || '').slice(0, 10);
+          if (untilDate) query = query.lte('period', untilDate);
+        }
+        if (table === 'admin_rejection_rates' && !options.allHistory) {
+          const sinceWeek = String(options.sinceWeek || getDefaultRejectionSinceWeek()).slice(0, 10);
+          if (sinceWeek) query = query.gte('week_start', sinceWeek);
+        }
+        if (order?.column) {
+          query = query.order(order.column, { ascending: order.ascending !== false });
+        }
+        return PAGINATED_TABLES.has(table)
+          ? fetchAllTableRows(() => {
+            let pageQuery = client.from(table).select(selectColumns);
+            if (table === 'admin_calls' && !options.allHistory) {
+              const sinceDate = String(options.sinceDate || getDefaultCallsSinceDate()).slice(0, 10);
+              if (sinceDate) pageQuery = pageQuery.gte('date', sinceDate);
+              const untilDate = String(options.untilDate || '').slice(0, 10);
+              if (untilDate) pageQuery = pageQuery.lte('date', untilDate);
+            }
+            if (table === 'daily_settlements' && options.sinceDate) {
+              const sinceDate = String(options.sinceDate || '').slice(0, 10);
+              if (sinceDate) pageQuery = pageQuery.gte('period', sinceDate);
+              const untilDate = String(options.untilDate || '').slice(0, 10);
+              if (untilDate) pageQuery = pageQuery.lte('period', untilDate);
+            }
+            if (table === 'admin_rejection_rates' && !options.allHistory) {
+              const sinceWeek = String(options.sinceWeek || getDefaultRejectionSinceWeek()).slice(0, 10);
+              if (sinceWeek) pageQuery = pageQuery.gte('week_start', sinceWeek);
+            }
+            if (order?.column) {
+              pageQuery = pageQuery.order(order.column, { ascending: order.ascending !== false });
+            }
+            return pageQuery;
+          }, fromRow)
+          : (async () => {
+            const { data, error } = await query;
+            if (error) throw error;
+            return (data || []).map(fromRow);
+          })();
+      };
+      let value;
+      try {
+        value = await fetchCollection(resolveSelectColumns(getDailySettlementSelect()));
+      } catch (error) {
+        if (table === 'daily_settlements' && isMissingDailySettlementCallFeeColumnError(error)) {
+          dailySettlementCallFeeColumnsOk = false;
+          value = await fetchCollection(resolveSelectColumns(DAILY_SETTLEMENT_SELECT_BASE));
+        } else {
+          throw error;
+        }
       }
-      if (table === 'daily_settlements' && options.sinceDate) {
-        const sinceDate = String(options.sinceDate || '').slice(0, 10);
-        if (sinceDate) query = query.gte('period', sinceDate);
-        const untilDate = String(options.untilDate || '').slice(0, 10);
-        if (untilDate) query = query.lte('period', untilDate);
-      }
-      if (table === 'admin_rejection_rates' && !options.allHistory) {
-        const sinceWeek = String(options.sinceWeek || getDefaultRejectionSinceWeek()).slice(0, 10);
-        if (sinceWeek) query = query.gte('week_start', sinceWeek);
-      }
-      if (order?.column) {
-        query = query.order(order.column, { ascending: order.ascending !== false });
-      }
-      const value = PAGINATED_TABLES.has(table)
-        ? await fetchAllTableRows(() => {
-          let pageQuery = client.from(table).select(selectColumns);
-          if (table === 'admin_calls' && !options.allHistory) {
-            const sinceDate = String(options.sinceDate || getDefaultCallsSinceDate()).slice(0, 10);
-            if (sinceDate) pageQuery = pageQuery.gte('date', sinceDate);
-            const untilDate = String(options.untilDate || '').slice(0, 10);
-            if (untilDate) pageQuery = pageQuery.lte('date', untilDate);
-          }
-          if (table === 'daily_settlements' && options.sinceDate) {
-            const sinceDate = String(options.sinceDate || '').slice(0, 10);
-            if (sinceDate) pageQuery = pageQuery.gte('period', sinceDate);
-            const untilDate = String(options.untilDate || '').slice(0, 10);
-            if (untilDate) pageQuery = pageQuery.lte('period', untilDate);
-          }
-          if (table === 'admin_rejection_rates' && !options.allHistory) {
-            const sinceWeek = String(options.sinceWeek || getDefaultRejectionSinceWeek()).slice(0, 10);
-            if (sinceWeek) pageQuery = pageQuery.gte('week_start', sinceWeek);
-          }
-          if (order?.column) {
-            pageQuery = pageQuery.order(order.column, { ascending: order.ascending !== false });
-          }
-          return pageQuery;
-        }, fromRow)
-        : await (async () => {
-          const { data, error } = await query;
-          if (error) throw error;
-          return (data || []).map(fromRow);
-        })();
       let nextValue = value;
       if (options.mergeWithExisting) {
         const prev = getCache(key, null);

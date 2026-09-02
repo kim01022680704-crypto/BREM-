@@ -275,6 +275,12 @@ window.BremSupabaseMapper = (function () {
       deduction_base: Math.abs(Number(item.deductionBase || 0)),
       delivery_amount: Number(item.deliveryAmount ?? item.settlementAmount ?? 0),
       settlement_amount: Number(item.settlementAmount ?? item.deliveryAmount ?? 0),
+      call_fee: item.callFee == null || item.callFee === ''
+        ? null
+        : Math.max(0, Math.round(Number(item.callFee) || 0)),
+      call_fee_unit: item.callFeeUnit == null || item.callFeeUnit === ''
+        ? null
+        : Math.max(0, Math.round(Number(item.callFeeUnit) || 0)),
       applied_at: toIso(item.appliedAt),
       updated_at: toIso(item.appliedAt)
     };
@@ -292,6 +298,8 @@ window.BremSupabaseMapper = (function () {
       deductionBase: Math.abs(Number(row.deduction_base || 0)),
       deliveryAmount: Number(row.delivery_amount ?? row.settlement_amount ?? 0),
       settlementAmount: Number(row.settlement_amount ?? row.delivery_amount ?? 0),
+      callFee: row.call_fee == null || row.call_fee === '' ? undefined : Number(row.call_fee),
+      callFeeUnit: row.call_fee_unit == null || row.call_fee_unit === '' ? undefined : Number(row.call_fee_unit),
       appliedAt: row.applied_at
     };
   }
@@ -335,6 +343,13 @@ window.BremSupabaseMapper = (function () {
     };
   }
 
+  function encodeUploadLogCallFeeSkipReason(entry) {
+    const raw = String(entry.skipReason || '').replace(/^\[callFee:\d+\]/, '');
+    if (entry.callFeeUnit == null || entry.callFeeUnit === '') return raw;
+    const unit = Math.max(0, Math.round(Number(entry.callFeeUnit) || 0));
+    return `[callFee:${unit}]${raw}`;
+  }
+
   function settlementUploadLogToRow(entry) {
     return {
       id: String(entry.id || ''),
@@ -359,7 +374,7 @@ window.BremSupabaseMapper = (function () {
       unmatched_records: Array.isArray(entry.unmatchedRecords) ? entry.unmatchedRecords : [],
       applied_records: Array.isArray(entry.appliedRecords) ? entry.appliedRecords : [],
       duplicate_of_log_id: String(entry.duplicateOfLogId || ''),
-      skip_reason: String(entry.skipReason || ''),
+      skip_reason: encodeUploadLogCallFeeSkipReason(entry),
       linked_record_id: String(entry.linkedRecordId || ''),
       uploaded_at: toIso(entry.uploadedAt),
       applied_at: entry.appliedAt ? toIso(entry.appliedAt) : null,

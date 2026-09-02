@@ -8113,6 +8113,22 @@ const BremStorage = (function () {
       return all[p] || all.coupang;
     },
 
+    computeCallFee(orderCount, platform, unitOverride) {
+      const fees = payrollDailySettlement.getFees(platform);
+      const unit = unitOverride != null && unitOverride !== ''
+        ? Math.max(0, Math.round(Number(unitOverride) || 0))
+        : Math.max(0, Math.round(Number(fees.callFee || 0)));
+      const count = Math.max(0, Math.round(Number(orderCount || 0)));
+      return { unit, callFee: count * unit };
+    },
+
+    resolveStoredCallFee(row, orderCount, platform) {
+      if (row && row.callFee != null && row.callFee !== '') {
+        return Math.max(0, Math.round(Number(row.callFee) || 0));
+      }
+      return payrollDailySettlement.computeCallFee(orderCount, platform).callFee;
+    },
+
     getAllFees() {
       const raw = storageAdapter.read(KEYS.payrollDailySettlementFees, {});
       return payrollDailySettlement.normalizeFees(raw && typeof raw === 'object' ? raw : {});
@@ -8666,8 +8682,12 @@ const BremStorage = (function () {
         const employmentInsurance = Math.floor(deductionBase * EMP_RATE);
         const industrialAccidentInsurance = Math.floor(deductionBase * INDUSTRIAL_RATE);
         const withholdingTax = Math.floor(deductionBase * WITHHOLDING_RATE);
-        const callFeeUnit = Math.max(0, Math.round(Number(fees.callFee || 0)));
-        const callFee = orderCount * callFeeUnit;
+        const callFeeUnit = Math.max(0, Math.round(Number(
+          settlement?.callFeeUnit != null && settlement.callFeeUnit !== ''
+            ? settlement.callFeeUnit
+            : fees.callFee || 0
+        )));
+        const callFee = payrollDailySettlement.resolveStoredCallFee(settlement, orderCount, p);
         // 일정산수수료(2%)는 출금 시에만 부과되는 회사 수익이므로 실지급액에서 빼지 않는다.
         // (실지급액에서 빼면 출금 때 또 빠져 2% 이중 차감됨) — 아래 값은 미리보기 표시용.
         const dailySettlementFee = payrollDailySettlement.resolveDailySettlementFee(settlementAmount, fees);
@@ -10171,27 +10191,50 @@ const BremStorage = (function () {
       return normalizeSettlements(storageAdapter.read(KEYS.settlements, []));
     },
 
-    upsertBatch({ period, records, platform = DEFAULT_PLATFORM }) {
+    upsertBatch({ period, records, platform = DEFAULT_PLATFORM, callFeeUnit } = {}) {
       if (!period) throw new Error('정산 기간이 필요합니다.');
 
       const p = normalizePlatform(platform);
       const callDate = String(period).slice(0, 10);
       const appliedAt = new Date().toISOString();
+      const hasExplicitUnit = callFeeUnit != null && callFeeUnit !== '';
+      const existingById = new Map(settlements.getAll().map(item => [String(item.id || ''), item]));
 
-      const nextRecords = records.map(record => ({
-        id: `${record.driverId}-${callDate}-${p}`,
-        driverId: record.driverId,
-        period: callDate,
-        platform: p,
-        riderId: record.riderId || '',
-        orderCount: Number(record.orderCount ?? record.callCount ?? 0),
-        hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
-        // 원천세·고용·산재 기준 금액(쿠팡 AC열). 0 이면 정산금액 기준으로 계산된다.
-        deductionBase: Math.abs(Number(record.deductionBase || 0)),
-        settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
-        deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
-        appliedAt
-      }));
+      const nextRecords = records.map(record => {
+        const orderCount = Number(record.orderCount ?? record.callCount ?? 0);
+        const id = `${record.driverId}-${callDate}-${p}`;
+        const existing = existingById.get(id);
+        const computed = hasExplicitUnit
+          ? payrollDailySettlement.computeCallFee(orderCount, p, callFeeUnit)
+          : null;
+        const keepFee = !computed && existing && existing.callFee != null && existing.callFee !== '';
+        return {
+          id,
+          driverId: record.driverId,
+          period: callDate,
+          platform: p,
+          riderId: record.riderId || '',
+          orderCount,
+          hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
+          // 원천세·고용·산재 기준 금액(쿠팡 AC열). 0 이면 정산금액 기준으로 계산된다.
+          deductionBase: Math.abs(Number(record.deductionBase || 0)),
+          settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
+          deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
+          // 콜수수료는 업로드 시 콜수×단가로 고정. 단가 변경이 과거 주를 소급하지 않게 한다.
+          // 재매칭처럼 단가가 안 넘어오면 이미 저장된 값을 유지한다.
+          ...(computed
+            ? { callFee: computed.callFee, callFeeUnit: computed.unit }
+            : keepFee
+              ? {
+                callFee: Math.max(0, Math.round(Number(existing.callFee) || 0)),
+                callFeeUnit: existing.callFeeUnit != null && existing.callFeeUnit !== ''
+                  ? Math.max(0, Math.round(Number(existing.callFeeUnit) || 0))
+                  : undefined
+              }
+              : {}),
+          appliedAt
+        };
+      });
 
       // 배민 콜수는 이제 BIZ 현황 크롤링(콜수·거절율 동기화)에서만 반영한다.
       // 일정산서 업로드는 배민 정산금액·시간제보험만 저장하고 콜수(brem_admin_calls)는 건드리지 않는다.
@@ -11032,6 +11075,18 @@ const BremStorage = (function () {
             payoutOverride: Number(a.payoutOverride || 0),
             useSheetPayout: a.useSheetPayout === true || a.useSheetPayout === 1 || a.useSheetPayout === 'true'
           };
+          if (Object.prototype.hasOwnProperty.call(a, 'callFee')) {
+            normalized.amounts.callFee = Math.max(0, Math.round(Number(a.callFee || 0)));
+          }
+          if (Object.prototype.hasOwnProperty.call(a, 'callFeeUnit')) {
+            normalized.amounts.callFeeUnit = Math.max(0, Math.round(Number(a.callFeeUnit || 0)));
+          }
+        }
+        if (rider.callFee != null && rider.callFee !== '') {
+          normalized.callFee = Math.max(0, Math.round(Number(rider.callFee || 0)));
+        }
+        if (rider.callFeeUnit != null && rider.callFeeUnit !== '') {
+          normalized.callFeeUnit = Math.max(0, Math.round(Number(rider.callFeeUnit || 0)));
         }
         return normalized;
       })
@@ -11109,6 +11164,33 @@ const BremStorage = (function () {
       .filter(id => id && !keep.has(id));
   }
 
+  function stampWeeklyCallFees(record, unitOverride) {
+    if (!record || typeof record !== 'object') return record;
+    // 단가를 이번에 입력한 경우에만 찍는다. 콜수무시·재매칭 등 다른 저장이
+    // 설정값/0으로 이미 저장된 콜수수료를 덮지 않게 한다.
+    if (unitOverride == null || unitOverride === '') return record;
+    const platform = normalizePlatform(record.platform);
+    const riders = Array.isArray(record.riders)
+      ? record.riders.map(rider => {
+        const count = Number(rider?.weeklyOrderCount || rider?.systemCallCount || 0);
+        const computed = payrollDailySettlement.computeCallFee(count, platform, unitOverride);
+        const next = { ...rider };
+        if (rider?.amounts && typeof rider.amounts === 'object') {
+          next.amounts = {
+            ...rider.amounts,
+            callFee: computed.callFee,
+            callFeeUnit: computed.unit
+          };
+        } else {
+          next.callFee = computed.callFee;
+          next.callFeeUnit = computed.unit;
+        }
+        return next;
+      })
+      : [];
+    return { ...record, riders };
+  }
+
   const weeklySettlements = {
     getAll(channel) {
       const key = weeklySettlementsKey(channel === 'direct' ? 'direct' : 'bro');
@@ -11135,8 +11217,8 @@ const BremStorage = (function () {
         || null;
     },
 
-    save(record) {
-      const next = normalizeWeeklySettlement(record);
+    save(record, options = {}) {
+      const next = normalizeWeeklySettlement(stampWeeklyCallFees(record, options.callFeeUnit));
       const key = weeklySettlementsKey(next.channel);
       const list = weeklySettlements.getAll(next.channel).filter(item => item.id !== next.id);
       list.unshift(next);
@@ -11211,6 +11293,21 @@ const BremStorage = (function () {
     return 'daily';
   }
 
+  function decodeUploadLogCallFee(entry = {}) {
+    const raw = String(entry.skipReason || '');
+    const match = raw.match(/^\[callFee:(\d+)\]/);
+    const fromEntry = entry.callFeeUnit != null && entry.callFeeUnit !== ''
+      ? Math.max(0, Math.round(Number(entry.callFeeUnit) || 0))
+      : undefined;
+    if (!match) {
+      return { skipReason: raw, callFeeUnit: fromEntry };
+    }
+    return {
+      skipReason: raw.slice(match[0].length),
+      callFeeUnit: fromEntry != null ? fromEntry : Math.max(0, Math.round(Number(match[1]) || 0))
+    };
+  }
+
   function normalizeSettlementUploadLog(entry = {}) {
     const period = String(entry.period || entry.startDate || '').slice(0, 10);
     const kind = normalizeSettlementUploadKind(entry.kind);
@@ -11239,6 +11336,7 @@ const BremStorage = (function () {
           .reduce((sum, row) => sum + Number(row.hourlyInsurance || 0), 0)
         : 0)
     );
+    const decodedSkip = decodeUploadLogCallFee(entry);
     return {
       id: String(entry.id || createId()),
       kind,
@@ -11262,8 +11360,10 @@ const BremStorage = (function () {
       unmatchedRecords,
       appliedRecords,
       duplicateOfLogId: String(entry.duplicateOfLogId || ''),
-      skipReason: String(entry.skipReason || ''),
+      skipReason: decodedSkip.skipReason,
       linkedRecordId: String(entry.linkedRecordId || ''),
+      payrollDailyEligible: entry.payrollDailyEligible === true,
+      callFeeUnit: decodedSkip.callFeeUnit,
       uploadedAt: entry.uploadedAt || new Date().toISOString(),
       appliedAt: entry.appliedAt || '',
       updatedAt: entry.updatedAt || entry.uploadedAt || new Date().toISOString()
@@ -12092,8 +12192,7 @@ const BremStorage = (function () {
       const deductionBase = Math.max(0, Math.round(Number(row.deductionBase || 0))) || settlementAmount;
       const hourlyInsurance = Math.abs(Math.round(Number(row.hourlyInsurance || 0)));
       const orderCount = Math.max(0, Math.round(Number(row.orderCount ?? row.callCount ?? 0)));
-      const fees = payrollDailySettlement.getFees(normalizePlatform(row.platform));
-      const callFee = orderCount * Math.max(0, Math.round(Number(fees.callFee || 0)));
+      const callFee = payrollDailySettlement.resolveStoredCallFee(row, orderCount, row.platform);
       return Math.max(0, settlementAmount
         - Math.floor(deductionBase * EMP_RATE)
         - Math.floor(deductionBase * INDUSTRIAL_RATE)

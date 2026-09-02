@@ -39,6 +39,7 @@ const EXPOSURE_KEY = 'brem_rider_dashboard_region_exposure_v1';
 function normalizeMode(value) {
   const mode = String(value || '').toLowerCase();
   if (mode === 'dashboard' || mode === 'view' || mode === '전체열람') return 'dashboard';
+  if (mode === 'rank' || mode === 'rank_only' || mode === 'ranking' || mode === '순위만열람') return 'rank';
   if (mode === 'metrics' || mode === 'quota' || mode === '할당만') return 'metrics';
   if (mode === 'leader' || mode === 'team_leader' || mode === '팀장') return 'leader';
   if (mode === 'hidden' || mode === 'off' || mode === 'none' || mode === '미노출') return 'hidden';
@@ -100,7 +101,7 @@ function normalizeMode(value) {
   });
 
   console.log('\n[명시 지정된 모드 분포] (지역×기사 조합 기준)');
-  const labels = { full: '올노출', dashboard: '전체열람', metrics: '할당만', leader: '팀장', hidden: '미노출' };
+  const labels = { full: '올노출', dashboard: '전체열람', rank: '순위만열람', metrics: '할당만', leader: '팀장', hidden: '미노출' };
   Object.entries(summary.modeCount)
     .sort((a, b) => b[1] - a[1])
     .forEach(([mode, n]) => console.log(`  ${(labels[mode] || mode).padEnd(8)} ${n}건`));

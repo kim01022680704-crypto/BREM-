@@ -135,6 +135,17 @@ const selectCount = (serverSrc.match(/deduction_base/g) || []).length;
 check('SELECT 3곳 + 계산부 = 4회 이상 등장', selectCount >= 4, 'true');
 check('daily_settlements SELECT 에 포함',
   /select\('driver_id,period,platform,order_count,hourly_insurance,deduction_base,/.test(serverSrc), 'true');
+check('daily_settlements SELECT 에 call_fee 포함',
+  /select\('driver_id,period,platform,order_count,hourly_insurance,deduction_base,delivery_amount,settlement_amount,call_fee,call_fee_unit'\)/.test(serverSrc), 'true');
+
+const adapterSrc = fs.readFileSync(path.join(root, 'js', 'storage-supabase-adapter.js'), 'utf8');
+check('관리자 조회 SELECT 에 call_fee 포함',
+  adapterSrc.includes('call_fee,call_fee_unit'), 'true');
+check('관리자 저장 시 call_fee 컬럼 없으면 재시도',
+  adapterSrc.includes('stripOptionalDailySettlementCallFeeColumns'), 'true');
+
+check('주정산 재저장은 단가 있을 때만 콜수수료를 찍는다',
+  storageSrc.includes('단가를 이번에 입력한 경우에만 찍는다'), 'true');
 
 console.log('\n[7] 배민은 영향 없음 (AC 열이 없는 서식)');
 const baemin = serverCalc(
@@ -144,6 +155,32 @@ const baemin = serverCalc(
 check('배민 공제기준 = 정산금액', baemin.deductionBase, 900000);
 check('배민 원천세 = 정산금액×3.3%', baemin.withholdingTax, Math.floor(900000 * 0.033));
 check('배민 콜수수료 = 90×100', baemin.callFee, 9000);
+
+console.log('\n[8] 업로드 시 저장된 call_fee 를 우선한다');
+const stamped = serverCalc(
+  {
+    platform: 'coupang',
+    settlement_amount: 1200000,
+    deduction_base: 1212000,
+    order_count: 120,
+    hourly_insurance: 0,
+    call_fee: 5000
+  },
+  { coupang: { callFee: 100, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' } }
+);
+check('저장된 콜수수료 5000 (현재 단가면 12,000)', stamped.callFee, 5000);
+check('실지급에서 저장 콜수수료를 뺀다', stamped.netPay,
+  1200000
+  - Math.floor(1212000 * 0.008)
+  - Math.floor(1212000 * 0.0088)
+  - Math.floor(1212000 * 0.033)
+  - 5000);
+
+const live = serverCalc(
+  { platform: 'coupang', settlement_amount: 1200000, order_count: 120, hourly_insurance: 0 },
+  { coupang: { callFee: 100, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' } }
+);
+check('옛 행(미저장)은 현재 단가로 계산', live.callFee, 12000);
 
 console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
 process.exit(failed ? 1 : 0);

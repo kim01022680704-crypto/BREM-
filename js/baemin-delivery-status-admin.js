@@ -2818,10 +2818,16 @@
   }
 
   async function savePartnerRegionEntry(partnerId, regionName) {
-    const pid = String(partnerId || '').trim().toUpperCase();
-    const region = String(regionName || '').trim();
-    if (!/^DP\d{6,}$/.test(pid)) {
-      showToast('DP 코드 형식을 확인하세요. (예: DP2603302214)');
+    let pid = String(partnerId || '').trim().toUpperCase();
+    let region = String(regionName || '').trim();
+    const dpPattern = /^DP\d{6,}$/;
+    if (!dpPattern.test(pid) && dpPattern.test(region.toUpperCase())) {
+      const swapped = pid;
+      pid = region.toUpperCase();
+      region = swapped;
+    }
+    if (!dpPattern.test(pid)) {
+      showToast('왼쪽은 지역명(예: 울산중B), 오른쪽은 DP 코드(예: DP2603302214)를 입력하세요.');
       return;
     }
     if (!region) {

@@ -1661,7 +1661,7 @@ const BremWeeklySettlement = (function () {
     return refreshWeeklySettlementRiders({ ...record, riders });
   }
 
-  function saveWeeklySettlement(record) {
+  function saveWeeklySettlement(record, options = {}) {
     // 채널(브로/직계약) 보존: 저장 키 라우팅에 사용되므로 반드시 유지.
     const channel = record.channel === 'direct' || record.summary?.channel === 'direct' ? 'direct' : 'bro';
     let toSave = record;
@@ -1678,7 +1678,7 @@ const BremWeeklySettlement = (function () {
     refreshed.summary = { ...(refreshed.summary || {}), channel };
     if (Array.isArray(toSave.fileNames)) refreshed.fileNames = toSave.fileNames;
     if (Array.isArray(toSave.sourceParts)) refreshed.sourceParts = toSave.sourceParts;
-    return BremStorage.weeklySettlements.save(refreshed);
+    return BremStorage.weeklySettlements.save(refreshed, options);
   }
 
   function loadWeeklySettlements(filter = {}) {

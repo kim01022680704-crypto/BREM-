@@ -201,7 +201,9 @@ const BremDirectSettlementCalc = (function () {
     const hourlyInsurance = Number(amounts.hourlyInsurance || 0);
     const withholdingTax = Number(amounts.withholdingTax || 0);
     const promotionWithholdingTax = promoTax(promo + other);
-    const callFee = callCount * unitCallFee;
+    const callFee = Object.prototype.hasOwnProperty.call(amounts, 'callFee')
+      ? Math.max(0, Math.round(Number(amounts.callFee || 0)))
+      : callCount * unitCallFee;
     const baseDeduct = deductionDetail + employmentInsurance + accidentInsurance + hourlyInsurance
       + withholdingTax + promotionWithholdingTax + callFee;
     // 선정산·일정산수수료를 빼기 전 잔액 = 이 플랫폼이 흡수할 수 있는 한도(음수면 0)

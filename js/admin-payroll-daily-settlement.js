@@ -204,11 +204,9 @@
       dailySettlementFee: 0,
       dailySettlementFeeMode: 'fixed'
     };
-    const callInput = $('payrollDailySettlementCallFee');
     const dailyInput = $('payrollDailySettlementDailyFee');
     const mode = fees.dailySettlementFeeMode === 'percent' ? 'percent' : 'fixed';
     syncDailyFeeModeUi(mode);
-    if (callInput) callInput.value = String(fees.callFee || 0);
     if (dailyInput) dailyInput.value = String(fees.dailySettlementFee || 0);
     syncCallFeeVisibleBtn();
   }
@@ -268,7 +266,6 @@
   }
 
   async function saveFeesFromInputs() {
-    const callFee = Math.max(0, Math.round(Number($('payrollDailySettlementCallFee')?.value || 0)));
     const dailySettlementFeeMode = $('payrollDailySettlementDailyFeeMode')?.value === 'percent'
       ? 'percent'
       : 'fixed';
@@ -282,7 +279,12 @@
         coupang: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' },
         baemin: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' }
       };
-      all[state.platform] = { callFee, dailySettlementFee, dailySettlementFeeMode };
+      const prev = all[state.platform] || {};
+      all[state.platform] = {
+        callFee: Math.max(0, Math.round(Number(prev.callFee || 0))),
+        dailySettlementFee,
+        dailySettlementFeeMode
+      };
       all.showCallFee = all.showCallFee !== false;
       await roster.persistFees(all);
       syncFeeInputs();

@@ -1044,12 +1044,12 @@
           <form id="baeminPartnerRegionForm" class="baemin-partner-map-form">
             <div class="baemin-partner-map-form__fields">
               <label class="baemin-field">
-                <span class="baemin-field__label">DP 코드</span>
-                <input type="text" id="baeminPartnerRegionDp" placeholder="DP2603096926" autocomplete="off" spellcheck="false">
-              </label>
-              <label class="baemin-field">
                 <span class="baemin-field__label">지역명</span>
                 <input type="text" id="baeminPartnerRegionName" placeholder="양산A" autocomplete="off">
+              </label>
+              <label class="baemin-field">
+                <span class="baemin-field__label">DP 코드</span>
+                <input type="text" id="baeminPartnerRegionDp" placeholder="DP2603096926" autocomplete="off" spellcheck="false">
               </label>
               <button type="submit" class="btn-primary baemin-partner-map-save" id="baeminPartnerRegionSaveBtn">등록</button>
             </div>
@@ -3741,7 +3741,7 @@
               <button class="primary-btn" type="submit" id="settlementUploadBtn-coupang">업로드 및 미리보기</button>
             </div>
           </form>
-          <p class="form-help">쿠팡 정산표 · 12행부터 C열(성함), F열(오더수), AH열(시간제보험), AL열(배달료·정산금액)을 읽습니다. 미리보기 확인 후 반영하기를 누르면 쿠팡 콜수에 저장됩니다. <strong>급여 일정산 반영</strong>을 체크해야 매칭 기사가 급여 일정산에 포함됩니다. 고용·산재·원천세는 업로드 값이 아니라 급여 일정산에서 AC(없으면 AL)×요율로 계산합니다.</p>
+          <p class="form-help">쿠팡 정산표 · 12행부터 C열(성함), F열(오더수), AH열(시간제보험), AL열(배달료·정산금액)을 읽습니다. 미리보기 확인 후 반영하기를 누르면 쿠팡 콜수에 저장됩니다. <strong>급여 일정산 반영</strong>을 체크해야 매칭 기사가 급여 일정산에 포함됩니다. 미리보기에서 <strong>콜수수료(원/콜)</strong>를 넣고 반영하면 콜수 × 입력금액으로 저장됩니다. 고용·산재·원천세는 업로드 값이 아니라 급여 일정산에서 AC(없으면 AL)×요율로 계산합니다.</p>
           <p class="form-help settlement-file-hint" id="settlementFileHint-coupang" hidden></p>
         </article>
 
@@ -3788,6 +3788,10 @@
             <div class="settlement-preview-actions">
               <span class="settlement-period-badge" id="settlementPreviewPeriod-coupang">-</span>
               <span class="settlement-payroll-preview-badge" id="settlementPayrollPreviewBadge-coupang">급여 일정산 미반영</span>
+              <label class="settlement-call-fee-field" title="반영 시 콜수 × 입력 단가로 콜수수료를 저장합니다">
+                <span>콜수수료 (원/콜)</span>
+                <input type="number" id="settlementCallFeeUnit-coupang" min="0" step="1" placeholder="예: 100" inputmode="numeric">
+              </label>
               <button class="primary-btn" type="button" id="settlementApplyBtn-coupang">반영하기</button>
               <button class="small-btn" type="button" id="settlementCancelBtn-coupang">취소</button>
             </div>
@@ -3937,7 +3941,7 @@
               <button class="primary-btn" type="submit" id="settlementUploadBtn-baemin">업로드 및 미리보기</button>
             </div>
           </form>
-          <p class="form-help">배민 정산표 · 2행부터 · <strong>K열(User ID)</strong>로 기사 배민 ID와 매칭 · <strong>U열(가게도착)·V열·AH열 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 배달 1건 · AH열 합계 = 배달수행금액 · L열은 참고용. <strong>급여 일정산 반영</strong>을 체크해야 매칭 기사가 급여 일정산에 포함됩니다. <strong>배민 콜수는 이 업로드로 반영되지 않으며 BIZ 현황 크롤링에서만 반영됩니다.</strong></p>
+          <p class="form-help">배민 정산표 · 2행부터 · <strong>K열(User ID)</strong>로 기사 배민 ID와 매칭 · <strong>U열(가게도착)·V열·AH열 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 배달 1건 · AH열 합계 = 배달수행금액 · L열은 참고용. <strong>급여 일정산 반영</strong>을 체크해야 매칭 기사가 급여 일정산에 포함됩니다. 미리보기에서 <strong>콜수수료(원/콜)</strong>를 넣고 반영하면 콜수 × 입력금액으로 저장됩니다. <strong>배민 콜수는 이 업로드로 반영되지 않으며 BIZ 현황 크롤링에서만 반영됩니다.</strong></p>
           <p class="form-help settlement-file-hint" id="settlementFileHint-baemin" hidden></p>
         </article>
 
@@ -4090,6 +4094,10 @@
             <div class="settlement-preview-actions">
               <span class="settlement-period-badge" id="settlementPreviewPeriod-baemin">-</span>
               <span class="settlement-payroll-preview-badge" id="settlementPayrollPreviewBadge-baemin">급여 일정산 미반영</span>
+              <label class="settlement-call-fee-field" title="반영 시 콜수 × 입력 단가로 콜수수료를 저장합니다">
+                <span>콜수수료 (원/콜)</span>
+                <input type="number" id="settlementCallFeeUnit-baemin" min="0" step="1" placeholder="예: 100" inputmode="numeric">
+              </label>
               <button class="primary-btn" type="button" id="settlementApplyBtn-baemin">반영하기</button>
               <button class="small-btn" type="button" id="settlementCancelBtn-baemin">취소</button>
             </div>
@@ -4593,6 +4601,10 @@
               <p class="form-help">배달료는 <strong>AM+AB</strong>입니다. (AM은 AB 차감 후 금액 · 일정산서 AL과 다름.) 공제는 정산서 수치 그대로: <strong>AB 차감내역 · AE 고용 · AG 산재 · AH 시간제</strong>. 원천세만 <strong>AC×3.3%</strong>. 정산결과·최종입금에서는 선정산(처리완료)·일정산수수료를 더 빼면 총지급액이 됩니다.</p>
             </div>
             <div class="promotion-form-actions">
+              <label class="settlement-call-fee-field" title="저장 시 콜수 × 입력 단가">
+                <span>콜수수료 (원/콜)</span>
+                <input type="number" id="weeklySettlementDirectCallFeeForm-coupang" min="0" step="1" placeholder="예: 100" inputmode="numeric">
+              </label>
               <button type="submit" class="primary-btn">업로드 및 매칭</button>
             </div>
           </form>
@@ -4602,6 +4614,10 @@
           <div class="card-header">
             <h2>쿠팡 정산 인수 · 매칭 미리보기 (직계약)</h2>
             <div class="settlement-preview-actions">
+              <label class="settlement-call-fee-field" title="저장 시 콜수 × 입력 단가로 콜수수료를 저장합니다">
+                <span>콜수수료 (원/콜)</span>
+                <input type="number" id="weeklySettlementDirectCallFee-coupang" min="0" step="1" placeholder="예: 100" inputmode="numeric">
+              </label>
               <button type="button" class="primary-btn" id="weeklySettlementDirectSaveBtn-coupang">매칭 기사만 저장</button>
               <button type="button" class="small-btn" id="weeklySettlementDirectCancelBtn-coupang">취소</button>
             </div>
@@ -4767,6 +4783,10 @@
               <p class="form-help">Z열은 표기만 합니다. 고용/산재 소급 기사는 미리보기에서 다중선택한 뒤 <strong>Z열 기준으로 지급액 맞추기</strong>를 누르면, 저장 후 정산결과 총지급액이 그 금액으로 들어갑니다.</p>
             </div>
             <div class="promotion-form-actions">
+              <label class="settlement-call-fee-field" title="저장 시 콜수 × 입력 단가">
+                <span>콜수수료 (원/콜)</span>
+                <input type="number" id="weeklySettlementDirectCallFeeForm-baemin" min="0" step="1" placeholder="예: 100" inputmode="numeric">
+              </label>
               <button type="submit" class="primary-btn">업로드 및 매칭</button>
             </div>
           </form>
@@ -4776,6 +4796,10 @@
           <div class="card-header">
             <h2>배민 정산 인수 · 매칭 미리보기 (직계약)</h2>
             <div class="settlement-preview-actions">
+              <label class="settlement-call-fee-field" title="저장 시 콜수 × 입력 단가로 콜수수료를 저장합니다">
+                <span>콜수수료 (원/콜)</span>
+                <input type="number" id="weeklySettlementDirectCallFee-baemin" min="0" step="1" placeholder="예: 100" inputmode="numeric">
+              </label>
               <button type="button" class="small-btn" id="weeklySettlementDirectApplySheetPayoutBtn-baemin" title="선택한 기사의 정산결과 총지급액을 Z열 금액으로 맞춥니다">선택 기사 Z열 지급액 맞추기</button>
               <button type="button" class="primary-btn" id="weeklySettlementDirectSaveBtn-baemin">매칭·Z지급 기사 저장</button>
               <button type="button" class="small-btn" id="weeklySettlementDirectCancelBtn-baemin">취소</button>
@@ -6193,7 +6217,7 @@
               <button type="button" class="revenue-sub-btn active" data-driver-region-platform="baemin">배민</button>
               <button type="button" class="revenue-sub-btn" data-driver-region-platform="coupang">쿠팡</button>
             </div>
-            <p class="form-help" id="driverRegionHint">배민: 등록한 크롤링 지역(DP)을 선택합니다. 쿠팡: 크롤링된 지역명(4글자)을 선택합니다. 지역 옆 <strong>라이더 노출</strong>을 켜면 등록 기사가 기사앱 「기사대시보드」를 봅니다. 기사마다 <strong>올노출</strong>(기본) / <strong>전체열람</strong>(자기 순위 비노출 · 남 순위+할당 열람) / <strong>할당만</strong>(순위 노출·본인 보드는 할당만) / <strong>미노출</strong>(기사앱 대시보드만 숨김 · 집계·순위·팀장 열람은 유지) / <strong>팀장임명</strong>(전원 보드·본인 순위 비노출 · 이름에 팀장 태그)을 고릅니다.</p>
+            <p class="form-help" id="driverRegionHint">배민: 등록한 크롤링 지역(DP)을 선택합니다. 쿠팡: 크롤링된 지역명(4글자)을 선택합니다. 지역 옆 <strong>라이더 노출</strong>을 켜면 등록 기사가 기사앱 「기사대시보드」를 봅니다. 기사마다 <strong>올노출</strong>(기본) / <strong>전체열람</strong>(자기 순위 비노출 · 남 순위+할당 열람) / <strong>순위만열람</strong>(자기 순위 비노출 · 남 순위만 열람) / <strong>할당만</strong>(순위 노출·본인 보드는 할당만) / <strong>미노출</strong>(기사앱 대시보드만 숨김 · 집계·순위·팀장 열람은 유지) / <strong>팀장임명</strong>(전원 보드·본인 순위 비노출 · 이름에 팀장 태그)을 고릅니다.</p>
             <div class="driver-region-layout">
               <div class="driver-region-catalog" id="driverRegionCatalog"></div>
               <div class="driver-region-detail">
@@ -7566,19 +7590,11 @@
             <div class="card-header">
               <div>
                 <h2>수수료 설정</h2>
-                <p class="form-help">선택한 플랫폼(쿠팡/배민)별 콜수수료·일정산수수료입니다. 콜수수료는 <strong>콜수 × 단가(원)</strong>로 실지급액에서 차감됩니다. 일정산수수료는 정액 또는 %이며 <strong>출금 시에만</strong> 차감(회사 수익)됩니다.</p>
+                <p class="form-help">선택한 플랫폼(쿠팡/배민)별 <strong>일정산수수료</strong>입니다. 정액 또는 %이며 <strong>출금 시에만</strong> 차감(회사 수익)됩니다. 콜수수료는 일정산서·주정산서 반영 때 입력한 원/콜로 이미 저장됩니다.</p>
               </div>
               <button type="button" class="primary-btn" id="payrollDailySettlementFeeSaveBtn">수수료 저장</button>
             </div>
             <div class="payroll-toolbar">
-              <label class="payroll-field">
-                <span>콜수수료 단가 (원/콜)</span>
-                <input type="number" id="payrollDailySettlementCallFee" min="0" step="1" value="0">
-              </label>
-              <label class="payroll-field">
-                <span>콜수수료 표시</span>
-                <button type="button" class="small-btn" id="payrollDailySettlementCallFeeVisibleBtn" aria-pressed="true">ON</button>
-              </label>
               <label class="payroll-field">
                 <span>일정산수수료 방식</span>
                 <select id="payrollDailySettlementDailyFeeMode">
@@ -7590,9 +7606,13 @@
                 <span id="payrollDailySettlementDailyFeeLabel">일정산수수료 (원)</span>
                 <input type="number" id="payrollDailySettlementDailyFee" min="0" step="1" value="0">
               </label>
+              <label class="payroll-field">
+                <span>콜수수료 표시</span>
+                <button type="button" class="small-btn" id="payrollDailySettlementCallFeeVisibleBtn" aria-pressed="true">ON</button>
+              </label>
             </div>
-            <p class="form-help">콜수수료 표시 OFF 시 관리자·기사앱 일정산 표에서 콜수수료 열이 숨겨집니다. (공제 계산은 유지)</p>
-            <p class="form-help">고용보험 0.8% · 산재보험 0.88% · 원천세 3.3% (정산금액 기준, 원 미만 절사). 콜수수료 = 콜수 × 단가. 실지급액 = 정산금 − 고용 − 산재 − 원천 − 콜수수료 − 시간제보험. <strong>일정산수수료(2%)는 실지급액에서 빼지 않고 출금할 때만 차감(회사 수익)됩니다.</strong></p>
+            <p class="form-help">콜수수료 표시 OFF 시 관리자·기사앱 일정산 표에서 콜수수료 열만 숨깁니다. (업로드 때 저장된 공제는 그대로입니다.)</p>
+            <p class="form-help">고용보험 0.8% · 산재보험 0.88% · 원천세 3.3% (정산금액 기준, 원 미만 절사). 실지급액 = 정산금 − 고용 − 산재 − 원천 − 콜수수료(업로드 저장분) − 시간제보험. <strong>일정산수수료는 실지급액에서 빼지 않고 출금할 때만 차감됩니다.</strong></p>
           </article>
 
           <article class="card">

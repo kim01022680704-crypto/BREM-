@@ -2527,6 +2527,43 @@ textarea {
   flex-wrap: wrap;
 }
 
+.settlement-call-fee-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.4);
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.settlement-call-fee-field input {
+  width: 88px;
+  min-height: 32px;
+  margin: 0;
+  padding: 4px 8px;
+}
+
+.settlement-call-fee-log-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.18);
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  color: #facc15;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .settlement-unmatched-card .card-header {
   flex-wrap: wrap;
 }
@@ -12763,6 +12800,12 @@ button.driver-org-node small,
   background: rgba(167, 139, 250, 0.14);
 }
 
+.driver-region-mode--rank.is-on {
+  border-color: #fb7185;
+  color: #ffe4e6;
+  background: rgba(251, 113, 133, 0.16);
+}
+
 .driver-region-mode--metrics.is-on {
   border-color: #38bdf8;
   color: #e0f2fe;
@@ -12783,6 +12826,10 @@ button.driver-org-node small,
 
 .driver-region-mode--dash input {
   accent-color: #a78bfa;
+}
+
+.driver-region-mode--rank input {
+  accent-color: #fb7185;
 }
 
 .driver-region-mode--metrics input {
@@ -12819,6 +12866,19 @@ button.driver-org-node small,
   vertical-align: middle;
 }
 
+.driver-region-rank-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(251, 113, 133, 0.22);
+  border: 1px solid #fb7185;
+  color: #fecdd3;
+  font-size: 11px;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
 .driver-region-hidden-badge {
   display: inline-block;
   margin-left: 6px;
@@ -12843,6 +12903,10 @@ tr.is-dashboard-hidden {
 
 tr.is-metrics-only {
   background: rgba(56, 189, 248, 0.05);
+}
+
+tr.is-rank-only {
+  background: rgba(251, 113, 133, 0.05);
 }
 
 .driver-region-leader-btn {

@@ -232,6 +232,7 @@ function listExposedRegions(exposure, platform) {
 /** 기사 지역 옵션:
  * full=올노출(기본, 본인 순위 노출 + 전체 보드)
  * dashboard=전체열람(자기 순위 비노출, 남 순위+할당 열람)
+ * rank=순위만열람(자기 순위 비노출, 남 순위만 열람 · 할당 숨김)
  * metrics=할당만(순위 노출, 본인 보드엔 할당만)
  * leader=팀장(전원 보드 열람·본인 순위 비노출)
  * hidden=미노출(기사앱 대시보드만 숨김 — 집계·순위·팀장 열람에는 포함)
@@ -246,6 +247,7 @@ const DEFAULT_RIDER_REGION_MODE = 'hidden';
 function normalizeRiderRegionMode(value) {
   const mode = String(value || '').toLowerCase();
   if (mode === 'dashboard' || mode === 'view' || mode === '전체열람') return 'dashboard';
+  if (mode === 'rank' || mode === 'rank_only' || mode === 'ranking' || mode === '순위만열람') return 'rank';
   if (mode === 'metrics' || mode === 'quota' || mode === '할당만') return 'metrics';
   if (mode === 'leader' || mode === 'team_leader' || mode === '팀장') return 'leader';
   if (mode === 'hidden' || mode === 'off' || mode === 'none' || mode === '미노출') return 'hidden';
@@ -280,9 +282,9 @@ function getRiderRegionModeForRegion(exposure, region, driverId) {
   return DEFAULT_RIDER_REGION_MODE;
 }
 
-/** 일반 순위에 올릴 기사 — 올노출·할당만·미노출 (전체열람·팀장만 제외)
+/** 일반 순위에 올릴 기사 — 올노출·할당만·미노출 (전체열람·순위만열람·팀장만 제외)
  * 미노출 = 기사앱 대시보드만 숨김. 집계·순위·팀장 열람에는 그대로 포함.
- * 팀장 = 순위에 절대 안 올림 (본인 포함).
+ * 팀장·전체열람·순위만열람 = 순위에 절대 안 올림 (본인 포함).
  */
 function filterRankingRiders(exposure, platform, regionKey, riders = [], region = null) {
   return (riders || []).filter(rider => {
@@ -976,8 +978,8 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
   const viewerMode = getRiderRegionModeForRegion(exposure, selected, riderRow.id);
   try {
     const regionRiders = await loadRidersForRegion(supabase, selected);
-    // 팀장: 미노출·전체열람 포함 전원을 보되, 팀장 본인(및 다른 팀장)은 순위 목록에서 뺀다.
-    // 일반: 올노출·할당만·미노출을 순위에 포함 (전체열람·팀장은 순위 비노출).
+    // 팀장: 미노출·전체열람·순위만열람 포함 전원을 보되, 팀장 본인(및 다른 팀장)은 순위 목록에서 뺀다.
+    // 일반: 올노출·할당만·미노출을 순위에 포함 (전체열람·순위만열람·팀장은 순위 비노출).
     const rankingRiders = viewerMode === 'leader'
       ? filterLeaderViewRankingRiders(exposure, selected, regionRiders)
       : filterRankingRiders(exposure, platform, selected.key, regionRiders, selected);
@@ -1004,8 +1006,10 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
     region: selected,
     viewerMode,
     // 할당만: 본인 보드에는 TOP 순위를 숨기고 할당 지표만
+    // 순위만열람: 본인 보드에는 순위만 보이고 할당은 숨김
     rankingsHidden: viewerMode === 'metrics',
-    metrics: live.metrics,
+    metricsHidden: viewerMode === 'rank',
+    metrics: viewerMode === 'rank' ? emptyMetrics() : live.metrics,
     realtimeRanking: viewerMode === 'metrics' ? [] : (live.realtimeRanking || []),
     realtimeRankingDisabled: viewerMode === 'metrics'
       ? true
@@ -1014,7 +1018,7 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
       ? '할당만 보기 — 실시간·주간 순위는 표시하지 않습니다.'
       : (live.realtimeRankingReason || ''),
     weeklyRanking: viewerMode === 'metrics' ? [] : weeklyRanking,
-    message: ''
+    message: viewerMode === 'rank' ? '순위만 열람 — 할당은 표시하지 않습니다.' : ''
   };
   writeResponseCache(cacheKey, payload);
   return payload;
@@ -1057,7 +1061,7 @@ async function getAdminRegionRanking(accessToken, query = {}) {
   try {
     const exposure = await readExposureMap(supabase);
     const regionRiders = await loadRidersForRegion(supabase, region);
-    // 관리자 화면도 기사앱과 동일: 팀장·전체열람은 순위에서 제외 (미노출은 집계 포함)
+    // 관리자 화면도 기사앱과 동일: 팀장·전체열람·순위만열람은 순위에서 제외 (미노출은 집계 포함)
     const rankingRiders = filterRankingRiders(exposure, platform, region.key, regionRiders, region);
     const shared = { maskNames: false, regionRiders, rankingRiders };
     const coupangDateInfo = platform === 'coupang'
@@ -1580,7 +1584,7 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
           delete riders[id];
         } else {
           riders[id] = {
-            mode, // dashboard | metrics | leader | hidden
+            mode, // dashboard | rank | metrics | leader | hidden
             updatedAt: now
           };
         }

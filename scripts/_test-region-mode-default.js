@@ -44,7 +44,8 @@ const withModes = {
         D: { mode: 'dashboard' },
         E: { mode: 'metrics' },
         F: { mode: '' },
-        G: { mode: '올노출' }
+        G: { mode: '올노출' },
+        H: { mode: '순위만열람' }
       }
     }
   }
@@ -56,16 +57,19 @@ check('명시 dashboard 유지',   S.getRiderRegionModeForRegion(withModes, REGI
 check('명시 metrics 유지',     S.getRiderRegionModeForRegion(withModes, REGION, 'E'), 'metrics');
 check('빈 문자열 → hidden',    S.getRiderRegionModeForRegion(withModes, REGION, 'F'), 'hidden');
 check('한글 "올노출" → full',  S.getRiderRegionModeForRegion(withModes, REGION, 'G'), 'full');
+check('한글 "순위만열람" → rank', S.getRiderRegionModeForRegion(withModes, REGION, 'H'), 'rank');
 
 console.log('\n[3] 서버 — 저장 시 정규화 (라디오 값 그대로 들어온다)');
 check("normalize('full')", S.normalizeRiderRegionMode('full'), 'full');
 check("normalize('hidden')", S.normalizeRiderRegionMode('hidden'), 'hidden');
 check("normalize('leader')", S.normalizeRiderRegionMode('leader'), 'leader');
+check("normalize('순위만열람')", S.normalizeRiderRegionMode('순위만열람'), 'rank');
+check("normalize('rank')", S.normalizeRiderRegionMode('rank'), 'rank');
 check("normalize(undefined) → hidden", S.normalizeRiderRegionMode(undefined), 'hidden');
 check("normalize('알수없는값') → hidden", S.normalizeRiderRegionMode('zzz'), 'hidden');
 
 console.log('\n[4] 미노출도 집계·순위에는 포함 (앱 대시보드만 숨김)');
-const riders = [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'newRider' }];
+const riders = [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'H' }, { id: 'newRider' }];
 const ranked = S.filterRankingRiders(withModes, 'baemin', 'r1', riders, REGION).map(r => r.id);
 check('full 포함', ranked.includes('A'), 'true');
 check('hidden 포함', ranked.includes('C'), 'true');
@@ -73,6 +77,7 @@ check('metrics 포함', ranked.includes('E'), 'true');
 check('설정없음(신규)도 포함', ranked.includes('newRider'), 'true');
 check('leader 제외', ranked.includes('B'), 'false');
 check('dashboard 제외', ranked.includes('D'), 'false');
+check('rank(순위만열람) 제외', ranked.includes('H'), 'false');
 
 console.log('\n[4-b] 팀장은 전부 볼 수 있어야 한다');
 // 팀장이 자기 지역 대시보드에 들어갈 수 있는가 (미노출이면 지역 자체가 안 보인다)
@@ -101,12 +106,21 @@ const newRiderRegions = S.filterViewerRegions(
 ).map(r => r.key);
 check('신규 기사(설정없음) 지역 안 보임 — 이번 변경 목적', newRiderRegions.includes('r1'), 'false');
 
+const rankRegions = S.filterViewerRegions(
+  withModes,
+  'baemin',
+  { id: 'H', regionBaemin: '남구e' },
+  REGION_LIST
+).map(r => r.key);
+check('순위만열람(H) 자기 지역 보임', rankRegions.includes('r1'), 'true');
+
 // 팀장이 보는 순위 목록 — 미노출·설정없음까지 전원 포함되어야 한다
 const leaderView = S.filterLeaderViewRankingRiders(withModes, REGION, riders).map(r => r.id);
 check('팀장 시야: 올노출 포함', leaderView.includes('A'), 'true');
 check('팀장 시야: 미노출 포함', leaderView.includes('C'), 'true');
 check('팀장 시야: 전체열람 포함', leaderView.includes('D'), 'true');
 check('팀장 시야: 할당만 포함', leaderView.includes('E'), 'true');
+check('팀장 시야: 순위만열람 포함', leaderView.includes('H'), 'true');
 check('팀장 시야: 설정없음(신규) 포함', leaderView.includes('newRider'), 'true');
 check('팀장 시야: 팀장(본인·다른팀장) 제외', leaderView.includes('B'), 'false');
 
@@ -118,6 +132,8 @@ check('클라이언트 상수 존재', Boolean(constMatch), 'true');
 check('클라이언트 = 서버 기본값', constMatch?.[1], server.DEFAULT_RIDER_REGION_MODE);
 check('클라이언트 normalize 에 full 분기 있음',
   /mode === 'full' \|\| mode === 'all'/.test(src), 'true');
+check('클라이언트 normalize 에 rank 분기 있음',
+  /mode === 'rank' \|\| mode === 'rank_only'/.test(src), 'true');
 check('클라이언트 getDriverRegionMode 가 상수를 반환',
   /return DEFAULT_DRIVER_REGION_MODE;/.test(src), 'true');
 
