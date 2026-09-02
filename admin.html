@@ -8576,7 +8576,7 @@
         <div class="settlement-match-modal__head-top">
           <h3 id="driverRegionCrawlMatchTitle">크롤링으로 지역등록</h3>
         </div>
-        <p class="form-help">오늘 배달현황 크롤의 배민ID로 ERP 기사를 매칭합니다. 반영 가능 건을 선택한 뒤 「선택 반영」하세요. 미등록은 간이등록으로 추가할 수 있습니다.</p>
+        <p class="form-help">오늘 배달현황 크롤의 배민ID·이름으로 ERP 기사를 매칭합니다. 반영 가능 건을 선택한 뒤 「선택 반영」하세요. 미등록은 <strong>검색 매칭</strong>으로 기존 기사와 연결하거나 간이등록할 수 있습니다.</p>
         <p class="direct-inline-stats" id="driverRegionCrawlMatchSummary"></p>
       </div>
       <div class="table-wrap driver-region-crawl-match-table-wrap">
@@ -8596,6 +8596,31 @@
             <tr><td colspan="7" class="empty">불러오는 중…</td></tr>
           </tbody>
         </table>
+      </div>
+      <div class="driver-region-crawl-search" id="driverRegionCrawlSearchPanel" hidden>
+        <p class="form-help" id="driverRegionCrawlSearchHint"></p>
+        <label class="driver-region-crawl-search-field">
+          <span>ERP 기사 검색</span>
+          <input type="search" id="driverRegionCrawlSearchInput" placeholder="이름 · 배민ID · 전화" autocomplete="off">
+        </label>
+        <div class="table-wrap">
+          <table class="weekly-settlement-detail-table">
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>배민ID</th>
+                <th>지역</th>
+                <th>선택</th>
+              </tr>
+            </thead>
+            <tbody id="driverRegionCrawlSearchRows">
+              <tr><td colspan="4" class="empty">이름이나 배민ID를 입력하세요.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="settlement-match-actions">
+          <button type="button" class="small-btn" id="driverRegionCrawlSearchCancelBtn">검색 닫기</button>
+        </div>
       </div>
       <div class="settlement-match-actions">
         <button type="button" class="small-btn" data-close-region-crawl-match>닫기</button>

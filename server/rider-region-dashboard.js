@@ -1300,10 +1300,18 @@ async function getAdminRegionCrawlMatch(accessToken, query = {}) {
   }
 
   const byBaeminId = new Map();
+  const byName = new Map();
   (riderRows || []).forEach(row => {
     const rider = mapRiderRow(row);
-    const idKey = baeminIdMatchKey(rider.baeminId);
+    if (!rider.baeminId && rider.raw_data?.baeminId) {
+      rider.baeminId = String(rider.raw_data.baeminId || '').trim();
+    }
+    const idKey = baeminIdMatchKey(rider.baeminId || rider.raw_data?.baeminId);
     if (idKey && !byBaeminId.has(idKey)) byBaeminId.set(idKey, rider);
+    const nameKey = normalizePersonName(rider.name);
+    if (!nameKey) return;
+    if (byName.has(nameKey)) byName.set(nameKey, null);
+    else byName.set(nameKey, rider);
   });
 
   function regionMatchesTarget(regionValue) {
@@ -1328,7 +1336,16 @@ async function getAdminRegionCrawlMatch(accessToken, query = {}) {
     const crawlName = String(
       parsed.riderName || parsed.rider_name || parsed.name || row.rider_name || ''
     ).trim();
-    const driver = byBaeminId.get(idKey) || null;
+    let driver = byBaeminId.get(idKey) || null;
+    let matchBy = driver ? 'baeminId' : '';
+    if (!driver) {
+      const nameKey = normalizePersonName(crawlName);
+      const named = nameKey ? byName.get(nameKey) : null;
+      if (named) {
+        driver = named;
+        matchBy = 'name';
+      }
+    }
     const currentRegion = driver
       ? String(driver.regionBaemin || driver.raw_data?.regionBaemin || '').trim()
       : '';
@@ -1344,8 +1361,10 @@ async function getAdminRegionCrawlMatch(accessToken, query = {}) {
       crawlName: crawlName || '-',
       driverId: driver?.id || '',
       driverName: driver?.name || '',
+      erpBaeminId: driver?.baeminId || '',
       currentRegion,
       status,
+      matchBy,
       targetRegion: label || partnerId
     });
   });

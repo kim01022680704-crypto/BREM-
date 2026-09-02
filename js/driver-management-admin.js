@@ -25,7 +25,7 @@ const BremDriverManagementAdmin = (function () {
     bulkCreateIndex: -1,
     bulkCreateBusy: false,
     bulkCreateSource: 'bulk',
-    crawlMatch: { rows: [], partnerId: '', label: '', busy: false },
+    crawlMatch: { rows: [], partnerId: '', label: '', busy: false, searchIndex: -1 },
     clusterAssign: { assignments: [], summary: {}, today: '', busy: false },
     statsLoadPromise: null,
     statsLoadTried: false,
@@ -3426,10 +3426,119 @@ const BremDriverManagementAdmin = (function () {
     return status || '-';
   }
 
+  function closeCrawlSearchPanel() {
+    state.crawlMatch.searchIndex = -1;
+    const panel = $('#driverRegionCrawlSearchPanel');
+    if (panel) panel.hidden = true;
+    const input = $('#driverRegionCrawlSearchInput');
+    if (input) input.value = '';
+    const rows = $('#driverRegionCrawlSearchRows');
+    if (rows) rows.innerHTML = '<tr><td colspan="4" class="empty">이름이나 배민ID를 입력하세요.</td></tr>';
+  }
+
   function closeCrawlMatchModal() {
+    closeCrawlSearchPanel();
     const modal = $('#driverRegionCrawlMatchModal');
     if (modal) modal.hidden = true;
-    state.crawlMatch = { rows: [], partnerId: '', label: '', busy: false };
+    state.crawlMatch = { rows: [], partnerId: '', label: '', busy: false, searchIndex: -1 };
+  }
+
+  function searchErpDrivers(query) {
+    const q = String(query || '').trim().toLowerCase().replace(/\s+/g, '');
+    if (!q) return [];
+    const list = window.BremStorage?.drivers?.getAll?.() || [];
+    const matchKey = window.BremDriverUtils?.baeminIdMatchKey
+      || window.BremWeeklySettlement?.baeminIdMatchKey;
+    const qKey = matchKey ? matchKey(q) : q;
+    const hits = [];
+    list.forEach(driver => {
+      const name = String(driver.name || '').replace(/\s+/g, '').toLowerCase();
+      const baeminId = String(driver.baeminId || driver.raw_data?.baeminId || '').toLowerCase();
+      const phone = String(driver.phone || '').replace(/\D/g, '');
+      const idKey = matchKey ? matchKey(driver.baeminId || driver.raw_data?.baeminId) : baeminId;
+      if (
+        (name && name.includes(q))
+        || (baeminId && baeminId.includes(q))
+        || (qKey && idKey && idKey === qKey)
+        || (phone && phone.includes(q.replace(/\D/g, '')))
+      ) {
+        hits.push(driver);
+      }
+    });
+    return hits.slice(0, 20);
+  }
+
+  function renderCrawlSearchHits(query) {
+    const body = $('#driverRegionCrawlSearchRows');
+    if (!body) return;
+    const hits = searchErpDrivers(query);
+    if (!String(query || '').trim()) {
+      body.innerHTML = '<tr><td colspan="4" class="empty">이름이나 배민ID를 입력하세요.</td></tr>';
+      return;
+    }
+    if (!hits.length) {
+      body.innerHTML = '<tr><td colspan="4" class="empty">검색 결과가 없습니다. 기사관리에서 등록 여부를 확인하세요.</td></tr>';
+      return;
+    }
+    body.innerHTML = hits.map(driver => `
+      <tr>
+        <td><strong>${escapeHtml(driver.name || '-')}</strong></td>
+        <td>${escapeHtml(driver.baeminId || driver.raw_data?.baeminId || '-')}</td>
+        <td>${escapeHtml(driver.regionBaemin || driver.raw_data?.regionBaemin || '미배정')}</td>
+        <td><button type="button" class="small-btn primary-btn" data-crawl-search-pick="${escapeHtml(driver.id)}">이 기사로 연결</button></td>
+      </tr>
+    `).join('');
+  }
+
+  async function openCrawlSearchPanel(index) {
+    const row = state.crawlMatch.rows[index];
+    if (!row) return;
+    state.crawlMatch.searchIndex = index;
+    const panel = $('#driverRegionCrawlSearchPanel');
+    const hint = $('#driverRegionCrawlSearchHint');
+    const input = $('#driverRegionCrawlSearchInput');
+    if (hint) {
+      hint.innerHTML = `크롤 <strong>${escapeHtml(row.crawlName || '-')}</strong> · ${escapeHtml(row.baeminId || row.coupangId || '-')} 을(를) ERP 기사와 연결합니다.`;
+    }
+    if (panel) panel.hidden = false;
+    if (typeof window.BremStorage?.awaitDriversFullyLoaded === 'function') {
+      try { await window.BremStorage.awaitDriversFullyLoaded(); } catch (_) { /* ignore */ }
+    }
+    if (input) {
+      input.value = row.crawlName && row.crawlName !== '-' ? row.crawlName : '';
+      renderCrawlSearchHits(input.value);
+      input.focus();
+      input.select();
+    }
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function applyCrawlSearchPick(driverId) {
+    const index = state.crawlMatch.searchIndex;
+    const row = state.crawlMatch.rows[index];
+    const driver = window.BremStorage?.drivers?.getById?.(driverId);
+    if (!row || !driver) {
+      showToast('연결할 기사를 찾지 못했습니다.');
+      return;
+    }
+    const region = selectedRegion();
+    const currentRegion = String(driver.regionBaemin || driver.raw_data?.regionBaemin || '').trim();
+    const already = region && (
+      currentRegion === region.label
+      || currentRegion === region.partnerId
+      || (region.partnerId && currentRegion.includes(region.partnerId))
+    );
+    row.driverId = driver.id;
+    row.driverName = driver.name || '';
+    row.erpBaeminId = driver.baeminId || driver.raw_data?.baeminId || '';
+    row.currentRegion = currentRegion;
+    row.matchBy = 'search';
+    row.status = already ? 'already' : 'assignable';
+    closeCrawlSearchPanel();
+    renderCrawlMatchRows();
+    showToast(already
+      ? `«${driver.name}» 은(는) 이미 이 지역입니다.`
+      : `«${driver.name}» 과(와) 연결했습니다. 선택 반영으로 지역을 넣으세요.`);
   }
 
   function renderCrawlMatchRows() {
@@ -3467,15 +3576,27 @@ const BremDriverManagementAdmin = (function () {
       let statusText = crawlStatusLabel(row.status);
       if (row.status === 'assignable' && row.currentRegion) {
         statusText = `${row.currentRegion} → ${region?.label || row.targetRegion || ''}`;
+      } else if (row.status === 'assignable' && row.matchBy === 'name') {
+        statusText = '반영 가능 · 이름 매칭';
+      } else if (row.status === 'assignable' && row.matchBy === 'search') {
+        statusText = '반영 가능 · 검색 연결';
       }
+      const erpLabel = row.driverName
+        ? (row.matchBy === 'name' && row.erpBaeminId && row.baeminId && row.erpBaeminId !== row.baeminId
+          ? `${row.driverName} (ERP ${row.erpBaeminId})`
+          : row.driverName)
+        : '-';
       const action = row.status === 'unregistered'
-        ? `<button type="button" class="small-btn primary-btn" data-crawl-quick-create="${index}">간이등록</button>`
-        : '—';
+        ? `<button type="button" class="small-btn" data-crawl-search-match="${index}">검색 매칭</button>
+           <button type="button" class="small-btn primary-btn" data-crawl-quick-create="${index}">간이등록</button>`
+        : (row.status === 'assignable'
+          ? `<button type="button" class="small-btn" data-crawl-search-match="${index}">다시 검색</button>`
+          : '—');
       return `<tr>
         <td><input type="checkbox" data-crawl-check="${index}"${checked}${disabled}></td>
         <td>${escapeHtml(row.crawlName || '-')}</td>
         <td>${escapeHtml(row.baeminId || row.coupangId || row.matchKey || '-')}</td>
-        <td>${escapeHtml(row.driverName || '-')}</td>
+        <td>${escapeHtml(erpLabel)}</td>
         <td>${escapeHtml(row.currentRegion || (row.status === 'unregistered' ? '-' : '미배정'))}</td>
         <td class="${statusClass}">${escapeHtml(statusText)}</td>
         <td>${action}</td>
@@ -3505,7 +3626,7 @@ const BremDriverManagementAdmin = (function () {
     if (help) {
       help.textContent = platform === 'coupang'
         ? '오늘 쿠팡 라이더일일(rider_daily) 크롤의 매칭키·쿠팡ID로 ERP 기사를 매칭합니다. 반영 가능 건을 선택한 뒤 「선택 반영」하세요. 미등록은 간이등록으로 추가할 수 있습니다.'
-        : '오늘 배달현황 크롤의 배민ID로 ERP 기사를 매칭합니다. 반영 가능 건을 선택한 뒤 「선택 반영」하세요. 미등록은 간이등록으로 추가할 수 있습니다.';
+        : '오늘 배달현황 크롤의 배민ID·이름으로 ERP 기사를 매칭합니다. 반영 가능 건을 선택한 뒤 「선택 반영」하세요. 미등록은 검색 매칭으로 기존 기사와 연결하거나 간이등록할 수 있습니다.';
     }
     if (idHeader) idHeader.textContent = platform === 'coupang' ? '쿠팡ID/키' : '배민ID';
     modal.hidden = false;
@@ -3924,6 +4045,20 @@ const BremDriverManagementAdmin = (function () {
         const index = Number(crawlQuick.dataset.crawlQuickCreate);
         const row = state.crawlMatch.rows[index];
         if (row) openBulkCreateFromCrawl(row);
+        return;
+      }
+      const crawlSearch = event.target.closest('[data-crawl-search-match]');
+      if (crawlSearch) {
+        void openCrawlSearchPanel(Number(crawlSearch.dataset.crawlSearchMatch));
+        return;
+      }
+      const crawlPick = event.target.closest('[data-crawl-search-pick]');
+      if (crawlPick) {
+        applyCrawlSearchPick(crawlPick.dataset.crawlSearchPick);
+        return;
+      }
+      if (event.target?.id === 'driverRegionCrawlSearchCancelBtn') {
+        closeCrawlSearchPanel();
       }
     });
 
@@ -4136,6 +4271,9 @@ const BremDriverManagementAdmin = (function () {
     $('#driverRegionClusterAssignApplyBtn')?.addEventListener('click', () => { void applyClusterAssignSelection(); });
     $('#driverRegionCrawlMatchBtn')?.addEventListener('click', () => { void openCrawlMatchModal(); });
     $('#driverRegionCrawlMatchApplyBtn')?.addEventListener('click', () => { void applyCrawlMatchSelection(); });
+    $('#driverRegionCrawlSearchInput')?.addEventListener('input', event => {
+      renderCrawlSearchHits(event.target.value);
+    });
     bindRegionAddCombo();
     $('#driverRegionListFilter')?.addEventListener('input', event => {
       const value = String(event.target.value || '');

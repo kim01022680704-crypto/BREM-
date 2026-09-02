@@ -13253,6 +13253,25 @@ tr.is-week-first td {
 .driver-region-crawl-status--assignable { color: #fbbf24; }
 .driver-region-crawl-status--unregistered { color: #fca5a5; }
 
+.driver-region-crawl-search {
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.45);
+}
+.driver-region-crawl-search-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+.driver-region-crawl-search-field input {
+  min-height: 36px;
+}
+
 .driver-org-member-panel {
   margin-top: 12px;
   border-top: 1px solid #3f3f46;
