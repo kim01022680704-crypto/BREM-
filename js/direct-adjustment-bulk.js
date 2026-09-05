@@ -112,7 +112,47 @@
     return '미매칭';
   }
 
-  function matchRow(baeminId, drivers, platform) {
+  function driverById(drivers, driverId) {
+    const id = String(driverId || '').trim();
+    if (!id) return null;
+    return (Array.isArray(drivers) ? drivers : []).find(item => String(item?.id || '') === id) || null;
+  }
+
+  /**
+   * 주정산서에 이미 붙인 ID(원본명·쿠팡로그인키·배민ID) → 기사.
+   * 엑셀이 이정익2201 이고 등록 전화 뒤4는 7469 인 경우를 여기서 살린다.
+   * 이름만 있는 값은 넣지 않는다.
+   */
+  function buildSettlementAliasLookup(settlementRiders, drivers, platform) {
+    const p = normalizePlatform(platform);
+    const map = new Map();
+    const list = Array.isArray(drivers) ? drivers : [];
+    (Array.isArray(settlementRiders) ? settlementRiders : []).forEach(rider => {
+      const driverId = String(rider?.matchedRiderId || rider?.driverId || '').trim();
+      if (!driverId || !driverById(list, driverId)) return;
+      [rider?.originalName, rider?.coupangLoginKey, rider?.baeminUserId].forEach(raw => {
+        const key = matchIdFor(p, raw);
+        if (!key) return;
+        const prev = map.get(key);
+        if (prev && prev !== driverId) map.set(key, '');
+        else map.set(key, driverId);
+      });
+    });
+    map.forEach((value, key) => {
+      if (!value) map.delete(key);
+    });
+    return map;
+  }
+
+  function resolveAliasLookup(drivers, platform, options) {
+    if (options?.aliasByKey instanceof Map) return options.aliasByKey;
+    if (options?.settlementRiders) {
+      return buildSettlementAliasLookup(options.settlementRiders, drivers, platform);
+    }
+    return null;
+  }
+
+  function matchRow(baeminId, drivers, platform, options) {
     const p = normalizePlatform(platform);
     const label = platformIdLabel(p);
     const id = matchIdFor(p, baeminId);
@@ -124,11 +164,16 @@
     if (candidates.length > 1) {
       return { status: 'duplicate', driver: null, driverId: '', driverName: '', matches: candidates, error: `동일 ${label}로 여러 기사 매칭` };
     }
-    if (!candidates.length) {
-      return { status: 'unmatched', driver: null, driverId: '', driverName: '', matches: [], error: '등록된 기사와 매칭 실패' };
+    if (candidates.length === 1) {
+      const driver = candidates[0];
+      return { status: 'matched', driver, driverId: driver.id, driverName: driver.name || '', matches: [driver], error: '' };
     }
-    const driver = candidates[0];
-    return { status: 'matched', driver, driverId: driver.id, driverName: driver.name || '', matches: [driver], error: '' };
+    const aliasId = resolveAliasLookup(list, p, options)?.get(id) || '';
+    const aliased = driverById(list, aliasId);
+    if (aliased) {
+      return { status: 'matched', driver: aliased, driverId: aliased.id, driverName: aliased.name || '', matches: [aliased], error: '' };
+    }
+    return { status: 'unmatched', driver: null, driverId: '', driverName: '', matches: [], error: '등록된 기사와 매칭 실패' };
   }
 
   function rowFromMatch(row, match, platform) {
@@ -167,17 +212,17 @@
     };
   }
 
-  function rematchRows(rows, drivers, platform) {
+  function rematchRows(rows, drivers, platform, options) {
     const p = normalizePlatform(platform);
     return (Array.isArray(rows) ? rows : []).map(row => {
       if (row.matchStatus === 'manual' && row.driverId) {
         return applyManualDriverToRow(row, row.driverId, drivers, p);
       }
-      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, drivers, p), p);
+      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, drivers, p, options), p);
     });
   }
 
-  function parseSheetRows(rows, drivers, platform) {
+  function parseSheetRows(rows, drivers, platform, options) {
     const p = normalizePlatform(platform);
     if (!Array.isArray(rows) || !rows.length) {
       return { rows: [], issues: ['시트에 데이터가 없습니다.'] };
@@ -189,7 +234,7 @@
       // 표시는 원본 그대로 두고, 매칭할 때만 플랫폼 규칙으로 정규화한다.
       const baeminId = String(cellValue(row, COL.baeminId) ?? '').trim();
       const amount = parseMoney(cellValue(row, COL.amount));
-      const match = matchRow(baeminId, drivers, p);
+      const match = matchRow(baeminId, drivers, p, options);
       const item = rowFromMatch({
         rowNumber: index + 1,
         rowKey: `direct-adj-${index + 1}`,
@@ -226,9 +271,13 @@
     let mergedRows = 0;
     let mergedDrivers = 0;
     let skippedNoAmount = 0;
+    let skippedUnmatched = 0;
     (Array.isArray(rows) ? rows : []).forEach(row => {
       const ok = row.matchStatus === 'matched' || row.matchStatus === 'manual';
-      if (!ok || !row.driverId) return;
+      if (!ok || !row.driverId) {
+        skippedUnmatched += 1;
+        return;
+      }
       const amount = Number(row.amount || 0);
       if (!amount) { skippedNoAmount += 1; return; }
       const id = String(row.driverId).trim();
@@ -245,7 +294,7 @@
       byDriver.set(id, entry);
       toApply.push(entry);
     });
-    return { toApply, mergedRows, mergedDrivers, skippedNoAmount };
+    return { toApply, mergedRows, mergedDrivers, skippedNoAmount, skippedUnmatched };
   }
 
   /** 미리보기에서 "합산됨"을 알려주기 위한 기사별 중복 그룹. driverId → { rowNumbers, total } */
@@ -274,8 +323,24 @@
       if (row.matchStatus === 'matched' || row.matchStatus === 'manual') acc.matched += 1;
       else acc.unmatched += 1;
       acc.amountTotal += Number(row.amount || 0);
+      if (!(row.matchStatus === 'matched' || row.matchStatus === 'manual')) {
+        acc.unmatchedAmount += Number(row.amount || 0);
+      }
       return acc;
-    }, { total: 0, matched: 0, unmatched: 0, amountTotal: 0 });
+    }, { total: 0, matched: 0, unmatched: 0, amountTotal: 0, unmatchedAmount: 0 });
+  }
+
+  function sortPreviewRows(rows) {
+    const rank = status => {
+      if (status === 'unmatched' || status === 'empty_id') return 0;
+      if (status === 'duplicate') return 1;
+      return 2;
+    };
+    return (Array.isArray(rows) ? rows : []).slice().sort((a, b) => {
+      const diff = rank(a.matchStatus) - rank(b.matchStatus);
+      if (diff) return diff;
+      return Number(a.rowNumber || 0) - Number(b.rowNumber || 0);
+    });
   }
 
   function sheetRowsFromWorkbook(workbook) {
@@ -351,6 +416,7 @@
     parseSheetRows,
     rematchRows,
     applyManualDriverToRow,
+    buildSettlementAliasLookup,
     matchRow,
     matchStatusLabel,
     getUnmatchedLines,
@@ -358,6 +424,7 @@
     filterRowsForApply,
     duplicateDriverGroups,
     summarizeRows,
+    sortPreviewRows,
     sheetRowsFromWorkbook,
     sheetRowsFromPasteText,
     templateRows

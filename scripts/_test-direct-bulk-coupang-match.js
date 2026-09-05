@@ -183,5 +183,57 @@ console.log('\n[9] 주정산서 업로드와 같은 쿠팡ID 규칙인지');
   });
 }
 
+console.log('\n[10] 주정산서 원본 ID 별칭 — 이정익2201 → 이정익(전화 7469)');
+{
+  const env = loadBulk();
+  const bulk = env.BremDirectAdjustmentBulk;
+  const drivers = [{ id: 'lee', name: '이정익', phone: '010-7795-7469' }];
+  const settlementRiders = [{
+    riderName: '이정익',
+    originalName: '이정익2201',
+    coupangLoginKey: '이정익2201',
+    matchedRiderId: 'lee'
+  }];
+
+  const without = bulk.parseSheetRows([['이정익2201', 14000], ['이정익2201', 20000]], drivers, 'coupang');
+  check('별칭 없으면 미매칭', without.rows[0].matchStatus, 'unmatched');
+  check('별칭 없으면 2행 미매칭', without.rows.every(r => r.matchStatus === 'unmatched'), true);
+
+  const withAlias = bulk.parseSheetRows(
+    [['이정익2201', 14000], ['이정익2201', 20000]],
+    drivers,
+    'coupang',
+    { settlementRiders }
+  );
+  check('정산서 원본 ID로 매칭', withAlias.rows[0].matchStatus, 'matched');
+  check('두 줄 모두 이정익', withAlias.rows.every(r => r.driverId === 'lee'), true);
+  check('합산 34,000', withAlias.rows.reduce((s, r) => s + r.amount, 0), 34000);
+
+  const stillMissing = bulk.parseSheetRows([['없는사람2201', 1000]], drivers, 'coupang', { settlementRiders });
+  check('정산서에 없는 ID는 여전히 미매칭', stillMissing.rows[0].matchStatus, 'unmatched');
+}
+
+console.log('\n[11] 미매칭 합계·미리보기 정렬·적용 제외 건수');
+{
+  const env = loadBulk();
+  const bulk = env.BremDirectAdjustmentBulk;
+  const parsed = bulk.parseSheetRows([
+    ['배승범1263', 10000],
+    ['없는사람9999', 14000],
+    ['배승범1263', 5000],
+    ['이정익2201', 20000]
+  ], DRIVERS, 'coupang');
+  const summary = bulk.summarizeRows(parsed.rows);
+  check('미매칭 2행', summary.unmatched, 2);
+  check('미매칭 금액 34,000', summary.unmatchedAmount, 34000);
+  const sorted = bulk.sortPreviewRows(parsed.rows);
+  check('미매칭이 맨 위', sorted[0].matchStatus, 'unmatched');
+  check('두번째도 미매칭', sorted[1].matchStatus, 'unmatched');
+  const filtered = bulk.filterRowsForApply(parsed.rows);
+  check('적용 대상 1명(합산)', filtered.toApply.length, 1);
+  check('적용 합산 15,000', filtered.toApply[0].amount, 15000);
+  check('미매칭 제외 2행', filtered.skippedUnmatched, 2);
+}
+
 console.log(`\n결과: ${pass}건 통과, ${fail}건 실패`);
 process.exit(fail ? 1 : 0);

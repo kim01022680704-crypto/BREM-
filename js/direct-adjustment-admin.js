@@ -13,6 +13,10 @@ const BremDirectAdjustmentAdmin = (function () {
       summary: '#directOtherBulkSummary',
       preview: '#directOtherBulkPreview',
       body: '#directOtherBulkBody',
+      issues: '#directOtherBulkIssues',
+      unmatchedBox: '#directOtherUnmatchedBox',
+      unmatchedBody: '#directOtherUnmatchedBody',
+      unmatchedCount: '#directOtherUnmatchedCount',
       applied: '#directOtherAppliedBody',
       clearAll: '#directOtherClearAllBtn'
     },
@@ -27,6 +31,10 @@ const BremDirectAdjustmentAdmin = (function () {
       summary: '#directPromotionBulkSummary',
       preview: '#directPromotionBulkPreview',
       body: '#directPromotionBulkBody',
+      issues: '#directPromotionBulkIssues',
+      unmatchedBox: '#directPromotionUnmatchedBox',
+      unmatchedBody: '#directPromotionUnmatchedBody',
+      unmatchedCount: '#directPromotionUnmatchedCount',
       applied: '#directPromotionAppliedBody',
       clearAll: '#directPromotionClearAllBtn'
     }
@@ -91,6 +99,10 @@ const BremDirectAdjustmentAdmin = (function () {
 
   function driversList() {
     return window.BremStorage?.drivers?.getAll?.() || [];
+  }
+
+  function matchOptions() {
+    return { settlementRiders: currentSettlement()?.riders || [] };
   }
 
   function driverName(driverId, fallback) {
@@ -285,13 +297,17 @@ const BremDirectAdjustmentAdmin = (function () {
       return;
     }
     await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
-    const parsed = window.BremDirectAdjustmentBulk.parseSheetRows(rows, driversList(), state.platform);
+    const parsed = window.BremDirectAdjustmentBulk.parseSheetRows(rows, driversList(), state.platform, matchOptions());
     state.pending[kind] = parsed;
     const fileInput = $(cfg.file);
     if (fileInput) fileInput.value = '';
     renderPreview(kind);
     const summary = window.BremDirectAdjustmentBulk.summarizeRows(parsed.rows);
-    showToast(`${cfg.label}${sourceLabel ? ` (${sourceLabel})` : ''}: ${summary.total}행 · 매칭 ${summary.matched}명 · 합계 ${formatNumber(summary.amountTotal)}원`);
+    let toast = `${cfg.label}${sourceLabel ? ` (${sourceLabel})` : ''}: ${summary.total}행 · 매칭 ${summary.matched}행 · 합계 ${formatNumber(summary.amountTotal)}원`;
+    if (summary.unmatched) {
+      toast += ` · 미매칭 ${summary.unmatched}행 ${formatNumber(summary.unmatchedAmount)}원`;
+    }
+    showToast(toast);
   }
 
   async function handleFileChange(kind, file) {
@@ -363,6 +379,7 @@ const BremDirectAdjustmentAdmin = (function () {
       wrap.hidden = true;
       body.innerHTML = '';
       if (summaryEl) summaryEl.textContent = '';
+      renderUnmatchedBox(kind, []);
       return;
     }
 
@@ -373,10 +390,16 @@ const BremDirectAdjustmentAdmin = (function () {
       const dupNote = dupGroups.size
         ? ` · 중복 <strong>${dupGroups.size}</strong>명은 합산 적용`
         : '';
-      summaryEl.innerHTML = `추출 <strong>${summary.total}</strong>행 · 매칭 <strong>${summary.matched}</strong>명 · 미매칭 <strong>${summary.unmatched}</strong>명 · 합계 <strong>${formatNumber(summary.amountTotal)}</strong>원${dupNote}`;
+      const unmatchedNote = summary.unmatched
+        ? ` · 미매칭 <strong class="promotion-status-no">${summary.unmatched}행 ${formatNumber(summary.unmatchedAmount)}원</strong>`
+        : ' · 미매칭 <strong>0</strong>행';
+      summaryEl.innerHTML = `추출 <strong>${summary.total}</strong>행 · 매칭 <strong>${summary.matched}</strong>행${unmatchedNote} · 합계 <strong>${formatNumber(summary.amountTotal)}</strong>원${dupNote}`;
     }
+    renderUnmatchedBox(kind, parsed.rows);
 
-    body.innerHTML = parsed.rows.map((row, index) => {
+    const previewRows = window.BremDirectAdjustmentBulk.sortPreviewRows?.(parsed.rows) || parsed.rows;
+    body.innerHTML = previewRows.map(row => {
+      const index = parsed.rows.indexOf(row);
       const matched = row.matchStatus === 'matched' || row.matchStatus === 'manual';
       const statusClass = matched ? 'promotion-status-ok' : 'promotion-status-no';
       const matchedId = matched ? driverPlatformId(row.driverId) : '';
@@ -399,6 +422,36 @@ const BremDirectAdjustmentAdmin = (function () {
     }).join('');
   }
 
+  function renderUnmatchedBox(kind, rows) {
+    const cfg = KINDS[kind];
+    const issues = cfg.issues ? $(cfg.issues) : null;
+    const box = cfg.unmatchedBox ? $(cfg.unmatchedBox) : null;
+    const body = cfg.unmatchedBody ? $(cfg.unmatchedBody) : null;
+    const countEl = cfg.unmatchedCount ? $(cfg.unmatchedCount) : null;
+    const unmatched = window.BremDirectAdjustmentBulk.getUnmatchedLines(rows);
+    if (issues) issues.hidden = !unmatched.length;
+    if (box) box.hidden = !unmatched.length;
+    if (countEl) countEl.textContent = `${unmatched.length}행`;
+    if (!body) return;
+    if (!unmatched.length) {
+      body.innerHTML = '';
+      return;
+    }
+    const parsed = state.pending[kind];
+    body.innerHTML = unmatched.map(row => {
+      const index = parsed?.rows ? parsed.rows.indexOf(row) : -1;
+      return `
+      <tr class="promotion-row-unpaid">
+        <td>${row.rowNumber}</td>
+        <td>${escapeHtml(row.baeminId || '-')} · ${formatNumber(row.amount)}원</td>
+        <td class="promotion-status-no">${escapeHtml(row.matchStatusLabel)}${row.error ? ` · ${escapeHtml(row.error)}` : ''}</td>
+        <td>${index >= 0
+          ? `<select class="small-select" data-direct-adj-driver="${kind}" data-row-index="${index}">${driverOptionsHtml()}</select>`
+          : '-'}</td>
+      </tr>`;
+    }).join('');
+  }
+
   function applyPending(kind) {
     const cfg = KINDS[kind];
     const settlement = currentSettlement();
@@ -411,10 +464,23 @@ const BremDirectAdjustmentAdmin = (function () {
       showToast('먼저 파일 업로드 또는 엑셀 붙여넣기로 미리보기를 만드세요.');
       return;
     }
-    const { toApply, mergedRows, mergedDrivers, skippedNoAmount } = window.BremDirectAdjustmentBulk.filterRowsForApply(parsed.rows);
+    const { toApply, mergedRows, mergedDrivers, skippedNoAmount, skippedUnmatched } = window.BremDirectAdjustmentBulk.filterRowsForApply(parsed.rows);
     if (!toApply.length) {
       showToast('적용할 매칭 행이 없습니다. (매칭·금액 확인)');
       return;
+    }
+    const unmatchedRows = window.BremDirectAdjustmentBulk.getUnmatchedLines(parsed.rows);
+    const duplicateRows = window.BremDirectAdjustmentBulk.getDuplicateLines(parsed.rows);
+    if (unmatchedRows.length || duplicateRows.length) {
+      const lines = [
+        `미매칭 ${unmatchedRows.length}행 · ${formatNumber(unmatchedRows.reduce((s, r) => s + Number(r.amount || 0), 0))}원은 빠집니다.`,
+        ...unmatchedRows.slice(0, 8).map(row => `· ${row.baeminId || '(ID 없음)'} ${formatNumber(row.amount)}원`),
+        unmatchedRows.length > 8 ? `· 외 ${unmatchedRows.length - 8}행` : '',
+        duplicateRows.length ? `중복매칭 ${duplicateRows.length}행도 빠집니다.` : '',
+        '',
+        `맞은 ${toApply.length}명만 적용할까요?`
+      ].filter(Boolean);
+      if (!window.confirm(lines.join('\n'))) return;
     }
     const coupang = state.platform === 'coupang';
     const entries = toApply.map(row => {
@@ -443,6 +509,7 @@ const BremDirectAdjustmentAdmin = (function () {
     let message = `${cfg.label} ${toApply.length}명 적용 완료`;
     if (addedToExisting) message += ` · 기존 ${addedToExisting}명 금액에 합산`;
     if (mergedDrivers) message += ` · 중복 ${mergedDrivers}명(${mergedRows + mergedDrivers}행) 합산`;
+    if (skippedUnmatched) message += ` · 미매칭 ${skippedUnmatched}행 제외`;
     if (skippedNoAmount) message += ` · 금액 없음 ${skippedNoAmount} 제외`;
     showToast(message);
   }
@@ -460,7 +527,7 @@ const BremDirectAdjustmentAdmin = (function () {
       showToast('미리보기가 없습니다. 파일 업로드 또는 엑셀 붙여넣기를 먼저 하세요.');
       return;
     }
-    parsed.rows = window.BremDirectAdjustmentBulk.rematchRows(parsed.rows, driversList(), state.platform);
+    parsed.rows = window.BremDirectAdjustmentBulk.rematchRows(parsed.rows, driversList(), state.platform, matchOptions());
     renderPreview(kind);
     showToast('매칭을 다시 시도했습니다.');
   }

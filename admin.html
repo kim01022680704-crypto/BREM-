@@ -4940,6 +4940,23 @@
                 <button type="button" class="small-btn" id="directOtherBulkRetryBtn">매칭 재시도</button>
               </div>
               <p class="direct-inline-stats" id="directOtherBulkSummary"></p>
+              <div class="payroll-bulk-match-issues" id="directOtherBulkIssues" hidden>
+                <div class="payroll-bulk-match-issues-head">
+                  <span class="payroll-bulk-match-issues-label">미매칭 확인</span>
+                </div>
+                <div class="payroll-bulk-match-issue-card" id="directOtherUnmatchedBox" hidden>
+                  <div class="payroll-bulk-match-issue-card-head">
+                    <strong>미매칭</strong>
+                    <span class="payroll-match-issue-count" id="directOtherUnmatchedCount">0행</span>
+                  </div>
+                  <div class="table-wrap bulk-preview-wrap payroll-match-issue-table">
+                    <table class="bulk-preview-table">
+                      <thead><tr><th>행</th><th>ID / 금액</th><th>상태</th><th>기사 선택</th></tr></thead>
+                      <tbody id="directOtherUnmatchedBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
               <div class="table-wrap" id="directOtherBulkPreview" hidden>
                 <table class="weekly-settlement-saved-table">
                   <thead><tr><th>행</th><th>기사ID</th><th>기사</th><th>금액</th><th>매칭</th></tr></thead>
@@ -4971,6 +4988,23 @@
                 <button type="button" class="small-btn" id="directPromotionBulkRetryBtn">매칭 재시도</button>
               </div>
               <p class="direct-inline-stats" id="directPromotionBulkSummary"></p>
+              <div class="payroll-bulk-match-issues" id="directPromotionBulkIssues" hidden>
+                <div class="payroll-bulk-match-issues-head">
+                  <span class="payroll-bulk-match-issues-label">미매칭 확인</span>
+                </div>
+                <div class="payroll-bulk-match-issue-card" id="directPromotionUnmatchedBox" hidden>
+                  <div class="payroll-bulk-match-issue-card-head">
+                    <strong>미매칭</strong>
+                    <span class="payroll-match-issue-count" id="directPromotionUnmatchedCount">0행</span>
+                  </div>
+                  <div class="table-wrap bulk-preview-wrap payroll-match-issue-table">
+                    <table class="bulk-preview-table">
+                      <thead><tr><th>행</th><th>ID / 금액</th><th>상태</th><th>기사 선택</th></tr></thead>
+                      <tbody id="directPromotionUnmatchedBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
               <div class="table-wrap" id="directPromotionBulkPreview" hidden>
                 <table class="weekly-settlement-saved-table">
                   <thead><tr><th>행</th><th>기사ID</th><th>기사</th><th>금액</th><th>매칭</th></tr></thead>
@@ -8872,8 +8906,8 @@
   <script src="js/payroll-slip-utils.js?v=20260814match1"></script>
   <script src="js/payroll-promotion-bulk.js?v=20260822other1"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260807b"></script>
-  <script src="js/direct-adjustment-bulk.js?v=20260813b"></script>
-  <script src="js/direct-adjustment-admin.js?v=20260827attach1"></script>
+  <script src="js/direct-adjustment-bulk.js?v=20260905a"></script>
+  <script src="js/direct-adjustment-admin.js?v=20260905a"></script>
   <script src="js/direct-settlement-calc.js?v=20260827tax1"></script>
   <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260823c"></script>
