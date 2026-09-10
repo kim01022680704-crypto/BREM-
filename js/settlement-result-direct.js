@@ -19,6 +19,7 @@ const BremSettlementResultDirect = (function () {
   const detailInitial = {
     missionPay: 0,
     other: 0,
+    promo: 0,
     leaseFee: 0,
     loanFee: 0
   };
@@ -316,7 +317,7 @@ const BremSettlementResultDirect = (function () {
         data-driver-id="${escapeHtml(row.driverId || '')}"
         data-platform="${escapeHtml(row.platform || '')}"
         style="cursor:pointer;"
-        title="클릭하여 추가지급·기타지급·리스·대여 조정">${cols.map(col => cellHtml(col, row)).join('')}</tr>`).join('');
+        title="클릭하여 추가지급·기타지급·BREM프로모션·리스·대여 조정">${cols.map(col => cellHtml(col, row)).join('')}</tr>`).join('');
 
       if (summaryEl) {
         // 선정산(처리완료)은 이 플랫폼에서 실제 출금한 금액을 그대로 공제한다.
@@ -360,13 +361,17 @@ const BremSettlementResultDirect = (function () {
     if (col.money !== false) classes.push('weekly-amount-cell');
     if (col.note) classes.push('settle-col-note');
 
-    // 리스차감·대여차감: 클릭해서 이번 정산서만 금액 수정/0/자동복원
-    if ((col.key === 'leaseFee' || col.key === 'loanFee') && row.driverId && row.settlementId) {
+    // BREM프로모션·리스차감·대여차감: 칸 클릭으로 이번 정산서만 금액 수정
+    if ((col.key === 'promo' || col.key === 'leaseFee' || col.key === 'loanFee') && row.driverId && row.settlementId) {
       classes.push('settle-fee-editable');
-      const title = `${col.label} — 클릭하여 수정 (0=없앰, 자동=ERP복원)`;
+      const title = col.key === 'promo'
+        ? `${col.label} — 클릭하여 수기 입력 (0=없앰)`
+        : col.key === 'leaseFee'
+          ? `${col.label} — 클릭하여 수기 입력 (0=없앰)`
+          : `${col.label} — 클릭하여 수정 (0=없앰, 자동=ERP복원)`;
       return `<td class="${classes.join(' ')}" title="${escapeHtml(title)}"
         data-settle-fee-edit="1"
-        data-fee-kind="${escapeHtml(col.key)}"
+        data-fee-kind="${escapeHtml(col.key === 'promo' ? 'promotion' : col.key)}"
         data-settlement-id="${escapeHtml(row.settlementId)}"
         data-driver-id="${escapeHtml(row.driverId)}"
         data-driver-name="${escapeHtml(row.name || '')}"
@@ -452,6 +457,7 @@ const BremSettlementResultDirect = (function () {
     const dname = $('#settlementFinalDetailDriverName');
     const missionInput = $('#settlementFinalDetailMissionPay');
     const otherInput = $('#settlementFinalDetailOtherPay');
+    const promoInput = $('#settlementFinalDetailPromo');
     const leaseInput = $('#settlementFinalDetailLeaseFee');
     const loanInput = $('#settlementFinalDetailLoanFee');
     if (sid) sid.value = row.settlementId || '';
@@ -459,18 +465,30 @@ const BremSettlementResultDirect = (function () {
     if (dname) dname.value = row.name || '';
     if (missionInput) missionInput.value = String(Math.max(0, Math.round(Number(row.missionPay || 0))));
     if (otherInput) otherInput.value = String(Math.max(0, Math.round(Number(row.other || 0))));
+    if (promoInput) promoInput.value = String(Math.max(0, Math.round(Number(row.promo || 0))));
     if (leaseInput) leaseInput.value = String(Math.max(0, Math.round(Number(row.leaseFee || 0))));
     if (loanInput) loanInput.value = String(Math.max(0, Math.round(Number(row.loanFee || 0))));
     detailInitial.missionPay = Math.max(0, Math.round(Number(row.missionPay || 0)));
     detailInitial.other = Math.max(0, Math.round(Number(row.other || 0)));
+    detailInitial.promo = Math.max(0, Math.round(Number(row.promo || 0)));
     detailInitial.leaseFee = Math.max(0, Math.round(Number(row.leaseFee || 0)));
     detailInitial.loanFee = Math.max(0, Math.round(Number(row.loanFee || 0)));
+    updatePromoTaxHint();
     modal.hidden = false;
-    missionInput?.focus?.();
+    promoInput?.focus?.();
   }
 
   function parseMoneyInput(selector) {
     return Math.max(0, Math.round(Number(String($(selector)?.value || '0').replace(/,/g, '')) || 0));
+  }
+
+  function updatePromoTaxHint() {
+    const hint = $('#settlementFinalDetailPromoTaxHint');
+    if (!hint || typeof Calc()?.promoTax !== 'function') return;
+    const promo = parseMoneyInput('#settlementFinalDetailPromo');
+    const other = parseMoneyInput('#settlementFinalDetailOtherPay');
+    const tax = Calc().promoTax(promo + other);
+    hint.textContent = `프로모션원천세 ${(tax || 0).toLocaleString('ko-KR')}원 = (BREM프로모션 ${promo.toLocaleString('ko-KR')} + 기타지급 ${other.toLocaleString('ko-KR')}) × 3.3%`;
   }
 
   function patchRiderManualAdjustments(settlementId, driverId, patch) {
@@ -516,23 +534,25 @@ const BremSettlementResultDirect = (function () {
     }
     await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
     if (restoreAuto) {
-      // 추가지급 → 주정산서 금액, 기타지급 → 0, 리스·대여 → ERP 자동
+      // 추가지급 → 주정산서 금액, 기타지급 → 0, 리스 → 0(수기만), 대여 → ERP 자동
+      // BREM프로모션은 수기/ERP 값이 섞여 있어 자동복원에서 건드리지 않는다.
       store.removeDriver('missionPay', settlementId, driverId);
       store.removeDriver('other', settlementId, driverId);
       store.removeDriver('leaseFee', settlementId, driverId);
       store.removeDriver('loanFee', settlementId, driverId);
       patchRiderManualAdjustments(settlementId, driverId, null);
       await window.BremStorage.flushStorage?.();
-      showToast('자동복원 · 추가지급(주정산서) · 기타지급 0 · 리스·대여 ERP');
+      showToast('자동복원 · 추가지급(주정산서) · 기타지급 0 · 리스 0(수기) · 대여 ERP · BREM프로모션 유지');
       closeFinalDetailModal();
       refreshAfterDetailSave();
       return;
     }
     const missionPay = parseMoneyInput('#settlementFinalDetailMissionPay');
     const otherPay = parseMoneyInput('#settlementFinalDetailOtherPay');
+    const promo = parseMoneyInput('#settlementFinalDetailPromo');
     const leaseFee = parseMoneyInput('#settlementFinalDetailLeaseFee');
     const loanFee = parseMoneyInput('#settlementFinalDetailLoanFee');
-    if (![missionPay, otherPay, leaseFee, loanFee].every(Number.isFinite)) {
+    if (![missionPay, otherPay, promo, leaseFee, loanFee].every(Number.isFinite)) {
       showToast('금액은 숫자로 입력하세요.');
       return;
     }
@@ -545,6 +565,10 @@ const BremSettlementResultDirect = (function () {
     if (otherPay !== detailInitial.other) {
       store.applyEntries('other', settlementId, [{ ...entry, amount: otherPay }]);
       patch.other = otherPay;
+    }
+    if (promo !== detailInitial.promo) {
+      store.applyEntries('promotion', settlementId, [{ ...entry, amount: promo }]);
+      patch.promo = promo;
     }
     if (leaseFee !== detailInitial.leaseFee) {
       store.applyEntries('leaseFee', settlementId, [{ ...entry, amount: leaseFee }]);
@@ -562,7 +586,7 @@ const BremSettlementResultDirect = (function () {
     await window.BremStorage.flushStorage?.();
     showToast(
       `저장 · 추가 ${missionPay.toLocaleString('ko-KR')} · 기타 ${otherPay.toLocaleString('ko-KR')}`
-      + ` · 리스 ${leaseFee.toLocaleString('ko-KR')} · 대여 ${loanFee.toLocaleString('ko-KR')}`
+      + ` · 프로모션 ${promo.toLocaleString('ko-KR')} · 리스 ${leaseFee.toLocaleString('ko-KR')} · 대여 ${loanFee.toLocaleString('ko-KR')}`
     );
     closeFinalDetailModal();
     refreshAfterDetailSave();
@@ -574,25 +598,31 @@ const BremSettlementResultDirect = (function () {
     const driverId = String(cell.getAttribute('data-driver-id') || '').trim();
     const driverName = String(cell.getAttribute('data-driver-name') || '').trim();
     const current = Math.max(0, Math.round(Number(cell.getAttribute('data-current-amount') || 0)));
-    if ((kind !== 'leaseFee' && kind !== 'loanFee') || !settlementId || !driverId) return;
+    const allowed = new Set(['promotion', 'leaseFee', 'loanFee']);
+    if (!allowed.has(kind) || !settlementId || !driverId) return;
     const store = window.BremStorage?.directSettlementAdjustments;
     if (!store?.applyEntries || !store?.removeDriver) {
       showToast('저장소를 불러오지 못했습니다.');
       return;
     }
-    const label = kind === 'leaseFee' ? '리스차감' : '대여차감';
+    const label = kind === 'promotion' ? 'BREM프로모션' : (kind === 'leaseFee' ? '리스차감' : '대여차감');
+    const help = kind === 'promotion'
+      ? `숫자 = 이번 정산서 수기 금액 · 0 = 없앰\n(저장 후 프로모션원천세 3.3%가 다시 계산됩니다)`
+      : kind === 'leaseFee'
+        ? `숫자 = 이번 정산서 수기 차감 · 0 = 없앰\n(ERP 자동 반영 없음 — 주 끝나면 직접 입력)`
+        : `숫자 = 이번 정산서에 적용 · 0 = 없앰 · 자동 = ERP 자동계산으로 복원`;
     const input = window.prompt(
-      `${label} (${driverName || driverId})\n`
-        + `숫자 = 이번 정산서에 적용 · 0 = 없앰 · 자동 = ERP 자동계산으로 복원\n`
-        + `현재: ${current.toLocaleString('ko-KR')}원`,
+      `${label} (${driverName || driverId})\n${help}\n현재: ${current.toLocaleString('ko-KR')}원`,
       String(current)
     );
     if (input == null) return;
     const trimmed = String(input).trim();
-    if (!trimmed || trimmed === '자동' || trimmed.toLowerCase() === 'auto') {
+    if (kind !== 'promotion' && (!trimmed || trimmed === '자동' || trimmed.toLowerCase() === 'auto')) {
       store.removeDriver(kind, settlementId, driverId);
       void window.BremStorage.flushStorage?.();
-      showToast(`${label} 자동계산으로 복원했습니다.`);
+      showToast(kind === 'leaseFee'
+        ? `${label} 수기 해제 · 0원`
+        : `${label} 자동계산으로 복원했습니다.`);
       if (state.viewMode === 'final') renderFinal();
       else {
         render();
@@ -602,7 +632,7 @@ const BremSettlementResultDirect = (function () {
     }
     const amount = Math.max(0, Math.round(Number(String(trimmed).replace(/,/g, ''))));
     if (!Number.isFinite(amount)) {
-      showToast('금액을 숫자로 입력하세요. (자동복원은 「자동」)');
+      showToast(kind === 'promotion' ? '금액을 숫자로 입력하세요.' : '금액을 숫자로 입력하세요. (자동복원은 「자동」)');
       return;
     }
     store.applyEntries(kind, settlementId, [{
@@ -611,6 +641,9 @@ const BremSettlementResultDirect = (function () {
       driverName,
       source: 'manual'
     }]);
+    if (kind === 'promotion') {
+      patchRiderManualAdjustments(settlementId, driverId, { promo: amount });
+    }
     void window.BremStorage.flushStorage?.();
     showToast(`${label} ${amount.toLocaleString('ko-KR')}원으로 반영했습니다.`);
     if (state.viewMode === 'final') renderFinal();
@@ -646,6 +679,8 @@ const BremSettlementResultDirect = (function () {
   async function loadWithdrawals() {
     const week = settlementWeek(currentSettlement());
     try {
+      await window.BremStorage?.ensureLeaseErpKeysLoaded?.();
+      await window.BremStorage?.payrollDailySettlement?.reloadWithdrawalHoldsFromServer?.();
       const fetchApi = window.BremStorage?.payrollWithdrawal?.fetchFromAdminApi;
       if (typeof fetchApi === 'function') {
         state.withdrawals = await fetchApi({ weekStart: week });
@@ -681,37 +716,34 @@ const BremSettlementResultDirect = (function () {
     return Math.ceil(-net / (1 - 0.033));
   }
 
-  async function batchFixNegatives() {
-    const settlement = currentSettlement();
-    if (!settlement) { showToast('정산서를 먼저 선택하세요.'); return; }
-    const rows = computeRows();
-    const negatives = rows.filter(r => Math.round(Number(r.netPay || 0)) < 0 && r.driverId);
-    if (!negatives.length) { showToast('마이너스(총지급액<0)인 기사가 없습니다.'); return; }
-
+  function buildNegativeFixPlans(negatives) {
     const store = window.BremStorage?.directSettlementAdjustments;
-    if (!store) { showToast('조정 저장소를 사용할 수 없습니다.'); return; }
-    const otherMap = store.getSettlement('other', settlement.id) || {};
-    const week = settlementWeek(settlement);
-
-    const entries = [];
+    const bySettlement = new Map();
     const retro = [];
-    negatives.forEach(row => {
+    (Array.isArray(negatives) ? negatives : []).forEach(row => {
+      const settlementId = String(row.settlementId || '').trim();
+      const driverId = String(row.driverId || '').trim();
+      if (!settlementId || !driverId) return;
       const x = grossUpForZero(row);
       if (x <= 0) return;
-      const prev = otherMap[row.driverId] || {};
-      entries.push({
-        driverId: row.driverId,
-        amount: Math.round(Number(prev.amount || 0)) + x, // 기존 기타지급 + 소급 그로스업
+      const otherMap = store?.getSettlement?.('other', settlementId) || {};
+      const prev = otherMap[driverId] || {};
+      const platform = String(row.platform || '').trim();
+      const list = bySettlement.get(settlementId) || [];
+      list.push({
+        driverId,
+        amount: Math.round(Number(prev.amount || 0)) + x,
         driverName: row.name,
-        baeminId: prev.baeminId || (state.platform === 'baemin' ? row.idLabel : ''),
-        coupangId: prev.coupangId || (state.platform === 'coupang' ? row.idLabel : '')
+        baeminId: prev.baeminId || (platform === 'baemin' ? row.idLabel : ''),
+        coupangId: prev.coupangId || (platform === 'coupang' ? row.idLabel : '')
       });
+      bySettlement.set(settlementId, list);
+
       const shortfall = Math.abs(Math.round(Number(row.netPay || 0)));
       const leaseFee = Math.max(0, Math.round(Number(row.leaseFee || 0)));
       const loanFee = Math.max(0, Math.round(Number(row.loanFee || 0)));
       const prepaid = Math.max(0, Math.round(Number(row.prepaid || 0)));
       const feeSum = leaseFee + loanFee + prepaid;
-      // 리스·대여·선정산이 있을 때만 회수(미납) 대상. 없으면 고용·산재 회사로스.
       const unpaidBalance = feeSum > 0 ? shortfall : 0;
       const reasonParts = [];
       if (leaseFee > 0) reasonParts.push(`리스차감 ${leaseFee.toLocaleString('ko-KR')}`);
@@ -719,10 +751,10 @@ const BremSettlementResultDirect = (function () {
       if (prepaid > 0) reasonParts.push(`선정산 ${prepaid.toLocaleString('ko-KR')}`);
       if (feeSum <= 0) reasonParts.push('고용·산재 로스(회사부담)');
       retro.push({
-        driverId: row.driverId,
+        driverId,
         name: row.name,
         idLabel: row.idLabel,
-        platform: row.platform,
+        platform,
         amount: x,
         grossUpAmount: x,
         unpaidBalance,
@@ -732,24 +764,35 @@ const BremSettlementResultDirect = (function () {
         status: 'logged',
         lossType: feeSum > 0 ? 'recoverable' : 'insurance_loss',
         reason: reasonParts.join(' · ') || '',
-        settlementId: settlement.id
+        settlementId
       });
     });
-    if (!entries.length) { showToast('맞출 금액이 없습니다.'); return; }
+    return { bySettlement, retro };
+  }
+
+  function platformKo(platform) {
+    return platform === 'coupang' ? '쿠팡' : '배민';
+  }
+
+  async function applyNegativeFixPlans(week, bySettlement, retro, options = {}) {
+    const store = window.BremStorage?.directSettlementAdjustments;
+    if (!store) { showToast('조정 저장소를 사용할 수 없습니다.'); return false; }
+    if (!bySettlement.size || !retro.length) { showToast('맞출 금액이 없습니다.'); return false; }
 
     const recoverable = retro.filter(r => r.unpaidBalance > 0 || (r.leaseFee + r.loanFee + r.prepaid) > 0);
     const insuranceLoss = retro.length - recoverable.length;
     const preview = retro.slice(0, 15)
       .map(r => {
         const transfer = resolveTransferUnpaid(r);
-        return `· ${r.name} (${r.idLabel}) 이관 ${formatNumber(transfer)}원 · 그로스업 +${formatNumber(r.amount)}원`
+        return `· ${r.name} (${platformKo(r.platform)} ${r.idLabel}) 이관 ${formatNumber(transfer)}원 · 그로스업 +${formatNumber(r.amount)}원`
           + (transfer <= 0 ? ' [회사로스]' : '')
           + (r.reason ? ` [${r.reason}]` : '');
       });
     const more = retro.length > 15 ? `\n외 ${retro.length - 15}명` : '';
+    const scope = options.scopeLabel || '선택한 정산서';
     const ok = window.confirm(
       [
-        `${entries.length}명의 마이너스를 0원으로 맞춥니다.`,
+        `${scope} · ${retro.length}명의 마이너스를 0원으로 맞춥니다.`,
         '마이너스만큼 기타지급을 올리고, 원천세 3.3%까지 반영(그로스업)합니다.',
         `회수대상(리스·대여·선정산·미납) ${recoverable.length}명 · 고용·산재 회사로스 ${insuranceLoss}명(이관 선택 불가)`,
         '차감관리 이관은 자동이 아닙니다. 「소급분」탭에서 이관액 있는 건만 선택해 보내세요.',
@@ -757,14 +800,46 @@ const BremSettlementResultDirect = (function () {
         ...preview
       ].join('\n') + more + '\n\n적용할까요?'
     );
-    if (!ok) return;
+    if (!ok) return false;
 
-    store.applyEntries('other', settlement.id, entries);
+    bySettlement.forEach((entries, settlementId) => {
+      store.applyEntries('other', settlementId, entries);
+    });
     window.BremStorage?.directRetroAdjustments?.add?.(week, retro);
     await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
-    render();
     if (typeof BremFinalDeposit !== 'undefined') void BremFinalDeposit.refresh?.();
-    showToast(`${entries.length}명 일괄 맞춤 완료 · 총지급액 0원 처리 (소급분 기록)`);
+    showToast(`${retro.length}명 일괄 맞춤 완료 · 총지급액 0원 처리 (소급분 기록)`);
+    return true;
+  }
+
+  async function batchFixNegatives() {
+    const settlement = currentSettlement();
+    if (!settlement) { showToast('정산서를 먼저 선택하세요.'); return; }
+    const negatives = computeRows().filter(r => Math.round(Number(r.netPay || 0)) < 0 && r.driverId);
+    if (!negatives.length) { showToast('마이너스(총지급액<0)인 기사가 없습니다.'); return; }
+    const { bySettlement, retro } = buildNegativeFixPlans(negatives);
+    const applied = await applyNegativeFixPlans(settlementWeek(settlement), bySettlement, retro, {
+      scopeLabel: `${platformKo(settlement.platform)} · ${settlement.region || settlement.id}`
+    });
+    if (applied) {
+      render();
+      if (state.viewMode === 'final') renderFinal();
+    }
+  }
+
+  async function batchFixFinalNegatives() {
+    const week = finalWeek();
+    if (!week) { showToast('정산주(수요일)를 선택하세요.'); return; }
+    const negatives = finalRows().filter(r => Math.round(Number(r.netPay || 0)) < 0 && r.driverId);
+    if (!negatives.length) { showToast('마이너스(총지급액<0)인 기사가 없습니다.'); return; }
+    const { bySettlement, retro } = buildNegativeFixPlans(negatives);
+    const applied = await applyNegativeFixPlans(week, bySettlement, retro, {
+      scopeLabel: `최종결산 ${week}(수) 주 전체`
+    });
+    if (applied) {
+      renderFinal();
+      if (state.viewMode === 'retroUnpaid') renderRetro();
+    }
   }
 
   function retroStatusLabel(status) {
@@ -1399,7 +1474,11 @@ const BremSettlementResultDirect = (function () {
       const t = Calc().sumRows(rows);
       const coupangCount = rows.filter(r => r.platform === 'coupang').length;
       const baeminCount = rows.filter(r => r.platform === 'baemin').length;
+      const negativeCount = rows.filter(r => Math.round(Number(r.netPay || 0)) < 0).length;
       const searchNote = q ? ` · 검색 “${escapeHtml(state.finalSearch)}”` : '';
+      const negNote = negativeCount
+        ? ` · <span class="muted-inline">총지급액 음수 <strong>${negativeCount}</strong>명 — 「마이너스 일괄 맞추기」로 한 번에 0원 처리</span>`
+        : '';
       summaryEl.innerHTML = `표시 <strong>${rows.length}</strong>줄 / 전체 ${allRows.length}줄 (쿠팡 ${coupangCount} · 배민 ${baeminCount})${searchNote}`
         + ` · 총프로모션 <strong>${formatNumber(t.promo)}</strong>`
         + ` · 총기타지급 <strong>${formatNumber(t.other)}</strong>`
@@ -1408,7 +1487,8 @@ const BremSettlementResultDirect = (function () {
         + ` · 총대여차감 <strong>${formatNumber(t.loanFee)}</strong>`
         + ` · 총콜수수료 <strong>${formatNumber(t.callFee)}</strong>`
         + ` · 총일정산수수료 <strong>${formatNumber(t.dailySettlementFee)}</strong>`
-        + ` · <span class="final-deposit-total">총지급액 <strong>${formatNumber(t.netPay)}</strong>원</span>`;
+        + ` · <span class="final-deposit-total">총지급액 <strong>${formatNumber(t.netPay)}</strong>원</span>`
+        + negNote;
     }
   }
 
@@ -1554,6 +1634,7 @@ const BremSettlementResultDirect = (function () {
       await loadWithdrawals();
       renderFinal();
     });
+    $('#settlementFinalBatchFixBtn')?.addEventListener('click', () => { void batchFixFinalNegatives(); });
     $('#settlementSpillReloadBtn')?.addEventListener('click', async () => { await loadWithdrawals(); renderSpillover(); });
     $('#settlementSpillFilter')?.addEventListener('change', () => renderSpillover());
     $('#settlementSpillWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
@@ -1597,6 +1678,12 @@ const BremSettlementResultDirect = (function () {
       if (row) void openFinalDetailModal(row);
     });
     $('#settlementFinalTable')?.addEventListener('click', (event) => {
+      const cell = event.target?.closest?.('[data-settle-fee-edit="1"]');
+      if (cell && $('#settlementFinalTable')?.contains(cell)) {
+        event.stopPropagation();
+        editLeaseLoanFeeCell(cell);
+        return;
+      }
       const rowEl = event.target?.closest?.('tr[data-final-row="1"]');
       if (!rowEl || !$('#settlementFinalTable')?.contains(rowEl)) return;
       const settlementId = String(rowEl.getAttribute('data-settlement-id') || '').trim();
@@ -1618,6 +1705,9 @@ const BremSettlementResultDirect = (function () {
     });
     $('#settlementFinalDetailSaveBtn')?.addEventListener('click', () => { void saveFinalDetailFees(); });
     $('#settlementFinalDetailAutoBtn')?.addEventListener('click', () => { void saveFinalDetailFees({ restoreAuto: true }); });
+    ['#settlementFinalDetailPromo', '#settlementFinalDetailOtherPay'].forEach(selector => {
+      $(selector)?.addEventListener('input', () => updatePromoTaxHint());
+    });
     $('#settlementRetroReloadBtn')?.addEventListener('click', () => renderRetro());
     $('#settlementRetroSendBtn')?.addEventListener('click', () => { void sendSelectedToDeduction(); });
     $('#settlementRetroWeekFilter')?.addEventListener('change', event => {

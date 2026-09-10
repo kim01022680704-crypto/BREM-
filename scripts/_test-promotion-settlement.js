@@ -47,7 +47,7 @@ const DRIVERS = [
 ];
 
 const store = {};
-const adjustments = { other: {}, promotion: {} };
+const adjustments = { other: {}, promotion: {}, missionPay: {}, leaseFee: {}, loanFee: {} };
 
 const SETTLEMENTS = [
   {
@@ -106,20 +106,28 @@ window.BremStorage = {
     clearWeek: (kind, wk) => { if (store[kind]) delete store[kind][wk]; }
   },
   directSettlementAdjustments: {
-    getSettlement: (kind, id) => adjustments[kind][id] || {},
+    getSettlement: (kind, id) => (adjustments[kind] || {})[id] || {},
     applyEntries(kind, id, entries, options = {}) {
+      if (!adjustments[kind]) adjustments[kind] = {};
       if (options.replace) adjustments[kind][id] = {};
       const cur = adjustments[kind][id] || (adjustments[kind][id] = {});
       entries.forEach(e => {
+        const prev = cur[e.driverId];
+        const incoming = Math.round(Number(e.amount || 0));
+        const amount = options.add
+          ? Math.round(Number(prev?.amount || 0)) + incoming
+          : incoming;
         cur[e.driverId] = {
-          amount: Math.round(Number(e.amount || 0)),
-          baeminId: e.baeminId || '', coupangId: e.coupangId || '',
-          driverName: e.driverName || '', source: e.source === 'erp' ? 'erp' : 'excel'
+          amount,
+          baeminId: e.baeminId || prev?.baeminId || '',
+          coupangId: e.coupangId || prev?.coupangId || '',
+          driverName: e.driverName || prev?.driverName || '',
+          source: e.source === 'erp' ? 'erp' : (e.source === 'manual' ? 'manual' : 'excel')
         };
       });
       return cur;
     },
-    removeDriver: (kind, id, driverId) => { if (adjustments[kind][id]) delete adjustments[kind][id][driverId]; },
+    removeDriver: (kind, id, driverId) => { if (adjustments[kind]?.[id]) delete adjustments[kind][id][driverId]; },
     clearSettlement: (kind, id) => { delete adjustments[kind][id]; },
     summary(id) {
       const sum = m => Object.values(m || {}).reduce((s, x) => s + Number(x.amount || 0), 0);
@@ -569,6 +577,45 @@ function check(label, actual, expected) {
   promoClearBtn.click();
   check('프로모션도 모두 비워짐', Object.keys(adjustments.promotion['weekly_direct_baemin_seoul_20260722'] || {}).length, 0);
   check('ERP 선택도 함께 해제', Adj.state.erpSelected.size, 0);
+
+  console.log('\n[정산결과] BREM프로모션 수기 수정');
+  adjustments.promotion['weekly_direct_baemin_seoul_20260722'] = {
+    d1: { amount: 100000, baeminId: 'BC000001', driverName: '김배민', source: 'excel' }
+  };
+  adjustments.other['weekly_direct_baemin_seoul_20260722'] = {
+    d1: { amount: 20000, baeminId: 'BC000001', driverName: '김배민', source: 'excel' }
+  };
+  Result.state.week = '2026-07-22';
+  Result.state.settlementId = 'weekly_direct_baemin_seoul_20260722';
+  Result.state.viewMode = 'platform';
+  await Result.refresh('baemin');
+  const kimRow = [...window.document.querySelectorAll('#settlementResultRows tr')]
+    .find(tr => tr.textContent.includes('김배민'));
+  check('김배민 행 있음', !!kimRow, 'true');
+  const nameCell = kimRow?.querySelector('td:not([data-settle-fee-edit])');
+  nameCell?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const promoInput = window.document.getElementById('settlementFinalDetailPromo');
+  check('팝업 BREM프로모션 입력칸', !!promoInput, 'true');
+  if (!promoInput?.value) {
+    window.document.getElementById('settlementFinalDetailSettlementId').value = 'weekly_direct_baemin_seoul_20260722';
+    window.document.getElementById('settlementFinalDetailDriverId').value = 'd1';
+    window.document.getElementById('settlementFinalDetailDriverName').value = '김배민';
+    window.document.getElementById('settlementFinalDetailOtherPay').value = '20000';
+    promoInput.value = '100000';
+  }
+  check('팝업 현재 프로모션', promoInput?.value, '100000');
+  promoInput.value = '150000';
+  promoInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+  check('원천세 힌트 갱신', /5,610/.test(window.document.getElementById('settlementFinalDetailPromoTaxHint')?.textContent || ''), 'true');
+  window.document.getElementById('settlementFinalDetailSaveBtn').click();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  check('수기 프로모션 저장', adjustments.promotion['weekly_direct_baemin_seoul_20260722']?.d1?.amount, 150000);
+  check('수기 출처', adjustments.promotion['weekly_direct_baemin_seoul_20260722']?.d1?.source, 'manual');
+  const kimAfter = [...window.document.querySelectorAll('#settlementResultRows tr')]
+    .find(tr => tr.textContent.includes('김배민'));
+  check('표 BREM프로모션 150,000', cell(kimAfter, 'promo'), '150,000');
+  check('표 프로모션원천세 5,610', cell(kimAfter, 'promotionWithholdingTax'), '5,610');
 
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);

@@ -132,12 +132,71 @@ const BremDirectSettlementCalc = (function () {
     return Math.max(0, Math.round(Number(fees.callFee || 0)));
   }
 
+  // 업로드 때 저장한 콜수수료(0원 포함)를 우선한다. 없을 때만 설정 단가.
+  function resolveRiderCallFee(rider, callCount, unitFromSettings) {
+    const amounts = rider?.amounts && typeof rider.amounts === 'object' ? rider.amounts : {};
+    const count = Math.max(0, Math.round(Number(callCount || 0)));
+    if (Object.prototype.hasOwnProperty.call(amounts, 'callFee')) {
+      return Math.max(0, Math.round(Number(amounts.callFee || 0)));
+    }
+    if (Object.prototype.hasOwnProperty.call(amounts, 'callFeeUnit')) {
+      return count * Math.max(0, Math.round(Number(amounts.callFeeUnit || 0)));
+    }
+    if (rider?.callFee != null && rider.callFee !== '') {
+      return Math.max(0, Math.round(Number(rider.callFee || 0)));
+    }
+    if (rider?.callFeeUnit != null && rider.callFeeUnit !== '') {
+      return count * Math.max(0, Math.round(Number(rider.callFeeUnit || 0)));
+    }
+    return count * Math.max(0, Math.round(Number(unitFromSettings || 0)));
+  }
+
   function withdrawalRowFee(row, platform) {
     if (row.feeAmount != null) return Math.max(0, Math.round(Number(row.feeAmount) || 0));
     const rowPlatform = normalizeWithdrawalPlatform(row.platform) || normalizePlatform(platform);
     const fees = window.BremStorage?.payrollDailySettlement?.getFees?.(rowPlatform) || {};
     const resolve = window.BremStorage?.payrollDailySettlement?.resolveDailySettlementFee;
     return typeof resolve === 'function' ? resolve(Number(row.amount || 0), fees) : 0;
+  }
+
+  // 급여일정산 「금액 홀딩」은 그 주 실출금이 아니라 주정산에서 빼 줘야 하는 금액이다.
+  // 처리완료 출금과 같이 선정산(처리완료)에 넣되, 일정산수수료는 0원이다.
+  function holdPrepaidRows(week) {
+    const weekKey = String(week || '').slice(0, 10);
+    if (!weekKey) return [];
+    const holds = window.BremStorage?.payrollDailySettlement?.getWithdrawalHolds?.() || [];
+    return (Array.isArray(holds) ? holds : [])
+      .map(item => {
+        const driverId = String(item?.driverId || '').trim();
+        const holdWeek = String(item?.weekStart || '').slice(0, 10);
+        const amount = Math.max(0, Math.round(Number(item?.amount || 0)));
+        if (!driverId || holdWeek !== weekKey || amount <= 0) return null;
+        return {
+          id: `hold-prepaid:${String(item.id || driverId)}_${weekKey}`,
+          driverId,
+          amount,
+          feeAmount: 0,
+          status: 'completed',
+          weekStart: weekKey,
+          platform: String(item.platform || '').trim(),
+          createdAt: String(item.createdAt || ''),
+          createdBy: 'hold'
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function withHoldPrepaid(withdrawals, week) {
+    const base = Array.isArray(withdrawals) ? withdrawals : [];
+    const holds = holdPrepaidRows(week);
+    if (!holds.length) return base;
+    const seen = new Set(
+      base
+        .filter(row => String(row.createdBy || '') === 'hold' || String(row.id || '').startsWith('hold-prepaid:'))
+        .map(row => `${String(row.driverId || '').trim()}|${String(row.weekStart || week).slice(0, 10)}`)
+    );
+    const extra = holds.filter(row => !seen.has(`${row.driverId}|${row.weekStart}`));
+    return extra.length ? base.concat(extra) : base;
   }
 
   // 같은 사람을 한 키로 모은다. 중복 등록으로 출금 driverId 와 정산 matchedRiderId 가
@@ -183,7 +242,8 @@ const BremDirectSettlementCalc = (function () {
     const idLabel = platform === 'coupang'
       ? (rider.coupangLoginKey || '-')
       : (rider.baeminUserId || '-');
-    const promo = driverId ? Number(adj.promoMap[driverId]?.amount || 0) : 0;
+    const promoOverride = pickOverrideAmount(adj.promoMap, driverId, manual, 'promo');
+    const promo = promoOverride == null ? 0 : promoOverride;
     const otherOverride = pickOverrideAmount(adj.otherMap, driverId, manual, 'other');
     const other = otherOverride == null ? 0 : otherOverride;
     const deliveryFee = Number(amounts.deliveryFee || 0);
@@ -201,9 +261,7 @@ const BremDirectSettlementCalc = (function () {
     const hourlyInsurance = Number(amounts.hourlyInsurance || 0);
     const withholdingTax = Number(amounts.withholdingTax || 0);
     const promotionWithholdingTax = promoTax(promo + other);
-    const callFee = Object.prototype.hasOwnProperty.call(amounts, 'callFee')
-      ? Math.max(0, Math.round(Number(amounts.callFee || 0)))
-      : callCount * unitCallFee;
+    const callFee = resolveRiderCallFee(rider, callCount, unitCallFee);
     const baseDeduct = deductionDetail + employmentInsurance + accidentInsurance + hourlyInsurance
       + withholdingTax + promotionWithholdingTax + callFee;
     // 선정산·일정산수수료를 빼기 전 잔액 = 이 플랫폼이 흡수할 수 있는 한도(음수면 0)
@@ -265,6 +323,7 @@ const BremDirectSettlementCalc = (function () {
    */
   function allocateWeekWithdrawals(withdrawals, week, capacityMap) {
     const weekKey = String(week || '').slice(0, 10);
+    withdrawals = withHoldPrepaid(withdrawals, weekKey);
     const remaining = new Map();
     (capacityMap instanceof Map ? capacityMap : new Map()).forEach((v, k) => {
       remaining.set(k, {
@@ -334,6 +393,7 @@ const BremDirectSettlementCalc = (function () {
   // map.untaggedCount/untaggedAmount = 플랫폼 미지정 출금(어느 쪽에도 못 붙임)
   function buildWeekPrepaidByPlatform(withdrawals, week) {
     const weekKey = String(week || '').slice(0, 10);
+    withdrawals = withHoldPrepaid(withdrawals, weekKey);
     const map = new Map();
     let untaggedCount = 0;
     let untaggedAmount = 0;
@@ -460,10 +520,14 @@ const BremDirectSettlementCalc = (function () {
   function loadLeaseContractsForFee(explicit) {
     if (Array.isArray(explicit)) return explicit;
     try {
-      return window.BremLeaseErp?.contracts?.()?.getAll?.() || [];
-    } catch (_error) {
-      return [];
-    }
+      const fromErp = window.BremLeaseErp?.contracts?.()?.getAll?.();
+      if (Array.isArray(fromErp) && fromErp.length) return fromErp;
+    } catch (_error) { /* fall through */ }
+    try {
+      const fromStorage = window.BremStorage?.readTableKey?.('brem_lease_contracts');
+      if (Array.isArray(fromStorage)) return fromStorage;
+    } catch (_error) { /* fall through */ }
+    return [];
   }
 
   function loadDeductionLedgerForFee(explicit) {
@@ -627,14 +691,17 @@ const BremDirectSettlementCalc = (function () {
         const rem = remaining.get(key) || { coupang: 0, baemin: 0 };
         ['coupang', 'baemin'].forEach(p => {
           const used = Math.max(0, Number(slice?.[p]?.prepaid || 0)) + Math.max(0, Number(slice?.[p]?.fee || 0));
-          rem[p] = Number(rem[p] || 0) - used;
+          rem[p] = Math.max(0, Number(rem[p] || 0) - used);
         });
         remaining.set(key, rem);
       });
     }
 
     const leaseIndex = options._leaseFeeIndex
-      || buildLeaseFeeIndex(loadLeaseContractsForFee(options.leaseContracts), week);
+      || (options.allowAutoLease
+        ? buildLeaseFeeIndex(loadLeaseContractsForFee(options.leaseContracts), week)
+        : new Map());
+    // 리스차감은 기본 수동(수기)만. ERP 계약 자동 반영은 allowAutoLease 일 때만.
     const loanIndex = options._loanFeeIndex
       || buildLoanFeeIndex(
         loadDeductionLedgerForFee(options.ledgerItems),
@@ -791,16 +858,17 @@ const BremDirectSettlementCalc = (function () {
     const week = settlementWeek(settlement);
     const unitCallFee = callFeeUnit(platform);
     const adj = adjustmentMaps(settlement);
+    const withdrawals = withHoldPrepaid(options.withdrawals, week);
 
     let allocation = options._allocation || null;
     if (!allocation && Array.isArray(options.weekSettlements) && options.weekSettlements.length) {
       allocation = allocateWeekWithdrawals(
-        options.withdrawals,
+        withdrawals,
         week,
         buildWeekCapacityMap(options.weekSettlements)
       );
     }
-    const strictMap = allocation ? null : (options._prepaidMap || buildWeekPrepaidByPlatform(options.withdrawals, week));
+    const strictMap = allocation ? null : (options._prepaidMap || buildWeekPrepaidByPlatform(withdrawals, week));
     const source = allocation || strictMap;
     const consumed = options._consumed || new Set();
     const leaseConsumed = options._leaseConsumed || new Set();
@@ -813,7 +881,7 @@ const BremDirectSettlementCalc = (function () {
         : [settlement];
       spill = buildLeaseLoanSpilloverAllocation(weekList, {
         week,
-        withdrawals: options.withdrawals,
+        withdrawals,
         _allocation: allocation,
         leaseContracts: options.leaseContracts,
         ledgerItems: options.ledgerItems,
@@ -840,15 +908,9 @@ const BremDirectSettlementCalc = (function () {
         }
       }
 
-      // 스필오버 배분은 플랫폼별로 이미 나뉘어 있음. 같은 플랫폼 행만 중복 방지.
+      // 리스차감: 정산서·기사별 수동(수기)만. ERP 계약 자동 차감은 쓰지 않는다.
       let leaseFee = 0;
       let leaseFeeManual = false;
-      const leaseDedupe = `${key || base.driverId || base.name}:lease:${platform}`;
-      if (!leaseConsumed.has(leaseDedupe)) {
-        leaseFee = resolveSpilloverFeeForRow(base, spill.leaseAlloc, spill.leaseIndex);
-        leaseConsumed.add(leaseDedupe);
-      }
-      // 정산결과 수동 override: 해당 정산서·기사만 (자동 스필오버 이후)
       const manual = riderManualAdjustments(rider);
       const leaseOverride = pickOverrideAmount(adj.leaseMap, base.driverId, manual, 'leaseFee');
       if (leaseOverride != null) {
@@ -1035,6 +1097,7 @@ const BremDirectSettlementCalc = (function () {
     normalizeWithdrawalPlatform,
     driverName,
     callFeeUnit,
+    resolveRiderCallFee,
     canonicalDriverKey,
     buildWeekPrepaidByPlatform,
     buildWeekCapacityMap,

@@ -6906,6 +6906,11 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+td.settle-fee-editable {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
 /* 숫자를 헤더 글자 가운데에 맞춘다. 헤더는 왼쪽, 숫자는 오른쪽이면
    열마다 눈이 좌우로 튀어 읽기 어렵다. 기사명·원본이름·경고는 글이라 왼쪽 유지. */
 .weekly-settlement-preview-table th,

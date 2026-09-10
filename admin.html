@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260910crawlfix1">
+  <link rel="stylesheet" href="css/admin.css?v=20260910promoedit1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5206,7 +5206,7 @@
               <input type="hidden" id="settlementResultWeek">
             </div>
           </div>
-          <p class="form-help">주정산서(직계약) · 선정산 · <strong>리스차감·대여차감</strong>(수~화, 「반영」분)으로 총지급액을 계산합니다. 표에서 <strong>행을 클릭</strong>하면 추가지급·기타지급·리스·대여를 이번 정산서만 조정할 수 있습니다. 리스·대여 칸만 누르면 빠른 수정(금액/0/자동)도 됩니다. 총지급이 마이너스면 「마이너스 일괄 맞추기」→「소급분 및 미납금」에서 <strong>선택해 차감관리</strong>로 보내세요.</p>
+          <p class="form-help">주정산서(직계약) · 선정산 · <strong>리스차감·대여차감</strong>(수~화, 「반영」분)으로 총지급액을 계산합니다. 표에서 <strong>행을 클릭</strong>하면 추가지급·기타지급·<strong>BREM프로모션</strong>·리스·대여를 이번 정산서만 조정할 수 있습니다. BREM프로모션·리스·대여 칸만 누르면 빠른 수정도 됩니다. 총지급이 마이너스면 「마이너스 일괄 맞추기」→「소급분 및 미납금」에서 <strong>선택해 차감관리</strong>로 보내세요.</p>
           <p class="settlement-week-range-label" id="settlementResultWeekRange"></p>
           <p class="direct-inline-stats" id="settlementResultSummary"></p>
           <div class="settlement-next-step">
@@ -5354,7 +5354,7 @@
               <input type="hidden" id="settlementFinalDetailSettlementId">
               <input type="hidden" id="settlementFinalDetailDriverId">
               <input type="hidden" id="settlementFinalDetailDriverName">
-              <p class="form-help" style="margin:0 0 0.5rem;"><strong>지급 조정</strong> — 추가지급(미션)·기타지급 (0 가능 · 추가지급 자동복원=주정산서 금액)</p>
+              <p class="form-help" style="margin:0 0 0.5rem;"><strong>지급 조정</strong> — 추가지급(미션)·기타지급·BREM프로모션 (0 가능 · 추가지급 자동복원=주정산서 금액, 프로모션은 수기 유지)</p>
               <div class="lease-form-grid">
                 <label>
                   추가지급(미션)
@@ -5364,7 +5364,12 @@
                   기타지급
                   <input type="number" id="settlementFinalDetailOtherPay" min="0" step="1" placeholder="0">
                 </label>
+                <label>
+                  BREM프로모션
+                  <input type="number" id="settlementFinalDetailPromo" min="0" step="1" placeholder="0">
+                </label>
               </div>
+              <p class="form-help" id="settlementFinalDetailPromoTaxHint" style="margin:0.35rem 0 0;">프로모션원천세 = (BREM프로모션 + 기타지급) × 3.3% (원 단위 절사)</p>
               <p class="form-help" style="margin:0.75rem 0 0.5rem;"><strong>차감 추가/수정</strong> — 리스차감·대여차감 (0=없앰, 자동복원=ERP 자동)</p>
               <div class="lease-form-grid">
                 <label>
@@ -5377,7 +5382,7 @@
                 </label>
               </div>
               <div class="promotion-form-actions" style="margin-top:0.75rem; justify-content:flex-end;">
-                <button type="button" class="small-btn" id="settlementFinalDetailAutoBtn" title="추가지급=주정산서 금액, 리스·대여=ERP 자동. 기타지급은 0으로">자동복원</button>
+                <button type="button" class="small-btn" id="settlementFinalDetailAutoBtn" title="추가지급=주정산서 금액, 리스·대여=ERP 자동. 기타지급은 0. BREM프로모션은 그대로">자동복원</button>
                 <button type="button" class="small-btn primary-btn" id="settlementFinalDetailSaveBtn">저장</button>
               </div>
             </form>
@@ -8996,8 +9001,8 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260807b"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260905a"></script>
   <script src="js/direct-adjustment-admin.js?v=20260905a"></script>
-  <script src="js/direct-settlement-calc.js?v=20260827tax1"></script>
-  <script src="js/settlement-result-direct.js?v=20260813c"></script>
+  <script src="js/direct-settlement-calc.js?v=20260910promoedit1"></script>
+  <script src="js/settlement-result-direct.js?v=20260910promoedit1"></script>
   <script src="js/final-deposit.js?v=20260823c"></script>
   <script src="js/tax-management-admin.js?v=20260830tax2"></script>
   <script src="js/driver-management-admin.js?v=20260909erpid1"></script>
