@@ -1460,6 +1460,9 @@ const BremWeeklySettlementAdmin = (function () {
     const rowsEl = q(ch, 'SavedRows', platform);
     if (!rowsEl) return;
 
+    if (platform === 'baemin') {
+      BremWeeklySettlement.consolidateOverlappingBaeminWeeklySettlements?.(ch);
+    }
     BremStorage.settlementUploadLogs.syncWeeklyFromSavedRecords(ch);
     const weekStart = ensureWeeklyLogWeek(ch, platform);
     updateWeeklyLogWeekRangeLabel(ch, platform);

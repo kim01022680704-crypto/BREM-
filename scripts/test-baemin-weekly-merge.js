@@ -102,6 +102,34 @@ const weekB = WS.baeminWeekStartKey(parsedB.startDate);
 check('weekStart A', weekA, '2026-07-29');
 check('weekStart B same week', weekB, '2026-07-29');
 
+const parsedTue = WS.parseBaeminFileName('20260901~20260901_배달 이글스_표준울산북필드B.xlsx');
+check('parse tue start', parsedTue.startDate, '2026-09-01');
+check('parse tue end', parsedTue.endDate, '2026-09-01');
+check('weekStart tue remainder', WS.baeminWeekStartKey(parsedTue.startDate), '2026-08-26');
+
+const idFromTue = WS.buildWeeklySettlementRecord({
+  platform: 'baemin',
+  channel: 'direct',
+  region: '배달 이글스_표준울산북필드B',
+  fileName: '20260901~20260901_배달 이글스_표준울산북필드B.xlsx',
+  startDate: '2026-09-01',
+  endDate: '2026-09-01',
+  matchedRiders: [],
+  unmatchedRiders: []
+}).id;
+const idFromWedHalf = WS.buildWeeklySettlementRecord({
+  platform: 'baemin',
+  channel: 'direct',
+  region: '배달 이글스_표준울산북필드B',
+  fileName: '20260826~20260831_배달 이글스_표준울산북필드B.xlsx',
+  startDate: '2026-08-26',
+  endDate: '2026-08-31',
+  matchedRiders: [],
+  unmatchedRiders: []
+}).id;
+check('tue remainder id uses 8/26 week', idFromTue.includes('20260826'), true);
+check('tue and wed-mon halves share id', idFromTue, idFromWedHalf);
+
 // 3) 기사별 금액·콜수 합산
 const merged = WS.mergeBaeminRiders([
   [{
@@ -240,6 +268,291 @@ check('alphanumeric baemin id', matchedIds[0]?.matchedRiderId, 'd-bc');
 check('raw_data baemin id', matchedIds[1]?.matchedRiderId, 'd-raw');
 check('unique name fallback', matchedIds[2]?.matchedRiderId, 'd-name');
 check('all three matched', matchedIds.every(item => item.matched), true);
+
+// 9) 사업자(회사명)가 달라도 같은 권역·주차면 한 정산으로 묶고, 겹치면 중복 제거
+check(
+  'strip 119라이더스',
+  WS.canonicalBaeminTeamRegion('119라이더스_표준울산북필드B'),
+  '표준울산북필드B'
+);
+check(
+  'strip 배달 이글스',
+  WS.canonicalBaeminTeamRegion('배달 이글스_표준울산북필드B'),
+  '표준울산북필드B'
+);
+check('keep 이글스남A region', WS.canonicalBaeminTeamRegion('이글스남A'), '이글스남A');
+check('keep 울산울주a', WS.canonicalBaeminTeamRegion('울산울주a'), '울산울주a');
+
+const id119 = WS.buildWeeklySettlementRecord({
+  platform: 'baemin',
+  channel: 'direct',
+  region: '119라이더스_표준울산북필드B',
+  fileName: '20260826~20260831_119라이더스_표준울산북필드B.xlsx',
+  startDate: '2026-08-26',
+  endDate: '2026-08-31',
+  matchedRiders: [],
+  unmatchedRiders: []
+}).id;
+const idEagles = WS.buildWeeklySettlementRecord({
+  platform: 'baemin',
+  channel: 'direct',
+  region: '배달 이글스_표준울산북필드B',
+  fileName: '20260826~20260831_배달 이글스_표준울산북필드B.xlsx',
+  startDate: '2026-08-26',
+  endDate: '2026-08-31',
+  matchedRiders: [],
+  unmatchedRiders: []
+}).id;
+check('company aliases share settlement id', id119, idEagles);
+check('canonical region stored', WS.buildWeeklySettlementRecord({
+  platform: 'baemin',
+  channel: 'direct',
+  region: '119라이더스_표준울산북필드B',
+  fileName: '20260826~20260831_119라이더스_표준울산북필드B.xlsx',
+  startDate: '2026-08-26',
+  endDate: '2026-08-31',
+  matchedRiders: [],
+  unmatchedRiders: []
+}).region, '표준울산북필드B');
+
+const splitCompany = WS.mergeBaeminRidersFromParts([
+  {
+    fileName: '20260826~20260831_119라이더스_표준울산북필드B.xlsx',
+    startDate: '2026-08-26',
+    endDate: '2026-08-31',
+    riders: [{
+      baeminUserId: 'jihye',
+      riderName: '정지혜',
+      weeklyOrderCount: 80,
+      amounts: { deliveryFee: 800000 }
+    }]
+  },
+  {
+    fileName: '20260901~20260901_배달 이글스_표준울산북필드B.xlsx',
+    startDate: '2026-09-01',
+    endDate: '2026-09-01',
+    riders: [{
+      baeminUserId: 'jihye',
+      riderName: '정지혜',
+      weeklyOrderCount: 39,
+      amounts: { deliveryFee: 390000 }
+    }]
+  }
+]);
+check('split company one rider', splitCompany.length, 1);
+check('split company summed calls', splitCompany[0].weeklyOrderCount, 119);
+check('split company summed fee', splitCompany[0].amounts.deliveryFee, 1190000);
+
+const dupCompany = WS.mergeBaeminRidersFromParts([
+  {
+    fileName: '20260826~20260901_119라이더스_표준울산북필드B.xlsx',
+    startDate: '2026-08-26',
+    endDate: '2026-09-01',
+    riders: [{
+      baeminUserId: 'jihye',
+      riderName: '정지혜',
+      weeklyOrderCount: 119,
+      amounts: { deliveryFee: 1190000 }
+    }]
+  },
+  {
+    fileName: '20260826~20260901_배달 이글스_표준울산북필드B.xlsx',
+    startDate: '2026-08-26',
+    endDate: '2026-09-01',
+    riders: [{
+      baeminUserId: 'jihye',
+      riderName: '정지혜',
+      weeklyOrderCount: 119,
+      amounts: { deliveryFee: 1190000 }
+    }]
+  }
+]);
+check('duplicate company one rider', dupCompany.length, 1);
+check('duplicate company keeps 119 not 238', dupCompany[0].weeklyOrderCount, 119);
+check('duplicate company warning', Array.isArray(dupCompany[0].warnings) && dupCompany[0].warnings.some(w => /중복/.test(w)), true);
+
+const overlapDiff = WS.mergeBaeminRidersFromParts([
+  {
+    fileName: '20260826~20260901_119라이더스_표준울산북필드B.xlsx',
+    startDate: '2026-08-26',
+    endDate: '2026-09-01',
+    riders: [{
+      baeminUserId: 'jihye',
+      riderName: '정지혜',
+      weeklyOrderCount: 80,
+      amounts: { deliveryFee: 800000 }
+    }]
+  },
+  {
+    fileName: '20260826~20260901_배달 이글스_표준울산북필드B.xlsx',
+    startDate: '2026-08-26',
+    endDate: '2026-09-01',
+    riders: [{
+      baeminUserId: 'jihye',
+      riderName: '정지혜',
+      weeklyOrderCount: 119,
+      amounts: { deliveryFee: 1190000 }
+    }]
+  }
+]);
+check('overlap different calls summed', overlapDiff[0].weeklyOrderCount, 199);
+check('overlap different warning', Array.isArray(overlapDiff[0].warnings) && overlapDiff[0].warnings.some(w => /겹칩니다/.test(w)), true);
+
+const companyFirst = WS.upsertBaeminWeeklyParts(null, {
+  platform: 'baemin',
+  channel: 'direct',
+  region: '119라이더스_표준울산북필드B',
+  fileName: '20260826~20260901_119라이더스_표준울산북필드B.xlsx',
+  startDate: '2026-08-26',
+  endDate: '2026-09-01',
+  riders: [{
+    baeminUserId: 'jihye',
+    riderName: '정지혜',
+    weeklyOrderCount: 119,
+    amounts: { deliveryFee: 1190000 }
+  }]
+});
+const companySecond = WS.upsertBaeminWeeklyParts(companyFirst, {
+  platform: 'baemin',
+  channel: 'direct',
+  region: '배달 이글스_표준울산북필드B',
+  fileName: '20260826~20260901_배달 이글스_표준울산북필드B.xlsx',
+  startDate: '2026-08-26',
+  endDate: '2026-09-01',
+  riders: [{
+    baeminUserId: 'jihye',
+    riderName: '정지혜',
+    weeklyOrderCount: 119,
+    amounts: { deliveryFee: 1190000 }
+  }]
+});
+check('sequential company upsert keeps id', companySecond.id, companyFirst.id);
+check('sequential company region canonical', companySecond.region, '표준울산북필드B');
+check('sequential company no double count', companySecond.riders[0].weeklyOrderCount, 119);
+check('sequential company two parts', companySecond.sourceParts.length, 2);
+
+const store = [];
+sandbox.BremStorage.weeklySettlements = {
+  getAll() { return store.slice(); },
+  getById(id) { return store.find(item => item.id === id) || null; },
+  save(record) {
+    const idx = store.findIndex(item => item.id === record.id);
+    if (idx >= 0) store[idx] = record;
+    else store.push(record);
+    return record;
+  },
+  remove(id) {
+    const idx = store.findIndex(item => item.id === id);
+    if (idx >= 0) store.splice(idx, 1);
+  }
+};
+const old119 = WS.buildWeeklySettlementRecord({
+  platform: 'baemin',
+  channel: 'direct',
+  region: '119라이더스_표준울산북필드B',
+  fileName: '20260826~20260901_119라이더스_표준울산북필드B.xlsx',
+  startDate: '2026-08-26',
+  endDate: '2026-09-01',
+  matchedRiders: [{
+    baeminUserId: 'jihye',
+    riderName: '정지혜',
+    matched: true,
+    matchedRiderId: 'd-jihye',
+    weeklyOrderCount: 119,
+    amounts: { deliveryFee: 1190000 }
+  }],
+  unmatchedRiders: []
+});
+old119.id = 'weekly_direct_baemin_119riders_old';
+old119.sourceParts = [{
+  fileName: '20260826~20260901_119라이더스_표준울산북필드B.xlsx',
+  startDate: '2026-08-26',
+  endDate: '2026-09-01',
+  riders: old119.riders
+}];
+store.push(old119);
+const incomingEagles = WS.buildWeeklySettlementRecord({
+  platform: 'baemin',
+  channel: 'direct',
+  region: '배달 이글스_표준울산북필드B',
+  fileName: '20260826~20260901_배달 이글스_표준울산북필드B.xlsx',
+  startDate: '2026-08-26',
+  endDate: '2026-09-01',
+  matchedRiders: [{
+    baeminUserId: 'jihye',
+    riderName: '정지혜',
+    matched: true,
+    matchedRiderId: 'd-jihye',
+    weeklyOrderCount: 119,
+    amounts: { deliveryFee: 1190000 }
+  }],
+  unmatchedRiders: []
+});
+incomingEagles.sourceParts = [{
+  fileName: '20260826~20260901_배달 이글스_표준울산북필드B.xlsx',
+  startDate: '2026-08-26',
+  endDate: '2026-09-01',
+  riders: incomingEagles.riders
+}];
+const savedMerge = WS.saveWeeklySettlement(incomingEagles);
+check('save merges into existing company record', store.length, 1);
+check('save keeps existing id', savedMerge.id, 'weekly_direct_baemin_119riders_old');
+check('save merged calls stay 119', savedMerge.riders[0].weeklyOrderCount, 119);
+
+store.length = 0;
+const left = WS.buildWeeklySettlementRecord({
+  platform: 'baemin',
+  channel: 'direct',
+  region: '119라이더스_표준울산북필드B',
+  fileName: '20260826~20260901_119라이더스_표준울산북필드B.xlsx',
+  startDate: '2026-08-26',
+  endDate: '2026-09-01',
+  matchedRiders: [{
+    baeminUserId: 'jihye',
+    riderName: '정지혜',
+    matched: true,
+    matchedRiderId: 'd-jihye',
+    weeklyOrderCount: 80,
+    amounts: { deliveryFee: 800000 }
+  }],
+  unmatchedRiders: []
+});
+left.id = 'weekly_direct_baemin_left';
+left.sourceParts = [{
+  fileName: left.fileName,
+  startDate: left.startDate,
+  endDate: left.endDate,
+  riders: left.riders
+}];
+const right = WS.buildWeeklySettlementRecord({
+  platform: 'baemin',
+  channel: 'direct',
+  region: '배달 이글스_표준울산북필드B',
+  fileName: '20260901~20260901_배달 이글스_표준울산북필드B.xlsx',
+  startDate: '2026-09-01',
+  endDate: '2026-09-01',
+  matchedRiders: [{
+    baeminUserId: 'jihye',
+    riderName: '정지혜',
+    matched: true,
+    matchedRiderId: 'd-jihye',
+    weeklyOrderCount: 39,
+    amounts: { deliveryFee: 390000 }
+  }],
+  unmatchedRiders: []
+});
+right.id = 'weekly_direct_baemin_right';
+right.sourceParts = [{
+  fileName: right.fileName,
+  startDate: right.startDate,
+  endDate: right.endDate,
+  riders: right.riders
+}];
+store.push(left, right);
+const consolidated = WS.consolidateOverlappingBaeminWeeklySettlements('direct');
+check('consolidate overlapping groups', consolidated, 1);
+check('consolidate one record left', store.length, 1);
+check('consolidate summed split week', store[0].riders[0].weeklyOrderCount, 119);
 
 if (failures.length) {
   failures.forEach(msg => console.log('FAIL:', msg));
