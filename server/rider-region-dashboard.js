@@ -14,6 +14,11 @@ const {
   PEAK_LABELS,
   PEAK_ORDER
 } = require('./coupang-collect-sources');
+const {
+  calcAcceptRateFromDelivery,
+  loadBaeminAcceptRatesBatch,
+  loadCoupangRejectRatesBatch
+} = require('./rider-crew-leader');
 
 const shortCoupangRegion = shortCoupangRegionLabel;
 
@@ -225,6 +230,40 @@ function listExposedRegions(exposure, platform) {
       label: String(meta.label || key).trim() || key,
       partnerId: String(meta.partnerId || '').trim(),
       vendorId: String(meta.vendorId || '').trim()
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+}
+
+function regionLookupKeys(region = {}) {
+  return [region.key, region.partnerId, region.vendorId, region.label]
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value, index, list) => list.indexOf(value) === index);
+}
+
+function isBranchManagerForRegion(exposure, region, driverId) {
+  const id = String(driverId || '').trim();
+  if (!id || !region) return false;
+  const platform = normalizePlatform(region.platform || 'baemin');
+  const side = exposure?.[platform] || {};
+  return regionLookupKeys(region).some(key => {
+    const managers = side[key]?.branchManagers;
+    return Boolean(managers && typeof managers === 'object' && managers[id]);
+  });
+}
+
+function listBranchManagerRegions(exposure, platform, driverId) {
+  const id = String(driverId || '').trim();
+  if (!id) return [];
+  return Object.entries(exposure?.[platform] || {})
+    .filter(([, meta]) => Boolean(meta?.branchManagers?.[id]))
+    .map(([key, meta]) => ({
+      key,
+      platform,
+      label: String(meta.label || key).trim() || key,
+      partnerId: String(meta.partnerId || '').trim(),
+      vendorId: String(meta.vendorId || '').trim(),
+      vendorName: String(meta.vendorName || meta.label || '').trim()
     }))
     .sort((a, b) => a.label.localeCompare(b.label, 'ko'));
 }
@@ -618,6 +657,7 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
   }
 
   const riderIndex = indexRegionRiders(rankingRiders);
+  const regionRiderIndex = indexRegionRiders(regionRiders);
   const rows = snapshot.rows || [];
   const slotKey = currentBaeminSlotKey();
   const slotPeakField = {
@@ -629,11 +669,32 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
 
   let driving = 0;
   let slotComplete = 0;
+  const operatingByDriver = new Map();
+  const operatingLiveMap = new Map();
   // 지역 등록 기사만 순위 — 같은 기사 중복 행은 최대 완료콜 유지
   const rankingByDriver = new Map();
   rows.forEach(row => {
     const parsed = row.parsed_json || {};
-    if (isDrivingStatus(parsed.statusDesc || parsed.status_desc || '')) driving += 1;
+    const statusDesc = String(parsed.statusDesc || parsed.status_desc || '').trim();
+    if (isDrivingStatus(statusDesc)) {
+      driving += 1;
+      const operatingRider = matchRegionRider(regionRiderIndex, {
+        ...parsed,
+        userId: parsed.userId || parsed.riderId || row.rider_user_id,
+        riderName: parsed.riderName || parsed.rider_name || parsed.name || row.rider_name
+      });
+      if (operatingRider) {
+        operatingLiveMap.set(operatingRider.id, {
+          acceptRateFromDelivery: calcAcceptRateFromDelivery(parsed)
+        });
+        operatingByDriver.set(operatingRider.id, {
+          driverId: operatingRider.id,
+          name: operatingRider.name || '-',
+          status: statusDesc || '운행중',
+          callCount: Math.max(0, Math.round(Number(parsed.totalComplete || parsed.total_complete || 0)))
+        });
+      }
+    }
     // 콜달성 대시보드와 동일: DP 스냅샷 전체의 시간대 완료콜 합
     slotComplete += Math.max(
       0,
@@ -688,6 +749,15 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
     ? ' · 오늘 배달현황 수집분이 없습니다'
     : (snapshotDate && snapshotDate !== today ? ` · 배달현황 스냅샷 ${snapshotDate}` : '');
 
+  const operatingRows = [...operatingByDriver.values()]
+    .sort((a, b) => b.callCount - a.callCount || a.name.localeCompare(b.name, 'ko'));
+  const operatingIds = new Set(operatingRows.map(row => row.driverId));
+  const acceptRates = await loadBaeminAcceptRatesBatch(
+    supabase,
+    regionRiders.filter(rider => operatingIds.has(rider.id)),
+    operatingLiveMap
+  );
+
   return {
     metrics: {
       assigned,
@@ -701,7 +771,11 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
       snapshotDate,
       sourceNote: `배민 ${slotLabel} ${slotComplete}/${assigned} · 운행중 ${driving}명 · ${setCount}세트 · 실시간순위=지역등록 ${regionRiders.length}명 중${snapshotNote}${quotaNote}`
     },
-    realtimeRanking: top
+    realtimeRanking: top,
+    operatingRiders: operatingRows.map(row => ({
+      ...row,
+      acceptRate: acceptRates.get(row.driverId) ?? null
+    }))
   };
 }
 
@@ -812,6 +886,7 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
   }
 
   let realtimeRanking = [];
+  let performanceRiders = [];
   if (!dailyError) {
     const filteredDaily = (dailyRows || []).filter(row => {
       const parsed = row.parsed_json || {};
@@ -831,6 +906,7 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
     })));
     const rankingIds = new Set(rankingRiders.map(rider => rider.id));
     const rankingByDriver = new Map();
+    const performanceByDriver = new Map();
 
     filteredDaily.forEach(row => {
       const parsed = row.parsed_json || {};
@@ -839,8 +915,20 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
         phone: row.phone_number || parsed.phone
       }, lookup);
       if (!driver || !rankingIds.has(driver.id)) return;
-      const complete = coupangRealtimeCallUnits(metricsFromParsed(parsed).complete);
+      const rawMetrics = metricsFromParsed(parsed);
+      const complete = coupangRealtimeCallUnits(rawMetrics.complete);
       if (complete <= 0) return;
+      const performance = {
+        driverId: driver.id,
+        name: driver.name || parsed.name || '-',
+        callCount: complete,
+        rejectCount: Math.max(0, Math.round(rawMetrics.reject)),
+        cancelCount: Math.max(0, Math.round(rawMetrics.cancel))
+      };
+      const performancePrev = performanceByDriver.get(driver.id);
+      if (!performancePrev || complete > performancePrev.callCount) {
+        performanceByDriver.set(driver.id, performance);
+      }
       const prev = rankingByDriver.get(driver.id);
       if (!prev || complete > prev.callCount) {
         rankingByDriver.set(driver.id, {
@@ -856,7 +944,19 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
       .sort((a, b) => b.callCount - a.callCount || a.name.localeCompare(b.name, 'ko'))
       .slice(0, 10)
       .map((row, index) => ({ ...row, rank: index + 1 }));
+    performanceRiders = [...performanceByDriver.values()]
+      .sort((a, b) => b.callCount - a.callCount || a.name.localeCompare(b.name, 'ko'));
   }
+
+  const performanceIds = new Set(performanceRiders.map(row => row.driverId));
+  const rejectRates = await loadCoupangRejectRatesBatch(
+    supabase,
+    rankingRiders.filter(rider => performanceIds.has(rider.id))
+  );
+  performanceRiders = performanceRiders.map(row => ({
+    ...row,
+    rejectionRate: rejectRates.get(row.driverId) ?? null
+  }));
 
   const metricsNote = Object.keys(peaksByType).length
     ? `쿠팡 피크타임 현황 · 운행중 ${operating}명 · 실시간순위=rider_daily 0.8가중치`
@@ -888,8 +988,283 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
         ? `${metricsNote} · 지역등록 ${rankingRiders.length}명 중`
         : metricsNote
     },
-    realtimeRanking
+    realtimeRanking,
+    performanceRiders
   };
+}
+
+function dateKeysBetween(fromDate, toDate) {
+  const rows = [];
+  const cursor = new Date(`${fromDate}T12:00:00+09:00`);
+  const end = new Date(`${toDate}T12:00:00+09:00`);
+  if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime())) return rows;
+  while (cursor <= end && rows.length < 8) {
+    rows.push(formatKstDateKey(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return rows;
+}
+
+const BAEMIN_SLOT_KEYS = ['morning', 'afternoon', 'evening', 'midnight'];
+const BAEMIN_COMPLETE_FIELDS = {
+  morning: ['morningCount', 'completeMorning'],
+  afternoon: ['afternoonCount', 'completeAfternoon'],
+  evening: ['eveningCount', 'completeEvening'],
+  midnight: ['midnightCount', 'completeMidnight']
+};
+
+function slotRate(completed, goal) {
+  const g = Number(goal || 0);
+  return g > 0 ? Math.round((Number(completed || 0) / g) * 1000) / 10 : 0;
+}
+
+function sumBaeminDeliverySlotTotals(rows) {
+  const totals = {
+    morning: 0,
+    afternoon: 0,
+    evening: 0,
+    midnight: 0
+  };
+  (rows || []).forEach(row => {
+    const parsed = row?.parsed_json || {};
+    BAEMIN_SLOT_KEYS.forEach(key => {
+      const fields = BAEMIN_COMPLETE_FIELDS[key];
+      totals[key] += Math.max(0, Number(parsed[fields[0]] ?? parsed[fields[1]] ?? 0));
+    });
+  });
+  return totals;
+}
+
+/** 오늘(또는 스냅샷 날짜) 칸만 실시간 슬롯으로 덮어쓴다. 지난 날은 이력 그대로. */
+function mergeLiveDaySlots(days, liveDate, liveSlots, slotOrder, labels) {
+  if (!liveDate || !liveSlots || !Array.isArray(slotOrder) || !slotOrder.length) {
+    return Array.isArray(days) ? days : [];
+  }
+  const list = (Array.isArray(days) ? days : []).map(day => ({
+    ...day,
+    slots: Array.isArray(day?.slots) ? day.slots.map(slot => ({ ...slot })) : []
+  }));
+  let day = list.find(item => item.date === liveDate);
+  if (!day) {
+    day = { date: liveDate, goal: 0, completed: 0, slots: [] };
+    list.push(day);
+    list.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  }
+  day.live = true;
+  day.slots = slotOrder.map(key => {
+    const prev = (day.slots || []).find(slot => slot.key === key) || {};
+    const live = liveSlots[key] || {};
+    const hasLiveCompleted = live.completed != null && live.completed !== '';
+    const hasLiveGoal = live.goal != null && live.goal !== '';
+    const goal = hasLiveGoal ? Number(live.goal) : Number(prev.goal || 0);
+    const completed = hasLiveCompleted ? Number(live.completed) : Number(prev.completed || 0);
+    return {
+      key,
+      label: prev.label || labels?.[key] || key,
+      goal,
+      completed,
+      rate: slotRate(completed, goal)
+    };
+  });
+  day.goal = day.slots.reduce((sum, slot) => sum + Number(slot.goal || 0), 0);
+  day.completed = day.slots.reduce((sum, slot) => sum + Number(slot.completed || 0), 0);
+  return list;
+}
+
+function totalsFromWeeklyDays(days) {
+  const list = Array.isArray(days) ? days : [];
+  const goal = list.reduce((sum, row) => sum + Number(row.goal || 0), 0);
+  const completed = list.reduce((sum, row) => sum + Number(row.completed || 0), 0);
+  return {
+    goal,
+    completed,
+    rate: slotRate(completed, goal),
+    days: list
+  };
+}
+
+async function buildBranchWeeklyProgress(supabase, region, weekStart, weekEnd) {
+  if (region.platform === 'baemin') {
+    const partnerId = String(region.partnerId || region.key || '').trim().toUpperCase();
+    let setCount = 1;
+    let matrix = null;
+    try {
+      const [setMap, quotaMatrix] = await Promise.all([
+        readPartnerSetCountMap(),
+        readWeekdayQuotaMatrix()
+      ]);
+      setCount = normalizeSetCount(setMap?.[partnerId]?.setCount) || 1;
+      matrix = quotaMatrix;
+    } catch (_) {
+      // 기본 할당표로 계속 계산한다.
+    }
+    const dates = dateKeysBetween(weekStart, weekEnd);
+    const today = formatKstDateKey(new Date());
+    const [historyResult, liveSnapshot] = await Promise.all([
+      supabase
+        .from('baemin_biz_collect_items')
+        .select('collect_date,parsed_json,dedupe_key')
+        .eq('source_menu', 'daily_history')
+        .gte('collect_date', weekStart)
+        .lte('collect_date', weekEnd)
+        .like('dedupe_key', `${partnerId}:%`)
+        .limit(100),
+      today >= weekStart && today <= weekEnd
+        ? loadBaeminDeliverySnapshot(supabase, partnerId, today)
+        : Promise.resolve({ rows: [], snapshotDate: '' })
+    ]);
+    const { data, error } = historyResult;
+    if (error && !/does not exist|schema cache/i.test(error.message || '')) throw error;
+    if (liveSnapshot?.error && !/does not exist|schema cache/i.test(liveSnapshot.error.message || '')) {
+      throw liveSnapshot.error;
+    }
+    const completedByDate = new Map();
+    (data || []).forEach(row => {
+      const parsed = row.parsed_json || {};
+      const date = String(parsed.businessDate || parsed.deliveryDate || row.collect_date || '').slice(0, 10);
+      const completed = Math.max(0, Math.round(Number(
+        parsed.totalComplete ?? parsed.allDayComplete ?? parsed.completeCount ?? parsed.deliveryCount ?? 0
+      )));
+      completedByDate.set(date, Math.max(completedByDate.get(date) || 0, completed));
+    });
+    const parsedByDate = new Map();
+    (data || []).forEach(row => {
+      const parsed = row.parsed_json || {};
+      const date = String(parsed.businessDate || parsed.deliveryDate || row.collect_date || '').slice(0, 10);
+      if (!date) return;
+      parsedByDate.set(date, parsed);
+    });
+    let days = dates.map(date => {
+      const targets = computeSlotTargets(setCount, date, matrix || undefined);
+      const parsed = parsedByDate.get(date) || {};
+      const slots = BAEMIN_SLOT_KEYS.map(key => {
+        const fields = BAEMIN_COMPLETE_FIELDS[key];
+        const goal = Math.max(0, Number(targets?.[key] || 0));
+        const completed = Math.max(0, Number(parsed[fields[0]] ?? parsed[fields[1]] ?? 0));
+        return {
+          key,
+          label: SLOT_LABELS[key] || key,
+          goal,
+          completed,
+          rate: slotRate(completed, goal)
+        };
+      });
+      const goal = slots.reduce((sum, slot) => sum + slot.goal, 0);
+      const slotCompleted = slots.reduce((sum, slot) => sum + slot.completed, 0);
+      const completed = slotCompleted || completedByDate.get(date) || 0;
+      return { date, goal, completed, slots };
+    });
+    const liveDate = String(liveSnapshot?.snapshotDate || today).slice(0, 10);
+    const liveRows = liveSnapshot?.rows || [];
+    if (liveRows.length && liveDate >= weekStart && liveDate <= weekEnd) {
+      const totals = sumBaeminDeliverySlotTotals(liveRows);
+      const liveSlots = {};
+      BAEMIN_SLOT_KEYS.forEach(key => {
+        liveSlots[key] = { completed: totals[key] };
+      });
+      days = mergeLiveDaySlots(days, liveDate, liveSlots, BAEMIN_SLOT_KEYS, SLOT_LABELS);
+    }
+    return totalsFromWeeklyDays(days);
+  }
+
+  const vendorId = String(region.vendorId || region.key || '').trim();
+  const today = formatKstDateKey(new Date());
+  const peakQuery = () => supabase
+    .from('coupang_collect_items')
+    .select('vendor_id,vendor_name,parsed_json,source_menu,collect_date')
+    .eq('collect_date', today)
+    .eq('source_menu', 'peak_realtime')
+    .limit(5000);
+  const [weeklyResult, peakResult] = await Promise.all([
+    supabase
+      .from('coupang_collect_items')
+      .select('vendor_id,vendor_name,parsed_json,collect_date')
+      .eq('source_menu', 'weekly_performance')
+      .gte('collect_date', weekStart)
+      .lte('collect_date', weekEnd)
+      .limit(1000),
+    today >= weekStart && today <= weekEnd
+      ? (vendorId ? peakQuery().eq('vendor_id', vendorId) : peakQuery())
+      : Promise.resolve({ data: [], error: null })
+  ]);
+  const { data, error } = weeklyResult;
+  if (error && !/does not exist|schema cache/i.test(error.message || '')) throw error;
+  if (peakResult?.error && !/does not exist|schema cache/i.test(peakResult.error.message || '')) {
+    throw peakResult.error;
+  }
+  const regionRef = {
+    key: vendorId || region.label,
+    vendorId,
+    label: shortCoupangRegionLabel(region.label || ''),
+    vendorName: region.vendorName || region.label || ''
+  };
+  const matchesRegion = row => {
+    const parsed = row?.parsed_json || {};
+    return coupangVendorMatchesRegion(
+      regionRef,
+      row.vendor_id || parsed.vendorId,
+      row.vendor_name || parsed.vendorName
+    );
+  };
+  const dayMap = new Map();
+  (data || []).filter(matchesRegion).forEach(row => {
+    const parsed = row.parsed_json || {};
+    const date = String(parsed.date || parsed.businessDate || row.collect_date || '').slice(0, 10);
+    if (!date || date < weekStart || date > weekEnd) return;
+    const current = dayMap.get(date) || { date, goal: 0, completed: 0, slotMap: {} };
+    const peakKey = String(parsed.peakType || parsed.peakTimeType || '').toUpperCase();
+    if (!PEAK_ORDER.includes(peakKey)) return;
+    const slot = current.slotMap[peakKey] || {
+      key: peakKey,
+      label: PEAK_LABELS[peakKey] || peakKey,
+      goal: 0,
+      completed: 0,
+      rate: 0
+    };
+    slot.goal += Math.max(0, Number(parsed.goalCount || 0));
+    slot.completed += Math.max(0, Number(parsed.completedCount || 0));
+    slot.rate = slotRate(slot.completed, slot.goal);
+    current.slotMap[peakKey] = slot;
+    current.goal += Math.max(0, Number(parsed.goalCount || 0));
+    current.completed += Math.max(0, Number(parsed.completedCount || 0));
+    dayMap.set(date, current);
+  });
+  let days = [...dayMap.values()]
+    .map(day => ({
+      date: day.date,
+      goal: day.goal,
+      completed: day.completed,
+      slots: PEAK_ORDER.map(key => day.slotMap[key] || {
+        key,
+        label: PEAK_LABELS[key] || key,
+        goal: 0,
+        completed: 0,
+        rate: 0
+      })
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  let peakRows = peakResult?.data || [];
+  if (vendorId && !peakRows.length && peakResult && !peakResult.error) {
+    const fallback = await peakQuery();
+    if (fallback.error && !/does not exist|schema cache/i.test(fallback.error.message || '')) {
+      throw fallback.error;
+    }
+    peakRows = fallback.data || [];
+  }
+  const liveSlots = {};
+  peakRows.filter(matchesRegion).forEach(row => {
+    const parsed = row.parsed_json || {};
+    const peakType = String(parsed.peakType || '').toUpperCase();
+    if (!PEAK_ORDER.includes(peakType)) return;
+    liveSlots[peakType] = {
+      goal: formatCoupangCount(parsed.goalCount || 0),
+      completed: formatCoupangCount(parsed.completedCount || 0)
+    };
+  });
+  if (Object.keys(liveSlots).length && today >= weekStart && today <= weekEnd) {
+    days = mergeLiveDaySlots(days, today, liveSlots, PEAK_ORDER, PEAK_LABELS);
+  }
+  return totalsFromWeeklyDays(days);
 }
 
 function emptyMetrics() {
@@ -1022,6 +1397,81 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
   };
   writeResponseCache(cacheKey, payload);
   return payload;
+}
+
+async function getRiderBranchDashboard(accessToken, query = {}) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const platform = normalizePlatform(query.platform || 'baemin');
+  const today = formatKstDateKey(new Date());
+  const weekStart = normalizeSettlementWeekStart(query.weekStart || today);
+  const weekEnd = settlementWeekEnd(weekStart);
+  const requestedKey = String(query.regionKey || '').trim();
+
+  try {
+    const exposure = await readExposureMap(supabase);
+    const regions = listBranchManagerRegions(exposure, platform, me.riderId || me.rider?.id);
+    if (!regions.length) {
+      return {
+        ok: true,
+        isBranchManager: false,
+        platform,
+        weekStart,
+        weekEnd,
+        regions: [],
+        message: '이 플랫폼에서 등록된 지사장 권한이 없습니다.'
+      };
+    }
+    const selected = regions.find(region => region.key === requestedKey) || regions[0];
+    if (!isBranchManagerForRegion(exposure, selected, me.riderId || me.rider?.id)) {
+      return { ok: false, status: 403, error: '이 지역의 지사장 권한이 없습니다.' };
+    }
+
+    const dateInfo = platform === 'coupang'
+      ? await resolveCoupangRiderDailyDate(supabase, today)
+      : null;
+    const liveDate = dateInfo?.collectDate || today;
+    const cacheKey = `branch|${me.riderId || me.rider?.id}|${platform}|${selected.key}|${weekStart}|${liveDate}`;
+    const cached = readResponseCache(cacheKey);
+    if (cached) return { ...cached, regions, selectedRegionKey: selected.key, region: selected };
+
+    const regionRiders = await loadRidersForRegion(supabase, selected);
+    const options = { maskNames: false, regionRiders, rankingRiders: regionRiders };
+    const [live, weeklyProgress, weeklyRanking] = await Promise.all([
+      platform === 'coupang'
+        ? buildCoupangLive(supabase, selected, liveDate, options)
+        : buildBaeminLive(supabase, selected, today, options),
+      buildBranchWeeklyProgress(supabase, selected, weekStart, weekEnd),
+      buildWeeklyRanking(supabase, selected, weekStart, weekEnd, options)
+    ]);
+    const payload = {
+      ok: true,
+      isBranchManager: true,
+      platform,
+      today: liveDate,
+      weekStart,
+      weekEnd,
+      regions,
+      selectedRegionKey: selected.key,
+      region: selected,
+      registeredCount: regionRiders.length,
+      metrics: live.metrics || emptyMetrics(),
+      operatingRiders: platform === 'baemin' ? (live.operatingRiders || []) : [],
+      performanceRiders: platform === 'coupang' ? (live.performanceRiders || []) : [],
+      weeklyProgress,
+      weeklyRanking,
+      coupangRiderOnlineUnavailable: platform === 'coupang'
+    };
+    writeResponseCache(cacheKey, payload);
+    return payload;
+  } catch (error) {
+    return { ok: false, status: 500, error: error.message || '지사관리 현황을 불러오지 못했습니다.' };
+  }
 }
 
 /**
@@ -1587,6 +2037,39 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
     ? body.driverIds.map(id => String(id || '').trim()).filter(Boolean)
     : [];
   const driverId = String(body.driverId || '').trim();
+  if (driverId && body.branchManager != null) {
+    try {
+      const exposure = await readExposureMap(supabase);
+      const side = { ...(exposure[platform] || {}) };
+      const prev = side[key] && typeof side[key] === 'object' ? side[key] : {};
+      const branchManagers = {
+        ...(prev.branchManagers && typeof prev.branchManagers === 'object' ? prev.branchManagers : {})
+      };
+      if (body.branchManager === true) {
+        branchManagers[driverId] = { enabled: true, updatedAt: new Date().toISOString() };
+      } else {
+        delete branchManagers[driverId];
+      }
+      const now = new Date().toISOString();
+      side[key] = {
+        ...prev,
+        exposed: prev.exposed === true || body.exposed === true,
+        label: String(body.label || prev.label || key).trim() || key,
+        partnerId: String(body.partnerId || prev.partnerId || '').trim(),
+        vendorId: String(body.vendorId || prev.vendorId || '').trim(),
+        branchManagers,
+        updatedAt: now
+      };
+      const next = await upsertExposureMap(supabase, {
+        ...exposure,
+        [platform]: side,
+        updatedAt: now
+      });
+      return { ok: true, exposure: next, branchManager: body.branchManager === true };
+    } catch (error) {
+      return { ok: false, status: 500, error: error.message || '지사장 권한을 저장하지 못했습니다.' };
+    }
+  }
   if (driverId || driverIdsBulk.length) {
     try {
       const exposure = await readExposureMap(supabase);
@@ -1621,7 +2104,11 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
         updatedAt: now
       };
       // 지역 미노출인데 기사 옵션만 저장해도 riders 는 유지 (나중에 지역 ON 해도 유지)
-      if (!side[key].exposed && !Object.keys(riders).length) {
+      if (
+        !side[key].exposed
+        && !Object.keys(riders).length
+        && !Object.keys(side[key].branchManagers || {}).length
+      ) {
         delete side[key];
       }
       const next = await upsertExposureMap(supabase, {
@@ -1641,13 +2128,17 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
     const exposed = body.exposed === true;
     const prev = side[key] && typeof side[key] === 'object' ? side[key] : {};
     const riders = prev.riders && typeof prev.riders === 'object' ? prev.riders : {};
+    const branchManagers = prev.branchManagers && typeof prev.branchManagers === 'object'
+      ? prev.branchManagers
+      : {};
     if (!exposed) {
       // 지역 OFF 해도 기사별 옵션(전체열람 등)은 유지
-      if (Object.keys(riders).length) {
+      if (Object.keys(riders).length || Object.keys(branchManagers).length) {
         side[key] = {
           ...prev,
           exposed: false,
           riders,
+          branchManagers,
           updatedAt: new Date().toISOString()
         };
       } else {
@@ -1661,6 +2152,7 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
         partnerId: String(body.partnerId || prev.partnerId || '').trim(),
         vendorId: String(body.vendorId || prev.vendorId || '').trim(),
         riders,
+        branchManagers,
         updatedAt: new Date().toISOString()
       };
     }
@@ -1679,6 +2171,7 @@ module.exports = {
   EXPOSURE_KEY,
   DEFAULT_RIDER_REGION_MODE,
   getRiderRegionDashboard,
+  getRiderBranchDashboard,
   getAdminRegionRanking,
   getAdminRegionCrawlMatch,
   getAdminCoupangClusterCrawlAssign,
@@ -1691,6 +2184,11 @@ module.exports = {
     getRiderRegionModeForRegion,
     filterRankingRiders,
     filterLeaderViewRankingRiders,
-    filterViewerRegions
+    filterViewerRegions,
+    isBranchManagerForRegion,
+    listBranchManagerRegions,
+    mergeLiveDaySlots,
+    sumBaeminDeliverySlotTotals,
+    buildBranchWeeklyProgress
   }
 };

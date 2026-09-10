@@ -1507,9 +1507,9 @@ const BremStorage = (function () {
       KEYS.settlementUnmatchedDirect
     ],
     'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
-    'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.deductionLedger, KEYS.leaseLoans],
+    'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts],
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
-    'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.deductionLedger, KEYS.leaseLoans],
+    'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts],
     'tax-management': [KEYS.drivers, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'admin-schedule': [KEYS.adminSchedules],
@@ -1698,24 +1698,22 @@ const BremStorage = (function () {
 
   function isDashboardCallsWindowReady(win = getDashboardCallsWindow()) {
     const token = `${win.since}|${win.until}`;
-    if (dashboardCallsLoadedToken === token) return true;
-    const list = window.BremDataCache?.getData?.(KEYS.calls);
-    if (!Array.isArray(list) || !list.length) return false;
-    return list.some(row => {
-      const day = String(row?.date || '').slice(0, 10);
-      return day >= win.since && day <= win.until;
-    });
+    return dashboardCallsLoadedToken === token;
   }
 
   /** 대시보드 주간·월간 표시에 필요한 콜수만 로드 (2년치 전체 → timeout → 0 고착 방지) */
   async function ensureDashboardCallsLoaded(options = {}) {
     const win = getDashboardCallsWindow(options);
+    const token = `${win.since}|${win.until}`;
+    if (options.force !== true && dashboardCallsLoadedToken === token) {
+      return { ok: true, cached: true };
+    }
     const result = await ensureCallsSinceDate(win.since, {
       untilDate: win.until,
       merge: true,
-      force: options.force === true
+      force: true
     });
-    dashboardCallsLoadedToken = `${win.since}|${win.until}`;
+    dashboardCallsLoadedToken = token;
     return result;
   }
 
@@ -3467,6 +3465,17 @@ const BremStorage = (function () {
     });
   }
 
+  async function fetchRiderBranchDashboardFromServer({ platform, regionKey, weekStart } = {}) {
+    const params = new URLSearchParams();
+    if (platform) params.set('platform', String(platform));
+    if (regionKey) params.set('regionKey', String(regionKey));
+    if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return riderApiFetch(`/api/rider/branch-dashboard${qs}`, 'branch-dashboard', {
+      timeoutMs: REGION_DASHBOARD_TIMEOUT_MS
+    });
+  }
+
   async function fetchRiderCrewLeaderDetailFromServer({ weekStart } = {}) {
     const params = new URLSearchParams();
     if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
@@ -4931,13 +4940,18 @@ const BremStorage = (function () {
         throw new Error('storage-supabase-adapter.js 가 로드되지 않았습니다.');
       }
       const client = createSupabaseClient(settings.url, settings.anonKey);
-      const { data: sessionData } = await client.auth.getSession();
+      let { data: sessionData } = await client.auth.getSession();
+      if (!sessionData?.session) {
+        const restored = await restorePersistedAuthSession(client);
+        if (restored) sessionData = { session: restored };
+      }
       activeSupabaseClient = client;
       if (sessionData?.session?.access_token) {
         rememberAdminAccessToken(sessionData.session.access_token);
       }
 
       if (sessionData?.session) {
+        const expectedRole = window.BREM_AUTH_SCOPE === 'rider' ? 'rider' : 'admin';
         try {
           const { data: profile, error: profileError } = await client
             .from('profiles')
@@ -4948,12 +4962,16 @@ const BremStorage = (function () {
             console.warn('[BREM] profiles load skipped:', profileError.message || profileError);
           }
           activeSupabaseProfile = profile
-            || buildProfileFromAuthUser(sessionData.session.user, 'admin')
+            || buildProfileFromAuthUser(sessionData.session.user, expectedRole)
             || null;
         } catch (profileLoadError) {
           console.warn('[BREM] profiles load failed:', profileLoadError?.message || profileLoadError);
-          activeSupabaseProfile = buildProfileFromAuthUser(sessionData.session.user, 'admin');
+          activeSupabaseProfile = buildProfileFromAuthUser(sessionData.session.user, expectedRole);
         }
+        if (activeSupabaseProfile?.role === 'rider' && activeSupabaseProfile.rider_id) {
+          sessionAdapter.write(SESSION_KEYS.driverId, activeSupabaseProfile.rider_id);
+        }
+        persistAuthSessionLocally(sessionData.session, expectedRole);
       }
 
       const adapter = window.BremSupabaseStorageAdapter.createSupabaseAdapter(client, KEYS);
@@ -5341,10 +5359,11 @@ const BremStorage = (function () {
     return host ? `sb-${host}-auth-token` : '';
   }
 
-  function persistAdminAuthSessionLocally(session, config = getSupabaseConfig()) {
+  function persistAuthSessionLocally(session, scope = 'admin', config = getSupabaseConfig()) {
     if (!session?.access_token || !session?.refresh_token) return false;
     const storageKey = getSupabaseAuthStorageKey(config);
     if (!storageKey) return false;
+    const normalized = scope === 'rider' ? 'rider' : 'admin';
     const payload = JSON.stringify({
       access_token: session.access_token,
       refresh_token: session.refresh_token,
@@ -5354,15 +5373,49 @@ const BremStorage = (function () {
       token_type: session.token_type || 'bearer',
       user: session.user || null
     });
-    const prefixed = `brem-auth-admin-${storageKey}`;
+    const prefixed = `brem-auth-${normalized}-${storageKey}`;
     try {
       localStorage.setItem(prefixed, payload);
       sessionStorage.setItem(prefixed, payload);
-      window.BremLoginPrefs?.setKeepLoggedIn?.('admin', true);
+      window.BremLoginPrefs?.setKeepLoggedIn?.(normalized, true);
       return true;
     } catch (error) {
-      console.warn('[BREM] persistAdminAuthSessionLocally failed:', error?.message || error);
+      console.warn('[BREM] persistAuthSessionLocally failed:', error?.message || error);
       return false;
+    }
+  }
+
+  function persistAdminAuthSessionLocally(session, config = getSupabaseConfig()) {
+    return persistAuthSessionLocally(session, 'admin', config);
+  }
+
+  async function restorePersistedAuthSession(client, scope = window.BREM_AUTH_SCOPE === 'rider' ? 'rider' : 'admin') {
+    if (!client?.auth?.setSession) return null;
+    const storageKey = getSupabaseAuthStorageKey();
+    if (!storageKey) return null;
+    const normalized = scope === 'rider' ? 'rider' : 'admin';
+    const prefixed = `brem-auth-${normalized}-${storageKey}`;
+    let raw = null;
+    try {
+      raw = localStorage.getItem(prefixed) || sessionStorage.getItem(prefixed);
+    } catch {
+      raw = null;
+    }
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed?.access_token || !parsed?.refresh_token) return null;
+      await client.auth.setSession({
+        access_token: parsed.access_token,
+        refresh_token: parsed.refresh_token
+      });
+      const { data } = await client.auth.getSession();
+      const session = data?.session || null;
+      if (session?.access_token) rememberAdminAccessToken(session.access_token);
+      return session;
+    } catch (error) {
+      console.warn('[BREM] restorePersistedAuthSession failed:', error?.message || error);
+      return null;
     }
   }
 
@@ -5616,16 +5669,15 @@ const BremStorage = (function () {
   }
 
   function purgeLegacyAuthFromLocalStorage() {
-    Object.values(SESSION_KEYS).forEach(key => {
-      try { localStorage.removeItem(key); } catch { /* ignore */ }
-    });
-
     const authPrefixes = ['brem-auth-', 'brem_sb_', 'brem_session_'];
     try {
       for (let index = localStorage.length - 1; index >= 0; index -= 1) {
         const key = localStorage.key(index);
         if (!key) continue;
-        if (authPrefixes.some(prefix => key.startsWith(prefix)) || Object.values(SESSION_KEYS).includes(key)) {
+        // 로그인 유지 세션·스코프 토큰은 유지 (기사앱/관리자 재시작 시 재로그인 방지)
+        if (key.startsWith('brem-auth-admin-') || key.startsWith('brem-auth-rider-')) continue;
+        if (Object.values(SESSION_KEYS).includes(key)) continue;
+        if (authPrefixes.some(prefix => key.startsWith(prefix))) {
           localStorage.removeItem(key);
         }
       }
@@ -12718,7 +12770,7 @@ const BremStorage = (function () {
       });
     },
 
-    saveBatch({ period, records, sourceFileName, platform = DEFAULT_PLATFORM }) {
+    saveBatch({ period, records, sourceFileName, platform = DEFAULT_PLATFORM, callFeeUnit }) {
       if (!period || !Array.isArray(records) || !records.length) return settlementUnmatched.getAll();
 
       const p = normalizePlatform(platform);
@@ -12750,6 +12802,9 @@ const BremStorage = (function () {
           rawName,
           name,
           orderCount: Number(record.orderCount || 0),
+          callFeeUnit: callFeeUnit == null || callFeeUnit === ''
+            ? (record.callFeeUnit == null ? null : Math.max(0, Math.round(Number(record.callFeeUnit) || 0)))
+            : Math.max(0, Math.round(Number(callFeeUnit) || 0)),
           hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
           deductionBase: Math.abs(Number(record.deductionBase || 0)),
           settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
@@ -12759,6 +12814,9 @@ const BremStorage = (function () {
             name,
             riderId: String(record.riderId || '').trim(),
             orderCount: Number(record.orderCount || 0),
+            callFeeUnit: callFeeUnit == null || callFeeUnit === ''
+              ? (record.callFeeUnit == null ? null : Math.max(0, Math.round(Number(record.callFeeUnit) || 0)))
+              : Math.max(0, Math.round(Number(callFeeUnit) || 0)),
             hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
             // 나중에 매칭 재시도할 때 AC(공제기준금액)가 살아있어야 원천세가 맞게 계산된다.
             deductionBase: Math.abs(Number(record.deductionBase || 0)),
@@ -12785,7 +12843,17 @@ const BremStorage = (function () {
       return list;
     },
 
-    saveWeeklyBatch({ weekStart, startDate, endDate, records, sourceFileName, platform = DEFAULT_PLATFORM, region = '', channel = 'bro' }) {
+    saveWeeklyBatch({
+      weekStart,
+      startDate,
+      endDate,
+      records,
+      sourceFileName,
+      platform = DEFAULT_PLATFORM,
+      region = '',
+      channel = 'bro',
+      callFeeUnit
+    }) {
       const weekKey = String(weekStart || weekStartKeyFromDate(startDate)).slice(0, 10);
       const startKey = String(startDate || weekKey).slice(0, 10);
       const endKey = String(endDate || weekEndKeyFromDate(weekKey)).slice(0, 10);
@@ -12816,6 +12884,9 @@ const BremStorage = (function () {
           rawName,
           name,
           orderCount: Number(record.weeklyOrderCount ?? record.orderCount ?? 0),
+          callFeeUnit: callFeeUnit == null || callFeeUnit === ''
+            ? (record.callFeeUnit ?? record.amounts?.callFeeUnit ?? null)
+            : Math.max(0, Math.round(Number(callFeeUnit) || 0)),
           settlementAmount: 0,
           deliveryAmount: 0,
           riderId: '',
@@ -12827,6 +12898,9 @@ const BremStorage = (function () {
             coupangLoginKey,
             baeminUserId,
             weeklyOrderCount: Number(record.weeklyOrderCount ?? record.orderCount ?? 0),
+            callFeeUnit: callFeeUnit == null || callFeeUnit === ''
+              ? (record.callFeeUnit ?? record.amounts?.callFeeUnit ?? null)
+              : Math.max(0, Math.round(Number(callFeeUnit) || 0)),
             channel: ch
           },
           sourceFileName: sourceFileName || '',
@@ -12912,7 +12986,7 @@ const BremStorage = (function () {
       });
     },
 
-    retryDailyMatching({ platform, weekStart, period = '', recordIds = [] } = {}) {
+    retryDailyMatching({ platform, weekStart, period = '', recordIds = [], callFeeUnit } = {}) {
       const p = normalizePlatform(platform);
       const weekKey = String(weekStart || '').slice(0, 10);
       const periodKey = String(period || '').slice(0, 10);
@@ -12956,8 +13030,15 @@ const BremStorage = (function () {
         if (hit?.driverId) {
           matchedCount += 1;
           const periodKey = String(item.period || '').slice(0, 10);
-          if (!byPeriod.has(periodKey)) byPeriod.set(periodKey, []);
-          byPeriod.get(periodKey).push({
+          if (!byPeriod.has(periodKey)) {
+            byPeriod.set(periodKey, {
+              records: [],
+              callFeeUnit: callFeeUnit == null || callFeeUnit === ''
+                ? (item.callFeeUnit ?? item.matchPayload?.callFeeUnit)
+                : callFeeUnit
+            });
+          }
+          byPeriod.get(periodKey).records.push({
             driverId: hit.driverId,
             riderId: hit.riderId || '',
             orderCount: Number(hit.orderCount || 0),
@@ -12974,9 +13055,14 @@ const BremStorage = (function () {
       });
 
       let applied = 0;
-      byPeriod.forEach((records, periodKey) => {
-        settlements.upsertBatch({ period: periodKey, platform: p, records });
-        applied += records.length;
+      byPeriod.forEach((group, periodKey) => {
+        settlements.upsertBatch({
+          period: periodKey,
+          platform: p,
+          records: group.records,
+          callFeeUnit: group.callFeeUnit
+        });
+        applied += group.records.length;
       });
 
       const current = settlementUnmatched.getAll();
@@ -12997,7 +13083,7 @@ const BremStorage = (function () {
       };
     },
 
-    retryWeeklyMatching({ platform, weekStart, recordIds = [], channel = 'bro' } = {}) {
+    retryWeeklyMatching({ platform, weekStart, recordIds = [], channel = 'bro', callFeeUnit } = {}) {
       const p = normalizePlatform(platform);
       const weekKey = String(weekStart || '').slice(0, 10);
       const ch = channel === 'direct' ? 'direct' : 'bro';
@@ -13023,6 +13109,10 @@ const BremStorage = (function () {
 
       let startDate = pending[0].period;
       let endDate = pending[0].endDate || weekEndKeyFromDate(weekKey);
+      const pendingCallFeeUnit = callFeeUnit == null || callFeeUnit === ''
+        ? pending.map(item => item.callFeeUnit ?? item.matchPayload?.callFeeUnit)
+          .find(unit => unit != null && unit !== '')
+        : callFeeUnit;
       // 쿠팡: 업로드 매칭과 동일하게 weekStart(base)~+6일 구간으로 일정산·콜수를 본다.
       if (p === 'coupang' && typeof BremWeeklySettlement.calculateCoupangSettlementDates === 'function') {
         const dates = BremWeeklySettlement.calculateCoupangSettlementDates(
@@ -13063,7 +13153,14 @@ const BremStorage = (function () {
           if (mergedToSaved) {
             saved.matchedNamesLabel = BremWeeklySettlement.buildMatchedNamesLabel(saved.riders);
             saved.summary = BremWeeklySettlement.buildWeeklySummary(saved.riders, []);
-            weeklySettlements.save(saved);
+            const storedUnit = (saved.riders || []).map(rider => (
+              rider?.amounts?.callFeeUnit ?? rider?.callFeeUnit
+            )).find(unit => unit != null && unit !== '');
+            weeklySettlements.save(saved, {
+              callFeeUnit: pendingCallFeeUnit == null || pendingCallFeeUnit === ''
+                ? storedUnit
+                : pendingCallFeeUnit
+            });
           }
         }
       }
@@ -13119,6 +13216,7 @@ const BremStorage = (function () {
         stillUnmatchedCount: nextPending.length,
         mergedToSaved,
         needsManualSave: newlyMatched.length > 0 && mergedToSaved === 0,
+        callFeeUnit: pendingCallFeeUnit,
         startDate,
         endDate,
         region: pending[0]?.region || ''
@@ -13520,7 +13618,7 @@ const BremStorage = (function () {
       nextEditable = [...nextEditable, 'payroll-daily-settlement'];
     }
 
-    return { ...account, menus: nextMenus, editableMenus: nextEditable };
+    return { ...account, menus: nextMenus, editableMenus: nextEditable, canOperateCrawl: true };
   }
 
   function parseAdminAccountsValue(raw) {
@@ -14125,6 +14223,14 @@ const BremStorage = (function () {
           });
           if (sessionError) {
             return { ok: false, reason: sessionError.message || '세션 연결에 실패했습니다.' };
+          }
+
+          persistAuthSessionLocally(payload.session, 'rider');
+          try {
+            window.BremLoginPrefs?.setKeepLoggedIn?.('rider', true);
+            window.BremLoginPrefs?.migrateSessionToPersist?.('rider');
+          } catch {
+            /* ignore */
           }
 
           if (payload.profile) {
@@ -14969,6 +15075,7 @@ const BremStorage = (function () {
     submitRiderInquiryToServer,
     ackRiderInquiryOnServer,
     fetchRiderRegionDashboardFromServer,
+    fetchRiderBranchDashboardFromServer,
     fetchRiderCrewLeaderFromServer,
     fetchRiderCrewLeaderDetailFromServer,
     renameRiderCrewFromServer,

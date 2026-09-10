@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260827crewrate2">
+  <link rel="stylesheet" href="css/driver.css?v=20260910branch1">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -69,8 +69,8 @@
             <input type="checkbox" id="driverRememberId">
             <span>아이디 기억하기</span>
           </label>
-          <label class="login-option">
-            <input type="checkbox" id="driverKeepLoggedIn">
+          <label class="login-option" hidden>
+            <input type="checkbox" id="driverKeepLoggedIn" checked>
             <span>로그인 유지</span>
           </label>
         </div>
@@ -148,12 +148,13 @@
                 </div>
               </dl>
               <div class="profile-actions">
-                <button type="button" class="profile-edit-toggle" id="driverProfileEditToggle">정보 수정</button>
+                <button type="button" class="profile-edit-toggle" id="driverProfileEditToggle" aria-expanded="false" aria-controls="driverProfileEditPanel">정보 수정</button>
                 <button type="button" class="profile-inquiry-btn profile-inquiry-btn--compact" id="driverAdminInquiryBtn" title="관리자 문의하기" aria-expanded="false" aria-controls="driverInquiryPopup">관리자 문의하기</button>
                 <button type="button" class="profile-withdrawal-btn profile-withdrawal-btn--compact" id="driverUrgentMissionBtn" title="긴급미션 수락" aria-expanded="false" aria-controls="driverUrgentMissionPopup">미션수락</button>
                 <button type="button" class="profile-withdrawal-btn profile-withdrawal-btn--compact" id="driverWithdrawalBtn" title="일정산 출금신청" aria-expanded="false" aria-controls="driverWithdrawalPanel">출금신청</button>
                 <button type="button" class="profile-payslip-btn" id="driverWeeklyPayslipBtn" aria-expanded="false" aria-controls="driverWeeklyPayslipPanel">주급명세서</button>
                 <button type="button" class="profile-region-dash-btn" id="driverRegionDashboardBtn" aria-expanded="false" aria-controls="driverRegionDashboardPanel">기사대시보드</button>
+                <button type="button" class="profile-branch-btn" id="driverBranchDashboardBtn" hidden aria-expanded="false" aria-controls="driverBranchDashboardPanel">지사관리</button>
                 <button type="button" class="profile-crew-btn" id="driverCrewLeaderBtn" aria-expanded="false" aria-controls="driverCrewLeaderPanel">크루장 관리</button>
               </div>
             </div>
@@ -256,7 +257,7 @@
                 <span class="live-ops-metric__icon" aria-hidden="true">↘</span>
                 <span class="live-ops-metric__label">현재거절율</span>
                 <strong class="live-ops-metric__value" id="coupangOpsRejectRate">-</strong>
-                <span class="live-ops-metric__hint">실시간 거절율 · 현재/최신</span>
+                <span class="live-ops-metric__hint">오늘 완료·거절·취소(0.8/1)로 계산</span>
               </article>
             </div>
             <div class="live-ops-card__foot">
@@ -338,6 +339,82 @@
               </section>
 
               <p class="driver-region-dash-footnote" id="driverRegionDashNote">노출 지역은 관리자가 설정한 지역만 표시됩니다.</p>
+            </div>
+          </article>
+
+          <article class="panel driver-weekly-payslip-panel driver-region-dashboard-panel driver-branch-dashboard-panel" id="driverBranchDashboardPanel" hidden>
+            <div class="driver-payslip-header">
+              <div class="driver-payslip-header__brand">
+                <img src="assets/brand/brem-logo-mark.png" width="72" height="52" alt="BREM" class="driver-payslip-logo">
+                <div>
+                  <p class="eyebrow driver-payslip-eyebrow">BREM BRANCH</p>
+                  <h2>지사관리 대시보드</h2>
+                </div>
+              </div>
+              <button type="button" class="ghost-btn driver-payslip-close" id="driverBranchDashboardCloseBtn">닫기</button>
+            </div>
+
+            <div class="driver-payslip-platform-tabs" role="tablist" aria-label="플랫폼별 지사관리">
+              <button type="button" class="driver-payslip-platform-tab active" data-branch-platform="baemin" role="tab" aria-selected="true">배민</button>
+              <button type="button" class="driver-payslip-platform-tab" data-branch-platform="coupang" role="tab" aria-selected="false">쿠팡</button>
+            </div>
+
+            <div class="driver-region-dash-meta">
+              <label class="driver-region-dash-meta__item">
+                <span class="driver-payslip-meta__label">담당 지역</span>
+                <select id="driverBranchDashboardRegion" class="driver-region-dash-select"></select>
+              </label>
+              <div class="driver-region-dash-meta__item">
+                <span class="driver-payslip-meta__label">정산주</span>
+                <strong id="driverBranchDashboardPeriod" class="driver-payslip-period-text">-</strong>
+              </div>
+              <button type="button" class="driver-region-dash-refresh" id="driverBranchDashboardRefreshBtn" title="새로고침">↻</button>
+            </div>
+
+            <div class="driver-payslip-empty" id="driverBranchDashboardEmpty">
+              <p>등록된 지사장 권한이 없습니다.</p>
+            </div>
+
+            <div id="driverBranchDashboardContent" hidden>
+              <p class="driver-region-dash-region-chip"><strong id="driverBranchDashboardRegionLabel">-</strong></p>
+              <div class="driver-region-dash-metrics driver-branch-metrics">
+                <div class="driver-region-dash-metric">
+                  <span>현재 완료/할당</span>
+                  <strong id="driverBranchAssigned">-</strong>
+                </div>
+                <button type="button" class="driver-region-dash-metric driver-branch-metric-btn" id="driverBranchOperatingDetailBtn">
+                  <span>운행중</span>
+                  <strong id="driverBranchOperating">-</strong>
+                </button>
+                <div class="driver-region-dash-metric">
+                  <span>지역 배정</span>
+                  <strong id="driverBranchRegistered">-</strong>
+                </div>
+              </div>
+
+              <section class="driver-branch-week">
+                <div class="driver-branch-week__head">
+                  <div>
+                    <h3>ERP 주간 타임별 할당 대시보드</h3>
+                    <p>배민 시간대·쿠팡 피크별 현황</p>
+                  </div>
+                  <button type="button" class="driver-branch-erp-open" id="driverBranchErpDashboardBtn">팝업으로 보기</button>
+                </div>
+                <p class="driver-branch-week__summary" id="driverBranchWeeklySummary">-</p>
+              </section>
+
+              <section class="driver-payslip-table-block">
+                <div class="driver-branch-rider-list-head">
+                  <h3 id="driverBranchRiderListTitle">기사 현황</h3>
+                  <span id="driverBranchRiderListCount">0명</span>
+                </div>
+                <label class="driver-branch-rider-search">
+                  <span class="sr-only">기사 이름 검색</span>
+                  <input type="search" id="driverBranchRiderSearch" placeholder="기사 이름 검색" autocomplete="off">
+                </label>
+                <div class="driver-branch-rider-list" id="driverBranchRiderList"></div>
+              </section>
+              <p class="driver-region-dash-footnote" id="driverBranchDashboardNote"></p>
             </div>
           </article>
 
@@ -618,9 +695,11 @@
             </section>
           </article>
 
-          <article class="panel profile-edit-panel" id="driverProfileEditPanel" hidden>
+          <div class="profile-edit-popup" id="driverProfileEditPanel" hidden>
+            <button type="button" class="profile-edit-popup__backdrop" data-profile-edit-close aria-label="정보 수정 닫기"></button>
+            <article class="panel profile-edit-panel" role="dialog" aria-modal="true" aria-labelledby="driverProfileEditTitle">
             <div class="panel-header profile-edit-header">
-              <h2>기사 정보 수정</h2>
+              <h2 id="driverProfileEditTitle">기사 정보 수정</h2>
               <div class="profile-edit-header-actions">
                 <button type="button" class="ghost-btn profile-edit-header-close" id="driverProfileEditHeaderClose">닫기</button>
                 <button type="submit" form="driverProfileEditForm" class="target-save-btn profile-edit-header-save" id="driverProfileEditHeaderSave">저장</button>
@@ -685,7 +764,28 @@
                 <button type="submit" class="target-save-btn profile-edit-save">정보 저장</button>
               </div>
             </form>
-          </article>
+            </article>
+          </div>
+
+          <div class="withdrawal-account-popup" id="driverWithdrawalAccountPopup" hidden>
+            <button type="button" class="withdrawal-account-popup__backdrop" data-withdrawal-account-close aria-label="계좌정보 입력 닫기"></button>
+            <div class="withdrawal-account-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="driverWithdrawalAccountTitle">
+              <div class="withdrawal-account-popup__head">
+                <div>
+                  <p>출금신청 전 필수정보</p>
+                  <h2 id="driverWithdrawalAccountTitle">계좌정보 입력</h2>
+                </div>
+                <button type="button" class="ghost-btn" data-withdrawal-account-close>닫기</button>
+              </div>
+              <p class="withdrawal-account-popup__hint">출금받을 본인 계좌번호를 먼저 등록해 주세요.</p>
+              <form id="driverWithdrawalAccountForm" class="withdrawal-account-form">
+                <label><span>은행명</span><input type="text" id="driverWithdrawalBankName" placeholder="예: 국민은행" autocomplete="off"></label>
+                <label><span>예금주</span><input type="text" id="driverWithdrawalAccountHolder" placeholder="예: 홍길동" autocomplete="off"></label>
+                <label><span>계좌번호</span><input type="text" id="driverWithdrawalAccountNumber" placeholder="- 없이 입력" inputmode="numeric" autocomplete="off" required></label>
+                <button type="submit" class="target-save-btn" id="driverWithdrawalAccountSaveBtn">저장하고 출금신청</button>
+              </form>
+            </div>
+          </div>
 
           <section class="summary-section driver-home-block">
             <div class="summary-grid summary-grid--metrics">
@@ -893,6 +993,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V6M4 18h16M7 15l3-4 3 2 4-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>대시보드</span>
         </button>
+        <button type="button" class="driver-app-nav__item" data-driver-tab="branch" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V8l8-4 8 4v12M8 20v-7h8v7M3 20h18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>지사관리</span>
+        </button>
         <button type="button" class="driver-app-nav__item" data-driver-tab="crew" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="16" cy="9" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4.5 18c.4-2.4 2.2-3.8 4.5-3.8s4.1 1.4 4.5 3.8M12.8 18c.3-1.7 1.4-2.8 3.2-2.8 1.9 0 3.1 1.2 3.5 3.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
           <span>크루장</span>
@@ -901,6 +1005,18 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <div class="driver-branch-detail-popup" id="driverBranchDetailPopup" hidden>
+    <button type="button" class="driver-branch-detail-popup__backdrop" data-branch-detail-close aria-label="닫기"></button>
+    <div class="driver-branch-detail-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="driverBranchDetailTitle">
+      <div class="driver-branch-detail-popup__head">
+        <h2 id="driverBranchDetailTitle">운행 현황</h2>
+        <button type="button" class="ghost-btn" data-branch-detail-close>닫기</button>
+      </div>
+      <p id="driverBranchDetailSummary"></p>
+      <div id="driverBranchDetailRows"></div>
+    </div>
+  </div>
 
   <div class="urgent-mission-popup driver-inquiry-popup" id="driverInquiryPopup" hidden>
     <button type="button" class="urgent-mission-popup__backdrop" data-inquiry-dismiss aria-label="닫기"></button>
@@ -1040,31 +1156,32 @@
     <p class="calendar-help">수요일만 선택할 수 있습니다. (수요일~화요일 기준)</p>
   </div>
 
-  <script src="js/native-app-bridge.js?v=20260816push7"></script>
+  <script src="js/native-app-bridge.js?v=20260909login1"></script>
   <script src="js/platforms.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/brem-env.js"></script>
   <script src="js/data-cache.js?v=20260621n"></script>
   <script src="js/driver-data-cache.js?v=20260805d"></script>
   <script>window.BREM_AUTH_SCOPE = 'rider';</script>
-  <script src="js/login-preferences.js?v=20260816app2"></script>
-  <script src="js/supabase-config.js?v=20260712c"></script>
+  <script src="js/login-preferences.js?v=20260909login1"></script>
+  <script src="js/supabase-config.js?v=20260909login1"></script>
   <script src="js/session-security.js?v=20260712a"></script>
   <script src="js/perf.js"></script>
   <script src="js/storage-supabase-mapper.js?v=20260816popup1"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260816popup1"></script>
-  <script src="js/storage.js?v=20260826crewdetail1"></script>
+  <script src="js/storage.js?v=20260910branch1"></script>
   <script src="js/driver-utils.js?v=20260816login1"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260816inq1"></script>
   <script src="js/driver-region-dashboard.js?v=20260827coupangrank1"></script>
+  <script src="js/driver-branch-dashboard.js?v=20260910branch1"></script>
   <script src="js/driver-crew-leader.js?v=20260827crewperf1"></script>
-  <script src="js/driver-withdrawal.js?v=20260830hold1"></script>
+  <script src="js/driver-withdrawal.js?v=20260907withdrawaccount1"></script>
   <script src="js/driver-urgent-missions.js?v=20260816um2"></script>
   <script src="js/driver-inquiries.js?v=20260817inq7"></script>
-  <script src="js/driver.js?v=20260817wd2"></script>
-  <script src="js/driver-app-nav.js?v=20260817pwanav1"></script>
+  <script src="js/driver.js?v=20260910branch1"></script>
+  <script src="js/driver-app-nav.js?v=20260910branch1"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

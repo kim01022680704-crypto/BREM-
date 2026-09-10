@@ -15,6 +15,8 @@
   let driverLoadFailed = false;
   let baeminLiveOpsPollTimer = null;
   let coupangLiveOpsPollTimer = null;
+  let profileEditScrollY = 0;
+  let profileEditScrollLocked = false;
   const BAEMIN_LIVE_OPS_POLL_MS = 2 * 60 * 1000;
   const COUPANG_LIVE_OPS_POLL_MS = 2 * 60 * 1000;
 
@@ -152,6 +154,50 @@
     const rate = Number(value);
     if (Number.isNaN(rate)) return '-';
     return `${rate % 1 === 0 ? rate : rate.toFixed(1)}%`;
+  }
+
+  /** 쿠팡 rider_daily 실적 — 0.8/1 가중치 소수 */
+  function formatCoupangUnits(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '-';
+    return `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}콜`;
+  }
+
+  function calcCoupangRejectRate(complete, reject, cancel) {
+    const c = Math.max(0, Number(complete) || 0);
+    const r = Math.max(0, Number(reject) || 0);
+    const x = Math.max(0, Number(cancel) || 0);
+    const denom = c + r + x;
+    if (denom <= 0) return null;
+    return Math.round(((r + x) / denom) * 1000) / 10;
+  }
+
+  function coupangLiveWeekPerf(ops) {
+    if (!ops?.available) return null;
+    const complete = Number(ops.weekComplete ?? (Number(ops.pastComplete || 0) + Number(ops.complete || 0)));
+    const reject = Number(ops.weekReject ?? (Number(ops.pastReject || 0) + Number(ops.reject || 0)));
+    const cancel = Number(ops.weekCancel ?? (Number(ops.pastCancel || 0) + Number(ops.cancel || 0)));
+    if (complete + reject + cancel <= 0) return null;
+    return {
+      complete,
+      reject,
+      cancel,
+      rate: calcCoupangRejectRate(complete, reject, cancel)
+    };
+  }
+
+  function coupangLiveWeekEntry(ops) {
+    const perf = coupangLiveWeekPerf(ops);
+    if (!perf) return null;
+    return {
+      rate: perf.rate,
+      stats: {
+        completeCount: perf.complete,
+        rejectCount: perf.reject,
+        cancelCount: perf.cancel,
+        unmeasured: perf.rate == null
+      }
+    };
   }
 
   function weeklyEntryForPlatform(driverId, weekStart, platform) {
@@ -355,10 +401,14 @@
       return;
     }
 
-    setText('coupangRateComplete', entry ? countLabel(stats.completeCount || 0) : empty);
-    setText('coupangRateReject', entry ? countLabel(stats.rejectCount || 0) : empty);
-    setText('coupangRateCancel', entry ? countLabel(stats.cancelCount || 0) : empty);
-    setText('coupangRateCalculated', !entry ? empty : (unmeasured ? '미집계' : formatPercent(entry.rate)));
+    const complete = Number(stats.completeCount || 0);
+    const reject = Number(stats.rejectCount || 0);
+    const cancel = Number(stats.cancelCount || 0);
+    const liveRate = calcCoupangRejectRate(complete, reject, cancel);
+    setText('coupangRateComplete', entry ? formatCoupangUnits(complete) : empty);
+    setText('coupangRateReject', entry ? formatCoupangUnits(reject) : empty);
+    setText('coupangRateCancel', entry ? formatCoupangUnits(cancel) : empty);
+    setText('coupangRateCalculated', !entry ? empty : (unmeasured && liveRate == null ? '미집계' : formatPercent(liveRate ?? entry.rate)));
   }
 
   function escapeHtml(value) {
@@ -477,9 +527,30 @@
     const panel = document.getElementById('driverProfileEditPanel');
     if (!panel) return;
     panel.hidden = !show;
+    if (show && !profileEditScrollLocked) {
+      profileEditScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      profileEditScrollLocked = true;
+      document.documentElement.classList.add('profile-edit-open');
+      document.body.classList.add('profile-edit-open');
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${profileEditScrollY}px`;
+      document.body.style.width = '100%';
+    } else if (!show && profileEditScrollLocked) {
+      profileEditScrollLocked = false;
+      document.documentElement.classList.remove('profile-edit-open');
+      document.body.classList.remove('profile-edit-open');
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      window.scrollTo(0, profileEditScrollY);
+    }
+    document.getElementById('driverProfileEditToggle')?.setAttribute('aria-expanded', show ? 'true' : 'false');
     if (show) {
       const driver = refreshCurrentDriver();
       if (driver) fillProfileEditForm(driver);
+      window.requestAnimationFrame(() => {
+        document.getElementById('driverEditResidentNumber')?.focus({ preventScroll: true });
+      });
     }
   }
 
@@ -549,6 +620,7 @@
     window.BremDriverWithdrawal?.reset?.();
     window.BremDriverWeeklyPayslip?.reset?.();
     window.BremDriverRegionDashboard?.reset?.();
+    window.BremDriverBranchDashboard?.reset?.();
     window.BremDriverCrewLeader?.reset?.();
     window.BremDriverUrgentMissions?.reset?.();
     window.BremDriverInquiries?.reset?.();
@@ -580,7 +652,7 @@
     if (!window.BremSessionSecurity?.start) return;
     window.BremSessionSecurity.start({
       isLoggedIn,
-      idleMs: window.BREM_IS_NATIVE_APP ? 0 : undefined,
+      idleMs: 0,
       onIdleLogout: async (message) => {
         await logoutDriver({ idle: true, message });
       }
@@ -627,6 +699,7 @@
     }));
     void window.BremDriverCrewLeader?.refreshEntryVisibility?.();
     void window.BremDriverRegionDashboard?.refreshEntryVisibility?.();
+    void window.BremDriverBranchDashboard?.refreshEntryVisibility?.();
     void window.BremDriverUrgentMissions?.refresh?.();
     window.BremDriverInquiries?.startWatch?.();
     window.setTimeout(() => queueNoticePopups(), 250);
@@ -1332,18 +1405,27 @@
     if (emptyEl) emptyEl.hidden = available;
 
     const callText = value => (
-      available ? `${number(value)}콜` : '-'
+      available ? formatCoupangUnits(value) : '-'
     );
     setText('coupangOpsComplete', callText(ops?.complete));
     setText('coupangOpsReject', callText(ops?.reject));
     setText('coupangOpsCancel', callText(ops?.cancel));
     setText('coupangOpsPastComplete', callText(ops?.pastComplete));
+    const todayRate = available
+      ? calcCoupangRejectRate(ops?.complete, ops?.reject, ops?.cancel)
+      : null;
     setText(
       'coupangOpsRejectRate',
-      available && ops?.rejectionRate != null && Number.isFinite(Number(ops.rejectionRate))
-        ? `${Number(ops.rejectionRate)}%`
-        : '-'
+      todayRate == null ? '-' : formatPercent(todayRate)
     );
+    const selectedWeek = state.selectedWeekStart || weekStartKey();
+    if (available && selectedWeek === weekStartKey()) {
+      const liveWeek = coupangLiveWeekEntry(ops);
+      if (liveWeek) {
+        setText('weeklyRejectionRateCoupang', liveWeek.rate == null ? '-' : formatPercent(liveWeek.rate));
+        renderRateDetail('coupang', liveWeek);
+      }
+    }
     setText(
       'driverCoupangLiveOpsUpdated',
       `마지막 업데이트: ${formatLiveOpsUpdatedAt(pickLiveOpsDisplayTime(ops))}`
@@ -1441,9 +1523,15 @@
     const currentWeekCalls = weekStats.total;
     const weeklyTarget = weeklyTargetFor(driver.id, weekStart);
     const weeklyRate = weeklyTarget ? Math.round((currentWeekCalls / weeklyTarget) * 100) : 0;
-    const weeklyRejectionCoupang = weeklyRateForPlatform(driver.id, weekStart, 'coupang');
     const weeklyAcceptanceBaemin = weeklyRateForPlatform(driver.id, weekStart, 'baemin');
-    const coupangRateEntry = weeklyEntryForPlatform(driver.id, weekStart, 'coupang');
+    const storedCoupangEntry = weeklyEntryForPlatform(driver.id, weekStart, 'coupang');
+    const liveCoupangEntry = weekStart === weekStartKey()
+      ? coupangLiveWeekEntry(BremStorage.getRiderCoupangOps?.())
+      : null;
+    const coupangRateEntry = liveCoupangEntry || storedCoupangEntry;
+    const weeklyRejectionCoupang = liveCoupangEntry
+      ? liveCoupangEntry.rate
+      : weeklyRateForPlatform(driver.id, weekStart, 'coupang');
     const baeminRateEntry = weeklyEntryForPlatform(driver.id, weekStart, 'baemin');
     const item = eventItemFor(driver);
     const eventProgress = BremStorage.events.getProgressForDriver(driver);
@@ -1573,6 +1661,24 @@
 
   document.getElementById('driverProfileEditHeaderClose')?.addEventListener('click', () => {
     toggleProfileEditPanel(false);
+  });
+
+  document.getElementById('driverProfileEditPanel')?.addEventListener('click', event => {
+    if (event.target.closest('[data-profile-edit-close]')) toggleProfileEditPanel(false);
+  });
+
+  document.addEventListener('brem-driver-profile-updated', event => {
+    const driverId = event.detail?.driverId || state.currentDriver?.id;
+    const updated = driverId ? BremStorage.drivers.getById(driverId) : null;
+    if (!updated) return;
+    state.currentDriver = updated;
+    renderDriver(updated);
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !document.getElementById('driverProfileEditPanel')?.hidden) {
+      toggleProfileEditPanel(false);
+    }
   });
 
   document.getElementById('driverProfileEditForm')?.addEventListener('submit', async event => {
@@ -1719,6 +1825,7 @@
       window.BremDriverWithdrawal?.reset?.();
       window.BremDriverWeeklyPayslip?.reset?.();
       window.BremDriverRegionDashboard?.reset?.();
+      window.BremDriverBranchDashboard?.reset?.();
       window.BremDriverCrewLeader?.reset?.();
       window.BremDriverUrgentMissions?.reset?.();
       window.BremDriverInquiries?.reset?.();
@@ -1736,6 +1843,7 @@
       void loadDriverAppDataThenRender(driver, { refreshProfile: false });
       void window.BremDriverCrewLeader?.refreshEntryVisibility?.();
       void window.BremDriverRegionDashboard?.refreshEntryVisibility?.();
+      void window.BremDriverBranchDashboard?.refreshEntryVisibility?.();
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -1916,13 +2024,6 @@
         showLoggedOut();
         return;
       }
-    }
-
-    if (!window.BREM_IS_NATIVE_APP
-      && window.BremSessionSecurity?.isIdleExpired?.()
-      && (BremStorage.auth.isDriverLoggedIn?.() || BremStorage.auth.getDriverSessionId())) {
-      await logoutDriver({ idle: true });
-      return;
     }
 
     if (!enforceDriverRouteAccess()) return;

@@ -567,6 +567,22 @@ app.get('/api/rider/crew-leader/detail', async (req, res) => {
   }
 });
 
+app.get('/api/rider/branch-dashboard', async (req, res) => {
+  try {
+    const result = await riderRegionDashboard.getRiderBranchDashboard(getBearerToken(req), {
+      platform: req.query.platform,
+      regionKey: req.query.regionKey,
+      weekStart: req.query.weekStart
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '지사관리 현황을 불러오지 못했습니다.' });
+  }
+});
+
 app.get('/api/rider/crew-leader', async (req, res) => {
   try {
     const probe = String(req.query.probe || '').trim() === '1'
@@ -1774,10 +1790,11 @@ app.post('/api/admin/baemin-delivery/collect', async (req, res) => {
         message: result.message || result.error
       });
     }
-    contributionAdmin.scheduleAutoRefresh({
+    await contributionAdmin.scheduleAutoRefresh({
       date: result.collectDate || result.captureDate || contributionAdmin.todayKst(),
-      platform: 'baemin'
-    });
+      platform: 'baemin',
+      autoActivate: true
+    }).catch(error => console.warn('[contribution-v3] baemin collect:', error?.message || error));
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '배민 자동 수집에 실패했습니다.' });
@@ -1798,10 +1815,11 @@ app.post('/api/admin/baemin-delivery/import-json', async (req, res) => {
         message: result.message || result.error
       });
     }
-    contributionAdmin.scheduleAutoRefresh({
+    await contributionAdmin.scheduleAutoRefresh({
       date: result.collectDate || body.captureDate || contributionAdmin.todayKst(),
-      platform: 'baemin'
-    });
+      platform: 'baemin',
+      autoActivate: true
+    }).catch(error => console.warn('[contribution-v3] baemin import:', error?.message || error));
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '배민 JSON 저장에 실패했습니다.' });
@@ -1949,6 +1967,7 @@ app.get('/api/admin/contribution/daily', async (req, res) => {
     const result = await contributionAdmin.listDaily(getBearerToken(req), {
       date: req.query.date,
       platform: req.query.platform,
+      period: req.query.period,
       region: req.query.region,
       keyword: req.query.keyword
     });
@@ -1962,6 +1981,83 @@ app.get('/api/admin/contribution/daily', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '기여도 조회에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/contribution/config', async (req, res) => {
+  try {
+    const result = await contributionAdmin.getConfig(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기여도 설정 조회에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/contribution/config', async (req, res) => {
+  try {
+    const result = await contributionAdmin.saveConfig(
+      getBearerToken(req),
+      req.body && typeof req.body === 'object' ? req.body : {}
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기여도 설정 저장에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/contribution/activate', async (req, res) => {
+  try {
+    const result = await contributionAdmin.activateLedger(
+      getBearerToken(req),
+      req.body && typeof req.body === 'object' ? req.body : {}
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error,
+        tableMissing: Boolean(result.tableMissing),
+        baseline: result.baseline
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기여도 원장 활성화에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/contribution/events', async (req, res) => {
+  try {
+    const result = await contributionAdmin.listEvents(getBearerToken(req), {
+      date: req.query.date,
+      platform: req.query.platform,
+      region: req.query.region,
+      riderId: req.query.riderId,
+      slotKey: req.query.slotKey,
+      keyword: req.query.keyword,
+      limit: req.query.limit
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error,
+        tableMissing: Boolean(result.tableMissing)
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기여도 이벤트 조회에 실패했습니다.' });
   }
 });
 

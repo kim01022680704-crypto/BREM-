@@ -40,6 +40,7 @@
   const buttons = Array.from(nav.querySelectorAll('[data-driver-tab]'));
   const gated = {
     dash: nav.querySelector('[data-driver-tab="dash"]'),
+    branch: nav.querySelector('[data-driver-tab="branch"]'),
     crew: nav.querySelector('[data-driver-tab="crew"]')
   };
 
@@ -69,6 +70,7 @@
     window.BremDriverWithdrawal?.close?.();
     window.BremDriverWeeklyPayslip?.close?.();
     window.BremDriverRegionDashboard?.close?.();
+    window.BremDriverBranchDashboard?.close?.();
     window.BremDriverCrewLeader?.close?.();
     window.BremDriverUrgentMissions?.close?.();
     window.BremDriverInquiries?.close?.();
@@ -80,6 +82,7 @@
     else if (tab === 'withdraw') window.BremDriverWithdrawal?.open?.();
     else if (tab === 'payslip') window.BremDriverWeeklyPayslip?.open?.();
     else if (tab === 'dash') window.BremDriverRegionDashboard?.open?.();
+    else if (tab === 'branch') window.BremDriverBranchDashboard?.open?.();
     else if (tab === 'crew') window.BremDriverCrewLeader?.open?.();
   }
 
@@ -118,7 +121,7 @@
 
   document.addEventListener('brem-driver-feature-visibility', (event) => {
     const kind = event?.detail?.kind;
-    if (kind !== 'dash' && kind !== 'crew') return;
+    if (kind !== 'dash' && kind !== 'branch' && kind !== 'crew') return;
     setGatedVisible(kind, event.detail.visible);
   });
 
@@ -126,6 +129,7 @@
     const loginWatcher = new MutationObserver(() => {
       if (!isLoggedIn()) {
         setGatedVisible('dash', false);
+        setGatedVisible('branch', false);
         setGatedVisible('crew', false);
         setTab('home', { keepPanels: true });
       }
@@ -134,9 +138,11 @@
   }
 
   setGatedVisible('dash', false);
+  setGatedVisible('branch', false);
   setGatedVisible('crew', false);
   setTab('home', { keepPanels: true });
   void window.BremDriverRegionDashboard?.refreshEntryVisibility?.();
+  void window.BremDriverBranchDashboard?.refreshEntryVisibility?.();
   void window.BremDriverCrewLeader?.refreshEntryVisibility?.();
 
   window.BremDriverAppNav = {

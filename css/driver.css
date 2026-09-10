@@ -360,6 +360,7 @@ h3 {
 .profile-actions > .profile-withdrawal-btn,
 .profile-actions > .profile-payslip-btn,
 .profile-actions > .profile-region-dash-btn,
+.profile-actions > .profile-branch-btn,
 .profile-actions > .profile-crew-btn {
   width: 100%;
   min-width: 0;
@@ -416,6 +417,7 @@ h3 {
 
 .profile-payslip-btn,
 .profile-region-dash-btn,
+.profile-branch-btn,
 .profile-crew-btn {
   min-height: 36px;
   padding: 0 14px;
@@ -434,6 +436,12 @@ h3 {
   color: var(--yellow);
 }
 
+.profile-branch-btn {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #ffffff;
+}
+
 .profile-crew-btn {
   background: #1d4ed8;
   border-color: #1d4ed8;
@@ -444,6 +452,8 @@ h3 {
 .profile-payslip-btn[aria-expanded="true"],
 .profile-region-dash-btn:hover,
 .profile-region-dash-btn[aria-expanded="true"],
+.profile-branch-btn:hover,
+.profile-branch-btn[aria-expanded="true"],
 .profile-crew-btn:hover,
 .profile-crew-btn[aria-expanded="true"] {
   box-shadow: 0 8px 20px rgba(17, 24, 39, 0.12);
@@ -451,6 +461,7 @@ h3 {
 
 .profile-payslip-btn[aria-expanded="true"],
 .profile-region-dash-btn[aria-expanded="true"],
+.profile-branch-btn[aria-expanded="true"],
 .profile-crew-btn[aria-expanded="true"] {
   outline: 2px solid #111827;
   outline-offset: 2px;
@@ -1123,11 +1134,51 @@ h3 {
 
 /* ── Profile edit ── */
 
+.profile-edit-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 2300;
+  display: block;
+  overflow-y: auto;
+  padding: 18px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.profile-edit-popup[hidden] {
+  display: none;
+}
+
+html.profile-edit-open,
+body.profile-edit-open {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.profile-edit-popup__backdrop {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.72);
+  touch-action: none;
+}
+
 .profile-edit-panel {
-  margin-top: -4px;
+  position: relative;
+  z-index: 1;
+  width: min(620px, 100%);
+  min-height: 0;
+  max-height: none;
+  margin: max(12px, 4vh) auto;
+  overflow: visible;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.32);
 }
 
 .profile-edit-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   flex-wrap: nowrap;
 }
 
@@ -1224,6 +1275,102 @@ h3 {
   border-color: var(--yellow);
   background: var(--card);
   box-shadow: 0 0 0 4px rgba(255, 212, 0, 0.16);
+}
+
+.withdrawal-account-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 2350;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: 18px;
+  overscroll-behavior: contain;
+}
+
+.withdrawal-account-popup[hidden] {
+  display: none;
+}
+
+html.withdrawal-account-open,
+body.withdrawal-account-open {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.withdrawal-account-popup__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.withdrawal-account-popup__dialog {
+  position: relative;
+  z-index: 1;
+  width: min(430px, 100%);
+  padding: 20px;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.32);
+}
+
+.withdrawal-account-popup__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.withdrawal-account-popup__head p {
+  color: #0f766e;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.withdrawal-account-popup__hint {
+  margin-top: 10px;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.withdrawal-account-form {
+  display: grid;
+  gap: 11px;
+  margin-top: 16px;
+}
+
+.withdrawal-account-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.withdrawal-account-form label span {
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.withdrawal-account-form input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #f8fafc;
+  color: #0f172a;
+  outline: none;
+}
+
+.withdrawal-account-form input:focus {
+  border-color: var(--yellow);
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(255, 212, 0, 0.16);
+}
+
+.withdrawal-account-form .target-save-btn {
+  width: 100%;
+  margin-top: 4px;
 }
 
 .profile-edit-actions {
@@ -3551,6 +3698,410 @@ button.calendar-day:hover {
   font-size: 0.74rem;
 }
 
+.driver-branch-metric-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.driver-branch-week {
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.driver-branch-week__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.driver-branch-week__head h3,
+.driver-branch-week p {
+  margin: 0;
+}
+
+.driver-branch-week__head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.driver-branch-erp-open {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #0f766e;
+  color: #ffffff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.driver-branch-progress {
+  height: 10px;
+  margin: 10px 0 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.driver-branch-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #0f766e;
+  transition: width 0.25s ease;
+}
+
+.driver-branch-week p {
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.driver-branch-week__summary {
+  margin-top: 12px !important;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.driver-branch-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.driver-branch-days div {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  padding: 8px 3px;
+  border-radius: 9px;
+  background: #f8fafc;
+  font-size: 0.68rem;
+}
+
+.driver-branch-days strong {
+  font-size: 0.72rem;
+  color: #0f172a;
+}
+
+.driver-branch-days small {
+  color: #64748b;
+}
+
+.driver-branch-rider-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.driver-branch-rider-list-head h3 {
+  margin: 0;
+}
+
+.driver-branch-rider-list-head span {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.driver-branch-rider-search {
+  display: block;
+  margin: 8px 0 7px;
+}
+
+.driver-branch-rider-search input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.driver-branch-rider-list {
+  display: grid;
+  gap: 7px;
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 3px;
+}
+
+.driver-branch-rider {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fff;
+  color: #0f172a;
+  text-align: left;
+  cursor: pointer;
+}
+
+.driver-branch-rider__info,
+.driver-branch-rider__metrics {
+  display: grid;
+  gap: 2px;
+}
+
+.driver-branch-rider__info {
+  min-width: 0;
+}
+
+.driver-branch-rider__info strong,
+.driver-branch-rider__info small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driver-branch-rider__metrics {
+  flex: 0 0 auto;
+  justify-items: end;
+}
+
+.driver-branch-rider__metrics em {
+  color: #0f766e;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.driver-branch-rider__metrics b {
+  font-size: 0.8rem;
+}
+
+.driver-branch-rider small,
+.driver-branch-empty-list {
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.driver-branch-empty-list {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 11px;
+  text-align: center;
+}
+
+.driver-branch-detail-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.driver-branch-detail-popup[hidden] {
+  display: none;
+}
+
+.driver-branch-detail-popup__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.68);
+}
+
+.driver-branch-detail-popup__dialog {
+  position: relative;
+  z-index: 1;
+  width: min(520px, 100%);
+  max-height: 78vh;
+  overflow: auto;
+  padding: 18px;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.driver-branch-detail-popup__dialog.is-erp {
+  width: min(760px, 100%);
+  padding: 14px;
+}
+
+.driver-branch-detail-popup__dialog.is-erp .driver-branch-detail-popup__head h2 {
+  font-size: 1rem;
+}
+
+.driver-branch-detail-popup__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.driver-branch-detail-popup__head h2,
+.driver-branch-detail-popup__dialog > p {
+  margin: 0;
+}
+
+.driver-branch-detail-popup__dialog > p {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+#driverBranchDetailRows {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.driver-branch-erp-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border-radius: 12px;
+  background: #0f172a;
+}
+
+.driver-branch-erp-kpis > div {
+  display: grid;
+  gap: 2px;
+  padding: 11px 6px;
+  text-align: center;
+}
+
+.driver-branch-erp-kpis > div + div {
+  border-left: 1px solid #334155;
+}
+
+.driver-branch-erp-kpis span {
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.driver-branch-erp-kpis strong {
+  color: #fde047;
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.driver-branch-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+  font-size: 0.82rem;
+}
+
+.driver-branch-detail-row span {
+  color: #475569;
+  text-align: right;
+}
+
+.driver-branch-erp-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.driver-branch-erp-table {
+  width: 100%;
+  min-width: 610px;
+  border-collapse: collapse;
+  background: #ffffff;
+}
+
+.driver-branch-erp-table th,
+.driver-branch-erp-table td {
+  padding: 7px 5px;
+  border-bottom: 1px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.driver-branch-erp-table thead th {
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 0.68rem;
+}
+
+.driver-branch-erp-table tbody th {
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.7rem;
+}
+
+.driver-branch-erp-table td strong,
+.driver-branch-erp-table td small {
+  display: block;
+}
+
+.driver-branch-erp-table td strong {
+  color: #0f172a;
+  font-size: 0.72rem;
+}
+
+.driver-branch-erp-table td small {
+  margin-top: 1px;
+  color: #0f766e;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.driver-branch-erp-table td.is-achieved {
+  background: #ecfdf5;
+}
+
+.driver-branch-erp-table td.is-total {
+  background: #fefce8;
+}
+
+.driver-branch-achievement-tag {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.driver-branch-achievement-tag.is-achieved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.driver-branch-achievement-tag.is-missed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.driver-branch-achievement-tag.is-empty {
+  background: #e2e8f0;
+  color: #64748b;
+}
+
 .driver-payslip-notices {
   margin-top: 14px;
   padding: 14px;
@@ -3646,7 +4197,8 @@ button.calendar-day:hover {
   .profile-inquiry-btn--compact,
   .profile-withdrawal-btn--compact,
   .profile-payslip-btn,
-  .profile-region-dash-btn {
+  .profile-region-dash-btn,
+  .profile-branch-btn {
     min-height: 40px;
     padding-inline: 8px;
     font-size: 0.74rem;
@@ -3933,6 +4485,7 @@ html.brem-app-nav[data-driver-tab]:not([data-driver-tab="home"]) .driver-home-bl
 html.brem-app-nav .profile-actions > .profile-withdrawal-btn,
 html.brem-app-nav .profile-actions > .profile-payslip-btn,
 html.brem-app-nav .profile-actions > .profile-region-dash-btn,
+html.brem-app-nav .profile-actions > .profile-branch-btn,
 html.brem-app-nav .profile-actions > .profile-crew-btn,
 html.brem-app-nav .profile-actions > #driverUrgentMissionBtn {
   display: none !important;

@@ -259,6 +259,15 @@ const BremDriverManagementAdmin = (function () {
     return phone ? `${name}${phone}` : name;
   }
 
+  function regionAssignedNameHtml(driver) {
+    const name = String(driver?.name || '').trim() || '-';
+    const erpId = String(makeDriverLoginId(driver) || '').trim();
+    const erpHtml = erpId
+      ? ` <span class="driver-region-erp-id" title="ERP ID">${escapeHtml(erpId)}</span>`
+      : '';
+    return `<strong>${escapeHtml(name)}</strong>${erpHtml}`;
+  }
+
   function shortCoupangRegion(name) {
     let raw = String(name || '').replace(/\s+/g, '').trim();
     if (!raw) return '';
@@ -1942,6 +1951,18 @@ const BremDriverManagementAdmin = (function () {
     return DEFAULT_DRIVER_REGION_MODE;
   }
 
+  function isDriverBranchManager(platform, regionKey, driverId) {
+    const id = String(driverId || '').trim();
+    if (!id) return false;
+    const side = state.regionExposure?.[platform] || {};
+    const region = regionCatalog().find(item => item.key === regionKey) || null;
+    const keys = [regionKey, region?.partnerId, region?.vendorId, region?.label]
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+      .filter((value, index, list) => list.indexOf(value) === index);
+    return keys.some(key => Boolean(side[key]?.branchManagers?.[id]));
+  }
+
   async function loadRegionExposure() {
     try {
       const token = await window.BremStorage?.resolveAdminAccessToken?.();
@@ -2002,6 +2023,21 @@ const BremDriverManagementAdmin = (function () {
       key: region.key,
       driverId,
       mode: normalizeDriverRegionMode(mode),
+      exposed: isRegionExposed(region.platform, region.key),
+      label: region.label,
+      partnerId: region.partnerId || '',
+      vendorId: region.vendorId || ''
+    });
+    invalidateRegionRankingCache(region);
+  }
+
+  async function setDriverBranchManager(region, driverId, enabled) {
+    if (!region || !driverId) return;
+    await postRegionExposure({
+      platform: region.platform,
+      key: region.key,
+      driverId,
+      branchManager: enabled === true,
       exposed: isRegionExposed(region.platform, region.key),
       label: region.label,
       partnerId: region.partnerId || '',
@@ -2621,6 +2657,7 @@ const BremDriverManagementAdmin = (function () {
       ? filtered.map(row => {
         const isFirst = weeklyLocalFirst && row.driver.id === weeklyLocalFirst.driver.id;
         const mode = getDriverRegionMode(platform, region.key, row.driver.id);
+        const branchManager = isDriverBranchManager(platform, region.key, row.driver.id);
         const rowClass = [
           isFirst ? 'is-week-first' : '',
           mode === 'dashboard' ? 'is-dashboard-only' : '',
@@ -2630,7 +2667,7 @@ const BremDriverManagementAdmin = (function () {
           mode === 'leader' ? 'is-region-leader' : ''
         ].filter(Boolean).join(' ');
         return `<tr${rowClass ? ` class="${rowClass}"` : ''}>
-          <td><strong>${escapeHtml(row.driver.name)}</strong>${isFirst ? ' <span class="driver-region-week-crown" title="주간 콜수 1등">1등</span>' : ''}${mode === 'leader' ? ' <span class="driver-region-leader-badge" title="팀장 — 기사앱에서 할당·실시간·주간 전원 표시">팀장</span>' : ''}${mode === 'dashboard' ? ' <span class="driver-region-dash-badge" title="자기 순위 비노출 · 남 순위+할당 열람">전체열람</span>' : ''}${mode === 'rank' ? ' <span class="driver-region-rank-badge" title="자기 순위 비노출 · 남 순위만 열람">순위만열람</span>' : ''}${mode === 'metrics' ? ' <span class="driver-region-metrics-badge" title="순위 노출 · 본인 보드엔 할당만">할당만</span>' : ''}${mode === 'hidden' ? ' <span class="driver-region-hidden-badge" title="기사앱 대시보드만 숨김 · 집계·순위 포함">미노출</span>' : ''}</td>
+          <td>${regionAssignedNameHtml(row.driver)}${isFirst ? ' <span class="driver-region-week-crown" title="주간 콜수 1등">1등</span>' : ''}${branchManager ? ' <span class="driver-region-branch-badge" title="이 플랫폼·지역의 지사장">지사장</span>' : ''}${mode === 'leader' ? ' <span class="driver-region-leader-badge" title="팀장 — 기사앱에서 할당·실시간·주간 전원 표시">팀장</span>' : ''}${mode === 'dashboard' ? ' <span class="driver-region-dash-badge" title="자기 순위 비노출 · 남 순위+할당 열람">전체열람</span>' : ''}${mode === 'rank' ? ' <span class="driver-region-rank-badge" title="자기 순위 비노출 · 남 순위만 열람">순위만열람</span>' : ''}${mode === 'metrics' ? ' <span class="driver-region-metrics-badge" title="순위 노출 · 본인 보드엔 할당만">할당만</span>' : ''}${mode === 'hidden' ? ' <span class="driver-region-hidden-badge" title="기사앱 대시보드만 숨김 · 집계·순위 포함">미노출</span>' : ''}</td>
           <td class="weekly-amount-cell">${formatNumber(row.callCount)}</td>
           <td class="weekly-amount-cell">${formatNumber(row.deliveryFee)}원</td>
           <td>
@@ -2657,6 +2694,9 @@ const BremDriverManagementAdmin = (function () {
               </label>
               <button type="button" class="small-btn driver-region-leader-btn${mode === 'leader' ? ' is-on' : ''}" data-region-rider-leader="${escapeHtml(row.driver.id)}" title="${mode === 'leader' ? '팀장 해제 후 올노출로 되돌립니다' : '팀장: 전원(미노출 포함) 집계·순위를 봄 · 본인은 순위에 안 나옴'}">
                 ${mode === 'leader' ? '팀장해제' : '팀장임명'}
+              </button>
+              <button type="button" class="small-btn driver-region-branch-btn${branchManager ? ' is-on' : ''}" data-region-rider-branch="${escapeHtml(row.driver.id)}" title="이 기사에게 현재 플랫폼·지역의 지사관리 메뉴를 부여합니다">
+                ${branchManager ? '지사장해제' : '지사장등록'}
               </button>
             </div>
           </td>
@@ -3972,6 +4012,27 @@ const BremDriverManagementAdmin = (function () {
           })
           .finally(() => {
             leaderBtn.disabled = false;
+          });
+        return;
+      }
+
+      const branchBtn = event.target.closest('[data-region-rider-branch]');
+      if (branchBtn) {
+        const region = selectedRegion();
+        const driverId = branchBtn.dataset.regionRiderBranch;
+        if (!region || !driverId) return;
+        const enabled = !isDriverBranchManager(region.platform, region.key, driverId);
+        branchBtn.disabled = true;
+        void setDriverBranchManager(region, driverId, enabled)
+          .then(() => {
+            renderRegionDetail();
+            showToast(enabled
+              ? `${region.label} ${region.platform === 'coupang' ? '쿠팡' : '배민'} 지사장으로 등록했습니다.`
+              : '지사장 권한을 해제했습니다.');
+          })
+          .catch(error => showToast(error.message || '지사장 설정 저장 실패'))
+          .finally(() => {
+            branchBtn.disabled = false;
           });
         return;
       }
