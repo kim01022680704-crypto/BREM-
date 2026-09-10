@@ -494,6 +494,7 @@
   function openPanel() {
     window.BremDriverWithdrawal?.close?.();
     window.BremDriverWeeklyPayslip?.close?.();
+    window.BremDriverBranchDashboard?.close?.();
     window.BremDriverCrewLeader?.close?.();
     state.visible = true;
     panel.hidden = false;

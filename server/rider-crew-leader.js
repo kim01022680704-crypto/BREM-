@@ -878,5 +878,8 @@ module.exports = {
   getCrewLeaderDashboard,
   getCrewLeaderDetail,
   renameCrewBox,
+  calcAcceptRateFromDelivery,
+  loadBaeminAcceptRatesBatch,
+  loadCoupangRejectRatesBatch,
   ORG_CHART_KEY
 };

@@ -444,6 +444,7 @@
     window.BremDriverWithdrawal?.close?.();
     window.BremDriverWeeklyPayslip?.close?.();
     window.BremDriverRegionDashboard?.close?.();
+    window.BremDriverBranchDashboard?.close?.();
     state.visible = true;
     panel.hidden = false;
     openBtn.setAttribute('aria-expanded', 'true');
