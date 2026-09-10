@@ -624,9 +624,11 @@ const BremPromotionApply = (function () {
         totalPromotionAmount: 0,
         appliedConditions: [],
         failedConditions: [],
-        failureReasons: [feeData
-          ? '배달처리비 유효 건 없음 (U·V열 빈칸·AH열 0·배달 미수행)'
-          : '배달처리비 정산서에서 User ID를 찾지 못했습니다 (K열·기사 배민 ID 확인)']
+        failureReasons: [!deliveryFeeIndex
+          ? '단가보장은 배민 배달처리비 정산서 업로드가 필요합니다'
+          : (feeData
+            ? '배달처리비 유효 건 없음 (U·V열 빈칸·AH열 0·배달 미수행)'
+            : '배달처리비 정산서에서 User ID를 찾지 못했습니다 (K열·기사 배민 ID 확인)')]
       };
     }
 
@@ -693,20 +695,12 @@ const BremPromotionApply = (function () {
     const promotionSettings = settings || BremStorage.promotionSettings.get();
     const selected = (selectedPromotionRuleIds || []).filter(Boolean);
     const assignmentMode = options.assignmentMode === 'per_driver' ? 'per_driver' : 'selected_rules';
-    const pickOptions = { assignmentMode };
 
     if (assignmentMode === 'selected_rules' && !selected.length) {
       throw new Error('적용할 프로모션 조건을 선택하세요.');
     }
 
     const deliveryFeeIndex = options.deliveryFeeIndex || null;
-    const feeRuleIds = assignmentMode === 'per_driver' ? [] : selected;
-    const requireDeliveryFee = options.requireDeliveryFee === true
-      || settlementNeedsDeliveryFee(settlement, platform, feeRuleIds, pickOptions);
-
-    if (requireDeliveryFee && !deliveryFeeIndex) {
-      throw new Error('단가보장 프로모션은 배달처리비 정산서 업로드가 필요합니다.');
-    }
 
     const calcRuleIds = assignmentMode === 'per_driver' ? [] : selected;
     const results = (settlement.riders || []).map(rider => {
@@ -724,7 +718,6 @@ const BremPromotionApply = (function () {
         promotionSettings,
         assignmentMode,
         deliveryFeeIndex: platform === 'baemin' ? deliveryFeeIndex : null,
-        requireDeliveryFee,
         ignoreMissingRates: options.ignoreMissingRates === true,
         rainApply: options.rainApply === true
       });
@@ -984,9 +977,11 @@ const BremPromotionApply = (function () {
         totalPromotionAmount: 0,
         appliedConditions: [],
         failedConditions: [],
-        failureReasons: [feeData
-          ? '쿠팡 배달처리비 유효 건 없음 (Y열 정산금액 0)'
-          : '쿠팡 배달처리비에서 이름(B열)·쿠팡ID 매칭 실패']
+        failureReasons: [!coupangDeliveryFeeIndex
+          ? '단가보장은 쿠팡 배달처리비 정산서 업로드가 필요합니다'
+          : (feeData
+            ? '쿠팡 배달처리비 유효 건 없음 (Y열 정산금액 0)'
+            : '쿠팡 배달처리비에서 이름(B열)·쿠팡ID 매칭 실패')]
       };
     }
 
@@ -1246,18 +1241,26 @@ const BremPromotionApply = (function () {
 
     if (needsDeliveryFee && !hasCoupangFee && !hasBaeminFee) {
       const reasons = [];
-      if (assignment.coupangRider) {
-        reasons.push(coupangFeeData
-          ? '쿠팡 배달처리비 유효 건 없음 (Y열 정산금액 0)'
-          : '쿠팡 배달처리비에서 이름(B열)·쿠팡ID 매칭 실패');
-      }
-      if (assignment.baeminRider) {
-        reasons.push(baeminFeeData
-          ? '배민 배달처리비 유효 건 없음 (U·V열 빈칸·AH열 0)'
-          : '배민 배달처리비에서 User ID(K열) 매칭 실패');
-      }
-      if (!reasons.length) {
-        reasons.push('배달처리비 정산서에서 해당 기사를 찾지 못했습니다');
+      if (!coupangDeliveryFeeIndex && !deliveryFeeIndex) {
+        reasons.push('단가보장은 쿠팡·배민 배달처리비 정산서 업로드가 필요합니다');
+      } else {
+        if (assignment.coupangRider) {
+          reasons.push(!coupangDeliveryFeeIndex
+            ? '단가보장은 쿠팡 배달처리비 정산서 업로드가 필요합니다'
+            : (coupangFeeData
+              ? '쿠팡 배달처리비 유효 건 없음 (Y열 정산금액 0)'
+              : '쿠팡 배달처리비에서 이름(B열)·쿠팡ID 매칭 실패'));
+        }
+        if (assignment.baeminRider) {
+          reasons.push(!deliveryFeeIndex
+            ? '단가보장은 배민 배달처리비 정산서 업로드가 필요합니다'
+            : (baeminFeeData
+              ? '배민 배달처리비 유효 건 없음 (U·V열 빈칸·AH열 0)'
+              : '배민 배달처리비에서 User ID(K열) 매칭 실패'));
+        }
+        if (!reasons.length) {
+          reasons.push('배달처리비 정산서에서 해당 기사를 찾지 못했습니다');
+        }
       }
       return {
         riderName: displayRider?.riderName || driver.name,
@@ -1418,15 +1421,6 @@ const BremPromotionApply = (function () {
 
     const deliveryFeeIndex = options.deliveryFeeIndex || null;
     const coupangDeliveryFeeIndex = options.coupangDeliveryFeeIndex || null;
-    const requireDeliveryFee = options.requireDeliveryFee === true
-      || combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, selected, { assignmentMode });
-
-    if (requireDeliveryFee && !deliveryFeeIndex) {
-      throw new Error('단가보장 프로모션은 배민 배달처리비 정산서 업로드가 필요합니다.');
-    }
-    if (requireDeliveryFee && !coupangDeliveryFeeIndex) {
-      throw new Error('단가보장 프로모션은 쿠팡 배달처리비 정산서 업로드가 필요합니다.');
-    }
 
     const results = assignments.flatMap(item => {
       const driver = BremStorage.drivers.getById(item.driverId);

@@ -485,27 +485,28 @@ const BremPromotionApplyAdmin = (function () {
       const baeminPassword = $('#promotionApplyDeliveryFeePassword-combined-baemin')?.value ?? '';
       const coupangFile = $('#promotionApplyDeliveryFeeFile-combined-coupang')?.files?.[0];
       const baeminFile = $('#promotionApplyDeliveryFeeFile-combined-baemin')?.files?.[0];
-      if (!coupangFile) {
-        throw new Error('단가보장 프로모션은 쿠팡 배달처리비 정산서 파일을 선택하세요.');
-      }
-      if (!baeminFile) {
-        throw new Error('단가보장 프로모션은 배민 배달처리비 정산서 파일을 선택하세요.');
-      }
+      if (!coupangFile && !baeminFile) return null;
 
-      const coupangParsed = await BremCoupangDeliveryFee.parseFile(coupangFile, coupangPassword);
-      BremCoupangDeliveryFee.assertDateMatch(coupangSettlement, coupangParsed);
-      const baeminParsed = await BremBaeminDeliveryFee.parseFile(baeminFile, baeminPassword);
-      BremBaeminDeliveryFee.assertDateMatch(baeminSettlement, baeminParsed);
+      let coupangParsed = null;
+      let baeminParsed = null;
+      if (coupangFile) {
+        coupangParsed = await BremCoupangDeliveryFee.parseFile(coupangFile, coupangPassword);
+        BremCoupangDeliveryFee.assertDateMatch(coupangSettlement, coupangParsed);
+      }
+      if (baeminFile) {
+        baeminParsed = await BremBaeminDeliveryFee.parseFile(baeminFile, baeminPassword);
+        BremBaeminDeliveryFee.assertDateMatch(baeminSettlement, baeminParsed);
+      }
 
       return {
         baemin: baeminParsed,
         coupang: coupangParsed,
-        index: baeminParsed.index,
-        fileName: [coupangParsed.fileName, baeminParsed.fileName].filter(Boolean).join(' / '),
-        teamName: baeminParsed.teamName,
-        startDate: baeminParsed.startDate,
-        endDate: baeminParsed.endDate,
-        riderCount: Number(baeminParsed.riderCount || 0) + Number(coupangParsed.riderCount || 0)
+        index: baeminParsed?.index || null,
+        fileName: [coupangParsed?.fileName, baeminParsed?.fileName].filter(Boolean).join(' / '),
+        teamName: baeminParsed?.teamName || coupangParsed?.teamName,
+        startDate: baeminParsed?.startDate || coupangParsed?.startDate,
+        endDate: baeminParsed?.endDate || coupangParsed?.endDate,
+        riderCount: Number(baeminParsed?.riderCount || 0) + Number(coupangParsed?.riderCount || 0)
       };
     }
 
@@ -513,10 +514,7 @@ const BremPromotionApplyAdmin = (function () {
     const fileInput = $(`#promotionApplyDeliveryFeeFile-${panelKey}`);
     const passwordInput = $(`#promotionApplyDeliveryFeePassword-${panelKey}`);
     const file = fileInput?.files?.[0];
-
-    if (!file) {
-      throw new Error('단가보장 프로모션은 배달처리비 정산서 파일을 선택하세요.');
-    }
+    if (!file) return null;
 
     const parsed = await BremBaeminDeliveryFee.parseFile(file, passwordInput?.value ?? '');
     BremBaeminDeliveryFee.assertDateMatch(baeminSettlement, parsed);
@@ -1017,11 +1015,16 @@ const BremPromotionApplyAdmin = (function () {
       state.ignoreMissingRates = ignoreMissingRates;
       state.rainApply = rainApply;
       renderResult(state.lastResult);
+      const feeSkip = (state.lastResult?.results || []).filter(row =>
+        (row.failureReasons || []).some(reason => String(reason || '').includes('배달처리비 정산서 업로드'))
+      ).length;
       showToast(ignoreMissingRates
         ? '수락/거절율 미등록을 무시하고 프로모션을 다시 계산했습니다.'
         : rainApply
           ? '우천적용으로 프로모션을 계산했습니다. (기상할증 건 AH-500원 후 단가보장)'
-          : '프로모션 계산이 완료되었습니다.');
+          : feeSkip
+            ? `프로모션 계산 완료. 단가보장 ${feeSkip}명은 배달처리비가 없어 제외했습니다.`
+            : '프로모션 계산이 완료되었습니다.');
     } catch (error) {
       showToast(error.message || '프로모션 계산 중 오류가 발생했습니다.');
     }

@@ -5325,10 +5325,11 @@
                 <input type="search" id="settlementFinalSearch" class="admin-period-input" placeholder="이름·ID" autocomplete="off" style="min-width:10rem;">
               </label>
               <button type="button" class="small-btn" id="settlementFinalReloadBtn">불러오기</button>
+              <button type="button" class="small-btn primary-btn" id="settlementFinalBatchFixBtn" title="이 주 전체(쿠팡+배민) 총지급액 마이너스 → 0원 맞추기. 소급분 탭에 기록 후 선택해 차감관리로 보내세요">마이너스 일괄 맞추기</button>
               <button type="button" class="small-btn primary-btn" id="settlementFinalPublishBtn" title="위에서 고른 정산주 전체(쿠팡+배민)를 라이더앱 주급명세서로 즉시 반영합니다">급여명세서 반영</button>
             </div>
           </div>
-          <p class="form-help">그 주 정산서의 모든 기사를 <strong>합치지 않고</strong> 정산서별로 나열합니다. 같은 사람이 쿠팡·배민 둘 다면 각각 한 줄씩(ID도 각 플랫폼 ID로) 표시됩니다. <strong>기사 이름(행)을 클릭</strong>하면 지급·공제 팝업이 열리고, 거기서 <strong>리스차감·대여차감</strong>을 넣고 수정할 수 있습니다. 아래 합계는 확인용입니다.<br><strong>「급여명세서 반영」을 누르면 위에서 고른 정산주가 라이더앱에 즉시 공개됩니다.</strong></p>
+          <p class="form-help">그 주 정산서의 모든 기사를 <strong>합치지 않고</strong> 정산서별로 나열합니다. 같은 사람이 쿠팡·배민 둘 다면 각각 한 줄씩(ID도 각 플랫폼 ID로) 표시됩니다. <strong>기사 이름(행)을 클릭</strong>하면 지급·공제 팝업이 열리고, 거기서 <strong>리스차감·대여차감</strong>을 넣고 수정할 수 있습니다. 총지급이 마이너스면 「마이너스 일괄 맞추기」→「소급분 및 미납금」에서 선택해 차감관리로 보내세요. 아래 합계는 확인용입니다.<br><strong>「급여명세서 반영」을 누르면 위에서 고른 정산주가 라이더앱에 즉시 공개됩니다.</strong></p>
           <p class="direct-inline-stats" id="settlementFinalSummary"></p>
           <div class="table-wrap direct-scroll direct-scroll-wide">
             <table class="weekly-settlement-saved-table settle-grouped-table" id="settlementFinalTable">
@@ -8990,8 +8991,8 @@
     <script src="js/contribution-admin.js?v=20260909contribution15"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
-  <script src="js/promotion-apply.js?v=20260827directcalls"></script>
-  <script src="js/promotion-apply-admin.js?v=20260827split3"></script>
+  <script src="js/promotion-apply.js?v=20260910mixfee"></script>
+  <script src="js/promotion-apply-admin.js?v=20260910mixfee"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>

@@ -675,6 +675,8 @@ const BremFinalDeposit = (function () {
   async function loadWithdrawals() {
     const week = ensureWeek();
     try {
+      await window.BremStorage?.ensureLeaseErpKeysLoaded?.();
+      await window.BremStorage?.payrollDailySettlement?.reloadWithdrawalHoldsFromServer?.();
       const fetchApi = window.BremStorage?.payrollWithdrawal?.fetchFromAdminApi;
       if (typeof fetchApi === 'function') {
         state.withdrawals = await fetchApi({ weekStart: week });
