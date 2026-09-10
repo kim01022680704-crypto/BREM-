@@ -1450,9 +1450,9 @@
     return _settlementUnmatchedRenderMemo;
   }
 
-  function saveSettlementUnmatched({ period, records, sourceFileName, platform }) {
+  function saveSettlementUnmatched({ period, records, sourceFileName, platform, callFeeUnit }) {
     if (!records?.length) return;
-    BremStorage.settlementUnmatched.saveBatch({ period, records, sourceFileName, platform });
+    BremStorage.settlementUnmatched.saveBatch({ period, records, sourceFileName, platform, callFeeUnit });
   }
 
   function formatMoney(value) {
@@ -2745,6 +2745,7 @@
       showAdminDataLoading(true);
     }
     applySectionEditPermissions();
+    window.BremBaeminDeliveryStatusAdmin?.ensureCrawlOperatorUi?.();
 
     startAdminSessionSecurity();
     window.BremSessionSecurity?.touchActivity?.();
@@ -4387,6 +4388,21 @@
     const p = normalizePlatform(log.platform);
     const appliedRecords = log.appliedRecords?.length ? log.appliedRecords : log.matchedRecords;
     const unmatchedRecords = log.unmatchedRecords || [];
+    const callFeeUnit = resolveDailyLogCallFeeUnit(log);
+    const appliedCallCount = (appliedRecords || []).reduce(
+      (sum, record) => sum + Math.max(0, Number(record.orderCount || 0)),
+      0
+    );
+    const totalHourlyInsurance = (appliedRecords || []).reduce(
+      (sum, record) => sum + Math.abs(Number(record.hourlyInsurance || 0)),
+      0
+    );
+    const totalCallFee = callFeeUnit == null ? null : appliedCallCount * callFeeUnit;
+    const callFeeSummary = callFeeUnit == null
+      ? '<strong>저장 단가 확인 불가</strong>'
+      : (callFeeUnit === 0
+        ? '<strong>차감 없음 (0원/콜)</strong>'
+        : `<strong>${formatMoney(totalCallFee)} 차감</strong> (${number(callFeeUnit)}원/콜 × ${number(appliedCallCount)}콜)`);
     const duplicateNote = log.status === 'duplicate_skipped'
       ? `<p class="weekly-call-mismatch-banner">⚠ ${escapeHtml(log.skipReason || '동일 데이터 — 중복 반영을 건너뛰었습니다.')}</p>`
       : '';
@@ -4400,6 +4416,8 @@
       <p>파일명: <strong>${escapeHtml(log.fileName || '-')}</strong> ${formatSettlementCallFeeLogBadge(resolveDailyLogCallFeeUnit(log))}</p>
       <p>상태: <strong>${escapeHtml(settlementUploadLogStatusLabel(log.status))}</strong></p>
       <p>매칭 ${number(log.matchedCount)}명 · 미매칭 ${number(log.unmatchedCount || 0)}명 · 총 오더수 ${number(log.totalOrderCount || 0)} · 총 정산금액 ${formatMoney(log.totalDeliveryAmount || 0)}</p>
+      <p>콜수수료 반영: ${callFeeSummary}</p>
+      <p>매칭 시간제보험: <strong>${formatMoney(totalHourlyInsurance)}</strong></p>
       <p>업로드: ${escapeHtml(formatDateTime(log.uploadedAt))}${log.appliedAt ? ` · 반영: ${escapeHtml(formatDateTime(log.appliedAt))}` : ''}</p>
       ${duplicateNote}
       ${duplicateRef}
@@ -4412,12 +4430,15 @@
             <th>배민 ID</th>
             <th>기사명</th>
             <th>콜수</th>
+            <th>콜수수료 차감</th>
+            <th>시간제보험</th>
             <th>배달수행금액</th>
           </tr>`
         : `<tr>
             <th>기사명</th>
             <th>엑셀 성함</th>
             <th>콜수</th>
+            <th>콜수수료 차감</th>
             <th>시간제보험</th>
             <th>정산금액</th>
           </tr>`;
@@ -4430,6 +4451,8 @@
             <td>${escapeHtml(record.riderId || '-')}</td>
             <td><strong>${escapeHtml(record.driverName || record.name || '-')}</strong></td>
             <td>${number(record.orderCount)}</td>
+            <td>${callFeeUnit == null ? '확인 불가' : (callFeeUnit === 0 ? '0원 (차감 없음)' : formatMoney(Number(record.orderCount || 0) * callFeeUnit))}</td>
+            <td>${formatMoney(Math.abs(Number(record.hourlyInsurance || 0)))}</td>
             <td>${formatMoney(settlementAmountValue(record))}</td>
           </tr>
         `;
@@ -4439,6 +4462,7 @@
           <td><strong>${escapeHtml(record.driverName || record.name || '-')}</strong></td>
           <td>${escapeHtml(record.rawName || record.name || '-')}</td>
           <td>${number(record.orderCount)}</td>
+          <td>${callFeeUnit == null ? '확인 불가' : (callFeeUnit === 0 ? '0원 (차감 없음)' : formatMoney(Number(record.orderCount || 0) * callFeeUnit))}</td>
           <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
           <td>${formatMoney(settlementAmountValue(record))}</td>
         </tr>
@@ -4446,7 +4470,7 @@
     }).join('');
 
     $('#settlementUploadLogDetailAppliedRows').innerHTML = appliedRows
-      || `<tr><td colspan="${isBaeminSettlementPlatform(p) ? 4 : 5}" class="empty">적용/매칭 내역이 없습니다.</td></tr>`;
+      || `<tr><td colspan="6" class="empty">적용/매칭 내역이 없습니다.</td></tr>`;
 
     const unmatchedBlock = $('#settlementUploadLogDetailUnmatchedBlock');
     const unmatchedRowsEl = $('#settlementUploadLogDetailUnmatchedRows');
@@ -4536,6 +4560,9 @@
           <button type="button" class="small-btn" data-settlement-upload-log-detail="${escapeHtml(item.id)}">상세</button>
           ${canReapplySettlementUploadLog(item)
             ? `<button type="button" class="small-btn ${payrollEligible ? '' : 'primary-btn'}" data-toggle-payroll-eligible="${escapeHtml(item.id)}" title="출금가능금액에 반영(포함)하거나 제외합니다.">${payrollEligible ? '급여 제외' : '급여 포함'}</button>`
+            : ''}
+          ${canReapplySettlementUploadLog(item)
+            ? `<button type="button" class="small-btn" data-edit-settlement-call-fee="${escapeHtml(item.id)}">수수료 수정</button>`
             : ''}
           ${canReapplySettlementUploadLog(item)
             ? `<button type="button" class="small-btn primary-btn" data-reapply-settlement-upload-log="${escapeHtml(item.id)}">재반영</button>`
@@ -4637,12 +4664,16 @@
     `;
   }
 
-  function renderBaeminMatchedRow(record) {
+  function renderBaeminMatchedRow(record, callFeeUnit) {
+    const callFee = callFeeUnit == null
+      ? '설정 필요'
+      : formatMoney(Number(record.orderCount || 0) * callFeeUnit);
     return `
       <tr>
         <td>${escapeHtml(record.riderId || '-')}</td>
         <td><strong>${escapeHtml(record.driverName)}</strong></td>
         <td>${Number(record.orderCount || 0).toLocaleString('ko-KR')}</td>
+        <td>${callFee}</td>
         <td>${formatMoney(settlementAmountValue(record))}</td>
       </tr>
     `;
@@ -4673,7 +4704,24 @@
     }
 
     previewCard.hidden = false;
-    prefillSettlementCallFeeUnit(p);
+    const callFeeUnit = preview.callFeeUnit != null
+      ? Math.max(0, Math.round(Number(preview.callFeeUnit) || 0))
+      : readSettlementCallFeeUnit(p);
+    const totalCallFee = callFeeUnit == null
+      ? null
+      : (preview.matched || []).reduce(
+        (sum, row) => sum + Math.max(0, Number(row.orderCount || 0)) * callFeeUnit,
+        0
+      );
+    const totalCallFeeEl = $(`#settlementTotalCallFee-${p}`);
+    if (totalCallFeeEl) {
+      totalCallFeeEl.textContent = totalCallFee == null ? '설정 필요' : formatMoney(totalCallFee);
+    }
+    const applyBtn = $(`#settlementApplyBtn-${p}`);
+    if (applyBtn) {
+      applyBtn.classList.toggle('needs-call-fee', callFeeUnit == null);
+      applyBtn.title = callFeeUnit == null ? '콜수수료 단가를 먼저 설정하세요.' : '';
+    }
     $(`#settlementPreviewPeriod-${p}`).textContent = preview.period
       ? formatDate(preview.period.length >= 10 ? preview.period.slice(0, 10) : preview.period)
       : '-';
@@ -4686,8 +4734,9 @@
       $(`#settlementFailedCount-${p}`).textContent = String(preview.unmatched.length);
       $(`#settlementTotalDeliveryAmount-${p}`).textContent = formatMoney(preview.totalDeliveryAmount || 0);
 
-      $(`#settlementMatchedRows-${p}`).innerHTML = preview.matched.map(renderBaeminMatchedRow).join('')
-        || '<tr><td colspan="4" class="empty">매칭된 기사가 없습니다.</td></tr>';
+      $(`#settlementMatchedRows-${p}`).innerHTML = preview.matched
+        .map(record => renderBaeminMatchedRow(record, callFeeUnit)).join('')
+        || '<tr><td colspan="5" class="empty">매칭된 기사가 없습니다.</td></tr>';
     } else {
       $(`#settlementTotalCount-${p}`).textContent = String(preview.totalRows);
       $(`#settlementSuccessCount-${p}`).textContent = String(preview.matched.length);
@@ -4697,10 +4746,11 @@
         <tr>
           <td><strong>${escapeHtml(record.driverName)}</strong></td>
           <td>${Number(record.orderCount || 0).toLocaleString('ko-KR')}</td>
+          <td>${callFeeUnit == null ? '설정 필요' : formatMoney(Number(record.orderCount || 0) * callFeeUnit)}</td>
           <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
           <td>${formatMoney(settlementAmountValue(record))}</td>
         </tr>
-      `).join('') || '<tr><td colspan="4" class="empty">매칭된 기사가 없습니다.</td></tr>';
+      `).join('') || '<tr><td colspan="5" class="empty">매칭된 기사가 없습니다.</td></tr>';
     }
 
     const failedBlock = $(`#settlementFailedBlock-${p}`);
@@ -5010,6 +5060,7 @@
             uploadLogId: log.id,
             forceReapply: true,
             payrollDailyEligible: settlementUploadLogPayrollEligible(log),
+            callFeeUnit: resolveDailyLogCallFeeUnit(log),
             totalDeliveryAmount: Number(log.totalDeliveryAmount || 0),
             skipRender: true,
             silent: true
@@ -6363,9 +6414,23 @@
       }
 
       renderSettlements();
+      const selectedCallFeeUnit = await requestSettlementPreviewCallFeeUnit(p);
+      if (selectedCallFeeUnit != null && result.unmatched.length) {
+        saveSettlementUnmatched({
+          period,
+          records: result.unmatched,
+          sourceFileName: file.name,
+          platform: p,
+          callFeeUnit: selectedCallFeeUnit
+        });
+        await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+      }
       const unmatchedHint = result.unmatched.length
         ? ` · 미매칭 ${result.unmatched.length}명은 「미매칭 매칭하기」로 처리하세요`
         : '';
+      const callFeeHint = selectedCallFeeUnit == null
+        ? ' · 콜수수료 설정 후 반영할 수 있습니다'
+        : ` · 콜수수료 ${selectedCallFeeUnit.toLocaleString('ko-KR')}원/콜`;
       if (isBaeminSettlementPlatform(p)) {
         const skip = result.skippedBaeminRows;
         const excluded = skip
@@ -6380,9 +6445,9 @@
         const skipLabel = excluded > 0
           ? ` · 무효행 제외 ${excluded}건${fieldSkip > 0 ? `(U·V 빈칸 등 ${fieldSkip}건)` : ''}`
           : '';
-        showToast(`${platformLabel(p)} 미리보기 · 유효 배달 ${result.totalDeliveries || 0}건 · 라이더 ${result.totalRiders || result.totalRows}명 · 매칭 ${result.matched.length}명${skipLabel}${unmatchedHint}`);
+        showToast(`${platformLabel(p)} 미리보기 · 유효 배달 ${result.totalDeliveries || 0}건 · 라이더 ${result.totalRiders || result.totalRows}명 · 매칭 ${result.matched.length}명${skipLabel}${unmatchedHint}${callFeeHint}`);
       } else {
-        showToast(`${platformLabel(p)} 미리보기 준비 · 매칭 ${result.matched.length}명 / 실패 ${result.unmatched.length}명${unmatchedHint}`);
+        showToast(`${platformLabel(p)} 미리보기 준비 · 매칭 ${result.matched.length}명 / 실패 ${result.unmatched.length}명${unmatchedHint}${callFeeHint}`);
       }
     } catch (error) {
       showToast(error.message || '정산표를 처리하지 못했습니다.');
@@ -6421,16 +6486,54 @@
 
   function readSettlementCallFeeUnit(platform) {
     const el = $(`#settlementCallFeeUnit-${normalizePlatform(platform)}`);
-    if (!el || el.value === '') return 0;
-    return Math.max(0, Math.round(Number(el.value) || 0));
+    if (!el || el.value === '') return null;
+    const numeric = Number(el.value);
+    if (!Number.isFinite(numeric) || numeric < 0 || !Number.isInteger(numeric)) return null;
+    return numeric;
   }
 
-  function prefillSettlementCallFeeUnit(platform) {
+  function settlementPreviewTotalCalls(preview) {
+    return [...(preview?.matched || []), ...(preview?.unmatched || [])]
+      .reduce((sum, row) => sum + Math.max(0, Number(row.orderCount || 0)), 0);
+  }
+
+  function setSettlementPreviewCallFeeUnit(platform, unit) {
+    const p = normalizePlatform(platform);
+    const preview = state.settlementPreviewByPlatform[p];
+    const normalized = window.BremCallFeeDialog?.normalizeUnit?.(unit);
+    if (!preview || normalized == null) return null;
+    preview.callFeeUnit = normalized;
+    const input = $(`#settlementCallFeeUnit-${p}`);
+    if (input) input.value = String(normalized);
+    if (preview.uploadLogId) {
+      BremStorage.settlementUploadLogs.update(preview.uploadLogId, { callFeeUnit: normalized });
+    }
+    renderSettlementPreview(p);
+    return normalized;
+  }
+
+  async function requestSettlementPreviewCallFeeUnit(platform) {
+    const p = normalizePlatform(platform);
+    const preview = state.settlementPreviewByPlatform[p];
+    if (!preview || !window.BremCallFeeDialog?.open) return null;
+    const current = preview.callFeeUnit ?? readSettlementCallFeeUnit(p);
+    const unit = await window.BremCallFeeDialog.open({
+      kind: 'daily',
+      platform: p,
+      fileName: preview.sourceFileName,
+      period: preview.period,
+      totalCalls: settlementPreviewTotalCalls(preview),
+      initialValue: current
+    });
+    if (unit == null) return null;
+    const saved = setSettlementPreviewCallFeeUnit(p, unit);
+    await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+    return saved;
+  }
+
+  function clearSettlementCallFeeUnit(platform) {
     const el = $(`#settlementCallFeeUnit-${normalizePlatform(platform)}`);
-    if (!el || el.dataset.prefilled === '1') return;
-    const unit = Number(BremStorage.payrollDailySettlement?.getFees?.(platform)?.callFee || 0);
-    if (el.value === '' && unit > 0) el.value = String(unit);
-    el.dataset.prefilled = '1';
+    if (el) el.value = '';
   }
 
   function syncSettlementPayrollPreviewBadge(platform) {
@@ -6464,20 +6567,9 @@
     const skipRender = options.skipRender === true;
     const silent = options.silent === true;
     const payrollDailyEligible = options.payrollDailyEligible === true;
-    let callFeeUnit = options.callFeeUnit != null && options.callFeeUnit !== ''
+    const callFeeUnit = options.callFeeUnit != null && options.callFeeUnit !== ''
       ? Math.max(0, Math.round(Number(options.callFeeUnit) || 0))
       : undefined;
-    if (callFeeUnit == null && period) {
-      const existing = BremStorage.settlements?.getAll?.()?.find(row => (
-        normalizePlatform(row.platform) === p
-        && String(row.period || '').slice(0, 10) === period
-        && row.callFeeUnit != null
-        && row.callFeeUnit !== ''
-      ));
-      if (existing) {
-        callFeeUnit = Math.max(0, Math.round(Number(existing.callFeeUnit) || 0));
-      }
-    }
     const totalDeliveryAmount = Number(
       options.totalDeliveryAmount
       ?? matched.reduce((sum, row) => sum + settlementAmountValue(row), 0)
@@ -6611,7 +6703,8 @@
               period,
               records: unmatched,
               sourceFileName,
-              platform: p
+              platform: p,
+              callFeeUnit
             });
           } else {
             BremStorage.settlementUnmatched.clearByPeriod(period, p);
@@ -6722,6 +6815,52 @@
     }
   }
 
+  async function editSettlementUploadLogCallFee(logId) {
+    const log = BremStorage.settlementUploadLogs.getById(logId);
+    const applicable = settlementUploadLogApplicableRecords(log);
+    if (!log || log.kind !== 'daily' || !applicable.length) {
+      showToast('수수료를 수정할 일정산 저장 데이터를 찾지 못했습니다.');
+      return;
+    }
+    const p = normalizePlatform(log.platform);
+    const period = String(log.period || '').slice(0, 10);
+    const unit = await window.BremCallFeeDialog?.open?.({
+      kind: 'daily',
+      platform: p,
+      fileName: log.fileName || '',
+      period,
+      totalCalls: Number(log.totalOrderCount || applicable.reduce(
+        (sum, row) => sum + Number(row.orderCount || 0),
+        0
+      )),
+      initialValue: resolveDailyLogCallFeeUnit(log)
+    });
+    if (unit == null) return;
+
+    const result = await applyDailySettlementFromLogData(p, {
+      period,
+      matched: applicable,
+      unmatched: log.unmatchedRecords || [],
+      sourceFileName: log.fileName || '',
+      uploadLogId: log.id,
+      forceReapply: true,
+      payrollDailyEligible: settlementUploadLogPayrollEligible(log),
+      callFeeUnit: unit,
+      totalDeliveryAmount: Number(log.totalDeliveryAmount || 0)
+    });
+    if (!result.ok) return;
+
+    invalidateCallStatsIndex();
+    renderSettlementUploadLogs(p);
+    if (state.settlementUploadLogDetailId === log.id) {
+      renderSettlementUploadLogDetail(log.id);
+    }
+    showToast(
+      `${platformLabel(p)} ${formatDate(period)} 콜수수료를 `
+      + `${Number(unit).toLocaleString('ko-KR')}원/콜로 수정해 급여에 재반영했습니다.`
+    );
+  }
+
   // 미매칭 내역만 현재 등록기사(배민ID·이름) 기준으로 다시 매칭해 반영한다.
   // 기존 매칭분은 그대로 두고, 새로 매칭된 기사만 추가한다. (출금기록은 건드리지 않음)
   async function retrySettlementUploadLogMatching(logId) {
@@ -6811,6 +6950,17 @@
       return;
     }
 
+    let callFeeUnit = preview.callFeeUnit ?? readSettlementCallFeeUnit(p);
+    if (callFeeUnit == null) {
+      callFeeUnit = await requestSettlementPreviewCallFeeUnit(p);
+      if (callFeeUnit == null) {
+        showToast('콜수수료 단가를 확정해야 정산서를 반영할 수 있습니다.');
+        return;
+      }
+    } else {
+      callFeeUnit = setSettlementPreviewCallFeeUnit(p, callFeeUnit);
+    }
+
     const applyBtn = $(`#settlementApplyBtn-${p}`);
     if (applyBtn) {
       applyBtn.disabled = true;
@@ -6820,7 +6970,6 @@
     try {
       const payrollDailyEligible = preview.payrollDailyEligible === true
         || readSettlementPayrollDailyEligibleCheckbox(p);
-      const callFeeUnit = readSettlementCallFeeUnit(p);
       const result = await applyDailySettlementFromLogData(p, {
         period: preview.period,
         matched: preview.matched,
@@ -6834,6 +6983,7 @@
         totalDeliveryAmount: Number(preview.totalDeliveryAmount || 0)
       });
       if (result.ok) {
+        clearSettlementCallFeeUnit(p);
         showToast(
           (payrollDailyEligible
             ? `${platformLabel(p)} 일정산 ${preview.matched.length}건 반영 · 매칭 기사 급여 일정산 포함`
@@ -7167,6 +7317,8 @@
     }
     if (sectionId === 'contribution' && window.BremContributionAdmin?.refresh) {
       void window.BremContributionAdmin.refresh();
+    } else {
+      window.BremContributionAdmin?.stopLiveWatch?.();
     }
   }
 
@@ -7211,6 +7363,7 @@
     }
     $('#sidebar').classList.remove('open');
     $('#overlay').classList.remove('active');
+    window.BremBaeminDeliveryStatusAdmin?.ensureCrawlOperatorUi?.();
     if (sectionId !== 'weekly-settlement' && sectionId !== 'weekly-settlement-direct' && sectionId !== 'promotion-apply') {
       const detailCard = $('#weeklySettlementDetailCard');
       if (detailCard) detailCard.hidden = true;
@@ -7689,6 +7842,23 @@
           preview.payrollDailyEligible = readSettlementPayrollDailyEligibleCheckbox(p);
           syncSettlementPayrollPreviewBadge(p);
         }
+      });
+
+      $(`#settlementCallFeeUnit-${p}`)?.addEventListener('input', event => {
+        const preview = state.settlementPreviewByPlatform[p];
+        if (!preview) return;
+        const unit = window.BremCallFeeDialog?.normalizeUnit?.(event.target.value);
+        if (unit == null) {
+          delete preview.callFeeUnit;
+          if (preview.uploadLogId) {
+            BremStorage.settlementUploadLogs.update(preview.uploadLogId, { callFeeUnit: null });
+            void BremStorage.flushStorage?.();
+          }
+          renderSettlementPreview(p);
+          return;
+        }
+        setSettlementPreviewCallFeeUnit(p, unit);
+        void BremStorage.flushStorage?.();
       });
 
       $(`#settlementUploadForm-${p}`)?.addEventListener('submit', event => uploadSettlement(event, p));
@@ -8243,6 +8413,12 @@
       const settlementUploadLogDetailButton = event.target.closest('[data-settlement-upload-log-detail]');
       if (settlementUploadLogDetailButton) {
         renderSettlementUploadLogDetail(settlementUploadLogDetailButton.dataset.settlementUploadLogDetail);
+        return;
+      }
+
+      const settlementCallFeeEditButton = event.target.closest('[data-edit-settlement-call-fee]');
+      if (settlementCallFeeEditButton) {
+        void editSettlementUploadLogCallFee(settlementCallFeeEditButton.dataset.editSettlementCallFee);
         return;
       }
 

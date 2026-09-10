@@ -6,3 +6,9 @@ scripts/
 *.md
 .env
 .env.*
+logs/
+_live-baemin-profile/
+_live-coupang-profile/
+_live-naver-profile/
+.naver-playwright-profile/
+.coupang-playwright-profile/

@@ -1,8 +1,8 @@
 /**
  * 크롤링 원버튼 조작 가능 관리자 판별
- * 1) 관리자 계정 레지스트리 canOperateCrawl === true (ERP 설정)
- * 2) 미설정(undefined)이면 레거시 env/기본 운영자 허용
- * 3) canOperateCrawl === false 이면 명시적 거부 (env로도 못 켬 — 계정 설정 우선)
+ * 1) 대표·총괄은 항상 허용 (탑바 크롤링 UI)
+ * 2) 기본 운영자(김형진 등)는 계정 플래그가 false여도 허용
+ * 3) 그 외는 관리자 계정 레지스트리 canOperateCrawl === true
  *
  * env(레거시): CRAWL_OPERATOR_ADMIN_IDS=email1,email2,로그인명,uuid
  */
@@ -14,7 +14,8 @@ function normalizeToken(value) {
 const DEFAULT_CRAWL_OPERATORS = Object.freeze([
   '김형진',
   'admin.g7yfepgm@gmail.com',
-  '관리자'
+  '관리자',
+  'kim01022680704@gmail.com'
 ]);
 
 function getAllowedOperatorTokens() {
@@ -61,11 +62,9 @@ function accountMatchesLegacyOperator(account = {}) {
 }
 
 function resolveCrawlAllowed(registryAccount, identity = {}) {
-  if (registryAccount && typeof registryAccount.canOperateCrawl === 'boolean') {
-    return {
-      allowed: registryAccount.canOperateCrawl === true,
-      source: registryAccount.canOperateCrawl ? 'account' : 'account-denied'
-    };
+  const role = String(registryAccount?.role || identity.role || '').trim().toLowerCase();
+  if (role === 'ceo' || role === 'director') {
+    return { allowed: true, source: 'role' };
   }
   const legacy = accountMatchesLegacyOperator({
     ...identity,
@@ -74,9 +73,15 @@ function resolveCrawlAllowed(registryAccount, identity = {}) {
     name: identity.name || registryAccount?.name,
     displayName: identity.displayName || registryAccount?.name
   });
+  if (legacy) {
+    return { allowed: true, source: 'legacy' };
+  }
+  if (registryAccount?.canOperateCrawl === true) {
+    return { allowed: true, source: 'account' };
+  }
   return {
-    allowed: legacy,
-    source: legacy ? 'legacy' : 'none'
+    allowed: false,
+    source: registryAccount?.canOperateCrawl === false ? 'account-denied' : 'none'
   };
 }
 
@@ -107,7 +112,8 @@ async function canOperateCrawl(accessToken) {
     loginName: displayName,
     displayName,
     name: displayName,
-    user_id: auth.userId
+    user_id: auth.userId,
+    role: registryAccount?.role || auth.profile?.role || ''
   });
 
   return {

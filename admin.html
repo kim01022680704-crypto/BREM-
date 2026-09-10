@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260830hold2">
+  <link rel="stylesheet" href="css/admin.css?v=20260910crawlfix1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -1459,37 +1459,93 @@
         <article class="card">
           <div class="card-header">
             <div>
-              <h2>기여도</h2>
+              <h2>기여도 포인트 원장</h2>
               <p class="form-help">
-                배민·쿠팡 <strong>타임별</strong>로 분리. 크롤 중 해당 타임 할당이 <strong>달성/종료되면 즉시 고정</strong>.
-                기여도 = 그 타임 안에서 쌓인 콜수(할당 0→달성). 과거 일일합계는 무시 · <strong>오늘 저녁부터</strong> 쌓입니다.
+                집계 시작 이후 크롤 증가분만 저장합니다. 날짜가 바뀌면 전날은 마감되고 새 영업일로 자동 넘어갑니다. 지역 할당 100% 도달 크롤까지 인정하고 이후에는 영구 마감됩니다.
               </p>
             </div>
             <div class="dashboard-baemin-live-actions">
-              <button type="button" class="primary-btn" id="contributionRefreshBtn">오늘/선택일 저장</button>
+              <span class="form-help contribution-auto-note">크롤 저장 시 자동 반영 · 화면 8초마다 새로고침</span>
+              <button type="button" class="primary-btn" id="contributionRefreshBtn">수동 크롤 반영</button>
               <button type="button" class="small-btn" id="contributionLoadBtn">조회</button>
             </div>
+          </div>
+          <div class="contribution-rule-card">
+            <div class="contribution-rule-card__head">
+              <div>
+                <strong>포인트 규칙</strong>
+                <p id="contributionLedgerStatus">원장 상태 확인 중…</p>
+              </div>
+              <span class="contribution-ledger-badge" id="contributionLedgerBadge">확인 중</span>
+            </div>
+            <div class="contribution-rule-grid">
+              <label>배민 1콜 점수
+                <input type="number" min="0" step="0.1" id="contributionBaeminPoint" value="10">
+              </label>
+              <label>쿠팡 0.8콜 점수
+                <input type="number" min="0" step="0.1" id="contributionCoupang08Point" value="8">
+              </label>
+              <label>쿠팡 1콜 점수
+                <input type="number" min="0" step="0.1" id="contributionCoupang10Point" value="10">
+              </label>
+              <div class="contribution-rule-actions">
+                <button type="button" class="small-btn" id="contributionRuleSaveBtn">규칙 저장</button>
+                <button type="button" class="primary-btn" id="contributionActivateBtn">집계 시작</button>
+              </div>
+            </div>
+            <p class="form-help">규칙 변경은 저장 이후 새 크롤부터 적용되며 지나간 포인트는 바뀌지 않습니다. 쿠팡 0.8/1콜은 가중 증가값으로 추정합니다.</p>
           </div>
           <div class="promotion-platform-tabs admin-section-tabs" role="tablist" aria-label="기여도 플랫폼">
             <button type="button" class="promotion-tab active" data-contribution-platform="baemin">배민</button>
             <button type="button" class="promotion-tab" data-contribution-platform="coupang">쿠팡</button>
           </div>
+          <div class="promotion-platform-tabs admin-section-tabs" id="contributionPeriodMenu" role="tablist" aria-label="기여도 기간">
+            <button type="button" class="promotion-tab active" data-contribution-period="day">일간 기여도</button>
+            <button type="button" class="promotion-tab" data-contribution-period="week">주간 기여도</button>
+          </div>
           <div class="form-row" style="gap:10px;flex-wrap:wrap;align-items:end;">
             <label>일자
               <input type="date" id="contributionDate" class="admin-period-input">
             </label>
-            <label>지역
-              <input type="search" id="contributionRegion" placeholder="지역명 필터" autocomplete="off">
-            </label>
-            <label>검색
-              <input type="search" id="contributionSearch" placeholder="기사 · 매칭키" autocomplete="off">
+            <label>기사 검색
+              <input type="search" id="contributionSearch" placeholder="기사명 · ERP ID · 배민 ID" autocomplete="off">
             </label>
           </div>
+          <div class="contribution-submenus">
+            <nav class="contribution-submenu" aria-label="기여도 지역 선택">
+              <strong>지역</strong>
+              <div id="contributionRegionMenu"><span class="form-help">지역 불러오는 중…</span></div>
+            </nav>
+            <nav class="contribution-submenu" id="contributionSlotSubmenu" aria-label="기여도 타임 선택">
+              <strong>타임</strong>
+              <div id="contributionSlotMenu"><span class="form-help">타임 불러오는 중…</span></div>
+            </nav>
+          </div>
           <p class="admin-table-summary" id="contributionSummary" aria-live="polite">일자를 선택하세요.</p>
+          <section class="contribution-progress-section" id="contributionProgressSection">
+            <div class="contribution-progress-section__head">
+              <h3>지역별 할당·기여도 현황</h3>
+              <span>현재 완료/할당과 집계 시작 후 인정 포인트</span>
+            </div>
+            <div class="contribution-progress-grid" id="contributionRegionProgress">
+              <p class="form-help">현황 불러오는 중…</p>
+            </div>
+          </section>
           <div id="contributionTable">
             <p class="form-help">불러오는 중…</p>
           </div>
         </article>
+        <div class="contribution-event-popup" id="contributionEventPopup" hidden>
+          <button type="button" class="contribution-event-popup__backdrop" data-contribution-event-close aria-label="원장 상세 닫기"></button>
+          <div class="contribution-event-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="contributionEventTitle">
+            <div class="contribution-event-popup__head">
+              <div><p>APPEND-ONLY LEDGER</p><h2 id="contributionEventTitle">기여도 원장 상세</h2></div>
+              <button type="button" class="small-btn" data-contribution-event-close>닫기</button>
+            </div>
+            <p class="admin-table-summary" id="contributionEventSummary"></p>
+            <div id="contributionEventTable"></div>
+          </div>
+        </div>
       </section>
 
       <section class="section baemin-view-section" id="coupang-rider-status">
@@ -3800,6 +3856,7 @@
             <p>총 기사 <strong id="settlementTotalCount-coupang">0</strong>명</p>
             <p>매칭 성공 <strong id="settlementSuccessCount-coupang">0</strong>명</p>
             <p>매칭 실패 <strong id="settlementFailedCount-coupang">0</strong>명</p>
+            <p>총 콜수수료 <strong id="settlementTotalCallFee-coupang">설정 필요</strong></p>
           </div>
 
           <div class="settlement-preview-block">
@@ -3810,6 +3867,7 @@
                   <tr>
                     <th>기사명</th>
                     <th>총 오더수</th>
+                    <th>콜수수료</th>
                     <th>시간제보험</th>
                     <th>총 정산금액</th>
                   </tr>
@@ -4108,6 +4166,7 @@
             <p>매칭 성공 <strong id="settlementSuccessCount-baemin">0</strong></p>
             <p>매칭 실패 <strong id="settlementFailedCount-baemin">0</strong></p>
             <p>총 배달수행금액 <strong id="settlementTotalDeliveryAmount-baemin">0원</strong></p>
+            <p>총 콜수수료 <strong id="settlementTotalCallFee-baemin">설정 필요</strong></p>
           </div>
 
           <div class="settlement-preview-block">
@@ -4119,6 +4178,7 @@
                     <th>라이더 아이디</th>
                     <th>기사명</th>
                     <th>콜수</th>
+                    <th>콜수수료</th>
                     <th>배달수행금액</th>
                   </tr>
                 </thead>
@@ -4631,6 +4691,7 @@
                   <th>원본 이름</th>
                   <th>쿠팡 ID</th>
                   <th>주간 오더수(F)</th>
+                  <th>콜수수료</th>
                   <th>배달료(AM+AB)</th>
                   <th>라이더별 지급(Z)</th>
                   <th>차감내역(AB)</th>
@@ -4815,6 +4876,7 @@
                   <th>원본 이름</th>
                   <th>User ID(B)</th>
                   <th>주간 콜수(D)</th>
+                  <th>콜수수료</th>
                   <th>배달료(E)</th>
                   <th>추가지급(F)</th>
                   <th>총배달료(G)</th>
@@ -6308,7 +6370,7 @@
                 <div class="driver-region-list-filter">
                   <label class="field">
                     <span class="field-label">배정 기사 검색</span>
-                    <input type="search" id="driverRegionListFilter" class="driver-region-list-filter__input" placeholder="이름·배민ID·연락처로 표에서 찾기" autocomplete="off">
+                    <input type="search" id="driverRegionListFilter" class="driver-region-list-filter__input" placeholder="이름·ERP ID·배민ID·연락처로 표에서 찾기" autocomplete="off">
                   </label>
                   <div class="driver-region-bulk-mode" role="group" aria-label="배정 기사 일괄 노출">
                     <button type="button" class="small-btn" id="driverRegionBulkFullBtn" title="이 지역 배정 기사 전원 올노출">전체 올노출</button>
@@ -6320,7 +6382,7 @@
                   <table class="weekly-settlement-detail-table">
                     <thead>
                       <tr>
-                        <th>이름</th>
+                        <th>이름 · ERP ID</th>
                         <th>콜수</th>
                         <th>배달료</th>
                         <th>기사앱</th>
@@ -8852,21 +8914,47 @@
     <p class="calendar-help">날짜를 클릭하면 선택됩니다.</p>
   </div>
 
+  <div class="call-fee-setup-dialog" id="callFeeSetupDialog" hidden>
+    <button type="button" class="call-fee-setup-dialog__backdrop" data-close-call-fee-dialog aria-label="닫기"></button>
+    <section class="call-fee-setup-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="callFeeSetupTitle">
+      <form id="callFeeSetupForm">
+        <p class="call-fee-setup-dialog__eyebrow">정산서별 필수 설정</p>
+        <h2 id="callFeeSetupTitle">콜수수료 설정</h2>
+        <p class="call-fee-setup-dialog__meta" id="callFeeSetupMeta"></p>
+        <div class="call-fee-setup-dialog__summary">
+          <span>정산서 총 콜수</span>
+          <strong id="callFeeSetupCalls">0콜</strong>
+        </div>
+        <label class="call-fee-setup-dialog__field">
+          <span>콜수수료 단가 (원/콜)</span>
+          <input type="number" id="callFeeSetupUnit" min="0" step="1" inputmode="numeric" placeholder="예: 100" required>
+        </label>
+        <p class="call-fee-setup-dialog__help">이 단가는 현재 정산서에 고정 저장됩니다. 수수료가 없으면 0을 입력하세요.</p>
+        <p class="call-fee-setup-dialog__error" id="callFeeSetupError" role="alert"></p>
+        <div class="call-fee-setup-dialog__actions">
+          <button type="button" class="small-btn" data-close-call-fee-dialog>미리보기로 돌아가기</button>
+          <button type="submit" class="primary-btn">단가 확정</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="js/platforms.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/brem-env.js"></script>
   <script src="js/perf.js"></script>
   <script>window.BREM_AUTH_SCOPE = 'admin';</script>
-  <script src="js/login-preferences.js?v=20260715h"></script>
+  <script src="js/login-preferences.js?v=20260909login1"></script>
   <script src="js/session-security.js?v=20260712a"></script>
-  <script src="js/supabase-config.js?v=20260712c"></script>
+  <script src="js/supabase-config.js?v=20260909login1"></script>
   <script src="js/data-cache.js?v=20260621n"></script>
   <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js?v=20260827mission9"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20260827mission11"></script>
-  <script src="js/storage.js?v=20260830block3"></script>
+  <script src="js/storage.js?v=20260910crawl1"></script>
+  <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -8880,13 +8968,13 @@
   <script src="js/promotion-engine.js?v=20260820a"></script>
   <script src="js/promotion-admin.js?v=20260730b"></script>
   <script src="js/weekly-settlement.js?v=20260830tax1"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260827week1"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260906callfee2"></script>
   <script src="js/baemin-delivery-fee.js?v=20260820b"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
-    <script src="js/baemin-delivery-status-admin.js?v=20260819look8"></script>
+    <script src="js/baemin-delivery-status-admin.js?v=20260910crawlfix1"></script>
     <script src="js/coupang-status-admin.js?v=20260818resume1"></script>
     <script src="js/coupang-rider-status-admin.js?v=20260811a"></script>
-    <script src="js/contribution-admin.js?v=20260805e"></script>
+    <script src="js/contribution-admin.js?v=20260909contribution15"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
   <script src="js/promotion-apply.js?v=20260827directcalls"></script>
@@ -8912,7 +9000,7 @@
   <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260823c"></script>
   <script src="js/tax-management-admin.js?v=20260830tax2"></script>
-  <script src="js/driver-management-admin.js?v=20260827coupangrank1"></script>
+  <script src="js/driver-management-admin.js?v=20260909erpid1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260822other1"></script>
   <script src="js/admin-payroll-slip-search.js?v=20260817pay6"></script>
@@ -8923,7 +9011,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260827mission10"></script>
   <script src="js/admin-missions.js?v=20260827mission10"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260830hold1"></script>
+    <script src="js/admin.js?v=20260910crawlfix1"></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

@@ -1,3 +1,437 @@
+.contribution-rule-card {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.contribution-rule-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.contribution-rule-card__head p {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.contribution-ledger-badge,
+.contribution-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.contribution-ledger-badge.is-active,
+.contribution-status-badge.is-live {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.contribution-status-badge.is-frozen {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.contribution-rule-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.contribution-rule-grid label {
+  display: grid;
+  gap: 5px;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.contribution-rule-grid input {
+  width: 100%;
+  min-height: 40px;
+}
+
+.contribution-rule-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.contribution-ledger-table td {
+  white-space: nowrap;
+}
+
+.contribution-rider-id {
+  color: #0f766e;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+#contributionTable .table-wrap {
+  max-height: 480px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+#contributionTable .contribution-ledger-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.contribution-auto-note {
+  white-space: nowrap;
+}
+
+.contribution-submenus {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.contribution-submenu {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.contribution-submenu > strong {
+  color: #334155;
+  font-size: 0.78rem;
+}
+
+.contribution-submenu > div {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 1px 5px;
+  scrollbar-width: thin;
+}
+
+.contribution-submenu button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.contribution-submenu button.active {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 118, 110, 0.2);
+}
+
+.contribution-submenu button.is-now:not(.active) {
+  border-color: #0f766e;
+  color: #0f766e;
+}
+
+.contribution-region-group + .contribution-region-group {
+  margin-top: 16px;
+}
+
+.contribution-region-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 10px 10px 0 0;
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.contribution-region-group__head h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.contribution-region-group__head span {
+  color: #fde047;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.contribution-progress-section {
+  margin: 14px 0 18px;
+}
+
+.contribution-progress-section__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.contribution-progress-section__head span {
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.contribution-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 9px;
+}
+
+.contribution-progress-card {
+  padding: 12px;
+  border: 1px solid #dbe3ec;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.contribution-progress-card__head,
+.contribution-progress-card__metric {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.contribution-progress-card__head > div {
+  display: grid;
+  gap: 1px;
+}
+
+.contribution-progress-card__head span {
+  color: #64748b;
+  font-size: 0.7rem;
+}
+
+.contribution-progress-card__metric {
+  margin-top: 9px;
+}
+
+.contribution-progress-card__metric > strong {
+  font-size: 1.05rem;
+}
+
+.contribution-progress-card__metric > b {
+  color: #0f766e;
+}
+
+.contribution-progress-bar {
+  height: 7px;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.contribution-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #0f766e;
+}
+
+.contribution-progress-card p,
+.contribution-progress-card small {
+  display: block;
+  margin: 7px 0 0;
+  color: #64748b;
+  font-size: 0.7rem;
+}
+
+.contribution-progress-card p strong {
+  color: #0f172a;
+}
+
+.contribution-progress-tag {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.66rem;
+  font-weight: 900;
+}
+
+.contribution-progress-tag.is-achieved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.contribution-progress-tag.is-frozen {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.contribution-match-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.contribution-match-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.contribution-match-badge.is-ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.contribution-match-badge.is-miss {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.contribution-match-badge.is-warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.contribution-slot-chips {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: normal;
+}
+
+.contribution-total-row td {
+  background: #f8fafc;
+  font-weight: 800;
+}
+
+.contribution-estimate {
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.contribution-event-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 2600;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.contribution-event-popup[hidden] {
+  display: none;
+}
+
+.contribution-event-popup__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.contribution-event-popup__dialog {
+  position: relative;
+  z-index: 1;
+  width: min(620px, 100%);
+  max-height: 82vh;
+  overflow: auto;
+  padding: 18px;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.3);
+}
+
+.contribution-event-popup__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.contribution-event-popup__head p {
+  margin: 0;
+  color: #0f766e;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.contribution-event-popup__head h2 {
+  margin: 2px 0 0;
+  color: #0f172a;
+}
+
+.contribution-event-popup__head p,
+#contributionEventSummary {
+  color: #475569;
+}
+
+.contribution-event-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.contribution-event-item {
+  padding: 11px 12px;
+  border: 1px solid #dbe3ec;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.contribution-event-item > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.contribution-event-item b {
+  color: #0f766e;
+}
+
+.contribution-event-item strong {
+  color: #0f172a;
+}
+
+.contribution-event-item p,
+.contribution-event-item small {
+  display: block;
+  margin: 4px 0 0;
+  color: #475569;
+  font-size: 0.74rem;
+}
+
+@media (max-width: 900px) {
+  .contribution-rule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .contribution-rule-actions > button {
+    flex: 1;
+  }
+}
+
 :root {
   --black: #0b0b0b;
   --black-2: #161616;
@@ -262,6 +696,9 @@ a {
   background: linear-gradient(135deg, #202020, #101010);
   border: 1px solid var(--line);
   border-radius: 20px;
+  position: sticky;
+  top: 0;
+  z-index: 25;
 }
 
 .topbar p,
@@ -4469,6 +4906,7 @@ textarea {
   align-items: stretch;
   gap: 4px;
   min-width: 0;
+  flex-shrink: 0;
 }
 
 .crawl-operator-topbar.app-hidden,
@@ -9964,6 +10402,45 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   cursor: pointer;
 }
 
+.revenue-region-drop-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 10px 0 8px;
+}
+
+@media (max-width: 720px) {
+  .revenue-region-drop-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.revenue-region-drop {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 16px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  text-align: center;
+}
+
+.revenue-region-drop strong {
+  font-size: 0.92rem;
+}
+
+.revenue-region-drop span {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.revenue-region-drop.is-dragover {
+  border-color: #7dd3a8;
+  background: rgba(125, 211, 168, 0.12);
+}
+
 .revenue-region-upload-pass {
   display: grid;
   gap: 6px;
@@ -12910,16 +13387,17 @@ tr.is-rank-only {
 }
 
 .driver-region-leader-btn {
+  background: #fbbf24 !important;
   border-color: #f59e0b !important;
-  color: #fde68a !important;
+  color: #111827 !important;
   font-weight: 800;
   min-width: 72px;
 }
 
 .driver-region-leader-btn.is-on {
-  background: rgba(245, 158, 11, 0.35) !important;
-  color: #fff7ed !important;
-  border-color: #fbbf24 !important;
+  background: #b45309 !important;
+  color: #ffffff !important;
+  border-color: #f59e0b !important;
   box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35);
 }
 
@@ -12935,6 +13413,33 @@ tr.is-rank-only {
   font-weight: 900;
   vertical-align: middle;
   letter-spacing: 0.02em;
+}
+
+.driver-region-branch-btn {
+  background: #0284c7 !important;
+  border-color: #38bdf8 !important;
+  color: #ffffff !important;
+  font-weight: 800;
+  min-width: 82px;
+}
+
+.driver-region-branch-btn.is-on {
+  background: #075985 !important;
+  border-color: #38bdf8 !important;
+  color: #ffffff !important;
+}
+
+.driver-region-branch-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.24);
+  border: 1px solid #38bdf8;
+  color: #e0f2fe;
+  font-size: 12px;
+  font-weight: 900;
+  vertical-align: middle;
 }
 
 tr.is-region-leader {
@@ -13115,6 +13620,18 @@ tr.is-dashboard-only .driver-region-mode:not(.is-on) {
   font-size: 0.72rem;
   font-weight: 800;
   vertical-align: middle;
+}
+
+.driver-region-erp-id {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 0;
+  color: #93c5fd;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  vertical-align: middle;
+  word-break: break-all;
 }
 
 tr.is-week-first td {
@@ -14460,4 +14977,105 @@ tr.is-week-first td {
 
 .driver-dup-dialog__btn--ghost {
   background: transparent;
+}
+
+.call-fee-setup-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.call-fee-setup-dialog[hidden] {
+  display: none;
+}
+
+.call-fee-setup-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: default;
+}
+
+.call-fee-setup-dialog__panel {
+  position: relative;
+  z-index: 1;
+  width: min(480px, 100%);
+  padding: 24px;
+  border: 1px solid var(--line, #333);
+  border-radius: 18px;
+  background: #151515;
+  color: #f5f5f5;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+
+.call-fee-setup-dialog__eyebrow {
+  margin: 0 0 6px;
+  color: var(--yellow, #ffd400);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.call-fee-setup-dialog__panel h2 {
+  margin: 0;
+}
+
+.call-fee-setup-dialog__meta,
+.call-fee-setup-dialog__help {
+  color: #b8b8b8;
+  line-height: 1.45;
+}
+
+.call-fee-setup-dialog__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 0 14px;
+  padding: 13px 14px;
+  border: 1px solid #363636;
+  border-radius: 12px;
+  background: #202020;
+}
+
+.call-fee-setup-dialog__summary strong {
+  color: var(--yellow, #ffd400);
+}
+
+.call-fee-setup-dialog__field {
+  display: grid;
+  gap: 8px;
+  font-weight: 800;
+}
+
+.call-fee-setup-dialog__field input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid #4b4b4b;
+  border-radius: 10px;
+  background: #0f0f0f;
+  color: #fff;
+  font-size: 1.05rem;
+}
+
+.call-fee-setup-dialog__field input[aria-invalid="true"] {
+  border-color: #ef4444;
+}
+
+.call-fee-setup-dialog__error {
+  min-height: 20px;
+  margin: 8px 0;
+  color: #fca5a5;
+  font-size: 0.85rem;
+}
+
+.call-fee-setup-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

@@ -5346,9 +5346,9 @@
   function isKnownCrawlOperatorLocally() {
     const account = window.BremStorage?.auth?.getAdminSessionAccount?.() || null;
     if (!account) return false;
-    if (typeof account.canOperateCrawl === 'boolean') {
-      return account.canOperateCrawl === true;
-    }
+    const role = String(account.role || '').trim().toLowerCase();
+    if (role === 'ceo' || role === 'director') return true;
+    if (account.canOperateCrawl === true) return true;
     const tokens = [
       account.id,
       account.email,
@@ -5557,28 +5557,34 @@
   }
 
   async function refreshCrawlOperatorAccess() {
+    const localAllowed = isKnownCrawlOperatorLocally();
+    if (localAllowed) {
+      state.crawlOperatorAllowed = true;
+      setCrawlOperatorUiVisible(true);
+    }
     try {
       const result = await adminApi('/api/admin/crawl/operator-access');
       let allowed = false;
       if (result?.ok) {
-        // 계정에 명시적으로 저장된 값은 서버 판정을 그대로 따름
-        if (result.source === 'account' || result.source === 'account-denied') {
-          allowed = Boolean(result.allowed);
-        } else {
-          allowed = Boolean(result.allowed) || isKnownCrawlOperatorLocally();
-        }
-      } else {
-        allowed = isKnownCrawlOperatorLocally();
+        allowed = Boolean(result.allowed);
       }
+      allowed = allowed || localAllowed;
       state.crawlOperatorAllowed = allowed;
       setCrawlOperatorUiVisible(allowed);
       return allowed;
     } catch {
-      const allowed = isKnownCrawlOperatorLocally();
-      state.crawlOperatorAllowed = allowed;
-      setCrawlOperatorUiVisible(allowed);
-      return allowed;
+      state.crawlOperatorAllowed = localAllowed;
+      setCrawlOperatorUiVisible(localAllowed);
+      return localAllowed;
     }
+  }
+
+  function ensureCrawlOperatorUi() {
+    if (state.crawlOperatorAllowed) {
+      setCrawlOperatorUiVisible(true);
+      return Promise.resolve(true);
+    }
+    return refreshCrawlOperatorAccess();
   }
 
   async function runMorningOneButton() {
@@ -7046,6 +7052,8 @@
   window.BremBaeminDeliveryStatusAdmin = {
     refresh,
     stopPolling,
+    ensureCrawlOperatorUi,
+    refreshCrawlOperatorAccess,
     handleWeekSelect,
     handleBizCollectWeekSelect,
     handleCoverageWeekSelect,
