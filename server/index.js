@@ -569,10 +569,13 @@ app.get('/api/rider/crew-leader/detail', async (req, res) => {
 
 app.get('/api/rider/branch-dashboard', async (req, res) => {
   try {
+    const probe = String(req.query.probe || '').trim() === '1'
+      || String(req.query.probe || '').trim().toLowerCase() === 'true';
     const result = await riderRegionDashboard.getRiderBranchDashboard(getBearerToken(req), {
       platform: req.query.platform,
       regionKey: req.query.regionKey,
-      weekStart: req.query.weekStart
+      weekStart: req.query.weekStart,
+      probe
     });
     if (!result.ok) {
       return res.status(result.status || 400).json({ error: result.error });

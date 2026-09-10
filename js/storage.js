@@ -3465,14 +3465,15 @@ const BremStorage = (function () {
     });
   }
 
-  async function fetchRiderBranchDashboardFromServer({ platform, regionKey, weekStart } = {}) {
+  async function fetchRiderBranchDashboardFromServer({ platform, regionKey, weekStart, probe } = {}) {
     const params = new URLSearchParams();
     if (platform) params.set('platform', String(platform));
     if (regionKey) params.set('regionKey', String(regionKey));
     if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
+    if (probe) params.set('probe', '1');
     const qs = params.toString() ? `?${params.toString()}` : '';
     return riderApiFetch(`/api/rider/branch-dashboard${qs}`, 'branch-dashboard', {
-      timeoutMs: REGION_DASHBOARD_TIMEOUT_MS
+      timeoutMs: probe ? Math.min(8000, REGION_DASHBOARD_TIMEOUT_MS) : REGION_DASHBOARD_TIMEOUT_MS
     });
   }
 

@@ -37,6 +37,7 @@
     result: null,
     pollTimer: null,
     requestSeq: 0,
+    visibilitySeq: 0,
     authorized: { baemin: false, coupang: false }
   };
 
@@ -228,20 +229,25 @@
 
   async function refreshEntryVisibility() {
     if (!window.BremStorage?.fetchRiderBranchDashboardFromServer) return;
+    const seq = ++state.visibilitySeq;
     try {
       const weekStart = settlementWeekStart(localDateKey());
       const [baemin, coupang] = await Promise.all([
-        window.BremStorage.fetchRiderBranchDashboardFromServer({ platform: 'baemin', weekStart }),
-        window.BremStorage.fetchRiderBranchDashboardFromServer({ platform: 'coupang', weekStart })
+        window.BremStorage.fetchRiderBranchDashboardFromServer({ platform: 'baemin', weekStart, probe: true }),
+        window.BremStorage.fetchRiderBranchDashboardFromServer({ platform: 'coupang', weekStart, probe: true })
       ]);
-      state.authorized.baemin = Boolean(baemin?.isBranchManager && baemin.regions?.length);
-      state.authorized.coupang = Boolean(coupang?.isBranchManager && coupang.regions?.length);
+      if (seq !== state.visibilitySeq) return;
+      state.authorized.baemin = Boolean(baemin?.ok && baemin.isBranchManager && baemin.regions?.length);
+      state.authorized.coupang = Boolean(coupang?.ok && coupang.isBranchManager && coupang.regions?.length);
       const visible = state.authorized.baemin || state.authorized.coupang;
+      const bothOk = baemin?.ok === true && coupang?.ok === true;
+      // 권한이 확인되면 바로 보여 준다. 집계 실패(500)로 메뉴를 다시 숨기지 않는다.
+      if (visible) setEntryVisible(true);
+      else if (bothOk) setEntryVisible(false);
       if (!state.authorized[state.platform]) {
         state.platform = state.authorized.coupang ? 'coupang' : 'baemin';
         state.regionKey = '';
       }
-      setEntryVisible(visible);
       syncPlatformTabs();
     } catch (_) {
       // 네트워크 실패 때 기존 노출 상태를 유지한다.

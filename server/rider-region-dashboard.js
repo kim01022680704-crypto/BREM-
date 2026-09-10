@@ -1412,14 +1412,19 @@ async function getRiderBranchDashboard(accessToken, query = {}) {
   const weekStart = normalizeSettlementWeekStart(query.weekStart || today);
   const weekEnd = settlementWeekEnd(weekStart);
   const requestedKey = String(query.regionKey || '').trim();
+  const probe = query.probe === true
+    || String(query.probe || '').trim() === '1'
+    || String(query.probe || '').trim().toLowerCase() === 'true';
+  const riderId = me.riderId || me.rider?.id;
 
   try {
     const exposure = await readExposureMap(supabase);
-    const regions = listBranchManagerRegions(exposure, platform, me.riderId || me.rider?.id);
+    const regions = listBranchManagerRegions(exposure, platform, riderId);
     if (!regions.length) {
       return {
         ok: true,
         isBranchManager: false,
+        probe,
         platform,
         weekStart,
         weekEnd,
@@ -1428,47 +1433,82 @@ async function getRiderBranchDashboard(accessToken, query = {}) {
       };
     }
     const selected = regions.find(region => region.key === requestedKey) || regions[0];
-    if (!isBranchManagerForRegion(exposure, selected, me.riderId || me.rider?.id)) {
+    if (!isBranchManagerForRegion(exposure, selected, riderId)) {
       return { ok: false, status: 403, error: '이 지역의 지사장 권한이 없습니다.' };
     }
 
-    const dateInfo = platform === 'coupang'
-      ? await resolveCoupangRiderDailyDate(supabase, today)
-      : null;
-    const liveDate = dateInfo?.collectDate || today;
-    const cacheKey = `branch|${me.riderId || me.rider?.id}|${platform}|${selected.key}|${weekStart}|${liveDate}`;
-    const cached = readResponseCache(cacheKey);
-    if (cached) return { ...cached, regions, selectedRegionKey: selected.key, region: selected };
+    // 하단 탭 노출은 집계 전에 권한만 확인한다. 집계 오류로 메뉴가 사라지지 않게.
+    if (probe) {
+      return {
+        ok: true,
+        isBranchManager: true,
+        probe: true,
+        platform,
+        weekStart,
+        weekEnd,
+        regions,
+        selectedRegionKey: selected.key,
+        region: selected
+      };
+    }
 
-    const regionRiders = await loadRidersForRegion(supabase, selected);
-    const options = { maskNames: false, regionRiders, rankingRiders: regionRiders };
-    const [live, weeklyProgress, weeklyRanking] = await Promise.all([
-      platform === 'coupang'
-        ? buildCoupangLive(supabase, selected, liveDate, options)
-        : buildBaeminLive(supabase, selected, today, options),
-      buildBranchWeeklyProgress(supabase, selected, weekStart, weekEnd),
-      buildWeeklyRanking(supabase, selected, weekStart, weekEnd, options)
-    ]);
-    const payload = {
-      ok: true,
-      isBranchManager: true,
-      platform,
-      today: liveDate,
-      weekStart,
-      weekEnd,
-      regions,
-      selectedRegionKey: selected.key,
-      region: selected,
-      registeredCount: regionRiders.length,
-      metrics: live.metrics || emptyMetrics(),
-      operatingRiders: platform === 'baemin' ? (live.operatingRiders || []) : [],
-      performanceRiders: platform === 'coupang' ? (live.performanceRiders || []) : [],
-      weeklyProgress,
-      weeklyRanking,
-      coupangRiderOnlineUnavailable: platform === 'coupang'
-    };
-    writeResponseCache(cacheKey, payload);
-    return payload;
+    try {
+      const dateInfo = platform === 'coupang'
+        ? await resolveCoupangRiderDailyDate(supabase, today)
+        : null;
+      const liveDate = dateInfo?.collectDate || today;
+      const cacheKey = `branch|${riderId}|${platform}|${selected.key}|${weekStart}|${liveDate}`;
+      const cached = readResponseCache(cacheKey);
+      if (cached) return { ...cached, regions, selectedRegionKey: selected.key, region: selected };
+
+      const regionRiders = await loadRidersForRegion(supabase, selected);
+      const options = { maskNames: false, regionRiders, rankingRiders: regionRiders };
+      const [live, weeklyProgress, weeklyRanking] = await Promise.all([
+        platform === 'coupang'
+          ? buildCoupangLive(supabase, selected, liveDate, options)
+          : buildBaeminLive(supabase, selected, today, options),
+        buildBranchWeeklyProgress(supabase, selected, weekStart, weekEnd),
+        buildWeeklyRanking(supabase, selected, weekStart, weekEnd, options)
+      ]);
+      const payload = {
+        ok: true,
+        isBranchManager: true,
+        platform,
+        today: liveDate,
+        weekStart,
+        weekEnd,
+        regions,
+        selectedRegionKey: selected.key,
+        region: selected,
+        registeredCount: regionRiders.length,
+        metrics: live.metrics || emptyMetrics(),
+        operatingRiders: platform === 'baemin' ? (live.operatingRiders || []) : [],
+        performanceRiders: platform === 'coupang' ? (live.performanceRiders || []) : [],
+        weeklyProgress,
+        weeklyRanking,
+        coupangRiderOnlineUnavailable: platform === 'coupang'
+      };
+      writeResponseCache(cacheKey, payload);
+      return payload;
+    } catch (error) {
+      return {
+        ok: true,
+        isBranchManager: true,
+        platform,
+        weekStart,
+        weekEnd,
+        regions,
+        selectedRegionKey: selected.key,
+        region: selected,
+        registeredCount: 0,
+        metrics: emptyMetrics(),
+        operatingRiders: [],
+        performanceRiders: [],
+        weeklyProgress: {},
+        weeklyRanking: [],
+        message: error.message || '지사관리 현황을 불러오지 못했습니다.'
+      };
+    }
   } catch (error) {
     return { ok: false, status: 500, error: error.message || '지사관리 현황을 불러오지 못했습니다.' };
   }
