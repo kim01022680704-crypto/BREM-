@@ -280,8 +280,54 @@ check(
   WS.canonicalBaeminTeamRegion('배달 이글스_표준울산북필드B'),
   '표준울산북필드B'
 );
+check(
+  'strip 주식회사 119컴퍼니 prefix+suffix+DP',
+  WS.canonicalBaeminTeamRegion('주식회사 119컴퍼니_표준울산북필드B주식회사119컴퍼니_DP2608315001'),
+  '표준울산북필드B'
+);
+check(
+  'strip 배달 이글스 prefix+suffix+DP',
+  WS.canonicalBaeminTeamRegion('배달 이글스_표준울산북필드B배달이글스_DP2608318332'),
+  '표준울산북필드B'
+);
+check(
+  'strip 119 남A live filename region',
+  WS.canonicalBaeminTeamRegion(WS.parseBaeminFileName(
+    '20260902~20260908_주식회사 119컴퍼니_표준울산남A주식회사119컴퍼니_DP2608315883.xlsx'
+  ).teamName),
+  '표준울산남A'
+);
+check(
+  'strip 이글스 남A live filename region',
+  WS.canonicalBaeminTeamRegion(WS.parseBaeminFileName(
+    '20260902~20260908_배달 이글스_표준울산남A배달이글스_DP2607278930.xlsx'
+  ).teamName),
+  '표준울산남A'
+);
 check('keep 이글스남A region', WS.canonicalBaeminTeamRegion('이글스남A'), '이글스남A');
 check('keep 울산울주a', WS.canonicalBaeminTeamRegion('울산울주a'), '울산울주a');
+
+const live119Id = WS.buildWeeklySettlementRecord({
+  platform: 'baemin',
+  channel: 'direct',
+  region: WS.parseBaeminFileName('20260902~20260908_주식회사 119컴퍼니_표준울산북필드B주식회사119컴퍼니_DP2608315001.xlsx').teamName,
+  fileName: '20260902~20260908_주식회사 119컴퍼니_표준울산북필드B주식회사119컴퍼니_DP2608315001.xlsx',
+  startDate: '2026-09-02',
+  endDate: '2026-09-08',
+  matchedRiders: [],
+  unmatchedRiders: []
+}).id;
+const liveEaglesId = WS.buildWeeklySettlementRecord({
+  platform: 'baemin',
+  channel: 'direct',
+  region: WS.parseBaeminFileName('20260902~20260908_배달 이글스_표준울산북필드B배달이글스_DP2608318332.xlsx').teamName,
+  fileName: '20260902~20260908_배달 이글스_표준울산북필드B배달이글스_DP2608318332.xlsx',
+  startDate: '2026-09-02',
+  endDate: '2026-09-08',
+  matchedRiders: [],
+  unmatchedRiders: []
+}).id;
+check('live 119/이글스 북필드B stay separate until selected', live119Id !== liveEaglesId, true);
 
 const id119 = WS.buildWeeklySettlementRecord({
   platform: 'baemin',
@@ -303,8 +349,8 @@ const idEagles = WS.buildWeeklySettlementRecord({
   matchedRiders: [],
   unmatchedRiders: []
 }).id;
-check('company aliases share settlement id', id119, idEagles);
-check('canonical region stored', WS.buildWeeklySettlementRecord({
+check('company transfer keeps separate ids', id119 !== idEagles, true);
+check('original region stored', WS.buildWeeklySettlementRecord({
   platform: 'baemin',
   channel: 'direct',
   region: '119라이더스_표준울산북필드B',
@@ -313,7 +359,7 @@ check('canonical region stored', WS.buildWeeklySettlementRecord({
   endDate: '2026-08-31',
   matchedRiders: [],
   unmatchedRiders: []
-}).region, '표준울산북필드B');
+}).region, '119라이더스_표준울산북필드B');
 
 const splitCompany = WS.mergeBaeminRidersFromParts([
   {
@@ -495,25 +541,23 @@ incomingEagles.sourceParts = [{
   riders: incomingEagles.riders
 }];
 const savedMerge = WS.saveWeeklySettlement(incomingEagles);
-check('save merges into existing company record', store.length, 1);
-check('save keeps existing id', savedMerge.id, 'weekly_direct_baemin_119riders_old');
-check('save merged calls stay 119', savedMerge.riders[0].weeklyOrderCount, 119);
+check('save does not auto-merge other company', store.length, 2);
 
 store.length = 0;
 const left = WS.buildWeeklySettlementRecord({
   platform: 'baemin',
   channel: 'direct',
-  region: '119라이더스_표준울산북필드B',
-  fileName: '20260826~20260901_119라이더스_표준울산북필드B.xlsx',
-  startDate: '2026-08-26',
-  endDate: '2026-09-01',
+  region: '주식회사 119컴퍼니_표준울산북필드B주식회사119컴퍼니_DP2608315001',
+  fileName: '20260902~20260908_주식회사 119컴퍼니_표준울산북필드B주식회사119컴퍼니_DP2608315001.xlsx',
+  startDate: '2026-09-02',
+  endDate: '2026-09-08',
   matchedRiders: [{
     baeminUserId: 'jihye',
     riderName: '정지혜',
     matched: true,
     matchedRiderId: 'd-jihye',
     weeklyOrderCount: 80,
-    amounts: { deliveryFee: 800000 }
+    amounts: { deliveryFee: 800000, withholdingTax: 26400 }
   }],
   unmatchedRiders: []
 });
@@ -527,17 +571,17 @@ left.sourceParts = [{
 const right = WS.buildWeeklySettlementRecord({
   platform: 'baemin',
   channel: 'direct',
-  region: '배달 이글스_표준울산북필드B',
-  fileName: '20260901~20260901_배달 이글스_표준울산북필드B.xlsx',
-  startDate: '2026-09-01',
-  endDate: '2026-09-01',
+  region: '배달 이글스_표준울산북필드B배달이글스_DP2608318332',
+  fileName: '20260902~20260908_배달 이글스_표준울산북필드B배달이글스_DP2608318332.xlsx',
+  startDate: '2026-09-02',
+  endDate: '2026-09-08',
   matchedRiders: [{
     baeminUserId: 'jihye',
     riderName: '정지혜',
     matched: true,
     matchedRiderId: 'd-jihye',
     weeklyOrderCount: 39,
-    amounts: { deliveryFee: 390000 }
+    amounts: { deliveryFee: 390000, withholdingTax: 12870 }
   }],
   unmatchedRiders: []
 });
@@ -549,10 +593,14 @@ right.sourceParts = [{
   riders: right.riders
 }];
 store.push(left, right);
-const consolidated = WS.consolidateOverlappingBaeminWeeklySettlements('direct');
-check('consolidate overlapping groups', consolidated, 1);
-check('consolidate one record left', store.length, 1);
-check('consolidate summed split week', store[0].riders[0].weeklyOrderCount, 119);
+const selected = WS.mergeSelectedWeeklySettlements([left, right], { channel: 'direct' });
+check('selected merge ok', selected.ok, true);
+check('selected merge one record left', store.length, 1);
+check('selected merge summed calls', store[0].riders[0].weeklyOrderCount, 119);
+check('selected merge summed fee', store[0].riders[0].amounts.deliveryFee, 1190000);
+check('selected merge summed tax', store[0].riders[0].amounts.withholdingTax, 39270);
+check('selected merge region plus', store[0].region.includes(' + '), true);
+check('selected merge file plus', store[0].fileName.includes(' + '), true);
 
 if (failures.length) {
   failures.forEach(msg => console.log('FAIL:', msg));

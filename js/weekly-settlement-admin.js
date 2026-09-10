@@ -1460,9 +1460,6 @@ const BremWeeklySettlementAdmin = (function () {
     const rowsEl = q(ch, 'SavedRows', platform);
     if (!rowsEl) return;
 
-    if (platform === 'baemin') {
-      BremWeeklySettlement.consolidateOverlappingBaeminWeeklySettlements?.(ch);
-    }
     BremStorage.settlementUploadLogs.syncWeeklyFromSavedRecords(ch);
     const weekStart = ensureWeeklyLogWeek(ch, platform);
     updateWeeklyLogWeekRangeLabel(ch, platform);
@@ -1475,7 +1472,7 @@ const BremWeeklySettlementAdmin = (function () {
     });
 
     if (!list.length) {
-      rowsEl.innerHTML = `<tr><td colspan="8" class="empty">${formatDate(weekStart)} 주에 업로드한 ${platformLabel(platform)} 주정산 기록이 없습니다.</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="${platform === 'baemin' ? 9 : 8}" class="empty">${formatDate(weekStart)} 주에 업로드한 ${platformLabel(platform)} 주정산 기록이 없습니다.</td></tr>`;
       return;
     }
 
@@ -1492,8 +1489,12 @@ const BremWeeklySettlementAdmin = (function () {
       const callFeeEditBtn = ch === 'direct' && item.linkedRecordId
         ? `<button type="button" class="small-btn" data-weekly-edit-call-fee="${escapeHtml(item.id)}">수수료 수정</button>`
         : '';
+      const mergeCell = platform === 'baemin' && item.linkedRecordId
+        ? `<td><input type="checkbox" data-weekly-merge-id="${escapeHtml(item.linkedRecordId)}"></td>`
+        : (platform === 'baemin' ? '<td></td>' : '');
       return `
       <tr>
+        ${mergeCell}
         <td>${formatDate(item.weekStart)} ~ ${formatDate(item.weekEnd)}</td>
         <td>${escapeHtml(item.region || '-')}</td>
         <td>${periodLabel}</td>
@@ -1510,6 +1511,49 @@ const BremWeeklySettlementAdmin = (function () {
       </tr>
     `;
     }).join('');
+    syncWeeklyMergeSelectAll(ch, platform);
+  }
+
+  function syncWeeklyMergeSelectAll(channel, platform) {
+    const box = q(channel, 'MergeSelectAll', platform);
+    const rowsEl = q(channel, 'SavedRows', platform);
+    if (!box || !rowsEl) return;
+    const boxes = [...rowsEl.querySelectorAll('input[data-weekly-merge-id]')];
+    box.checked = boxes.length > 0 && boxes.every(item => item.checked);
+    box.indeterminate = boxes.some(item => item.checked) && !box.checked;
+  }
+
+  async function mergeSelectedSavedSettlements(channel, platform) {
+    const ch = normChannel(channel);
+    const rowsEl = q(ch, 'SavedRows', platform);
+    const ids = [...new Set(
+      [...(rowsEl?.querySelectorAll('input[data-weekly-merge-id]:checked') || [])]
+        .map(box => String(box.dataset.weeklyMergeId || '').trim())
+        .filter(Boolean)
+    )];
+    if (ids.length < 2) {
+      showToast('합칠 정산서를 2건 이상 선택하세요.');
+      return;
+    }
+    const records = ids
+      .map(id => BremStorage.weeklySettlements.getById(id, ch) || BremStorage.weeklySettlements.getById(id))
+      .filter(Boolean);
+    if (records.length < 2) {
+      showToast('선택한 정산서를 찾지 못했습니다.');
+      return;
+    }
+    const labels = records.map(item => item.region || item.fileName || item.id).join('\n+ ');
+    if (!window.confirm(`선택한 ${records.length}건을 합칠까요?\n같은 기사는 콜수·배달료를 더하고, 표기는 지역A + 지역B 로 남습니다.\n\n${labels}`)) {
+      return;
+    }
+    const result = BremWeeklySettlement.mergeSelectedWeeklySettlements(records, { channel: ch });
+    if (!result?.ok) {
+      showToast(result?.error || '합치지 못했습니다.');
+      return;
+    }
+    await BremStorage.flushStorage?.();
+    renderSavedList(ch, platform);
+    showToast(`정산서 ${result.mergedCount}건을 합쳤습니다. 같은 기사 콜수·금액이 다시 계산됩니다.`);
   }
 
   function renderDetail(record) {
@@ -1750,6 +1794,21 @@ const BremWeeklySettlementAdmin = (function () {
     q(ch, 'UnmatchedRetryBtn', platform)?.addEventListener('click', () => {
       retryWeeklyUnmatched(ch, platform);
     });
+    if (platform === 'baemin') {
+      q(ch, 'MergeBtn', platform)?.addEventListener('click', () => {
+        void mergeSelectedSavedSettlements(ch, platform);
+      });
+      q(ch, 'MergeSelectAll', platform)?.addEventListener('change', event => {
+        const rowsEl = q(ch, 'SavedRows', platform);
+        [...(rowsEl?.querySelectorAll('input[data-weekly-merge-id]') || [])]
+          .forEach(box => { box.checked = event.target.checked; });
+      });
+      q(ch, 'SavedRows', platform)?.addEventListener('change', event => {
+        if (event.target?.matches?.('input[data-weekly-merge-id]')) {
+          syncWeeklyMergeSelectAll(ch, platform);
+        }
+      });
+    }
     if (ch === 'direct' && platform === 'baemin') {
       q(ch, 'ApplySheetPayoutBtn', platform)?.addEventListener('click', () => {
         applySelectedSheetPayout(ch, platform);

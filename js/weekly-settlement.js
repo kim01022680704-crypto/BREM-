@@ -32,9 +32,13 @@ const BremWeeklySettlement = (function () {
       .replace(/^_|_$/g, '') || 'unknown';
   }
 
-  // 배민 사업자(회사)가 바뀌어도 같은 권역 정산서는 한 주로 묶는다.
-  // 파일명 `119라이더스_표준울산북필드B` / `배달 이글스_표준울산북필드B` → 권역은 북필드B.
-  const BAEMIN_COMPANY_PREFIXES = Object.freeze([
+  // 배민 사업자가 바뀌어도 같은 권역 정산서는 한 주로 묶는다.
+  // `주식회사 119컴퍼니_표준울산북필드B주식회사119컴퍼니_DP…`
+  // `배달 이글스_표준울산북필드B배달이글스_DP…` → 권역은 표준울산북필드B.
+  const BAEMIN_COMPANY_ALIASES = Object.freeze([
+    '주식회사 119컴퍼니',
+    '주식회사119컴퍼니',
+    '119컴퍼니',
     '119라이더스',
     '119 라이더스',
     '배달 이글스',
@@ -42,48 +46,93 @@ const BremWeeklySettlement = (function () {
   ]);
 
   function compactBaeminLabel(value) {
-    return String(value || '').replace(/\s+/g, '').toLowerCase();
+    return String(value || '').replace(/[\s_\-–—]+/g, '').toLowerCase();
   }
 
-  function stripBaeminCompanyPrefix(teamName) {
-    const raw = String(teamName || '').trim();
-    if (!raw) return '';
-    const compactHead = compactBaeminLabel(raw);
-    const prefixes = [...BAEMIN_COMPANY_PREFIXES]
-      .map(prefix => prefix.replace(/\s+/g, ''))
-      .sort((a, b) => b.length - a.length);
-    for (const prefix of prefixes) {
-      if (!compactHead.startsWith(prefix.toLowerCase())) continue;
-      let index = 0;
-      let eaten = 0;
-      while (index < raw.length && eaten < prefix.length) {
-        if (/\s/.test(raw[index])) {
-          index += 1;
-          continue;
-        }
+  function trimBaeminLabelEdges(value) {
+    return String(value || '').replace(/^[\s_\-–—]+|[\s_\-–—]+$/g, '').trim();
+  }
+
+  function stripBaeminPartnerId(value) {
+    return trimBaeminLabelEdges(String(value || '').replace(/[_-\s]*DP\d+\s*$/i, ''));
+  }
+
+  function eatCompactPrefix(raw, compactAlias) {
+    let index = 0;
+    let eaten = 0;
+    while (index < raw.length && eaten < compactAlias.length) {
+      if (/[\s_\-–—]/.test(raw[index])) {
         index += 1;
-        eaten += 1;
+        continue;
       }
-      while (index < raw.length && /[\s_\-–—]/.test(raw[index])) index += 1;
-      const rest = raw.slice(index).trim();
+      index += 1;
+      eaten += 1;
+    }
+    while (index < raw.length && /[\s_\-–—]/.test(raw[index])) index += 1;
+    return trimBaeminLabelEdges(raw.slice(index));
+  }
+
+  function eatCompactSuffix(raw, compactAlias) {
+    let index = raw.length;
+    let eaten = 0;
+    while (index > 0 && eaten < compactAlias.length) {
+      index -= 1;
+      if (/[\s_\-–—]/.test(raw[index])) continue;
+      eaten += 1;
+    }
+    while (index > 0 && /[\s_\-–—]/.test(raw[index - 1])) index -= 1;
+    return trimBaeminLabelEdges(raw.slice(0, index));
+  }
+
+  function sortedBaeminCompanyAliases() {
+    return [...BAEMIN_COMPANY_ALIASES]
+      .map(alias => ({ alias, compact: compactBaeminLabel(alias) }))
+      .sort((a, b) => b.compact.length - a.compact.length);
+  }
+
+  function stripBaeminCompanyOnce(teamName) {
+    let raw = stripBaeminPartnerId(teamName);
+    if (!raw) return '';
+    const compact = compactBaeminLabel(raw);
+    const aliases = sortedBaeminCompanyAliases();
+    for (const item of aliases) {
+      if (compact === item.compact) continue;
+      if (!compact.startsWith(item.compact)) continue;
+      const rest = eatCompactPrefix(raw, item.compact);
+      if (rest) return rest;
+    }
+    for (const item of aliases) {
+      if (compact === item.compact) continue;
+      if (!compact.endsWith(item.compact)) continue;
+      const rest = eatCompactSuffix(raw, item.compact);
       if (rest) return rest;
     }
     return raw;
   }
 
+  function stripBaeminCompanyPrefix(teamName) {
+    return canonicalBaeminTeamRegion(teamName);
+  }
+
   function canonicalBaeminTeamRegion(teamName) {
-    const raw = String(teamName || '').trim();
-    return stripBaeminCompanyPrefix(raw) || raw;
+    const original = String(teamName || '').trim();
+    let current = original;
+    for (let i = 0; i < 6; i += 1) {
+      const next = stripBaeminCompanyOnce(current);
+      if (next === current) break;
+      current = next;
+    }
+    return stripBaeminPartnerId(current) || original;
   }
 
   function baeminCompanyLabelFromTeam(teamName) {
     const raw = String(teamName || '').trim();
     if (!raw) return '';
-    const compactHead = compactBaeminLabel(raw);
-    const prefixes = [...BAEMIN_COMPANY_PREFIXES]
-      .sort((a, b) => compactBaeminLabel(b).length - compactBaeminLabel(a).length);
-    for (const prefix of prefixes) {
-      if (compactHead.startsWith(compactBaeminLabel(prefix))) return prefix.replace(/\s+/g, '');
+    const compact = compactBaeminLabel(raw);
+    for (const item of sortedBaeminCompanyAliases()) {
+      if (compact.startsWith(item.compact) || compact.endsWith(item.compact)) {
+        return item.alias.replace(/\s+/g, '');
+      }
     }
     return '';
   }
@@ -1766,9 +1815,7 @@ const BremWeeklySettlement = (function () {
         paymentDate: payload.paymentDate || calculateCoupangSettlementDates(payload.startDate || parsedMeta.startDate).paymentDate
       };
 
-    const region = canonicalBaeminTeamRegion(
-      payload.region || parsedMeta.region || parsedMeta.teamName || ''
-    ) || (payload.region || parsedMeta.region || parsedMeta.teamName || '');
+    const region = String(payload.region || parsedMeta.region || parsedMeta.teamName || '').trim();
     const fileNames = Array.isArray(payload.fileNames)
       ? payload.fileNames.map(String).filter(Boolean)
       : (payload.fileName ? [String(payload.fileName)] : []);
@@ -1855,11 +1902,19 @@ const BremWeeklySettlement = (function () {
     push(BremStorage.weeklySettlements.getById(record.id));
     const weekStart = baeminWeekStartKey(record.startDate || record.baseSettlementDate);
     const canon = canonicalBaeminTeamRegion(record.region);
+    const company = compactBaeminLabel(
+      baeminCompanyLabelFromTeam(record.region) || baeminCompanyLabelFromFileName(record.fileName || '')
+    );
     if (weekStart && canon) {
       (BremStorage.weeklySettlements.getAll(channel) || []).forEach(item => {
         if (normalizePlatform(item.platform) !== 'baemin') return;
         if (canonicalBaeminTeamRegion(item.region) !== canon) return;
         if (baeminWeekStartKey(item.startDate || item.baseSettlementDate) !== weekStart) return;
+        const itemCompany = compactBaeminLabel(
+          baeminCompanyLabelFromTeam(item.region) || baeminCompanyLabelFromFileName(item.fileName || '')
+        );
+        // 회사 이관(119→이글스)은 자동으로 합치지 않는다. 같은 회사 월말 분할만 자동 합친다.
+        if (company && itemCompany && company !== itemCompany) return;
         push(item);
       });
     }
@@ -1872,7 +1927,7 @@ const BremWeeklySettlement = (function () {
     let toSave = record;
     const extraIds = [];
     // 배민: 같은 권역(회사명 무시)·수~화 주 기존 건이 있으면 part upsert 후 금액·콜수 합산
-    if (normalizePlatform(record.platform) === 'baemin') {
+    if (normalizePlatform(record.platform) === 'baemin' && options.skipAutoMerge !== true) {
       const existingList = listExistingBaeminWeeklyRecords(record, channel);
       if (existingList.length) {
         let merged = existingList[0];
@@ -1898,8 +1953,137 @@ const BremWeeklySettlement = (function () {
     const saved = BremStorage.weeklySettlements.save(refreshed, options);
     extraIds
       .filter(id => id && id !== String(saved?.id || refreshed.id || ''))
-      .forEach(id => BremStorage.weeklySettlements.remove?.(id, channel));
+      .forEach(id => {
+        BremStorage.weeklySettlements.remove?.(id, channel);
+        relinkWeeklyUploadLogs(id, saved, channel);
+      });
     return saved;
+  }
+
+  function relinkWeeklyUploadLogs(fromId, toRecord, channel) {
+    const logsApi = BremStorage.settlementUploadLogs;
+    if (!logsApi?.getAll || !logsApi?.update) return;
+    const keepId = String(toRecord?.id || '').trim();
+    const extraId = String(fromId || '').trim();
+    if (!keepId || !extraId || extraId === keepId) return;
+    (logsApi.getAll(channel) || []).forEach(log => {
+      if (String(log.linkedRecordId || '').trim() !== extraId) return;
+      logsApi.update(log.id, {
+        linkedRecordId: keepId,
+        region: toRecord.region || log.region,
+        channel
+      });
+    });
+  }
+
+  function uniqueJoinLabels(values) {
+    const seen = new Set();
+    const out = [];
+    (Array.isArray(values) ? values : [values]).forEach(value => {
+      String(value || '').split(/\s*\+\s*/).forEach(part => {
+        const label = String(part || '').trim();
+        if (!label) return;
+        const key = compactBaeminLabel(label);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        out.push(label);
+      });
+    });
+    return out;
+  }
+
+  /**
+   * 관리자가 고른 주정산서를 한 건으로 합친다.
+   * 회사 이관처럼 같은 사람이 두 장에 있으면 콜수·금액을 더하고,
+   * 지역·파일명은 `어디 + 어디` 로 남긴다.
+   */
+  function mergeSelectedWeeklySettlements(records = [], options = {}) {
+    const list = [];
+    const seen = new Set();
+    (Array.isArray(records) ? records : []).forEach(record => {
+      const id = String(record?.id || '').trim();
+      if (!record || !id || seen.has(id)) return;
+      seen.add(id);
+      list.push(record);
+    });
+    if (list.length < 2) {
+      return { ok: false, error: '합칠 정산서를 2건 이상 선택하세요.' };
+    }
+    const channel = options.channel === 'bro' || list[0].channel === 'bro' ? 'bro' : 'direct';
+    const platform = normalizePlatform(list[0].platform || 'baemin');
+    const parts = list.flatMap(record => {
+      const listed = listBaeminSourceParts(record);
+      if (listed.length) return listed;
+      return [{
+        fileName: String(record.fileName || record.region || record.id || '').trim(),
+        startDate: String(record.startDate || '').slice(0, 10),
+        endDate: String(record.endDate || '').slice(0, 10),
+        riders: Array.isArray(record.riders) ? record.riders : []
+      }];
+    });
+    const riders = mergeBaeminRiders(parts.map(part => part.riders));
+    const startDate = list.map(item => String(item.startDate || '').slice(0, 10)).filter(Boolean).sort()[0] || '';
+    const endDate = list.map(item => String(item.endDate || '').slice(0, 10)).filter(Boolean).sort().pop() || '';
+    const region = uniqueJoinLabels(list.map(item => item.region)).join(' + ');
+    const fileNames = uniqueJoinLabels(list.flatMap(item => [
+      ...(Array.isArray(item.fileNames) ? item.fileNames : []),
+      item.fileName
+    ]));
+    const keep = list[0];
+    const extraIds = list.slice(1).map(item => String(item.id || '').trim()).filter(id => id && id !== keep.id);
+    const toSave = {
+      ...keep,
+      platform,
+      channel,
+      region,
+      fileName: fileNames.join(' + '),
+      fileNames,
+      sourceParts: parts,
+      startDate,
+      endDate,
+      settlementWeekLabel: startDate && endDate ? `${startDate} ~ ${endDate}` : String(keep.settlementWeekLabel || ''),
+      riders,
+      matchedNamesLabel: buildMatchedNamesLabel(riders.filter(item => item.matched || item.matchedRiderId)),
+      summary: {
+        ...buildWeeklySummary(
+          riders.filter(item => item.matched || item.matchedRiderId),
+          riders.filter(item => !item.matched && !item.matchedRiderId)
+        ),
+        channel
+      }
+    };
+    const saved = saveWeeklySettlement(toSave, { ...options, skipAutoMerge: true });
+    extraIds.forEach(id => {
+      BremStorage.weeklySettlements.remove?.(id, channel);
+      relinkWeeklyUploadLogs(id, saved, channel);
+    });
+    collapseWeeklyUploadLogsForMerge(saved, extraIds, channel);
+    return { ok: true, record: saved, mergedCount: list.length };
+  }
+
+  function collapseWeeklyUploadLogsForMerge(saved, extraIds, channel) {
+    const logsApi = BremStorage.settlementUploadLogs;
+    if (!logsApi?.getAll) return;
+    const keepId = String(saved?.id || '').trim();
+    const extra = new Set((extraIds || []).map(id => String(id || '').trim()).filter(Boolean));
+    const related = (logsApi.getAll(channel) || []).filter(log => {
+      const linked = String(log.linkedRecordId || '').trim();
+      return linked === keepId || extra.has(linked);
+    });
+    if (!related.length) return;
+    const primary = related[0];
+    related.slice(1).forEach(log => {
+      logsApi.remove?.(log.id, { rollback: false });
+    });
+    logsApi.update?.(primary.id, {
+      linkedRecordId: keepId,
+      region: saved.region,
+      fileName: saved.fileName,
+      startDate: saved.startDate,
+      endDate: saved.endDate,
+      matchedCount: Number(saved.summary?.matchedRiders || saved.riders?.length || 0),
+      channel
+    });
   }
 
   /** 이미 따로 저장된 같은 권역·주차 배민 정산서를 월말 분할처럼 한 건으로 합친다. */
@@ -2010,16 +2194,17 @@ const BremWeeklySettlement = (function () {
           || String(part.region || options.region || '').trim()
           || 'unknown';
         const weekStart = part.weekStart || baeminWeekStartKey(part.startDate) || '';
-        const key = `${slugify(region)}|${weekStart}`;
+        const company = compactBaeminLabel(
+          baeminCompanyLabelFromTeam(part.region) || baeminCompanyLabelFromFileName(part.fileName)
+        ) || 'none';
+        const key = `${company}|${slugify(region)}|${weekStart}`;
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(part);
       });
 
       const records = [];
       for (const groupParts of groups.values()) {
-        const region = canonicalBaeminTeamRegion(
-          groupParts.map(p => p.region).find(Boolean) || options.region || ''
-        ) || groupParts.map(p => p.region).find(Boolean) || options.region || '';
+        const region = groupParts.map(p => p.sourceTeamName || p.region).find(Boolean) || options.region || '';
         const startDate = groupParts.map(p => p.startDate).filter(Boolean).sort()[0] || options.startDate || '';
         const endDate = groupParts.map(p => p.endDate).filter(Boolean).sort().pop() || options.endDate || '';
         const extracted = mergeBaeminRidersFromParts(groupParts);
@@ -2239,6 +2424,7 @@ const BremWeeklySettlement = (function () {
     buildWeeklySettlementRecord,
     refreshWeeklySettlementRiders,
     saveWeeklySettlement,
+    mergeSelectedWeeklySettlements,
     consolidateOverlappingBaeminWeeklySettlements,
     loadWeeklySettlements,
     deleteWeeklySettlement,
