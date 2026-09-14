@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
   <link rel="stylesheet" href="css/driver-tokens.css?v=20260914dark1">
-  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260914perf1">
+  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260914perf2">
 </head>
 <body>
   <section class="login-page" id="driverLoginCard">
@@ -907,6 +907,22 @@
                 </table>
               </div>
             </article>
+
+            <article class="panel driver-perf-cal-panel">
+              <div class="panel-header">
+                <h2>월별 실적 달력</h2>
+                <div class="week-nav">
+                  <button type="button" id="perfCalPrevBtn">&lt;&lt;</button>
+                  <span id="perfCalLabel">-</span>
+                  <button type="button" id="perfCalNextBtn">&gt;&gt;</button>
+                </div>
+              </div>
+              <div class="ds-cal">
+                <div class="ds-cal__dow"><span class="ds-cal__sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="ds-cal__sat">토</span></div>
+                <div class="ds-cal__grid" id="perfCalGrid"></div>
+                <div class="ds-cal__legend"><span><i class="ds-cal__dot ds-cal__dot--call"></i>콜수(배민+쿠팡)</span><span><i class="ds-cal__dot ds-cal__dot--amt"></i>정산금액(만원)</span></div>
+              </div>
+            </article>
           </section>
 
           <div class="content-grid driver-home-block">
@@ -1201,6 +1217,7 @@
   <script src="js/promotion-count-sim.js?v=20260910missim1"></script>
   <script src="js/driver.js?v=20260910missim1"></script>
   <script src="js/driver-app-nav.js?v=20260914perf1"></script>
+  <script src="js/driver-perf-calendar.js?v=20260914perf2"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

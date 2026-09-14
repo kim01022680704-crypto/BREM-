@@ -1155,3 +1155,38 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .brem-mobile-cards tbody td { color: var(--rd-text); }
 .rider-ds .brem-mobile-cards tbody td::before { color: var(--rd-text-muted); }
 .rider-ds .brem-mobile-cards tbody td:first-child { border-bottom-color: var(--rd-border); color: var(--rd-text); }
+
+/* =====================================================================
+   월별 실적 달력 (#driverPerfCalPanel / .ds-cal) — Phase 3
+   ===================================================================== */
+.rider-ds .ds-cal { padding: 10px 12px 12px; }
+.rider-ds .ds-cal__dow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 6px; }
+.rider-ds .ds-cal__dow span { text-align: center; font-size: var(--rd-fs-100); font-weight: 700; color: var(--rd-text-muted); }
+.rider-ds .ds-cal__dow .ds-cal__sun { color: var(--rd-danger); }
+.rider-ds .ds-cal__dow .ds-cal__sat { color: var(--rd-info); }
+.rider-ds .ds-cal__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.rider-ds .ds-cal__cell {
+  aspect-ratio: 1 / 1.28;
+  border: 1px solid var(--rd-border);
+  border-radius: 7px;
+  background: var(--rd-card-2);
+  padding: 3px 1px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.rider-ds .ds-cal__cell--empty { border: 0; background: transparent; }
+.rider-ds .ds-cal__cell--today { border-color: var(--rd-accent); box-shadow: 0 0 0 1px var(--rd-accent) inset; }
+.rider-ds .ds-cal__day { font-size: 10px; font-weight: 700; color: var(--rd-text-muted); line-height: 1.1; }
+.rider-ds .ds-cal__cell--sun .ds-cal__day { color: var(--rd-danger); }
+.rider-ds .ds-cal__cell--sat .ds-cal__day { color: var(--rd-info); }
+.rider-ds .ds-cal__call { margin-top: 2px; font-size: 9px; font-weight: 700; color: var(--rd-text); line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rider-ds .ds-cal__amt { margin-top: auto; font-size: 10px; font-weight: 800; color: var(--rd-accent-strong); line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rider-ds .ds-cal__amt small { font-size: 8px; font-weight: 700; margin-left: 1px; }
+.rider-ds .ds-cal__legend { display: flex; justify-content: center; gap: 16px; margin-top: 10px; }
+.rider-ds .ds-cal__legend span { display: inline-flex; align-items: center; gap: 5px; font-size: var(--rd-fs-100); color: var(--rd-text-muted); }
+.rider-ds .ds-cal__dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.rider-ds .ds-cal__dot--call { background: var(--rd-text); }
+.rider-ds .ds-cal__dot--amt { background: var(--rd-accent-strong); }
