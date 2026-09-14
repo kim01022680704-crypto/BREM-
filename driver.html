@@ -16,11 +16,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260910missim1">
+  <link rel="stylesheet" href="css/driver.css?v=20260914perf1">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
   <link rel="stylesheet" href="css/driver-tokens.css?v=20260914dark1">
-  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260914dark1">
+  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260914perf1">
 </head>
 <body>
   <section class="login-page" id="driverLoginCard">
@@ -789,7 +789,14 @@
             </div>
           </div>
 
-          <section class="summary-section driver-home-block">
+          <section class="driver-perf-panel" id="driverPerfPanel">
+          <div class="week-nav week-nav--perf">
+            <button type="button" id="prevWeekBtn">&lt;&lt;</button>
+            <span id="dailyRange">전체 기록</span>
+            <button type="button" id="nextWeekBtn">&gt;&gt;</button>
+          </div>
+
+          <section class="summary-section">
             <div class="summary-grid summary-grid--metrics">
               <button type="button" class="summary-card summary-card--metric summary-card--action" id="monthTargetCard" aria-label="월간 목표 설정">
                 <span class="summary-card__label">월간 목표</span>
@@ -882,15 +889,9 @@
             </div>
           </section>
 
-          <div class="content-grid driver-home-block">
-            <article class="panel">
+          <article class="panel driver-perf-daily">
               <div class="panel-header">
                 <h2>일별 콜수</h2>
-                <div class="week-nav">
-                  <button type="button" id="prevWeekBtn">&lt;&lt;</button>
-                  <span id="dailyRange">전체 기록</span>
-                  <button type="button" id="nextWeekBtn">&gt;&gt;</button>
-                </div>
               </div>
               <div class="table-wrap daily-calls-wrap">
                 <table class="daily-calls-table">
@@ -906,7 +907,9 @@
                 </table>
               </div>
             </article>
+          </section>
 
+          <div class="content-grid driver-home-block">
             <article class="panel">
               <div class="panel-header">
                 <h2>나의 미션</h2>
@@ -981,6 +984,10 @@
         <button type="button" class="driver-app-nav__item is-active" data-driver-tab="home">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
           <span>홈</span>
+        </button>
+        <button type="button" class="driver-app-nav__item" data-driver-tab="perf">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V4M4 20h16M8 20v-6M13 20V9M18 20v-9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>실적</span>
         </button>
         <button type="button" class="driver-app-nav__item" data-driver-tab="notice">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h12v14H6z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 9h6M9 13h6M9 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
@@ -1193,7 +1200,7 @@
   <script src="js/driver-inquiries.js?v=20260817inq7"></script>
   <script src="js/promotion-count-sim.js?v=20260910missim1"></script>
   <script src="js/driver.js?v=20260910missim1"></script>
-  <script src="js/driver-app-nav.js?v=20260910branch2"></script>
+  <script src="js/driver-app-nav.js?v=20260914perf1"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

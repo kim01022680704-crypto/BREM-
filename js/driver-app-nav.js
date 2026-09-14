@@ -95,7 +95,7 @@
     current = next;
     syncActive();
     if (!options.keepPanels) closeAllPanels();
-    if (next === 'home' || next === 'notice') return true;
+    if (next === 'home' || next === 'notice' || next === 'perf') return true;
     openTabPanel(next);
     return true;
   }

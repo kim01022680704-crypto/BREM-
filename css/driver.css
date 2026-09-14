@@ -2053,6 +2053,10 @@ html.brem-app-nav[data-driver-tab]:not([data-driver-tab="mission"]) #driverUrgen
   display: none !important;
 }
 
+html.brem-app-nav[data-driver-tab]:not([data-driver-tab="perf"]) #driverPerfPanel {
+  display: none !important;
+}
+
 .notice-badge {
   display: inline-block;
   margin-right: 6px;
@@ -2226,6 +2230,80 @@ html.brem-app-nav[data-driver-tab]:not([data-driver-tab="mission"]) #driverUrgen
 .mission-conditions {
   margin-top: 8px;
   color: var(--muted);
+}
+
+.mission-sim {
+  margin-top: 12px;
+  padding: 12px 12px 10px;
+  border: 1px solid rgba(232, 197, 71, 0.28);
+  border-radius: 14px;
+  background: rgba(232, 197, 71, 0.05);
+}
+
+.mission-sim__label {
+  margin: 0 0 8px;
+  color: #e8c547;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.mission-sim__now {
+  margin: 0 0 10px;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.mission-sim__guess {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 0.86rem;
+}
+
+.mission-sim__guess input {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #111;
+  color: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.mission-sim__guess strong {
+  margin: 0;
+  color: #ffd400;
+  font-size: 1rem;
+}
+
+.mission-sim__rows {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mission-sim__rows li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.84rem;
+}
+
+.mission-sim__rows span {
+  color: var(--muted);
+}
+
+.mission-sim__note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
 }
 
 /* ── Calendars ── */

@@ -1108,3 +1108,50 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 
 .rider-ds .driver-branch-rider-list-head span { background: var(--rd-card-2); color: var(--rd-text-muted); border: 1px solid var(--rd-border); }
 .rider-ds .driver-region-dash-rank__count { color: var(--rd-text); }
+
+/* =====================================================================
+   실적 전용 탭 (#driverPerfPanel) — 상단 주 전환 스위처 카드화
+   ===================================================================== */
+.rider-ds .driver-perf-panel { display: grid; gap: 12px; }
+.rider-ds .week-nav--perf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 8px;
+  background: var(--rd-card);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+}
+.rider-ds .week-nav--perf button {
+  flex-shrink: 0;
+  min-width: 40px;
+  min-height: 40px;
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-card-2);
+  color: var(--rd-accent);
+  font-weight: 700;
+}
+.rider-ds .week-nav--perf button:hover { background: var(--rd-hover); border-color: var(--rd-accent); }
+.rider-ds .week-nav--perf span {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  color: var(--rd-text);
+  font-size: var(--rd-fs-500);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 모바일 표→카드 변환(brem-mobile-cards)의 밝은 카드 다크화 (일별 콜수 등) */
+.rider-ds .brem-mobile-cards tbody tr {
+  background: var(--rd-card-2);
+  border-color: var(--rd-border);
+  box-shadow: var(--rd-shadow-sm);
+}
+.rider-ds .brem-mobile-cards tbody td { color: var(--rd-text); }
+.rider-ds .brem-mobile-cards tbody td::before { color: var(--rd-text-muted); }
+.rider-ds .brem-mobile-cards tbody td:first-child { border-bottom-color: var(--rd-border); color: var(--rd-text); }
