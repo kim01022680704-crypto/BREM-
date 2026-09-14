@@ -62,37 +62,33 @@ function mergeMetrics(a = {}, b = {}) {
   return out;
 }
 
-function denyTotal(metrics = {}) {
-  return Number(metrics.foodReject || 0) + Number(metrics.bmartReject || 0) + Number(metrics.storeReject || 0)
-    + Number(metrics.foodCancel || 0) + Number(metrics.bmartCancel || 0) + Number(metrics.storeCancel || 0)
-    + Number(metrics.foodRiderFault || 0) + Number(metrics.bmartRiderFault || 0) + Number(metrics.storeRiderFault || 0);
-}
-
+// 배민 거절/수락율 규칙: 「푸드(음식배달)」만 집계에 포함. 비마트·스토어는 상세 표시용일 뿐 수락율/거절 합계에 미포함.
 function calcAcceptRate(metrics = {}) {
   const complete = Number(metrics.complete || 0);
-  const deny = denyTotal(metrics);
+  const deny = Number(metrics.foodReject || 0)
+    + Number(metrics.foodCancel || 0)
+    + Number(metrics.foodRiderFault || 0);
   const denom = complete + deny;
   if (denom <= 0) return null;
   return Math.round((100 - (deny / denom) * 100) * 10) / 10;
 }
 
-/** 거절율 stats: 헤드라인 합계 + 서비스별(푸드·비마트·스토어) 상세 (크롤 원본 기준) */
+/**
+ * 거절율 stats
+ *  - 헤드라인(거절/취소/귀책 합계·수락율) = 푸드 기준 (원래 규칙 유지)
+ *  - 서비스별 상세(rejectByService 등) = 크롤 원본 푸드/비마트/스토어 표시용
+ *    (total 키를 넣지 않아 renderRateDetail 헤드라인은 rejectCount(=푸드)로 폴백됨)
+ */
 function buildRejectionStats(metrics = {}) {
   const m = k => Number(metrics[k] || 0);
-  const rejectFood = m('foodReject'), rejectBmart = m('bmartReject'), rejectStore = m('storeReject');
-  const cancelFood = m('foodCancel'), cancelBmart = m('bmartCancel'), cancelStore = m('storeCancel');
-  const riderFood = m('foodRiderFault'), riderBmart = m('bmartRiderFault'), riderStore = m('storeRiderFault');
-  const rejectTotal = rejectFood + rejectBmart + rejectStore;
-  const cancelTotal = cancelFood + cancelBmart + cancelStore;
-  const riderTotal = riderFood + riderBmart + riderStore;
   return {
     completeTotal: m('complete'),
-    rejectCount: rejectTotal,
-    dispatchCancelCount: cancelTotal,
-    riderCancelCount: riderTotal,
-    rejectByService: { food: rejectFood, bmart: rejectBmart, store: rejectStore, total: rejectTotal },
-    dispatchCancelByService: { food: cancelFood, bmart: cancelBmart, store: cancelStore, total: cancelTotal },
-    riderFaultByService: { food: riderFood, bmart: riderBmart, store: riderStore, total: riderTotal },
+    rejectCount: m('foodReject'),
+    dispatchCancelCount: m('foodCancel'),
+    riderCancelCount: m('foodRiderFault'),
+    rejectByService: { food: m('foodReject'), bmart: m('bmartReject'), store: m('storeReject') },
+    dispatchCancelByService: { food: m('foodCancel'), bmart: m('bmartCancel'), store: m('storeCancel') },
+    riderFaultByService: { food: m('foodRiderFault'), bmart: m('bmartRiderFault'), store: m('storeRiderFault') },
     unmeasured: false
   };
 }
