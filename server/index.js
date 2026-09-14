@@ -345,9 +345,17 @@ app.post('/api/internal/baemin-auth-alert', async (req, res) => {
       return res.status(401).json({ error: 'unauthorized' });
     }
     const body = req.body || {};
+    const isTest = body.test === true;
     const recovered = body.recovered === true;
     const reason = String(body.reason || '').slice(0, 300);
-    const payload = recovered
+    const payload = isTest
+      ? {
+          title: '🔔 배민 알림 연결 테스트',
+          body: '관리자앱 푸시가 정상 연결되었습니다. 배민 재인증이 필요할 때 이 채널로 알림이 옵니다.',
+          channelId: 'brem_inquiry',
+          data: { type: 'baemin-auth-test' }
+        }
+      : recovered
       ? {
           title: '✅ 배민 크롤링 세션 복구',
           body: '배민 로그인/인증이 복구되어 자동 수집이 재개됐습니다.',
