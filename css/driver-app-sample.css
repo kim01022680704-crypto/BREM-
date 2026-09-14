@@ -1077,6 +1077,10 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .driver-notice-count { color: var(--rd-text-muted); }
 .rider-ds .empty-text { color: var(--rd-text-muted); }
 
+/* 헤더 반영 알림: "최근 반영 시간 + 새로고침"(준비완료 상태)은 숨김 —
+   로딩/에러 피드백은 그대로 표시(JS 무수정, readyEl 표시 시에만 카드 숨김) */
+.rider-ds #riderPublishNotice:has(#riderPublishReady:not([hidden])) { display: none !important; }
+
 .rider-ds .notice-popup__dialog {
   background: var(--rd-card);
   border: 1px solid var(--rd-border);
