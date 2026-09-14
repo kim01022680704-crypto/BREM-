@@ -9435,7 +9435,8 @@ body.driver-popup-open {
 .driver-popup-modal__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(0, 0, 0, 0.84);
+  backdrop-filter: blur(2px);
 }
 
 .driver-popup-modal__dialog {
@@ -9443,13 +9444,24 @@ body.driver-popup-open {
   z-index: 1;
   display: flex;
   flex-direction: column;
-  width: min(1080px, 100%);
-  height: min(860px, calc(100vh - 40px));
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: #121212;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  width: min(1000px, 100%);
+  height: min(760px, calc(100vh - 40px));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: #0a0a0a;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
   overflow: hidden;
+}
+
+/* 간이 등록: 좁고 컴팩트하게 / 목록: 넓게 */
+.driver-popup-modal__dialog[data-popup-type="register"] {
+  width: min(600px, 100%);
+  height: min(700px, calc(100vh - 40px));
+}
+
+.driver-popup-modal__dialog[data-popup-type="list"] {
+  width: min(1000px, 100%);
+  height: min(760px, calc(100vh - 40px));
 }
 
 .driver-popup-modal__head {
@@ -9458,14 +9470,29 @@ body.driver-popup-open {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--line);
-  background: #161616;
+  padding: 15px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, #131313, #0d0d0d);
 }
 
 .driver-popup-modal__head h3 {
+  position: relative;
   margin: 0;
-  font-size: 1.1rem;
+  padding-left: 13px;
+  font-size: 1.06rem;
+  letter-spacing: -0.01em;
+}
+
+.driver-popup-modal__head h3::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 15px;
+  border-radius: 2px;
+  background: var(--yellow);
 }
 
 .driver-popup-modal__head-actions {
@@ -9514,7 +9541,7 @@ body.driver-popup-open {
 .driver-popup-modal__body {
   flex: 1;
   min-height: 0;
-  background: #0f0f0f;
+  background: #0a0a0a;
 }
 
 .driver-popup-modal__frame {

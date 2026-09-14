@@ -16,9 +16,9 @@
   <script>
     (function () {
       try {
-        if (new URLSearchParams(location.search).get('embed') === '1') {
-          document.documentElement.classList.add('is-embed-popup');
-        }
+        var p = new URLSearchParams(location.search);
+        if (p.get('embed') === '1') document.documentElement.classList.add('is-embed-popup');
+        if (p.get('simple') === '1') document.documentElement.classList.add('is-embed-simple');
       } catch (e) {}
     })();
   </script>
@@ -29,7 +29,14 @@
     html.is-embed-popup .drivers-header { display: none !important; }
     html.is-embed-popup .drivers-page .index-content,
     html.is-embed-popup .index-content { max-height: none; padding: 14px 16px; }
-    html.is-embed-popup body { background: #0f0f0f; }
+    html.is-embed-popup body { background: #0a0a0a; }
+    /* 간이 목록: 관리/삭제 버튼·선택·관리 컬럼 숨겨 "확인 전용" (표시 전용, 기능 영향 없음) */
+    html.is-embed-simple .filters--compact { display: none !important; }
+    html.is-embed-simple .list-selection-bar { display: none !important; }
+    html.is-embed-simple .col-select,
+    html.is-embed-simple .col-privacy,
+    html.is-embed-simple .col-actions { display: none !important; }
+    html.is-embed-simple .list-panel { border: 0; box-shadow: none; background: transparent; }
   </style>
 </head>
 <body class="drivers-page">

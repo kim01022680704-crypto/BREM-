@@ -16,9 +16,9 @@
   <script>
     (function () {
       try {
-        if (new URLSearchParams(location.search).get('embed') === '1') {
-          document.documentElement.classList.add('is-embed-popup');
-        }
+        var p = new URLSearchParams(location.search);
+        if (p.get('embed') === '1') document.documentElement.classList.add('is-embed-popup');
+        if (p.get('simple') === '1') document.documentElement.classList.add('is-embed-simple');
       } catch (e) {}
     })();
   </script>
@@ -29,7 +29,12 @@
     html.is-embed-popup .drivers-header { display: none !important; }
     html.is-embed-popup .index-content,
     html.is-embed-popup .index-content--register { max-height: none; padding: 14px 16px; }
-    html.is-embed-popup body { background: #0f0f0f; }
+    html.is-embed-popup body { background: #0a0a0a; }
+    /* 간이 등록: 상단 툴바/모드탭/제목 숨겨 핵심 입력만 (표시 전용, 기능 영향 없음) */
+    html.is-embed-simple .register-top--desktop { display: none !important; }
+    html.is-embed-simple .panel-header--register { display: none !important; }
+    html.is-embed-simple .layout--register { padding: 0; }
+    html.is-embed-simple .form-panel--register { border: 0; box-shadow: none; background: transparent; padding: 4px 2px; }
   </style>
 </head>
 <body class="register-page drivers-page">

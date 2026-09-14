@@ -10,18 +10,18 @@
 
   var CONFIG = {
     register: {
-      title: '기사 등록',
-      src: 'rider-manage.html?register=1&embed=1',
+      title: '기사 간이 등록',
+      src: 'rider-manage.html?register=1&embed=1&simple=1',
       full: 'rider-manage.html?register=1'
     },
     list: {
-      title: '기사 목록 · 검색',
-      src: 'drivers.html?embed=1',
+      title: '기사 목록 · 확인',
+      src: 'drivers.html?embed=1&simple=1',
       full: 'drivers.html'
     }
   };
 
-  var modal, frame, titleEl, expandEl;
+  var modal, frame, titleEl, expandEl, dialogEl;
   var lastFocus = null;
 
   function els() {
@@ -29,6 +29,7 @@
     frame = frame || document.getElementById('driverPopupFrame');
     titleEl = titleEl || document.getElementById('driverPopupTitle');
     expandEl = expandEl || document.getElementById('driverPopupExpand');
+    dialogEl = dialogEl || (modal && modal.querySelector('.driver-popup-modal__dialog'));
     return modal && frame;
   }
 
@@ -39,6 +40,7 @@
 
     if (titleEl) titleEl.textContent = conf.title;
     if (expandEl) expandEl.setAttribute('href', conf.full);
+    if (dialogEl) dialogEl.setAttribute('data-popup-type', type);
 
     // iframe 로드는 열릴 때만(불필요한 사전 로드 방지)
     if (frame.getAttribute('src') !== conf.src) {
