@@ -56,6 +56,20 @@
     return utils.buildPromotionBulkMap(getPromotionAggregatedRows());
   }
 
+  // 프로모션 배치의 "내용 서명" — 기사별 금액을 정규화(기사id:금액 정렬)해서 만든다.
+  // 동일 파일/내용을 다시 적용해 이중 계상되는 것을 감지하는 용도(계산엔 영향 없음).
+  function promotionBatchSignature(rows) {
+    const bulkUtils = window.BremPayrollPromotionBulk;
+    const list = bulkUtils?.aggregateMatchedRowsByDriver
+      ? (bulkUtils.aggregateMatchedRowsByDriver(rows).rows || [])
+      : (Array.isArray(rows) ? rows : []);
+    return list
+      .filter(r => Number(r.bremPromotion || 0) > 0 && String(r.driverId || '').trim())
+      .map(r => `${String(r.driverId).trim()}:${Math.round(Number(r.bremPromotion || 0))}`)
+      .sort()
+      .join('|');
+  }
+
   function getOtherPaymentAggregatedRows() {
     return state.otherPaymentAppliedBatches.flatMap(batch => batch.rows || []);
   }
@@ -1526,11 +1540,28 @@
     }
 
     const summary = bulkUtils.summarizeRows(toApply);
+
+    // 이중 계상 방지: 동일한 내용(기사별 금액)이 이미 적용돼 있으면 강하게 경고한다.
+    const newSig = promotionBatchSignature(toApply);
+    const dupBatch = newSig
+      ? state.promotionAppliedBatches.find(b => promotionBatchSignature(b.rows) === newSig)
+      : null;
+    if (dupBatch) {
+      const ok = window.confirm(
+        '⚠️ 동일한 프로모션 내용이 이미 적용되어 있습니다.\n'
+        + `(기존: ${dupBatch.fileName || '-'} · 기사 ${summary.matched}명 · 합계 ${summary.bremPromotionTotal.toLocaleString('ko-KR')}원)\n\n`
+        + '지금 다시 적용하면 같은 금액이 한 번 더 합산되어 2배가 됩니다.\n\n'
+        + '그래도 중복 적용할까요? (일반적으로 「취소」가 맞습니다)'
+      );
+      if (!ok) return;
+    }
+
     const batch = {
       id: `promo-batch-${Date.now()}`,
       fileName: state.promotionPendingFileName || 'BREM프로모션.xlsx',
       appliedAt: new Date().toISOString(),
       rows: toApply.map(row => ({ ...row })),
+      signature: newSig,
       matchedCount: summary.matched,
       totalAmount: summary.bremPromotionTotal,
       mergedAlreadyApplied: filtered.mergedAlreadyApplied || 0,
@@ -1702,9 +1733,16 @@
     }
 
     const targetLines = weekLines.filter(line => line.uploadId === targetUploadId);
-    const matchedDrivers = [...bulkMap.entries()].filter(([driverId, bulk]) =>
-      Boolean(findSavedLineForBulk(targetLines, driverId, bulk))
-    ).length;
+    let matchedDrivers = 0;
+    let alreadyPromoCount = 0; // 저장 시 이미 프로모션이 baked-in(SET)된 명세서 수
+    bulkMap.forEach((bulk, driverId) => {
+      const match = findSavedLineForBulk(targetLines, driverId, bulk);
+      if (!match) return;
+      matchedDrivers += 1;
+      const raw = match.rawData && typeof match.rawData === 'object' ? match.rawData : {};
+      const curPromo = utils.parseMoney ? utils.parseMoney(raw.bremPromotion) : Number(raw.bremPromotion) || 0;
+      if (raw.bremPromotionFromBulk === true && curPromo > 0) alreadyPromoCount += 1;
+    });
     const unmatchedDrivers = bulkMap.size - matchedDrivers;
 
     const ok = window.confirm(
@@ -1712,6 +1750,9 @@
       + `저장된 명세서 ${targetLines.length}명에 BREM프로모션을 합산합니다.\n`
       + `· 추가 금액 합계 ${addTotal.toLocaleString('ko-KR')}원 · 매칭 예상 ${matchedDrivers}명`
       + (unmatchedDrivers ? ` · 명세서에 없는 기사 ${unmatchedDrivers}명` : '')
+      + (alreadyPromoCount
+        ? `\n\n⚠️ 이 중 ${alreadyPromoCount}명은 저장할 때 이미 프로모션이 반영된 명세서입니다.\n합산하면 그 기사들은 프로모션이 중복(2배)될 수 있습니다. 반드시 확인하세요.`
+        : '')
       + `\n\n기존 프로모션에 더합니다. (이미 넣은 금액을 포함한 전체 파일을 다시 올리면 중복됩니다)\n계속할까요?`
     );
     if (!ok) return;
