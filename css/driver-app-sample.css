@@ -1268,3 +1268,85 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .driver-goal-dot { width: 7px; height: 7px; border-radius: 999px; display: inline-block; }
 .rider-ds .driver-goal-dot--baemin { background: var(--rd-teal); }
 .rider-ds .driver-goal-dot--coupang { background: var(--rd-warning); }
+
+/* =====================================================================
+   홈 v2 — 프리뷰 홈 전체 재구성 (프로필/관리메뉴/실시간현황/KPI/목표/미션)
+   원본 홈 블록은 숨기고(.driver-home-legacy) 새 카드로 표시. 값은 표시용
+   미러 모듈(js/driver-home-preview.js)이 원본에서 복사 → 계산 로직 무변경.
+   ===================================================================== */
+.rider-ds .driver-home-legacy { display: none !important; }
+.rider-ds .driver-home-v2 { display: grid; gap: 12px; }
+/* 홈이 아닌 탭에서는 v2 홈 숨김 (탭 전환 CSS와 동일 규칙) */
+html.rider-ds.brem-app-nav[data-driver-tab]:not([data-driver-tab="home"]) .driver-home-v2 { display: none !important; }
+
+/* 프로필 */
+.rider-ds .ds-profile { display: flex; align-items: center; gap: 12px; padding: 13px 15px; }
+.rider-ds .ds-profile__avatar { flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--rd-accent-soft); color: var(--rd-accent); font-weight: 800; font-size: 1rem; }
+.rider-ds .ds-profile__body { min-width: 0; flex: 1; }
+.rider-ds .ds-profile__name { color: var(--rd-text); font-size: var(--rd-fs-500); font-weight: 700; }
+.rider-ds .ds-profile__sub { margin-top: 3px; display: flex; gap: 6px; }
+.rider-ds .ds-profile__edit { flex-shrink: 0; padding: 7px 12px; border: 1px solid var(--rd-border-strong); border-radius: var(--rd-radius-sm); background: var(--rd-card-2); color: var(--rd-text); font-size: var(--rd-fs-200); font-weight: 600; cursor: pointer; }
+.rider-ds .ds-profile__edit:hover { background: var(--rd-hover); }
+
+/* 관리 메뉴 */
+.rider-ds .ds-admin { padding: 12px 15px; }
+.rider-ds .ds-admin[hidden] { display: none !important; }
+.rider-ds .ds-admin__title { display: flex; align-items: center; gap: 6px; color: var(--rd-text-muted); font-size: var(--rd-fs-100); font-weight: 700; margin-bottom: 9px; }
+.rider-ds .ds-admin__title::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--rd-accent); }
+.rider-ds .ds-admin__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.rider-ds .ds-admin__btn { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; background: var(--rd-card-2); border: 1px solid var(--rd-border); border-radius: var(--rd-radius); color: var(--rd-text); font-size: var(--rd-fs-200); font-weight: 600; cursor: pointer; }
+.rider-ds .ds-admin__btn[hidden] { display: none !important; }
+.rider-ds .ds-admin__btn:hover { background: var(--rd-hover); border-color: var(--rd-border-strong); }
+.rider-ds .ds-admin__btn svg { width: 22px; height: 22px; color: var(--rd-accent); }
+
+/* 실시간 현황 (오늘/주간 토글) */
+.rider-ds .ds-today { padding: 13px 15px; }
+.rider-ds .ds-today__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.rider-ds .ds-today__title { color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 700; }
+.rider-ds .ds-seg { display: inline-flex; background: var(--rd-card-2); border: 1px solid var(--rd-border); border-radius: 999px; padding: 2px; }
+.rider-ds .ds-seg button { border: 0; background: transparent; color: var(--rd-text-muted); font-size: var(--rd-fs-100); font-weight: 700; padding: 4px 12px; border-radius: 999px; cursor: pointer; }
+.rider-ds .ds-seg button.is-active { background: var(--rd-accent); color: var(--rd-accent-ink); }
+.rider-ds .ds-period[hidden] { display: none; }
+.rider-ds .ds-plat-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--rd-border); }
+.rider-ds .ds-plat-row:first-child { border-top: 0; }
+.rider-ds .ds-plat-metrics { display: flex; gap: 14px; flex: 1; min-width: 0; }
+.rider-ds .ds-metric { display: flex; flex-direction: column; gap: 1px; }
+.rider-ds .ds-metric span { color: var(--rd-text-muted); font-size: var(--rd-fs-100); }
+.rider-ds .ds-metric strong { color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 700; font-variant-numeric: tabular-nums; }
+.rider-ds .ds-metric strong.pos { color: var(--rd-success); }
+
+/* 미니 KPI */
+.rider-ds .ds-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.rider-ds .ds-kpi { background: var(--rd-card); border: 1px solid var(--rd-border); border-radius: var(--rd-radius); padding: 12px 8px; text-align: center; }
+.rider-ds .ds-kpi span { display: block; color: var(--rd-text-muted); font-size: var(--rd-fs-100); margin-bottom: 5px; }
+.rider-ds .ds-kpi strong { color: var(--rd-text); font-size: var(--rd-fs-500); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rider-ds .ds-kpi--baemin strong { color: var(--rd-teal); }
+.rider-ds .ds-kpi--coupang strong { color: var(--rd-warning); }
+
+/* 목표 카드 */
+.rider-ds .ds-targets { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.rider-ds .ds-target { display: block; text-align: left; padding: 12px 14px; background: var(--rd-card); border: 1px solid var(--rd-border); border-radius: var(--rd-radius); cursor: pointer; }
+.rider-ds .ds-target:hover { border-color: var(--rd-border-strong); }
+.rider-ds .ds-target__top { display: flex; align-items: center; justify-content: space-between; }
+.rider-ds .ds-target__label { color: var(--rd-text-muted); font-size: var(--rd-fs-100); }
+.rider-ds .ds-target__set { color: var(--rd-accent); font-size: var(--rd-fs-100); font-weight: 700; }
+.rider-ds .ds-target__value { margin-top: 4px; color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rider-ds .ds-target__ach { margin-top: 2px; color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+
+/* 미션 + 장기근속 */
+.rider-ds .ds-mission { padding: 13px 15px; }
+.rider-ds .ds-mission__hd { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.rider-ds .ds-mission__hd b { color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 700; }
+.rider-ds .ds-mission__hd .amt { color: var(--rd-accent-strong); font-size: var(--rd-fs-500); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rider-ds .ds-mrow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--rd-border); margin-top: 6px; }
+.rider-ds .ds-mrow[hidden] { display: none !important; }
+.rider-ds .ds-mrow:first-of-type { border-top: 0; margin-top: 8px; }
+.rider-ds .ds-mrow__calls { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+.rider-ds .ds-mrow__amt { margin-left: auto; color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 700; font-variant-numeric: tabular-nums; }
+.rider-ds .ds-mnote { margin-top: 8px; color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+.rider-ds .ds-mini-progress { margin-top: 10px; }
+.rider-ds .ds-mini-progress[hidden] { display: none !important; }
+.rider-ds .ds-mini-progress__label { display: flex; justify-content: space-between; gap: 8px; color: var(--rd-text-muted); font-size: var(--rd-fs-100); margin-bottom: 5px; }
+.rider-ds .ds-mini-progress__label strong { color: var(--rd-text); }
+.rider-ds .ds-mini-progress__bar { height: 7px; border-radius: 999px; background: var(--rd-card-2); overflow: hidden; }
+.rider-ds .ds-mini-progress__bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--rd-accent), var(--rd-accent-strong)); }

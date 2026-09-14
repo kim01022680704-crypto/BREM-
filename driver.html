@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
   <link rel="stylesheet" href="css/driver-tokens.css?v=20260914dark1">
-  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260914perf3">
+  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260914home1">
 </head>
 <body>
   <section class="login-page" id="driverLoginCard">
@@ -123,7 +123,125 @@
 
       <main>
         <section class="result" id="result" hidden>
-          <div class="profile-card driver-home-block">
+          <!-- ===== 홈 v2 (프리뷰 디자인) : 표시용. 값은 원본(.driver-home-legacy)에서 미러 ===== -->
+          <div class="driver-home-v2">
+            <div class="ds-card ds-profile">
+              <div class="ds-profile__avatar" id="hv2Avatar">-</div>
+              <div class="ds-profile__body">
+                <div class="ds-profile__name" id="hv2Name">-</div>
+                <div class="ds-profile__sub" id="hv2Badges"></div>
+              </div>
+              <button type="button" class="ds-profile__edit" id="hv2InfoBtn">정보</button>
+            </div>
+
+            <div class="ds-card ds-admin" id="hv2Admin" hidden>
+              <div class="ds-admin__title">관리 메뉴 · 권한 계정 전용</div>
+              <div class="ds-admin__grid">
+                <button type="button" class="ds-admin__btn" id="hv2AdminDash" hidden>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V11M12 21V4M18 21v-7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+                  <span>기사대시보드</span>
+                </button>
+                <button type="button" class="ds-admin__btn" id="hv2AdminBranch" hidden>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V8l8-4 8 4v12M8 20v-7h8v7M3 20h18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span>지사관리</span>
+                </button>
+                <button type="button" class="ds-admin__btn" id="hv2AdminCrew" hidden>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="16" cy="9" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4.5 18c.4-2.4 2.2-3.8 4.5-3.8s4.1 1.4 4.5 3.8M12.8 18c.3-1.7 1.4-2.8 3.2-2.8 1.9 0 3.1 1.2 3.5 3.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                  <span>크루장</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="ds-card ds-today">
+              <div class="ds-today__head">
+                <span class="ds-today__title">실시간 현황</span>
+                <div class="ds-seg" id="hv2Seg">
+                  <button type="button" class="is-active" data-period="today">오늘</button>
+                  <button type="button" data-period="week">주간</button>
+                </div>
+              </div>
+              <div class="ds-period" data-period="today">
+                <div class="ds-plat-row">
+                  <span class="ds-plat-chip ds-plat-chip--baemin">배민</span>
+                  <div class="ds-plat-metrics">
+                    <div class="ds-metric"><span>완료</span><strong id="hv2TdBmComplete">-</strong></div>
+                    <div class="ds-metric"><span>수락율</span><strong class="pos" id="hv2TdBmAccept">-</strong></div>
+                    <div class="ds-metric"><span>거절</span><strong id="hv2TdBmReject">-</strong></div>
+                    <div class="ds-metric"><span>취소</span><strong id="hv2TdBmCancel">-</strong></div>
+                  </div>
+                </div>
+                <div class="ds-plat-row">
+                  <span class="ds-plat-chip ds-plat-chip--coupang">쿠팡</span>
+                  <div class="ds-plat-metrics">
+                    <div class="ds-metric"><span>완료</span><strong id="hv2TdCpComplete">-</strong></div>
+                    <div class="ds-metric"><span>거절율</span><strong class="pos" id="hv2TdCpReject">-</strong></div>
+                    <div class="ds-metric"><span>거절</span><strong id="hv2TdCpRejectN">-</strong></div>
+                    <div class="ds-metric"><span>취소</span><strong id="hv2TdCpCancel">-</strong></div>
+                  </div>
+                </div>
+              </div>
+              <div class="ds-period" data-period="week" hidden>
+                <div class="ds-plat-row">
+                  <span class="ds-plat-chip ds-plat-chip--baemin">배민</span>
+                  <div class="ds-plat-metrics">
+                    <div class="ds-metric"><span>완료</span><strong id="hv2WkBmComplete">-</strong></div>
+                    <div class="ds-metric"><span>수락율</span><strong class="pos" id="hv2WkBmAccept">-</strong></div>
+                    <div class="ds-metric"><span>거절</span><strong id="hv2WkBmReject">-</strong></div>
+                    <div class="ds-metric"><span>취소</span><strong id="hv2WkBmCancel">-</strong></div>
+                  </div>
+                </div>
+                <div class="ds-plat-row">
+                  <span class="ds-plat-chip ds-plat-chip--coupang">쿠팡</span>
+                  <div class="ds-plat-metrics">
+                    <div class="ds-metric"><span>완료</span><strong id="hv2WkCpComplete">-</strong></div>
+                    <div class="ds-metric"><span>거절율</span><strong class="pos" id="hv2WkCpReject">-</strong></div>
+                    <div class="ds-metric"><span>거절</span><strong id="hv2WkCpRejectN">-</strong></div>
+                    <div class="ds-metric"><span>취소</span><strong id="hv2WkCpCancel">-</strong></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="ds-kpis">
+              <div class="ds-kpi"><span>주간 콜수</span><strong id="hv2KpiCalls">-</strong></div>
+              <div class="ds-kpi ds-kpi--baemin"><span>수락율(배민)</span><strong id="hv2KpiAccept">-</strong></div>
+              <div class="ds-kpi ds-kpi--coupang"><span>거절율(쿠팡)</span><strong id="hv2KpiReject">-</strong></div>
+            </div>
+
+            <div class="ds-targets">
+              <button type="button" class="ds-target" id="hv2WeekTarget">
+                <div class="ds-target__top"><span class="ds-target__label">주간 목표</span><span class="ds-target__set">설정 ›</span></div>
+                <div class="ds-target__value" id="hv2WeekTargetVal">-</div>
+                <div class="ds-target__ach" id="hv2WeekTargetAch">-</div>
+              </button>
+              <button type="button" class="ds-target" id="hv2MonthTarget">
+                <div class="ds-target__top"><span class="ds-target__label">월간 목표</span><span class="ds-target__set">설정 ›</span></div>
+                <div class="ds-target__value" id="hv2MonthTargetVal">-</div>
+                <div class="ds-target__ach" id="hv2MonthTargetAch">-</div>
+              </button>
+            </div>
+
+            <div class="ds-card ds-mission">
+              <div class="ds-mission__hd"><b>나의 미션</b><span class="amt" id="hv2MissionTotal">-</span></div>
+              <div class="ds-mrow" id="hv2MissionBaemin" hidden>
+                <span class="ds-plat-chip ds-plat-chip--baemin">배민</span>
+                <span class="ds-mrow__calls" id="hv2MissionBaeminCalls">-</span>
+                <span class="ds-mrow__amt" id="hv2MissionBaeminAmt">-</span>
+              </div>
+              <div class="ds-mrow" id="hv2MissionCoupang" hidden>
+                <span class="ds-plat-chip ds-plat-chip--coupang">쿠팡</span>
+                <span class="ds-mrow__calls" id="hv2MissionCoupangCalls">-</span>
+                <span class="ds-mrow__amt" id="hv2MissionCoupangAmt">-</span>
+              </div>
+              <p class="ds-mnote">배민 실시간 · 쿠팡 익일 정산 반영 · 콜수 기준 예상</p>
+              <div class="ds-mini-progress" id="hv2LongService" hidden>
+                <div class="ds-mini-progress__label"><span id="hv2LsLabel">장기근속</span><strong id="hv2LsValue">-</strong></div>
+                <div class="ds-mini-progress__bar"><i id="hv2LsBar" style="width:0%"></i></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="profile-card driver-home-block driver-home-legacy">
             <div class="profile-card-main">
               <p class="eyebrow">기사 정보</p>
               <h2 id="driverName">-</h2>
@@ -162,7 +280,7 @@
             </div>
           </div>
 
-          <section class="driver-home-block driver-goals">
+          <section class="driver-home-block driver-goals driver-home-legacy">
             <button type="button" class="driver-goal-card summary-card--action" id="monthTargetCard" aria-label="월간 목표 설정">
               <div class="driver-goal-card__top">
                 <span class="driver-goal-card__label">월간 목표</span>
@@ -187,7 +305,7 @@
             </button>
           </section>
 
-          <section class="live-ops-card driver-home-block" id="driverBaeminLiveOps" hidden>
+          <section class="live-ops-card driver-home-block driver-home-legacy" id="driverBaeminLiveOps" hidden>
             <div class="live-ops-card__head">
               <div>
                 <p class="live-ops-card__eyebrow">실시간 운행현황 (배민)</p>
@@ -244,7 +362,7 @@
             </p>
           </section>
 
-          <section class="live-ops-card driver-home-block" id="driverCoupangLiveOps" hidden>
+          <section class="live-ops-card driver-home-block driver-home-legacy" id="driverCoupangLiveOps" hidden>
             <div class="live-ops-card__head">
               <div>
                 <p class="live-ops-card__eyebrow">실시간 운행현황 (쿠팡)</p>
@@ -903,7 +1021,7 @@
             </article>
           </section>
 
-          <div class="content-grid driver-home-block">
+          <div class="content-grid driver-home-block driver-home-legacy">
             <article class="panel">
               <div class="panel-header">
                 <h2>나의 미션</h2>
@@ -1196,6 +1314,7 @@
   <script src="js/driver.js?v=20260910missim1"></script>
   <script src="js/driver-app-nav.js?v=20260914perf3"></script>
   <script src="js/driver-perf-calendar.js?v=20260914perf2"></script>
+  <script src="js/driver-home-preview.js?v=20260914home1"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
