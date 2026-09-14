@@ -903,6 +903,85 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .driver-withdrawal-reconcile { background: var(--rd-card-2); color: var(--rd-text-muted); }
 .rider-ds .driver-withdrawal-reconcile strong { color: var(--rd-text); }
 
+/* ── 출금 플랫폼: 라디오 → 세그먼트 pill (프리뷰 ds-seg) ── */
+.rider-ds .driver-withdrawal-platform {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.rider-ds .driver-withdrawal-platform legend {
+  flex: 0 0 100%;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 2px;
+  color: var(--rd-text-muted);
+  font-size: var(--rd-fs-300);
+  font-weight: 700;
+}
+.rider-ds .driver-withdrawal-platform__option {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  gap: 0;
+  padding: 12px 10px;
+  border: 1px solid var(--rd-border-strong);
+  border-radius: 10px;
+  background: var(--rd-card-2);
+  color: var(--rd-text-muted);
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+/* 프리뷰 순서(배민 · 쿠팡) 맞춤 */
+.rider-ds .driver-withdrawal-platform__option:has(#driverWithdrawalPlatformBaemin) { order: 0; }
+.rider-ds .driver-withdrawal-platform__option:has(#driverWithdrawalPlatformCoupang) { order: 1; }
+/* 라디오 점 숨김(접근성 위해 완전 제거하지 않고 시각만 감춤) */
+.rider-ds .driver-withdrawal-platform__option input {
+  position: absolute;
+  width: 1px; height: 1px;
+  opacity: 0; margin: 0; padding: 0;
+  pointer-events: none;
+}
+.rider-ds .driver-withdrawal-platform__option:has(input:checked) {
+  border-color: var(--rd-accent);
+  background: var(--rd-accent-soft);
+  color: var(--rd-accent-strong);
+}
+.rider-ds .driver-withdrawal-platform__option.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── 내 신청내역: 다크 카드 + 상태 배지 (프리뷰 ds-req) ── */
+.rider-ds .driver-withdrawal-request {
+  border: 1px solid var(--rd-border);
+  background: var(--rd-card-2);
+  color: var(--rd-text);
+}
+.rider-ds .driver-withdrawal-request strong { color: var(--rd-text); white-space: nowrap; flex: 0 0 auto; }
+.rider-ds .driver-withdrawal-request__meta { color: var(--rd-text-muted); flex: 1 1 auto; min-width: 0; }
+.rider-ds .driver-withdrawal-request__fee { color: var(--rd-text-subtle); }
+.rider-ds .driver-withdrawal-request__badge { background: var(--rd-info); color: #0a0b0d; }
+.rider-ds .driver-withdrawal-request__badge.is-pending { background: var(--rd-warning); color: #0a0b0d; }
+.rider-ds .driver-withdrawal-request__badge.is-completed { background: var(--rd-success); color: #06251a; }
+.rider-ds .driver-withdrawal-request.is-completed {
+  border-color: color-mix(in srgb, var(--rd-success) 45%, var(--rd-border));
+  background: var(--rd-success-soft);
+  color: var(--rd-text);
+}
+.rider-ds .driver-withdrawal-request.is-completed strong { color: var(--rd-text); }
+.rider-ds .driver-withdrawal-request.is-cancelled {
+  border-color: var(--rd-border);
+  background: var(--rd-card);
+  color: var(--rd-text-subtle);
+}
+.rider-ds .driver-withdrawal-request.is-cancelled strong { color: var(--rd-text-subtle); }
+.rider-ds .driver-withdrawal-request.is-cancelled .driver-withdrawal-request__badge { background: var(--rd-text-subtle); color: var(--rd-card); }
+.rider-ds .driver-payslip-empty-line { color: var(--rd-text-muted); }
+
 /* 계좌정보 입력 팝업 */
 .rider-ds .withdrawal-account-popup__dialog {
   background: var(--rd-card);
