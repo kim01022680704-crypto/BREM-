@@ -987,7 +987,11 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .notice-item { border-bottom: 1px solid var(--rd-border); }
 .rider-ds .notice-item h3,
 .rider-ds .notice-item__title { color: var(--rd-text); }
+.rider-ds .notice-item__name { color: var(--rd-text) !important; }
+.rider-ds .notice-item__toggle { color: var(--rd-text); }
 .rider-ds .notice-item__date { color: var(--rd-text-subtle); }
+.rider-ds #noticeList .empty-text,
+.rider-ds .empty-text { color: var(--rd-text-muted); }
 .rider-ds .notice-item__body,
 .rider-ds .notice-item p { color: var(--rd-text) !important; }
 .rider-ds .notice-count,
