@@ -1092,6 +1092,41 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .driver-notice-count { color: var(--rd-text-muted); }
 .rider-ds .empty-text { color: var(--rd-text-muted); }
 
+/* 공지 하단 앱 다운로드(안드로이드 APK) 카드 — 다크/라이트 공통(토큰) */
+.rider-ds .driver-app-download {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius-lg);
+  background: var(--rd-card);
+  box-shadow: var(--rd-shadow-sm);
+}
+.rider-ds .driver-app-download__info { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.rider-ds .driver-app-download__title { color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 700; }
+.rider-ds .driver-app-download__desc { color: var(--rd-text-muted); font-size: var(--rd-fs-100); line-height: 1.4; }
+.rider-ds .driver-app-download__btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 16px;
+  border: 0;
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-accent);
+  color: var(--rd-accent-ink);
+  font-size: var(--rd-fs-300);
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: filter var(--rd-ease);
+}
+.rider-ds .driver-app-download__btn:hover { filter: brightness(1.06); }
+.rider-ds .driver-app-download__btn:active { filter: brightness(0.96); }
+.rider-ds .driver-app-download__btn-ico { font-size: 14px; line-height: 1; }
+
 /* 헤더 반영 알림: "최근 반영 시간 + 새로고침"(준비완료 상태)은 숨김 —
    로딩/에러 피드백은 그대로 표시(JS 무수정, readyEl 표시 시에만 카드 숨김) */
 .rider-ds #riderPublishNotice:has(#riderPublishReady:not([hidden])) { display: none !important; }
