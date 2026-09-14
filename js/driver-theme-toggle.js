@@ -31,15 +31,19 @@
   function syncButton(theme) {
     var btn = document.getElementById('riderThemeToggle');
     if (!btn) return;
-    // 버튼 아이콘 = "탭하면 바뀔 방향" 안내
+    var ico = btn.querySelector('.rider-theme-toggle__ico');
+    var label = btn.querySelector('.rider-theme-toggle__label');
+    // 라벨/아이콘 = "탭하면 바뀔 모드" 안내
     if (theme === 'light') {
-      btn.textContent = '🌙';
-      btn.title = '다크 모드로 전환';
-      btn.setAttribute('aria-label', '다크 모드로 전환');
+      if (ico) ico.textContent = '🌙';
+      if (label) label.textContent = '다크모드';
+      btn.title = '다크모드로 전환';
+      btn.setAttribute('aria-label', '다크모드로 전환');
     } else {
-      btn.textContent = '☀️';
-      btn.title = '화이트 모드로 전환';
-      btn.setAttribute('aria-label', '화이트 모드로 전환');
+      if (ico) ico.textContent = '☀️';
+      if (label) label.textContent = '화이트모드';
+      btn.title = '화이트모드로 전환';
+      btn.setAttribute('aria-label', '화이트모드로 전환');
     }
   }
 

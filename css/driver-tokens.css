@@ -90,6 +90,12 @@ html.rider-ds[data-rd-theme="light"] {
   --rd-text-muted: #56606f;
   --rd-text-subtle: #8a93a1;
 
+  /* Hero도 라이트(밝은 버전): 흰 톤 그라데이션 + 히어로 텍스트도 다크로 */
+  --rd-hero-1: #ffffff;
+  --rd-hero-2: #eaeef4;
+  --rd-on-dark: #16202f;
+  --rd-on-dark-muted: rgba(22, 32, 47, 0.62);
+
   /* Accent (앰버) — 채움은 그대로, 흰 배경 텍스트 대비용 strong은 살짝 진하게 */
   --rd-accent: #f5b301;
   --rd-accent-strong: #c98a00;
