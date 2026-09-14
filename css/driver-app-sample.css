@@ -1,0 +1,1110 @@
+/* =====================================================================
+   기사앱(라이더) — 프리미엄 다크 샘플 (SCOPED to .rider-ds)
+   - 모든 선택자는 .rider-ds / html.rider-ds 하위로만 한정 → 기본 화면 영향 없음
+   - DOM/id/class/이벤트 바인딩 그대로. 색·간격·타이포·상태표시만 정리
+   - 값은 css/driver-tokens.css 의 --rd-* 토큰을 참조
+   - 방향: 블랙 유지 + 카드까지 다크, 흰 숫자, 앰버 포인트 하나
+   ===================================================================== */
+
+.rider-ds.driver-app,
+.rider-ds .driver-app { color: var(--rd-text); }
+
+/* ── 앱 전체 바탕(다크) : 카드 뒤 밝은 배경 제거 ─────── */
+html.rider-ds,
+html.rider-ds body {
+  background: var(--rd-bg);
+  color: var(--rd-text);
+  font-family: var(--rd-font);
+}
+html.rider-ds body {
+  background:
+    radial-gradient(circle at 12% -8%, rgba(245, 179, 1, 0.10), transparent 26rem),
+    radial-gradient(circle at 88% 0%, rgba(245, 179, 1, 0.06), transparent 20rem),
+    var(--rd-bg);
+}
+.rider-ds .driver-app { background: transparent; }
+.rider-ds main { background: transparent; }
+.rider-ds .result { background: transparent; }
+
+/* ── 히어로 : 깊은 블랙 + 미세한 상단 하이라이트 ────── */
+.rider-ds .hero {
+  gap: 10px;
+  padding: 20px 20px 18px;
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(245, 179, 1, 0.10), transparent 60%),
+    linear-gradient(135deg, var(--rd-hero-1) 0%, var(--rd-hero-2) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--rd-radius-lg);
+  box-shadow: var(--rd-shadow);
+}
+.rider-ds .hero__logo { filter: drop-shadow(0 2px 10px rgba(245, 179, 1, 0.22)); }
+.rider-ds .hero .eyebrow {
+  color: var(--rd-accent);
+  font-size: var(--rd-fs-200);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.rider-ds .hero__titles h1 {
+  color: var(--rd-accent-strong);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-shadow: 0 1px 12px rgba(245, 179, 1, 0.28);
+}
+.rider-ds .hero-desc { color: var(--rd-on-dark-muted); font-size: var(--rd-fs-300); }
+.rider-ds .logout-btn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--rd-radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--rd-on-dark);
+  font-size: var(--rd-fs-200);
+  font-weight: 600;
+}
+
+/* ── 카드 공통 (다크) ──────────────────────────────── */
+.rider-ds .profile-card,
+.rider-ds .live-ops-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 40%),
+    var(--rd-card);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius-lg);
+  box-shadow: var(--rd-shadow-sm);
+}
+
+/* ── 프로필 카드 ───────────────────────────────────── */
+.rider-ds .profile-card-main { padding: 20px 20px 18px; }
+.rider-ds .profile-card-main h2 {
+  margin-bottom: 14px;
+  color: var(--rd-text);
+  font-size: var(--rd-fs-600);
+  letter-spacing: -0.01em;
+}
+.rider-ds .eyebrow { color: var(--rd-accent); }
+.rider-ds .profile-list > div { border-bottom: 1px solid var(--rd-border); }
+.rider-ds .profile-list dt {
+  color: var(--rd-text-subtle);
+  font-size: var(--rd-fs-100);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.rider-ds .profile-list dd {
+  color: var(--rd-text);
+  font-size: var(--rd-fs-400);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 플랫폼 배지 : 다크 칩 */
+.rider-ds .platform-badge,
+.rider-ds .platform-chip {
+  font-size: var(--rd-fs-200);
+  font-weight: 700;
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border-strong);
+  color: var(--rd-text);
+}
+.rider-ds .platform-badge[data-platform="baemin"] {
+  color: var(--rd-teal); background: var(--rd-teal-soft); border-color: transparent;
+}
+.rider-ds .platform-badge[data-platform="coupang"] {
+  color: var(--rd-warning); background: var(--rd-warning-soft); border-color: transparent;
+}
+
+/* 액션 버튼 : 다크 세컨더리 통일 + 명세서만 앰버 CTA */
+.rider-ds .profile-actions > button {
+  min-height: 44px;
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-card-2);
+  color: var(--rd-text);
+  font-size: var(--rd-fs-300);
+  font-weight: 600;
+  transition: background var(--rd-ease), border-color var(--rd-ease);
+}
+.rider-ds .profile-actions > button:hover {
+  background: var(--rd-hover);
+  border-color: var(--rd-border-strong);
+}
+.rider-ds .profile-actions > .profile-payslip-btn {
+  background: var(--rd-accent);
+  border-color: transparent;
+  color: var(--rd-accent-ink);
+}
+.rider-ds .profile-actions > .profile-payslip-btn:hover { filter: brightness(1.06); }
+
+/* ── 실시간 운행현황 카드 ──────────────────────────── */
+.rider-ds .live-ops-card { padding: 16px 16px 12px; }
+.rider-ds .live-ops-card__eyebrow {
+  color: var(--rd-text-muted); font-size: var(--rd-fs-200); letter-spacing: 0;
+}
+.rider-ds .live-ops-card__title { color: var(--rd-text); font-size: var(--rd-fs-400); }
+.rider-ds .live-ops-card__live {
+  background: var(--rd-success-soft); color: var(--rd-success);
+  font-size: var(--rd-fs-100); letter-spacing: 0.06em;
+}
+.rider-ds .live-ops-card__live-dot { background: var(--rd-success); }
+
+/* 무지개 메트릭 → 다크 타일 통일. 의미는 숫자색·아이콘으로만 */
+.rider-ds .live-ops-grid { gap: 8px; }
+.rider-ds .live-ops-metric,
+.rider-ds .live-ops-metric--complete,
+.rider-ds .live-ops-metric--reject,
+.rider-ds .live-ops-metric--cancel,
+.rider-ds .live-ops-metric--fault,
+.rider-ds .live-ops-metric--accept {
+  padding: 11px 12px 10px;
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  background: var(--rd-card-2);
+}
+.rider-ds .live-ops-metric__label {
+  color: var(--rd-text-muted); font-size: var(--rd-fs-200); font-weight: 600; letter-spacing: 0;
+}
+.rider-ds .live-ops-metric__value {
+  color: var(--rd-text);
+  font-size: var(--rd-fs-700);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.rider-ds .live-ops-metric__hint { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); font-weight: 500; }
+
+.rider-ds .live-ops-metric--complete .live-ops-metric__value { color: var(--rd-success); }
+.rider-ds .live-ops-metric--reject .live-ops-metric__value { color: var(--rd-danger); }
+.rider-ds .live-ops-metric--cancel .live-ops-metric__value { color: var(--rd-warning); }
+.rider-ds .live-ops-metric--fault .live-ops-metric__value { color: var(--rd-warning); }
+.rider-ds .live-ops-metric--accept .live-ops-metric__value { color: var(--rd-info); }
+.rider-ds .live-ops-metric--complete .live-ops-metric__icon { background: var(--rd-success-soft); color: var(--rd-success); }
+.rider-ds .live-ops-metric--reject .live-ops-metric__icon { background: var(--rd-danger-soft); color: var(--rd-danger); }
+.rider-ds .live-ops-metric--cancel .live-ops-metric__icon { background: var(--rd-warning-soft); color: var(--rd-warning); }
+.rider-ds .live-ops-metric--fault .live-ops-metric__icon { background: var(--rd-warning-soft); color: var(--rd-warning); }
+.rider-ds .live-ops-metric--accept .live-ops-metric__icon { background: var(--rd-info-soft); color: var(--rd-info); }
+
+.rider-ds .live-ops-refresh-btn {
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-card-2);
+  color: var(--rd-text);
+  font-size: var(--rd-fs-200);
+  font-weight: 600;
+}
+.rider-ds .live-ops-card__auto,
+.rider-ds .live-ops-card__updated { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+.rider-ds .live-ops-card__updated strong,
+.rider-ds .live-ops-card__auto strong { color: var(--rd-text-muted); }
+
+/* ── 하단 탭바 : 깊은 블랙 + 절제된 앰버 강조 ──────── */
+html.rider-ds .driver-app-nav {
+  background: #0e0f12;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+}
+html.rider-ds .driver-app-nav__item {
+  color: var(--rd-text-subtle); font-size: var(--rd-fs-200); font-weight: 600; letter-spacing: 0;
+}
+html.rider-ds .driver-app-nav__item.is-active {
+  color: var(--rd-accent);
+  background: var(--rd-accent-soft);
+}
+html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-accent); }
+
+/* =====================================================================
+   실적/현황 영역 정리 (요약카드 · 수락율 · 일별표 · 미션 · 진행률)
+   ===================================================================== */
+
+/* ── 배민/쿠팡 동시 노출 : 카드 상단에 얇은 플랫폼 라인으로 구분 ── */
+.rider-ds #driverBaeminLiveOps { box-shadow: var(--rd-shadow-sm), inset 0 2px 0 var(--rd-teal); }
+.rider-ds #driverCoupangLiveOps { box-shadow: var(--rd-shadow-sm), inset 0 2px 0 var(--rd-warning); }
+.rider-ds #driverBaeminLiveOps .live-ops-card__eyebrow { color: var(--rd-teal); }
+.rider-ds #driverCoupangLiveOps .live-ops-card__eyebrow { color: var(--rd-warning); }
+
+/* ── 콜수 요약 카드 : 무지개 → 다크 통일 (플랫폼은 좌측 라인으로만) ── */
+.rider-ds .summary-section { gap: 10px; }
+.rider-ds .summary-grid { gap: 8px; }
+.rider-ds .summary-card {
+  min-height: 84px;
+  padding: 13px 14px;
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  background: var(--rd-card);
+  box-shadow: none;
+}
+.rider-ds .summary-card__label {
+  color: var(--rd-text-muted);
+  font-size: var(--rd-fs-200);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.rider-ds .summary-card__value {
+  color: var(--rd-text);
+  font-size: var(--rd-fs-600);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+/* 플랫폼 구분: 배경색 대신 좌측 얇은 라인 + 값 색상만 */
+.rider-ds .summary-card--baemin {
+  background: var(--rd-card);
+  border-color: var(--rd-border);
+  box-shadow: inset 3px 0 0 var(--rd-teal);
+}
+.rider-ds .summary-card--coupang {
+  background: var(--rd-card);
+  border-color: var(--rd-border);
+  box-shadow: inset 3px 0 0 var(--rd-warning);
+}
+.rider-ds .summary-card--baemin .summary-card__value { color: var(--rd-teal); }
+.rider-ds .summary-card--coupang .summary-card__value { color: var(--rd-warning); }
+.rider-ds .summary-card--metric { border-color: var(--rd-border); background: var(--rd-card); }
+.rider-ds .summary-card--metric .summary-card__value { color: var(--rd-text); }
+.rider-ds .summary-card--total {
+  border-color: transparent;
+  background: var(--rd-accent-soft);
+  box-shadow: inset 3px 0 0 var(--rd-accent);
+}
+.rider-ds .summary-card--total .summary-card__value { color: var(--rd-accent-strong); }
+.rider-ds .summary-card__value--unset {
+  color: var(--rd-text-subtle);
+  font-size: var(--rd-fs-400);
+  font-weight: 700;
+}
+
+/* 클릭 가능한 목표/수락율 카드 */
+.rider-ds .summary-card--action:hover,
+.rider-ds .summary-card--action:focus-visible {
+  border-color: var(--rd-border-strong);
+  box-shadow: 0 0 0 3px var(--rd-accent-soft);
+  outline: none;
+}
+.rider-ds .summary-card--action[aria-expanded="true"] {
+  border-color: transparent;
+  box-shadow: inset 3px 0 0 var(--rd-accent), 0 0 0 1px var(--rd-border-strong);
+}
+
+/* 수락율/거절율 상세 패널 */
+.rider-ds .rate-detail-panel {
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  background: var(--rd-card-2);
+}
+.rider-ds .rate-detail-list dt { color: var(--rd-text-muted); font-size: var(--rd-fs-200); }
+.rider-ds .rate-detail-list dd { color: var(--rd-text); font-size: var(--rd-fs-300); }
+.rider-ds .rate-detail-breakdown { color: var(--rd-text-muted); }
+.rider-ds .rate-detail-breakdown strong { color: var(--rd-text); }
+
+/* ── 패널(일별 콜수 · 미션 · 진행률) 다크 ─────────── */
+.rider-ds .content-grid { gap: 12px; }
+.rider-ds .panel {
+  background: var(--rd-card);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius-lg);
+  box-shadow: var(--rd-shadow-sm);
+}
+.rider-ds .panel-header {
+  padding: 14px 16px;
+  color: var(--rd-text);
+  background: transparent;
+  border-bottom: 1px solid var(--rd-border);
+}
+.rider-ds .panel-header h2 {
+  color: var(--rd-text);
+  font-size: var(--rd-fs-500);
+  font-weight: 700;
+}
+.rider-ds .panel-header p { color: var(--rd-text-muted); font-size: var(--rd-fs-200); }
+
+/* 주차 네비 */
+.rider-ds .week-nav { color: var(--rd-text-muted); }
+.rider-ds .week-nav button {
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  color: var(--rd-accent);
+  background: var(--rd-card-2);
+}
+.rider-ds .week-nav button:hover {
+  border-color: var(--rd-border-strong);
+  background: var(--rd-hover);
+}
+
+/* 일별 콜수 표 */
+.rider-ds .content-grid thead th,
+.rider-ds .table-wrap thead th {
+  color: var(--rd-text-muted);
+  background: var(--rd-card-2);
+  border-bottom: 1px solid var(--rd-border);
+  font-size: var(--rd-fs-200);
+  font-weight: 700;
+}
+.rider-ds .content-grid tbody td,
+.rider-ds .table-wrap tbody td {
+  color: var(--rd-text);
+  border-bottom: 1px solid var(--rd-border);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.rider-ds .content-grid tbody tr:hover td,
+.rider-ds .table-wrap tbody tr:hover td { background: var(--rd-hover); }
+
+/* 진행률 */
+.rider-ds .progress-info span {
+  color: var(--rd-accent);
+  background: var(--rd-accent-soft);
+}
+.rider-ds .progress-info strong { color: var(--rd-text); }
+.rider-ds .progress-bar { background: var(--rd-card-2); }
+.rider-ds .progress-bar span {
+  background: linear-gradient(90deg, var(--rd-accent) 0%, var(--rd-accent-strong) 100%);
+  box-shadow: 0 0 16px rgba(245, 179, 1, 0.35);
+}
+.rider-ds .rule-text { color: var(--rd-text-muted); font-size: var(--rd-fs-200); }
+
+/* 나의 미션 */
+.rider-ds .mission-summary-box {
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  background: var(--rd-card-2);
+}
+.rider-ds .mission-platform-block {
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  background: var(--rd-card);
+}
+.rider-ds .mission-platform-block.is-mission-assigned {
+  border-color: transparent;
+  background: rgba(245, 179, 1, 0.08);
+  box-shadow: inset 3px 0 0 var(--rd-accent), 0 0 0 1px var(--rd-accent-soft);
+}
+.rider-ds .mission-platform-block.is-mission-assigned .mission-summary-label { color: var(--rd-accent); font-weight: 700; }
+.rider-ds .mission-platform-block + .mission-platform-block { border-top: 1px solid var(--rd-border); }
+.rider-ds .mission-summary-label { color: var(--rd-text-muted); font-size: var(--rd-fs-300); }
+.rider-ds .mission-platform-block strong { color: var(--rd-text); }
+.rider-ds .mission-summary-box strong { color: var(--rd-text); }
+.rider-ds .mission-conditions { color: var(--rd-text-muted); }
+.rider-ds .mission-sim {
+  border: 1px solid var(--rd-accent-soft);
+  background: rgba(245, 179, 1, 0.06);
+}
+
+/* =====================================================================
+   주급명세서 · 지사관리 · 크루장 관리 (공유 컴포넌트) — 다크 통일
+   driver-payslip-* / driver-region-dash-* / driver-crew-* 클래스 공통 적용
+   ===================================================================== */
+
+/* 패널 컨테이너 (명세서/지사/크루 공통) */
+.rider-ds .driver-weekly-payslip-panel {
+  background: var(--rd-card);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius-lg);
+  box-shadow: var(--rd-shadow-sm);
+  color: var(--rd-text);
+}
+
+/* ── 헤더 (로고 + 타이틀 + 닫기) ── */
+.rider-ds .driver-payslip-header {
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--rd-border);
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(245, 179, 1, 0.08), transparent 60%),
+    transparent;
+}
+.rider-ds .driver-payslip-logo { filter: drop-shadow(0 2px 8px rgba(245, 179, 1, 0.2)); }
+.rider-ds .driver-payslip-eyebrow {
+  color: var(--rd-accent);
+  font-size: var(--rd-fs-200);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.rider-ds .driver-payslip-header h2 {
+  color: var(--rd-text);
+  font-size: var(--rd-fs-600);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.rider-ds .ghost-btn {
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-card-2);
+  color: var(--rd-text);
+  font-size: var(--rd-fs-200);
+  font-weight: 600;
+}
+.rider-ds .ghost-btn:hover { background: var(--rd-hover); }
+.rider-ds .driver-payslip-inquiry-btn { color: var(--rd-accent); border-color: var(--rd-accent-soft); }
+
+/* ── 메타 (정산기간/지급일/주차 네비) ── */
+.rider-ds .driver-payslip-meta,
+.rider-ds .driver-region-dash-meta,
+.rider-ds .driver-crew-meta {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rd-border);
+  background: var(--rd-card-2);
+}
+.rider-ds .driver-payslip-meta__label,
+.rider-ds .driver-crew-meta .driver-payslip-meta__label {
+  color: var(--rd-text-subtle);
+  font-size: var(--rd-fs-100);
+  font-weight: 700;
+}
+/* 정산기간/지급일 박스 다크 (base #fff 덮기) */
+.rider-ds .driver-payslip-meta__item {
+  background: var(--rd-card);
+  border: 1px solid var(--rd-border);
+}
+.rider-ds .driver-payslip-period-text,
+.rider-ds .driver-payslip-payment-text {
+  color: var(--rd-text);
+  font-size: var(--rd-fs-400);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rider-ds .driver-payslip-week-btn {
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-card);
+  color: var(--rd-accent);
+  font-weight: 700;
+}
+.rider-ds .driver-payslip-week-btn:hover { background: var(--rd-hover); }
+
+/* ── 기사 정보 바 ── */
+.rider-ds .driver-payslip-rider-bar {
+  border-bottom: 1px solid var(--rd-border);
+  background: transparent;
+}
+.rider-ds .driver-payslip-rider-bar > div {
+  border-color: var(--rd-border);
+  background: var(--rd-card-2);
+}
+.rider-ds .driver-payslip-rider-bar span { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+.rider-ds .driver-payslip-rider-bar strong {
+  color: var(--rd-text);
+  font-size: var(--rd-fs-300);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 빈 상태 ── */
+.rider-ds .driver-payslip-empty {
+  color: var(--rd-text-muted);
+  background: var(--rd-card-2);
+  border: 1px dashed var(--rd-border-strong);
+  border-radius: var(--rd-radius);
+}
+.rider-ds .driver-payslip-empty p { color: var(--rd-text-muted); }
+.rider-ds .driver-payslip-empty-hint { color: var(--rd-text-subtle); font-size: var(--rd-fs-200); }
+
+/* ── 플랫폼 탭 (합계/쿠팡/배민 · 지사 배민/쿠팡) ── */
+.rider-ds .driver-payslip-platform-tabs {
+  gap: 6px;
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius-pill);
+  padding: 3px;
+}
+.rider-ds .driver-payslip-platform-tab {
+  border: 0;
+  background: transparent;
+  color: var(--rd-text-muted);
+  font-size: var(--rd-fs-300);
+  font-weight: 700;
+  border-radius: var(--rd-radius-pill);
+}
+.rider-ds .driver-payslip-platform-tab.active {
+  background: var(--rd-accent);
+  color: var(--rd-accent-ink);
+}
+
+/* ── 명세서 요약 카드 (지급/공제/총지급) ── */
+.rider-ds .driver-payslip-summary { gap: 8px; }
+.rider-ds .driver-payslip-summary-card {
+  padding: 12px 10px;
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  text-align: center;
+}
+.rider-ds .driver-payslip-summary-card span {
+  color: var(--rd-text-muted);
+  font-size: var(--rd-fs-100);
+  font-weight: 600;
+}
+.rider-ds .driver-payslip-summary-card strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--rd-text);
+  font-size: var(--rd-fs-400);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rider-ds .driver-payslip-summary-card--net {
+  border-color: transparent;
+  background: var(--rd-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--rd-accent-soft), 0 0 0 1px var(--rd-accent-soft);
+}
+.rider-ds .driver-payslip-summary-card--net span { color: var(--rd-accent); }
+.rider-ds .driver-payslip-summary-card--net strong { color: var(--rd-accent-strong); }
+
+/* ── 지급/공제 내역 리스트 ── */
+.rider-ds .driver-payslip-lines {
+  background: var(--rd-card);
+  border-color: var(--rd-border);
+}
+.rider-ds .driver-payslip-table-block h3 {
+  color: var(--rd-text);
+  font-size: var(--rd-fs-400);
+  font-weight: 700;
+}
+.rider-ds .driver-payslip-table-block__hint { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); font-weight: 500; }
+.rider-ds .driver-payslip-lines li {
+  border-bottom: 1px solid var(--rd-border);
+  color: var(--rd-text);
+}
+.rider-ds .driver-payslip-lines li span { color: var(--rd-text-muted); font-size: var(--rd-fs-300); }
+.rider-ds .driver-payslip-lines li strong {
+  color: var(--rd-text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 계산식 (지급 - 공제 = 총지급) ── */
+.rider-ds .driver-payslip-formula {
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  color: var(--rd-text-muted);
+}
+.rider-ds .driver-payslip-formula span { color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.rider-ds .driver-payslip-formula__op { color: var(--rd-text-subtle); }
+.rider-ds .driver-payslip-formula strong { color: var(--rd-accent-strong); font-weight: 800; }
+
+/* ── 정산 공지 (base #fff / #fafafa 덮기) ── */
+.rider-ds .driver-payslip-notices {
+  background: var(--rd-card);
+  border: 1px solid var(--rd-border);
+}
+.rider-ds .driver-payslip-notices h3 { color: var(--rd-text); font-size: var(--rd-fs-400); }
+.rider-ds .driver-payslip-notice-list li { color: var(--rd-text-muted); }
+.rider-ds .driver-payslip-notice-item {
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border);
+}
+.rider-ds .driver-payslip-notice-copy strong { color: var(--rd-text); }
+.rider-ds .driver-payslip-notice-copy p { color: var(--rd-text-muted); }
+.rider-ds .driver-payslip-notice-copy time { color: var(--rd-text-subtle); }
+.rider-ds .driver-payslip-notice-badge--announcement { color: #e2e8f0; background: #475569; }
+.rider-ds .driver-payslip-notice-badge--notice { color: var(--rd-accent-ink); background: var(--rd-accent); }
+
+/* =====================================================================
+   지사관리 대시보드 전용
+   ===================================================================== */
+.rider-ds .driver-region-dash-select {
+  background: var(--rd-card);
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  color: var(--rd-text);
+  font-size: var(--rd-fs-300);
+}
+.rider-ds .driver-region-dash-refresh {
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-card);
+  color: var(--rd-accent);
+}
+.rider-ds .driver-region-dash-region-chip strong {
+  color: var(--rd-accent);
+  background: var(--rd-accent-soft);
+  border-radius: var(--rd-radius-pill);
+}
+/* KPI: 겹치는 카드 테두리 제거 → 하나의 깔끔한 다크 패널 + 옅은 구분선 */
+.rider-ds .driver-region-dash-metrics,
+.rider-ds .driver-branch-metrics {
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  padding: 14px 4px;
+  gap: 0;
+}
+.rider-ds .driver-region-dash-metric,
+.rider-ds .driver-branch-metric-btn {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--rd-text);
+  gap: 5px;
+}
+.rider-ds .driver-region-dash-metric + .driver-region-dash-metric::before {
+  background: var(--rd-border);
+  top: 8%;
+  bottom: 8%;
+}
+.rider-ds .driver-region-dash-metric span { color: var(--rd-text-muted); font-size: var(--rd-fs-100); font-weight: 700; }
+.rider-ds .driver-region-dash-metric strong {
+  color: var(--rd-text);
+  font-size: var(--rd-fs-500);
+  font-weight: 800;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rider-ds .driver-branch-metric-btn { cursor: pointer; }
+.rider-ds .driver-branch-metric-btn:hover strong { color: var(--rd-info); filter: brightness(1.15); }
+.rider-ds .driver-branch-metric-btn strong { color: var(--rd-info); }
+.rider-ds .driver-branch-week {
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+}
+.rider-ds .driver-branch-week h3 { color: var(--rd-text); font-size: var(--rd-fs-400); }
+.rider-ds .driver-branch-week p,
+.rider-ds .driver-branch-week__summary { color: var(--rd-text-muted); font-size: var(--rd-fs-200); }
+.rider-ds .driver-branch-erp-open {
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-card);
+  color: var(--rd-accent);
+  font-size: var(--rd-fs-200);
+  font-weight: 600;
+}
+.rider-ds .driver-branch-rider-list-head h3 { color: var(--rd-text); font-size: var(--rd-fs-400); }
+.rider-ds .driver-branch-rider-list-head span { color: var(--rd-text-muted); font-size: var(--rd-fs-200); }
+.rider-ds .driver-branch-rider-search input {
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  color: var(--rd-text);
+}
+.rider-ds .driver-branch-rider-search input::placeholder { color: var(--rd-text-subtle); }
+.rider-ds .driver-region-dash-footnote { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+
+/* =====================================================================
+   크루장 관리 전용
+   ===================================================================== */
+.rider-ds .driver-crew-rename-btn {
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-card-2);
+  color: var(--rd-accent);
+  font-size: var(--rd-fs-200);
+  font-weight: 600;
+}
+.rider-ds .driver-crew-view-tabs {
+  gap: 6px;
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius-pill);
+  padding: 3px;
+}
+.rider-ds .driver-crew-view-tab {
+  border: 0;
+  background: transparent;
+  color: var(--rd-text-muted);
+  font-size: var(--rd-fs-300);
+  font-weight: 700;
+  border-radius: var(--rd-radius-pill);
+}
+.rider-ds .driver-crew-view-tab.active { background: var(--rd-accent); color: var(--rd-accent-ink); }
+.rider-ds .driver-crew-summary {
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  color: var(--rd-text);
+}
+.rider-ds .driver-crew-rename-form input {
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius-sm);
+  color: var(--rd-text);
+}
+.rider-ds .driver-crew-rename-save {
+  border: 0;
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-accent);
+  color: var(--rd-accent-ink);
+  font-weight: 700;
+}
+
+/* ── 명세서 지급/공제 라인 세부 ── */
+.rider-ds .driver-payslip-line { border-bottom: 1px solid var(--rd-border); }
+.rider-ds .driver-payslip-line__label strong { color: var(--rd-text); font-weight: 600; }
+.rider-ds .driver-payslip-line__desc { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+.rider-ds .driver-payslip-line__amount {
+  color: var(--rd-text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rider-ds .driver-payslip-line--total {
+  border-top: 1px solid var(--rd-border-strong);
+  background: var(--rd-card-2);
+}
+.rider-ds .driver-payslip-line--total .driver-payslip-line__label strong { color: var(--rd-accent); }
+.rider-ds .driver-payslip-line--total .driver-payslip-line__amount { color: var(--rd-accent-strong); }
+
+/* ── 지사/크루 기사 행 ── */
+.rider-ds .driver-branch-rider,
+.rider-ds .driver-branch-detail-row {
+  background: var(--rd-card-2);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  color: var(--rd-text);
+}
+.rider-ds .driver-branch-rider:hover { background: var(--rd-hover); border-color: var(--rd-border-strong); }
+.rider-ds .driver-branch-rider__info strong,
+.rider-ds .driver-branch-detail-row strong { color: var(--rd-text); font-weight: 700; }
+.rider-ds .driver-branch-rider__info small,
+.rider-ds .driver-branch-detail-row span { color: var(--rd-text-muted); font-size: var(--rd-fs-100); }
+.rider-ds .driver-branch-rider__metrics em {
+  color: var(--rd-info);
+  font-style: normal;
+  font-weight: 700;
+  font-size: var(--rd-fs-200);
+}
+.rider-ds .driver-branch-rider__metrics b {
+  color: var(--rd-text);
+  font-size: var(--rd-fs-400);
+  font-variant-numeric: tabular-nums;
+}
+.rider-ds .driver-branch-achievement-tag {
+  font-size: var(--rd-fs-100);
+  font-weight: 700;
+  font-style: normal;
+  border-radius: var(--rd-radius-pill);
+  padding: 2px 8px;
+}
+.rider-ds .driver-branch-achievement-tag.is-achieved { color: var(--rd-success); background: var(--rd-success-soft); }
+.rider-ds .driver-branch-achievement-tag.is-missed { color: var(--rd-danger); background: var(--rd-danger-soft); }
+.rider-ds .driver-branch-achievement-tag.is-empty { color: var(--rd-text-subtle); background: var(--rd-card-2); }
+.rider-ds .driver-branch-empty-list { color: var(--rd-text-subtle); font-size: var(--rd-fs-200); }
+
+/* ── 지사 ERP KPI / 테이블 ── */
+.rider-ds .driver-branch-erp-kpis { color: var(--rd-text); }
+.rider-ds .driver-branch-erp-table thead th {
+  color: var(--rd-text-muted);
+  background: var(--rd-card-2);
+  border-bottom: 1px solid var(--rd-border);
+}
+.rider-ds .driver-branch-erp-table tbody td {
+  color: var(--rd-text);
+  border-bottom: 1px solid var(--rd-border);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 지사 ERP 팝업(타임별 할당) 다크 정리 ── */
+.rider-ds .driver-branch-detail-popup__dialog { background: var(--rd-card); border: 1px solid var(--rd-border); color: var(--rd-text); }
+.rider-ds .driver-branch-detail-popup__head h3 { color: var(--rd-text); font-size: var(--rd-fs-500); margin: 0; }
+.rider-ds .driver-branch-detail-popup__summary { color: var(--rd-text-muted); font-size: var(--rd-fs-200); margin: 6px 0 12px; }
+.rider-ds .driver-branch-erp-kpis { background: var(--rd-card-2); border: 1px solid var(--rd-border); border-radius: var(--rd-radius); margin-bottom: 12px; }
+.rider-ds .driver-branch-erp-kpis > div + div { border-left: 1px solid var(--rd-border); }
+.rider-ds .driver-branch-erp-kpis span { color: var(--rd-text-muted); }
+.rider-ds .driver-branch-erp-kpis strong { color: var(--rd-accent-strong); }
+.rider-ds .driver-branch-erp-table-wrap { border: 1px solid var(--rd-border); border-radius: var(--rd-radius-sm); }
+.rider-ds .driver-branch-erp-table { background: var(--rd-card); }
+.rider-ds .driver-branch-erp-table th,
+.rider-ds .driver-branch-erp-table td { border-bottom: 1px solid var(--rd-border); border-right: 1px solid var(--rd-border); }
+.rider-ds .driver-branch-erp-table thead th { background: var(--rd-card-2); color: var(--rd-text-muted); }
+.rider-ds .driver-branch-erp-table tbody th { background: var(--rd-card-2); color: var(--rd-text); }
+.rider-ds .driver-branch-erp-table td strong { color: var(--rd-text); }
+.rider-ds .driver-branch-erp-table td small { color: var(--rd-info); }
+.rider-ds .driver-branch-erp-table td.is-achieved { background: var(--rd-success-soft); }
+.rider-ds .driver-branch-erp-table td.is-achieved small { color: var(--rd-success); }
+.rider-ds .driver-branch-erp-table td.is-total { background: var(--rd-accent-soft); }
+.rider-ds .driver-branch-erp-table td.is-total strong { color: var(--rd-accent-strong); }
+
+/* ── 기사대시보드: 할당 + 순위 다크 ── */
+.rider-ds .driver-region-dash-rank-block h3 { color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 800; }
+.rider-ds .driver-region-dash-rank-list {
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  overflow: hidden;
+  background: var(--rd-card-2);
+}
+.rider-ds .driver-region-dash-rank { border-bottom: 1px solid var(--rd-border); }
+.rider-ds .driver-region-dash-rank.is-top { background: var(--rd-accent-soft); }
+.rider-ds .driver-region-dash-rank__n {
+  background: var(--rd-card);
+  color: var(--rd-text-muted);
+  font-weight: 800;
+}
+.rider-ds .driver-region-dash-rank.is-top .driver-region-dash-rank__n { background: var(--rd-accent); color: var(--rd-accent-ink); }
+.rider-ds .driver-region-dash-rank__name { color: var(--rd-text); font-weight: 700; }
+.rider-ds .driver-region-dash-rank__count { color: var(--rd-accent-strong); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rider-ds .driver-region-dash-rank--empty { color: var(--rd-text-subtle); }
+
+/* ── 크루장 상세보기 표 다크 ── */
+.rider-ds .driver-crew-detail__summary { color: var(--rd-text-muted); font-size: var(--rd-fs-200); margin: 0 0 12px; line-height: 1.5; }
+.rider-ds .driver-crew-detail-table-wrap { overflow-x: auto; border: 1px solid var(--rd-border); border-radius: var(--rd-radius-sm); }
+.rider-ds .driver-crew-detail-table { width: 100%; min-width: 560px; border-collapse: collapse; background: var(--rd-card); }
+.rider-ds .driver-crew-detail-table th,
+.rider-ds .driver-crew-detail-table td { padding: 8px 6px; border-bottom: 1px solid var(--rd-border); text-align: center; white-space: nowrap; font-size: var(--rd-fs-200); font-variant-numeric: tabular-nums; }
+.rider-ds .driver-crew-detail-table thead th { background: var(--rd-card-2); color: var(--rd-text-muted); font-weight: 700; }
+.rider-ds .driver-crew-detail-table tbody td { color: var(--rd-text); }
+.rider-ds .driver-crew-detail-table tbody td:first-child,
+.rider-ds .driver-crew-detail-table thead th:first-child { text-align: left; }
+.rider-ds .driver-crew-detail-table .driver-crew-name { display: flex; align-items: center; gap: 5px; }
+.rider-ds .driver-crew-detail-table .driver-crew-name strong { color: var(--rd-text); font-size: var(--rd-fs-300); }
+.rider-ds .driver-crew-detail-table tr.is-self td { background: var(--rd-accent-soft); }
+.rider-ds .driver-crew-tag { padding: 1px 6px; border-radius: var(--rd-radius-pill); font-size: 10px; font-weight: 700; }
+.rider-ds .driver-crew-tag--self { color: var(--rd-accent-ink); background: var(--rd-accent); }
+.rider-ds .driver-crew-tag--crew { color: var(--rd-info); background: var(--rd-info-soft); }
+.rider-ds .driver-crew-detail-table td.driver-crew-num--total { color: var(--rd-accent-strong); font-weight: 800; }
+.rider-ds .driver-crew-detail-table tfoot .driver-crew-total-row td { border-top: 2px solid var(--rd-border-strong); background: var(--rd-card-2); color: var(--rd-text); font-weight: 800; }
+
+/* =====================================================================
+   출금 신청 패널 (다크)
+   ===================================================================== */
+.rider-ds .form-help { color: var(--rd-text-muted); }
+.rider-ds .driver-withdrawal-available {
+  background: linear-gradient(135deg, var(--rd-card) 0%, var(--rd-card-2) 100%);
+  border: 1px solid var(--rd-border);
+  color: var(--rd-text);
+}
+.rider-ds .driver-withdrawal-available strong { color: var(--rd-accent-strong); }
+.rider-ds .driver-withdrawal-available strong.is-negative,
+.rider-ds #driverWithdrawalAvailable.is-negative { color: var(--rd-danger); }
+.rider-ds .driver-withdrawal-available .form-help { color: var(--rd-on-dark-muted); }
+.rider-ds .driver-withdrawal-unpaid { background: var(--rd-danger-soft); color: var(--rd-danger); }
+.rider-ds .driver-withdrawal-paused-banner { background: var(--rd-warning-soft); color: var(--rd-warning); }
+
+.rider-ds .driver-withdrawal-platform {
+  border: 1px solid var(--rd-border-strong);
+  background: var(--rd-card-2);
+}
+.rider-ds .driver-withdrawal-platform legend { color: var(--rd-info); }
+.rider-ds .driver-withdrawal-platform__option { color: var(--rd-text); }
+
+.rider-ds .driver-withdrawal-form label { color: var(--rd-text); }
+.rider-ds .driver-withdrawal-form input {
+  border: 1px solid var(--rd-border-strong);
+  background: var(--rd-card-2);
+  color: var(--rd-text);
+}
+.rider-ds .driver-withdrawal-form input::placeholder { color: var(--rd-text-subtle); }
+.rider-ds .driver-withdrawal-form input:focus { outline: none; border-color: var(--rd-accent); }
+.rider-ds .driver-withdrawal-max-btn {
+  border: 1px solid var(--rd-info);
+  background: var(--rd-info-soft);
+  color: var(--rd-info);
+}
+.rider-ds .driver-withdrawal-max-btn:hover { background: var(--rd-info); color: #0a0b0d; border-color: var(--rd-info); }
+
+/* 날짜별 일정산 표 */
+.rider-ds .data-table { background: var(--rd-card); }
+.rider-ds .driver-withdrawal-table th.driver-withdrawal-net,
+.rider-ds .driver-withdrawal-table td.driver-withdrawal-net {
+  border-left: 2px solid var(--rd-accent);
+  background: var(--rd-accent-soft);
+  color: var(--rd-accent-strong);
+}
+.rider-ds .driver-withdrawal-table td.driver-withdrawal-net strong { color: var(--rd-accent-strong); }
+.rider-ds .driver-withdrawal-table th.driver-withdrawal-daily-fee-head .driver-withdrawal-th-sub { color: var(--rd-info); }
+
+.rider-ds .driver-withdrawal-reconcile { background: var(--rd-card-2); color: var(--rd-text-muted); }
+.rider-ds .driver-withdrawal-reconcile strong { color: var(--rd-text); }
+
+/* 계좌정보 입력 팝업 */
+.rider-ds .withdrawal-account-popup__dialog {
+  background: var(--rd-card);
+  border: 1px solid var(--rd-border);
+  color: var(--rd-text);
+}
+.rider-ds .withdrawal-account-popup__head p { color: var(--rd-teal); }
+.rider-ds .withdrawal-account-popup__hint { color: var(--rd-text-muted); }
+.rider-ds .withdrawal-account-form label span { color: var(--rd-text-muted); }
+.rider-ds .withdrawal-account-form input {
+  border: 1px solid var(--rd-border-strong);
+  background: var(--rd-card-2);
+  color: var(--rd-text);
+}
+.rider-ds .withdrawal-account-form input:focus { border-color: var(--rd-accent); background: var(--rd-card); box-shadow: 0 0 0 4px var(--rd-accent-soft); }
+
+/* =====================================================================
+   긴급미션 팝업 · 관리자 문의 팝업 (공유 .urgent-mission-popup__dialog) 다크
+   ===================================================================== */
+.rider-ds .urgent-mission-popup__dialog {
+  background: var(--rd-card);
+  border: 1px solid var(--rd-border);
+  color: var(--rd-text);
+  box-shadow: var(--rd-shadow);
+}
+.rider-ds .urgent-mission-popup__eyebrow { color: var(--rd-warning); }
+.rider-ds .urgent-mission-popup__dialog h2 { color: var(--rd-text); }
+.rider-ds .urgent-mission-popup__empty { color: var(--rd-text-muted); }
+.rider-ds .urgent-mission-popup__card { border-top-color: var(--rd-border); }
+.rider-ds .urgent-mission-popup__card .urgent-mission-card__content { color: var(--rd-text); }
+.rider-ds .urgent-mission-popup__card .urgent-mission-card__meta { color: var(--rd-text-muted); }
+.rider-ds .urgent-mission-popup__card .urgent-mission-tag--baemin { background: var(--rd-success-soft); color: var(--rd-success); }
+.rider-ds .urgent-mission-popup__card .urgent-mission-tag--coupang { background: var(--rd-warning-soft); color: var(--rd-warning); }
+.rider-ds .urgent-mission-popup__card .urgent-mission-status.is-open { background: var(--rd-warning-soft); color: var(--rd-warning); }
+.rider-ds .urgent-mission-popup__reject { border: 1px solid var(--rd-border-strong); background: var(--rd-card-2); color: var(--rd-text-muted); }
+.rider-ds .urgent-mission-popup__accept { border: 0; background: var(--rd-accent); color: var(--rd-accent-ink); }
+
+/* 관리자 문의 폼/내역 */
+.rider-ds .driver-inquiry-hint { color: var(--rd-text-muted); }
+.rider-ds .driver-inquiry-field { color: var(--rd-text-muted); }
+.rider-ds .driver-inquiry-field textarea {
+  border: 1px solid var(--rd-border-strong);
+  background: var(--rd-card-2);
+  color: var(--rd-text);
+}
+.rider-ds .driver-inquiry-field textarea::placeholder { color: var(--rd-text-subtle); }
+.rider-ds .driver-inquiry-history-title { color: var(--rd-text); }
+.rider-ds .driver-inquiry-empty { color: var(--rd-text-subtle); }
+.rider-ds .driver-inquiry-item { border-top: 1px solid var(--rd-border); }
+.rider-ds .driver-inquiry-item__head time { color: var(--rd-text-subtle); }
+.rider-ds .driver-inquiry-item p { color: var(--rd-text); }
+.rider-ds .driver-inquiry-status.is-new,
+.rider-ds .driver-inquiry-status.is-ack { background: var(--rd-warning-soft); color: var(--rd-warning); }
+.rider-ds .driver-inquiry-status.is-read { background: var(--rd-info-soft); color: var(--rd-info); }
+.rider-ds .driver-inquiry-status.is-done { background: var(--rd-success-soft); color: var(--rd-success); }
+.rider-ds .driver-inquiry-status.is-reply { background: var(--rd-warning-soft); color: var(--rd-warning); }
+.rider-ds .driver-inquiry-reply { background: var(--rd-card-2); border: 1px solid var(--rd-border); }
+.rider-ds .driver-inquiry-reply strong { color: var(--rd-accent-strong); }
+.rider-ds .driver-inquiry-reply p { color: var(--rd-text); }
+.rider-ds .driver-inquiry-ack-done { color: var(--rd-success) !important; }
+
+/* =====================================================================
+   기사 정보 수정 패널 (#driverProfileEditPanel) 다크
+   ===================================================================== */
+.rider-ds .profile-edit-section + .profile-edit-section { border-top: 1px solid var(--rd-border); }
+.rider-ds .profile-edit-section-title { color: var(--rd-text); }
+.rider-ds .profile-edit-section-desc { color: var(--rd-text-muted); }
+.rider-ds .profile-edit-label { color: var(--rd-text-muted); }
+.rider-ds .profile-edit-form input {
+  border: 1px solid var(--rd-border-strong);
+  background: var(--rd-card-2);
+  color: var(--rd-text);
+}
+.rider-ds .profile-edit-form input::placeholder { color: var(--rd-text-subtle); }
+.rider-ds .profile-edit-form input:focus { border-color: var(--rd-accent); background: var(--rd-card); box-shadow: 0 0 0 4px var(--rd-accent-soft); }
+.rider-ds .profile-edit-form input:disabled,
+.rider-ds .profile-edit-form input[readonly] { background: var(--rd-bg); color: var(--rd-text-subtle); }
+
+/* =====================================================================
+   공지 탭 (notice-item) + 공지 팝업 (notice-popup) 다크
+   ===================================================================== */
+.rider-ds .notice-item { border-bottom: 1px solid var(--rd-border); }
+.rider-ds .notice-item h3,
+.rider-ds .notice-item__title { color: var(--rd-text); }
+.rider-ds .notice-item__date { color: var(--rd-text-subtle); }
+.rider-ds .notice-item__body,
+.rider-ds .notice-item p { color: var(--rd-text) !important; }
+.rider-ds .notice-count,
+.rider-ds .driver-notice-count { color: var(--rd-text-muted); }
+.rider-ds .empty-text { color: var(--rd-text-muted); }
+
+.rider-ds .notice-popup__dialog {
+  background: var(--rd-card);
+  border: 1px solid var(--rd-border);
+  color: var(--rd-text);
+  box-shadow: var(--rd-shadow);
+}
+.rider-ds .notice-popup__eyebrow { color: var(--rd-warning); }
+.rider-ds .notice-popup__dialog h2 { color: var(--rd-text); }
+.rider-ds .notice-popup__body { color: var(--rd-text) !important; }
+.rider-ds .notice-popup__hide {
+  border: 1px solid var(--rd-border-strong);
+  background: var(--rd-card-2);
+  color: var(--rd-text-muted);
+}
+.rider-ds .notice-popup__close {
+  border: 0;
+  background: var(--rd-accent);
+  color: var(--rd-accent-ink);
+}
+
+/* =====================================================================
+   월간/주간 목표 설정 다이얼로그 + 날짜 선택기(range-calendar) 다크
+   ===================================================================== */
+.rider-ds .driver-target-dialog {
+  background: var(--rd-card);
+  border: 1px solid var(--rd-border);
+  color: var(--rd-text);
+  box-shadow: var(--rd-shadow);
+}
+.rider-ds .driver-target-dialog__head {
+  background: var(--rd-card-2);
+  border-bottom: 1px solid var(--rd-border);
+}
+.rider-ds .driver-target-dialog__head h2 { color: var(--rd-text); }
+.rider-ds .driver-target-dialog__close {
+  border: 1px solid var(--rd-border-strong);
+  background: var(--rd-card-2);
+  color: var(--rd-text-muted);
+}
+.rider-ds .driver-target-dialog__close:hover { border-color: var(--rd-accent); color: var(--rd-accent-strong); }
+
+.rider-ds .target-field__label { color: var(--rd-text-muted); }
+.rider-ds .target-field input[type="number"],
+.rider-ds .driver-target-dialog input[type="number"],
+.rider-ds .driver-target-dialog input[type="text"] {
+  border: 1px solid var(--rd-border-strong);
+  background: var(--rd-card-2);
+  color: var(--rd-text);
+}
+.rider-ds .target-field input[type="number"]:focus { border-color: var(--rd-accent); box-shadow: 0 0 0 4px var(--rd-accent-soft); }
+
+.rider-ds .period-picker-btn {
+  border: 1px solid var(--rd-border-strong);
+  background: var(--rd-card-2);
+  color: var(--rd-text);
+}
+.rider-ds .period-picker-btn:hover,
+.rider-ds .period-picker-btn:focus-visible { border-color: var(--rd-accent); background: var(--rd-accent-soft); box-shadow: 0 0 0 4px var(--rd-accent-soft); }
+.rider-ds .period-picker-btn__value { color: var(--rd-text); }
+.rider-ds .period-picker-btn__hint { color: var(--rd-text-subtle); }
+.rider-ds .month-picker-trigger { border-color: rgba(245, 179, 1, 0.45); }
+
+/* 날짜 선택 팝오버 */
+.rider-ds .range-calendar {
+  background: var(--rd-card);
+  border: 1px solid var(--rd-border);
+  color: var(--rd-text);
+  box-shadow: var(--rd-shadow);
+}
+.rider-ds .calendar-header button {
+  border: 1px solid var(--rd-border-strong);
+  background: var(--rd-card-2);
+  color: var(--rd-text);
+}
+.rider-ds .calendar-header button:hover { border-color: var(--rd-accent); background: var(--rd-accent-soft); }
+.rider-ds .calendar-header strong { color: var(--rd-text); }
+.rider-ds .calendar-weekdays { color: var(--rd-text-muted); }
+.rider-ds .calendar-weekdays span:last-child { color: var(--rd-info); }
+.rider-ds .calendar-weekdays span:first-child { color: var(--rd-danger); }
+
+.rider-ds .month-cell { border: 1px solid var(--rd-border); color: var(--rd-text); background: var(--rd-card-2); }
+.rider-ds .month-cell:hover { border-color: var(--rd-accent); background: var(--rd-accent-soft); }
+.rider-ds .month-cell.selected { border-color: var(--rd-accent); background: var(--rd-accent); color: var(--rd-accent-ink); }
+
+.rider-ds .calendar-day { color: var(--rd-text); }
+.rider-ds button.calendar-day:hover { border-color: var(--rd-border-strong); background: var(--rd-hover); }
+.rider-ds .calendar-day.muted { color: var(--rd-text-subtle); }
+.rider-ds .calendar-day.in-range { background: var(--rd-accent-soft); border-color: rgba(245, 179, 1, 0.25); }
+.rider-ds .calendar-day.selected { color: var(--rd-accent-ink); background: var(--rd-accent); border-color: var(--rd-accent); }
+.rider-ds .calendar-day.pickable-wednesday:not(.selected):not(.muted) { border-color: rgba(245, 179, 1, 0.5); background: var(--rd-accent-soft); }
+.rider-ds .calendar-day.pickable-wednesday:hover:not(.selected) { border-color: var(--rd-accent); background: var(--rd-accent-soft); }
+
+.rider-ds .month-today-btn { background: var(--rd-accent-soft); color: var(--rd-accent-strong); }
+.rider-ds .month-today-btn:hover { background: var(--rd-accent); color: var(--rd-accent-ink); }
+
+/* =====================================================================
+   크루장 메인 표/이름변경 폼 · 지사 기사수 배지 (잔여 밝은 면) 다크
+   ===================================================================== */
+.rider-ds .driver-crew-table-wrap { background: var(--rd-card); border: 1px solid var(--rd-border); }
+.rider-ds .driver-crew-leader-panel .driver-crew-table th { background: var(--rd-card-2); color: var(--rd-accent-strong); }
+.rider-ds .driver-crew-leader-panel .driver-crew-table td { border-bottom: 1px solid var(--rd-border); color: var(--rd-text); }
+.rider-ds .driver-crew-table tr.is-self td { background: var(--rd-accent-soft); }
+.rider-ds .driver-crew-footnote { color: var(--rd-text-subtle); }
+.rider-ds .driver-crew-detail-summary { border: 1px solid var(--rd-border-strong); background: var(--rd-card-2); color: var(--rd-text-muted); }
+
+.rider-ds .driver-crew-rename-form { background: var(--rd-card-2); border: 1px solid var(--rd-border); }
+.rider-ds .driver-crew-rename-form label { color: var(--rd-text-muted); }
+.rider-ds .driver-crew-rename-form input { border: 1px solid var(--rd-border-strong); background: var(--rd-card); color: var(--rd-text); }
+.rider-ds .driver-crew-rename-btn { border: 1px solid var(--rd-info); background: var(--rd-info-soft); color: var(--rd-info); }
+.rider-ds .driver-crew-rename-btn:hover { background: var(--rd-info); color: #0a0b0d; }
+.rider-ds .driver-crew-rename-save { background: var(--rd-info); color: #0a0b0d; }
+
+.rider-ds .driver-branch-rider-list-head span { background: var(--rd-card-2); color: var(--rd-text-muted); border: 1px solid var(--rd-border); }
+.rider-ds .driver-region-dash-rank__count { color: var(--rd-text); }

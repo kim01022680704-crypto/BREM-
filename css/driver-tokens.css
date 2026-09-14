@@ -1,0 +1,68 @@
+/* =====================================================================
+   BREM Rider(기사앱) Design Tokens — 프리미엄 다크 (draft)
+   이 파일은 변수만 선언하며 어떤 요소에도 스타일을 직접 적용하지 않습니다.
+   => 이 파일만 불러와서는 화면이 절대 바뀌지 않습니다 (기능 영향 0).
+
+   방향: 블랙 유지 + 무게감 있는 프리미엄 다크(핀테크/토스 다크 톤).
+   카드까지 다크, 흰 숫자, 강조는 절제된 앰버 하나. 상태는 밝은 시맨틱 색으로만.
+   실제 적용은 .rider-ds 스코프 스타일에서 var(--rd-*) 로 참조합니다.
+   ===================================================================== */
+
+:root {
+  /* ---- Surface (near-black → elevated) ---- */
+  --rd-bg: #0a0b0d;
+  --rd-card: #15171c;          /* 카드 기본 */
+  --rd-card-2: #1b1e25;        /* 메트릭 타일 등 살짝 올라온 면 */
+  --rd-hover: #20242c;
+
+  /* ---- Border (구조용, 은은) ---- */
+  --rd-border: rgba(255, 255, 255, 0.07);
+  --rd-border-strong: rgba(255, 255, 255, 0.14);
+
+  /* ---- Text ---- */
+  --rd-text: #f2f4f7;
+  --rd-text-muted: #9aa3b2;
+  --rd-text-subtle: #6b7480;
+  --rd-on-dark: #ffffff;
+  --rd-on-dark-muted: rgba(255, 255, 255, 0.64);
+
+  /* ---- Hero (깊은 블랙 + 미세한 입체) ---- */
+  --rd-hero-1: #0d0f13;
+  --rd-hero-2: #191d26;
+
+  /* ---- Accent (절제된 앰버 하나) ---- */
+  --rd-accent: #f5b301;
+  --rd-accent-strong: #ffc21f;
+  --rd-accent-ink: #1a1204;
+  --rd-accent-soft: rgba(245, 179, 1, 0.16);
+
+  /* ---- Semantic (다크 배경용 밝은 톤) ---- */
+  --rd-success: #34d399;  --rd-success-soft: rgba(52, 211, 153, 0.14);
+  --rd-danger:  #f87171;  --rd-danger-soft:  rgba(248, 113, 113, 0.14);
+  --rd-warning: #fbbf24;  --rd-warning-soft: rgba(251, 191, 36, 0.14);
+  --rd-info:    #60a5fa;  --rd-info-soft:    rgba(96, 165, 250, 0.14);
+  --rd-teal:    #2dd4bf;  --rd-teal-soft:    rgba(45, 212, 191, 0.14);
+
+  /* ---- Typography ---- */
+  --rd-font: "Noto Sans KR", "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --rd-fs-100: 0.6875rem;  /* 11px 캡션 */
+  --rd-fs-200: 0.75rem;    /* 12px 보조 */
+  --rd-fs-300: 0.8125rem;  /* 13px 본문 */
+  --rd-fs-400: 0.875rem;   /* 14px 강조 본문 */
+  --rd-fs-500: 1rem;       /* 16px 제목 */
+  --rd-fs-600: 1.3125rem;  /* 21px 큰 값 */
+  --rd-fs-700: 1.625rem;   /* 26px 통계 숫자 */
+
+  /* ---- Radius ---- */
+  --rd-radius-sm: 10px;
+  --rd-radius: 14px;
+  --rd-radius-lg: 18px;
+  --rd-radius-pill: 999px;
+
+  /* ---- Elevation ---- */
+  --rd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --rd-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+
+  /* ---- Motion ---- */
+  --rd-ease: 0.16s ease;
+}

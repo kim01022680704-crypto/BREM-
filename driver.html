@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" class="rider-ds">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -16,9 +16,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260910branch2">
+  <link rel="stylesheet" href="css/driver.css?v=20260910missim1">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
+  <link rel="stylesheet" href="css/driver-tokens.css?v=20260914dark1">
+  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260914dark1">
 </head>
 <body>
   <section class="login-page" id="driverLoginCard">
@@ -101,7 +103,7 @@
           >
           <div class="hero__titles">
             <p class="eyebrow">BREM RIDER</p>
-            <h1>기사 전용 조회</h1>
+            <h1>BREM RIDER SYSTEM</h1>
           </div>
           <button class="logout-btn" type="button" id="driverLogoutBtn">로그아웃</button>
         </div>
@@ -909,18 +911,27 @@
               <div class="panel-header">
                 <h2>나의 미션</h2>
               </div>
-              <div class="mission-summary-box">
+              <div class="mission-summary-box" id="riderMissionBox">
+                <div class="mission-platform-block" id="riderMissionCombinedWrap" hidden>
+                  <p class="mission-summary-label">합산 미션</p>
+                  <strong id="riderMissionCombinedTitle">미설정</strong>
+                  <p class="rule-text" id="riderMissionCombinedDescription">관리자가 합산 미션을 배정하면 설명이 표시됩니다.</p>
+                  <p class="rule-text mission-conditions" id="riderMissionCombinedConditions" hidden></p>
+                  <div class="mission-sim" id="riderMissionCombinedSim" hidden></div>
+                </div>
                 <div class="mission-platform-block" id="riderMissionBaeminWrap">
                   <p class="mission-summary-label">배민 미션</p>
                   <strong id="riderMissionBaeminTitle">미설정</strong>
                   <p class="rule-text" id="riderMissionBaeminDescription">관리자가 배민 미션을 배정하면 설명이 표시됩니다.</p>
                   <p class="rule-text mission-conditions" id="riderMissionBaeminConditions" hidden></p>
+                  <div class="mission-sim" id="riderMissionBaeminSim" hidden></div>
                 </div>
                 <div class="mission-platform-block" id="riderMissionCoupangWrap">
                   <p class="mission-summary-label">쿠팡 미션</p>
                   <strong id="riderMissionCoupangTitle">미설정</strong>
                   <p class="rule-text" id="riderMissionCoupangDescription">관리자가 쿠팡 미션을 배정하면 설명이 표시됩니다.</p>
                   <p class="rule-text mission-conditions" id="riderMissionCoupangConditions" hidden></p>
+                  <div class="mission-sim" id="riderMissionCoupangSim" hidden></div>
                 </div>
               </div>
             </article>
@@ -1170,7 +1181,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260816popup1"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260816popup1"></script>
-  <script src="js/storage.js?v=20260910branch2"></script>
+  <script src="js/storage.js?v=20260910missim1"></script>
   <script src="js/driver-utils.js?v=20260816login1"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260816inq1"></script>
@@ -1180,7 +1191,8 @@
   <script src="js/driver-withdrawal.js?v=20260907withdrawaccount1"></script>
   <script src="js/driver-urgent-missions.js?v=20260816um2"></script>
   <script src="js/driver-inquiries.js?v=20260817inq7"></script>
-  <script src="js/driver.js?v=20260910branch2"></script>
+  <script src="js/promotion-count-sim.js?v=20260910missim1"></script>
+  <script src="js/driver.js?v=20260910missim1"></script>
   <script src="js/driver-app-nav.js?v=20260910branch2"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
