@@ -32,6 +32,9 @@ window.BremSupabaseStorageAdapter = (function () {
     'settlement_upload_logs',
     'settlement_unmatched',
     'promotion_apply_results',
+    // 명세서 업로드 이력·공지도 해가 지날수록 쌓여 1000행을 넘길 수 있어 선제적으로 전 페이지 로드.
+    'payroll_slip_uploads',
+    'payroll_notices',
     'payroll_slip_lines',
     'lease_vehicles',
     'lease_contracts',
