@@ -74,6 +74,62 @@
       font-size: 0.84rem; font-weight: 700; cursor: pointer;
       box-shadow: 0 4px 14px rgba(0,0,0,0.12);
     }
+
+    /* ───────── 신규 간이등록 팝업: 다크·컴팩트 리스킨(간이등록 폼 톤) ─────────
+       is-embed-new(신규 등록)에만 적용. 목록/상세(라이트) 및 풀페이지엔 영향 없음. */
+    html.is-embed-new { color-scheme: dark; }
+    html.is-embed-new,
+    html.is-embed-new body { background: #0e0e0f !important; }
+    html.is-embed-new .app.index-app,
+    html.is-embed-new .index-layout,
+    html.is-embed-new .index-content,
+    html.is-embed-new .index-content--register,
+    html.is-embed-new .form-panel,
+    html.is-embed-new .form-panel--register,
+    html.is-embed-new .form-section { background: transparent !important; }
+    /* 섹션 제목/불필요 안내는 숨겨 이미지처럼 필드만 깔끔하게 */
+    html.is-embed-new .register-section-title { display: none !important; }
+    html.is-embed-new .form-note--login { display: none !important; }
+    /* 라벨 */
+    html.is-embed-new .field-label { color: #cbd5e1 !important; font-weight: 600; }
+    html.is-embed-new .field-label em { color: #f87171 !important; font-style: normal; }
+    /* 입력/선택/텍스트영역/날짜버튼 */
+    html.is-embed-new input,
+    html.is-embed-new select,
+    html.is-embed-new textarea,
+    html.is-embed-new .date-picker-button {
+      background: #17171a !important;
+      border: 1px solid rgba(255,255,255,0.14) !important;
+      color: #f4f4f5 !important;
+    }
+    html.is-embed-new .date-picker-button { text-align: left; }
+    html.is-embed-new input::placeholder,
+    html.is-embed-new textarea::placeholder { color: #6b7280 !important; }
+    html.is-embed-new input:focus,
+    html.is-embed-new select:focus,
+    html.is-embed-new textarea:focus {
+      border-color: #ffd400 !important;
+      box-shadow: 0 0 0 3px rgba(255,212,0,0.18) !important;
+      outline: none !important;
+    }
+    /* 안내문(남은 것) 톤 다운 */
+    html.is-embed-new .form-note,
+    html.is-embed-new .form-note--subtle { color: #8b8f98 !important; }
+    html.is-embed-new .form-note strong { color: #e5e7eb !important; }
+    /* 플랫폼 패널 */
+    html.is-embed-new .platform-panel {
+      background: #17171a !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+    }
+    html.is-embed-new .platform-panel-label { color: #cbd5e1 !important; }
+    html.is-embed-new .platform-check > span { color: #e5e7eb !important; }
+    /* 버튼: 기사 등록=옐로, 초기화=고스트(다크) */
+    html.is-embed-new .form-actions .btn.primary {
+      background: #ffd400 !important; border-color: #ffd400 !important; color: #111 !important;
+    }
+    html.is-embed-new .form-actions .btn.ghost {
+      background: #1b1b1c !important; border: 1px solid rgba(255,255,255,0.16) !important; color: #e5e7eb !important;
+    }
   </style>
 </head>
 <body class="register-page drivers-page">
