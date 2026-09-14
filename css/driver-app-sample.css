@@ -1437,3 +1437,58 @@ html.rider-ds.brem-app-nav[data-driver-tab]:not([data-driver-tab="home"]) .drive
 .rider-ds .ds-mini-progress__label strong { color: var(--rd-text); }
 .rider-ds .ds-mini-progress__bar { height: 7px; border-radius: 999px; background: var(--rd-card-2); overflow: hidden; }
 .rider-ds .ds-mini-progress__bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--rd-accent), var(--rd-accent-strong)); }
+
+/* =====================================================================
+   화이트(라이트) 테마 구조 보정 — [data-rd-theme="light"] 일 때만
+   토큰 오버라이드로 안 잡히는 하드코딩 값/다크전용 색만 보정.
+   (히어로 상단바는 다크 유지 → 로그아웃/타이틀/알림 영역은 손대지 않음)
+   ===================================================================== */
+
+/* 하단 탭바: 다크 하드코딩(#0e0f12/흰 라인/진한 그림자) → 라이트 카드톤 */
+html.rider-ds[data-rd-theme="light"] .driver-app-nav {
+  background: var(--rd-card);
+  border-top: 1px solid var(--rd-border);
+  box-shadow: 0 -6px 20px rgba(17, 24, 39, 0.08);
+}
+
+/* 출금 가능액 카드: 라이트 카드에서 흰 글자(form-help) → 회색 본문색 */
+html.rider-ds[data-rd-theme="light"] .driver-withdrawal-available .form-help { color: var(--rd-text-muted); }
+
+/* 헤더 우측 액션(테마 토글 + 로그아웃)을 한 셀로 묶음 → 3열 그리드 유지 */
+.rider-ds .hero__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: end;
+}
+
+/* 헤더 테마 토글 버튼 (다크 히어로 위에 얹힘 → on-dark 톤 유지, 라이트에서도 동일) */
+.rider-ds .rider-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--rd-radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--rd-on-dark);
+  cursor: pointer;
+  transition: background var(--rd-ease), border-color var(--rd-ease);
+}
+.rider-ds .rider-theme-toggle:hover { background: rgba(255, 255, 255, 0.12); }
+.rider-ds .rider-theme-toggle:focus-visible { outline: 2px solid var(--rd-accent); outline-offset: 1px; }
+
+/* 좁은 화면: 노란 한 줄 타이틀이 토글 버튼과 겹치지 않게 살짝 축소(브랜딩 유지) */
+@media (max-width: 420px) {
+  .rider-ds .hero__titles h1 { font-size: 1.02rem; }
+}
+@media (max-width: 360px) {
+  .rider-ds .hero__titles h1 { font-size: 0.92rem; }
+  .rider-ds .hero__actions { gap: 6px; }
+  .rider-ds .logout-btn { padding-left: 8px; padding-right: 8px; }
+}

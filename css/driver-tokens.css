@@ -66,3 +66,43 @@
   /* ---- Motion ---- */
   --rd-ease: 0.16s ease;
 }
+
+/* =====================================================================
+   화이트(라이트) 테마 — html.rider-ds[data-rd-theme="light"] 일 때만 토큰 오버라이드
+   - 다크는 기본값(:root) 그대로 유지. 이 블록은 라이트 선택 시에만 적용.
+   - 방향: 본문/카드/네비는 밝은 화이트, 히어로(상단바)는 다크 유지(노란 브랜드 타이틀 보존).
+     → 히어로 전용 토큰(--rd-hero-*, --rd-on-dark*)은 오버라이드하지 않음.
+   - 시맨틱/강조는 흰 배경 대비를 위해 살짝 진하게.
+   ===================================================================== */
+html.rider-ds[data-rd-theme="light"] {
+  /* Surface */
+  --rd-bg: #eef1f5;
+  --rd-card: #ffffff;
+  --rd-card-2: #f4f6f9;
+  --rd-hover: #e9edf3;
+
+  /* Border */
+  --rd-border: rgba(17, 24, 39, 0.10);
+  --rd-border-strong: rgba(17, 24, 39, 0.18);
+
+  /* Text */
+  --rd-text: #16202f;
+  --rd-text-muted: #56606f;
+  --rd-text-subtle: #8a93a1;
+
+  /* Accent (앰버) — 채움은 그대로, 흰 배경 텍스트 대비용 strong은 살짝 진하게 */
+  --rd-accent: #f5b301;
+  --rd-accent-strong: #c98a00;
+  --rd-accent-soft: rgba(245, 179, 1, 0.16);
+
+  /* Semantic (흰 배경 대비용으로 진한 톤) */
+  --rd-success: #0f9d63;  --rd-success-soft: rgba(15, 157, 99, 0.12);
+  --rd-danger:  #dc2626;  --rd-danger-soft:  rgba(220, 38, 38, 0.10);
+  --rd-warning: #c2760a;  --rd-warning-soft: rgba(194, 118, 10, 0.12);
+  --rd-info:    #2563eb;  --rd-info-soft:    rgba(37, 99, 235, 0.10);
+  --rd-teal:    #0d9488;  --rd-teal-soft:    rgba(13, 148, 136, 0.12);
+
+  /* Elevation (밝은 그림자) */
+  --rd-shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.06);
+  --rd-shadow: 0 10px 28px rgba(17, 24, 39, 0.10);
+}

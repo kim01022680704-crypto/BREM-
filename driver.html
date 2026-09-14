@@ -2,6 +2,15 @@
 <html lang="ko" class="rider-ds">
 <head>
   <meta charset="UTF-8">
+  <!-- 저장된 라이트/다크 테마를 스타일 적용 전에 반영(깜빡임 방지). 표시용 전용, 계산/기능 영향 없음 -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('brem_rider_theme');
+        if (t === 'light') document.documentElement.setAttribute('data-rd-theme', 'light');
+      } catch (e) {}
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="BREM 기사 전용 조회">
   <meta name="theme-color" content="#0a0a0a">
@@ -19,8 +28,8 @@
   <link rel="stylesheet" href="css/driver.css?v=20260914perf1">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
-  <link rel="stylesheet" href="css/driver-tokens.css?v=20260914dark1">
-  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260914hdr1">
+  <link rel="stylesheet" href="css/driver-tokens.css?v=20260914light1">
+  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260914light2">
 </head>
 <body>
   <section class="login-page" id="driverLoginCard">
@@ -105,7 +114,10 @@
             <p class="eyebrow">BREM RIDER</p>
             <h1>BREM RIDER SYSTEM</h1>
           </div>
-          <button class="logout-btn" type="button" id="driverLogoutBtn">로그아웃</button>
+          <div class="hero__actions">
+            <button class="rider-theme-toggle" type="button" id="riderThemeToggle" aria-label="화면 밝기 전환" title="화면 밝기 전환">🌙</button>
+            <button class="logout-btn" type="button" id="driverLogoutBtn">로그아웃</button>
+          </div>
         </div>
         <p class="hero-desc">본인 콜수와 장기근속이벤트 진행률을 확인합니다.</p>
         <p class="rider-publish-notice" id="riderPublishNotice" hidden>
@@ -1315,6 +1327,7 @@
   <script src="js/driver-app-nav.js?v=20260914perf3"></script>
   <script src="js/driver-perf-calendar.js?v=20260914perf2"></script>
   <script src="js/driver-home-preview.js?v=20260914home1"></script>
+  <script src="js/driver-theme-toggle.js?v=20260914light1"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
