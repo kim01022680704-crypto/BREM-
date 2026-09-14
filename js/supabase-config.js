@@ -41,18 +41,21 @@
   const LEGACY_SESSION_PREFIX = 'brem_sb_';
   const LEGACY_LOCAL_PREFIX = 'brem-auth-';
 
+  function isLegacyUnscopedAuthKey(key) {
+    if (!key) return false;
+    // 로그인 유지용 스코프 토큰은 지우면 안 됨 (앱/브라우저 재시작 시 재로그인됨)
+    if (key.startsWith('brem-auth-admin-') || key.startsWith('brem-auth-rider-')) {
+      return false;
+    }
+    return key.startsWith(AUTH_STORAGE_PREFIX) || key.startsWith(LEGACY_SESSION_PREFIX);
+  }
+
   function purgeLegacyLocalAuthStorage() {
     try {
-      const prefixes = [
-        AUTH_STORAGE_PREFIX,
-        LEGACY_SESSION_PREFIX,
-        'brem-auth-admin-',
-        'brem-auth-rider-'
-      ];
       for (let index = localStorage.length - 1; index >= 0; index -= 1) {
         const key = localStorage.key(index);
         if (!key) continue;
-        if (prefixes.some(prefix => key.startsWith(prefix))) {
+        if (isLegacyUnscopedAuthKey(key)) {
           localStorage.removeItem(key);
         }
       }
@@ -157,13 +160,11 @@
         setItem(key, value) {
           const store = resolveWriteStore();
           store.setItem(scopedPrefix + key, value);
-          // 관리자: 로그인 유지 토큰은 localStorage에도 미러 (drivers.html 등 다른 페이지 공유)
-          if (scope === 'admin') {
-            try {
-              localStorage.setItem(scopedPrefix + key, value);
-            } catch {
-              /* ignore */
-            }
+          // 관리자·기사: 로그인 유지 토큰은 localStorage에도 미러 (앱 재시작·다른 페이지 공유)
+          try {
+            localStorage.setItem(scopedPrefix + key, value);
+          } catch {
+            /* ignore */
           }
           try {
             sessionStorage.removeItem(AUTH_STORAGE_PREFIX + key);

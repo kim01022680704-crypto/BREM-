@@ -1152,6 +1152,12 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   return {
     ok: true,
     enrolled: true,
+    accountConfigured: Boolean(String(
+      rider?.account_number
+      || rider?.accountNumber
+      || rider?.raw_data?.accountNumber
+      || ''
+    ).trim()),
     weekStart,
     weekEnd,
     driverId,
@@ -1219,6 +1225,16 @@ async function getWithdrawalSummary(accessToken, weekStartInput) {
 async function createWithdrawalRequest(accessToken, body = {}) {
   const me = await getRiderMe(accessToken);
   if (!me.ok) return me;
+
+  const accountNumber = String(
+    me.rider?.account_number
+    || me.rider?.accountNumber
+    || me.rider?.raw_data?.accountNumber
+    || ''
+  ).trim();
+  if (!accountNumber) {
+    return { ok: false, status: 400, code: 'ACCOUNT_REQUIRED', error: '출금신청 전 계좌번호를 등록해 주세요.' };
+  }
 
   const amount = Math.max(0, Math.round(Number(body.amount || 0)));
   if (!amount) {

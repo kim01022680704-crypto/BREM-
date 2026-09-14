@@ -289,6 +289,21 @@ const TAX = base => Math.floor(base * 0.033);
     .find(tr => tr.textContent.includes('박쿠팡')).querySelectorAll('td')].map(td => td.textContent.trim());
   check(`실지급 ${money(parkDelivery - parkSheetDeduct - parkTax)}`, cells7.includes(money(parkDelivery - parkSheetDeduct - parkTax)), 'true');
 
+  console.log('\n[7-1] 정산서에 저장된 콜수수료는 현재 설정 단가보다 우선한다');
+  SETTLEMENTS[0].riders[0].amounts.callFee = 36000;
+  SETTLEMENTS[0].riders[0].amounts.callFeeUnit = 300;
+  FEES = { coupang: { callFee: 250, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' } };
+  await Result.refresh('coupang');
+  const cells71 = [...[...window.document.querySelectorAll('#settlementResultRows tr')]
+    .find(tr => tr.textContent.includes('박쿠팡')).querySelectorAll('td')].map(td => td.textContent.trim());
+  check('저장 단가 300원 × 120콜 = 36,000', cells71.includes('36,000'), 'true');
+  check(`현재 설정 250원이어도 저장 당시 실지급 유지 ${money(parkDelivery - parkSheetDeduct - parkTax - 36000)}`,
+    cells71.includes(money(parkDelivery - parkSheetDeduct - parkTax - 36000)), 'true');
+  delete SETTLEMENTS[0].riders[0].amounts.callFee;
+  delete SETTLEMENTS[0].riders[0].amounts.callFeeUnit;
+  FEES = { coupang: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' } };
+  await Result.refresh('coupang');
+
   console.log('\n[8] 쿠팡·배민 지급/공제 열을 통일한다 (한쪽에만 있는 항목도 0으로 표기)');
   // 헤더는 2줄(그룹행 + 열이름행)이라 열 이름은 두 번째 줄에서 읽는다.
   const headRows = [...window.document.querySelectorAll('#settlementResultHead tr')];

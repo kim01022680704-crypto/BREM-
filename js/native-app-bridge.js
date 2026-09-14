@@ -11,11 +11,19 @@
 
   function isCapacitorNative() {
     try {
-      return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'
-        && window.Capacitor.isNativePlatform());
+      if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'
+        && window.Capacitor.isNativePlatform()) {
+        return true;
+      }
     } catch {
-      return false;
+      /* ignore */
     }
+    try {
+      if (window.Capacitor && window.Capacitor.isNativePlatform === true) return true;
+    } catch {
+      /* ignore */
+    }
+    return false;
   }
 
   function isStandaloneDisplay() {
@@ -37,6 +45,12 @@
 
   window.BREM_IS_NATIVE_APP = isCapacitorNative();
   window.BREM_IS_INSTALLED_SHELL = window.BREM_IS_NATIVE_APP || isStandaloneDisplay();
+
+  function refreshNativeFlags() {
+    window.BREM_IS_NATIVE_APP = isCapacitorNative();
+    window.BREM_IS_INSTALLED_SHELL = window.BREM_IS_NATIVE_APP || isStandaloneDisplay();
+    return window.BREM_IS_NATIVE_APP;
+  }
 
   function hidePwaInstallUi() {
     if (!window.BREM_IS_INSTALLED_SHELL) return;
@@ -336,6 +350,7 @@
   }
 
   function boot() {
+    refreshNativeFlags();
     hidePwaInstallUi();
     persistNativeRiderSession();
     bindBackButton();
@@ -361,4 +376,11 @@
   } else {
     boot();
   }
+  window.addEventListener('capacitorReady', function () {
+    refreshNativeFlags();
+    persistNativeRiderSession();
+  });
+  window.setTimeout(function () {
+    if (refreshNativeFlags()) persistNativeRiderSession();
+  }, 400);
 })();

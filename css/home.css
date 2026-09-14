@@ -168,6 +168,20 @@ body {
   line-height: 1;
 }
 
+.brem-btn-portal--wide {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  aspect-ratio: auto;
+  min-height: 72px;
+  padding: 16px 20px;
+  gap: 14px;
+}
+
+.brem-btn-portal--wide .brem-btn-portal-icon {
+  width: 36px;
+  height: 36px;
+}
+
 @media (max-width: 420px) {
   .brem-home {
     padding: 54px 12px 18px;

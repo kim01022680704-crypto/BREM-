@@ -191,6 +191,15 @@
     display: none !important;
   }
 
+  .admin-app .topbar-link--register {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+    text-align: center;
+  }
+
   /* ── Stats & cards ── */
   .admin-app .stats-grid,
   .admin-app .revenue-summary-grid,

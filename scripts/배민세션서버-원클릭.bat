@@ -7,7 +7,7 @@ rem ================================================================
 rem  더블클릭 한 번으로: 코드동기화 -> 포트 3939 정리 -> 세션서버 시작
 rem  로컬 폴더가 다르면 아래 BREM_DIR 값만 바꾸세요.
 rem ================================================================
-set "BREM_DIR=E:\브램로컬\BREM"
+set "BREM_DIR=E:\BREM"
 
 if not exist "%BREM_DIR%\package.json" (
   echo [오류] %BREM_DIR% 에서 package.json 을 찾지 못했습니다.
@@ -33,12 +33,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [1/3] code sync (origin/main) ...
-if exist "%BREM_DIR%\scripts\_session-git-sync.cmd" (
-  call "%BREM_DIR%\scripts\_session-git-sync.cmd"
-) else (
-  echo   [경고] _session-git-sync.cmd 없음 - sync 건너뛰고 서버만 기동
-)
+echo [1/3] using local code %BREM_DIR% (git reset skipped)
+if exist "%BREM_DIR%\_live-baemin-profile" set "BAEMIN_PLAYWRIGHT_PROFILE=%BREM_DIR%\_live-baemin-profile"
+echo   browsers=%PLAYWRIGHT_BROWSERS_PATH%
+echo   profile=%BAEMIN_PLAYWRIGHT_PROFILE%
 echo.
 
 echo [2/3] 포트 3939 정리 ...
@@ -61,6 +59,7 @@ echo   ▶ 로그인/배달현황 확인 후 brem.kr 탑바 [크롤링 시작]
 echo   ▶ 이 창은 닫지 마세요.
 echo.
 set "BAEMIN_AUTO_OPEN_BROWSER=1"
+set "BAEMIN_AUTO_RESUME_STATUS_LOOP=1"
 call npm.cmd run baemin:session-server
 
 echo.

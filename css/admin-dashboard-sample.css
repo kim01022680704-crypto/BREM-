@@ -1,0 +1,236 @@
+/* =====================================================================
+   관리자 ERP 대시보드 — 디자인 시스템 샘플 적용 (SCOPED to #dashboard)
+   - 모든 선택자는 #dashboard 하위로만 한정 → 다른 메뉴 화면에 영향 없음
+   - DOM/id/class/이벤트 바인딩은 그대로. 색·간격·타이포·상태표시만 정리
+   - !important 사용하지 않음 (모바일 오버라이드와 충돌 회피)
+   - 값은 css/brem-tokens.css 의 --ds-* 토큰을 참조
+   ===================================================================== */
+
+/* ── 섹션 리듬 ─────────────────────────────────────── */
+#dashboard.section.active {
+  gap: var(--ds-space-5);
+}
+
+/* ── 카드 공통 ─────────────────────────────────────── */
+#dashboard .card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-sm);
+}
+
+/* 라이브 카드의 골드 글로우 제거 → 차분하게 */
+#dashboard .dashboard-baemin-live-card {
+  border-color: var(--ds-border);
+  box-shadow: var(--ds-shadow-sm);
+}
+
+/* ── 카드 헤더 ─────────────────────────────────────── */
+#dashboard .card-header {
+  background: transparent;
+  border-bottom: 1px solid var(--ds-border);
+  padding: var(--ds-space-4) var(--ds-space-5);
+}
+
+#dashboard .card-header h2 {
+  color: var(--ds-text);
+  font-size: var(--ds-fs-500);
+  font-weight: var(--ds-fw-semibold);
+  letter-spacing: -0.01em;
+}
+
+#dashboard .dashboard-baemin-week-block__head h3,
+#dashboard .card-header h3 {
+  color: var(--ds-text);
+  font-size: var(--ds-fs-400);
+  font-weight: var(--ds-fw-semibold);
+}
+
+/* ── 보조 텍스트 · 상태 문구 통일 ──────────────────── */
+#dashboard .form-help,
+#dashboard .admin-table-summary,
+#dashboard .dashboard-baemin-live-help,
+#dashboard .dashboard-search-result,
+#dashboard .dashboard-scroll-note {
+  color: var(--ds-text-muted);
+  font-size: var(--ds-fs-200);
+  line-height: 1.5;
+}
+
+#dashboard .dashboard-baemin-applied-time {
+  color: var(--ds-text-subtle);
+  font-size: var(--ds-fs-200);
+  font-weight: var(--ds-fw-medium);
+}
+
+/* ── 통계 카드 그리드 ─────────────────────────────── */
+#dashboard .stats-grid {
+  gap: var(--ds-space-3);
+}
+
+#dashboard .stat-card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  padding: var(--ds-space-4) var(--ds-space-5);
+  transition: border-color var(--ds-ease), background var(--ds-ease);
+}
+
+/* 플랫폼별 색 테두리는 차분하게 통일 (정보는 라벨로 구분) */
+#dashboard .stat-card--coupang,
+#dashboard .stat-card--baemin {
+  border-color: var(--ds-border);
+}
+
+#dashboard .stat-card span {
+  color: var(--ds-text-muted);
+  font-size: var(--ds-fs-200);
+  font-weight: var(--ds-fw-medium);
+}
+
+#dashboard .stat-card strong {
+  margin-top: var(--ds-space-2);
+  color: var(--ds-text);
+  font-size: var(--ds-fs-700);
+  font-weight: var(--ds-fw-bold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 경고 통계(공차)만 강조색 유지 — 절제해서 하나만 */
+#dashboard .stat-card--warning strong {
+  color: var(--ds-warning);
+}
+
+#dashboard .stat-card--success strong {
+  color: var(--ds-success);
+}
+
+/* 클릭 가능한 통계 카드(버튼)의 hover */
+#dashboard .dashboard-stat-link {
+  cursor: pointer;
+  text-align: left;
+}
+
+#dashboard .dashboard-stat-link:hover {
+  border-color: var(--ds-border-strong);
+  background: var(--ds-surface-hover);
+}
+
+/* ── 버튼 통일 ─────────────────────────────────────── */
+#dashboard .primary-btn {
+  background: var(--ds-accent);
+  color: var(--ds-accent-ink);
+  border: 1px solid transparent;
+  border-radius: var(--ds-radius-sm);
+  padding: 9px 14px;
+  font-size: var(--ds-fs-300);
+  font-weight: var(--ds-fw-semibold);
+  transition: filter var(--ds-ease);
+}
+
+#dashboard .primary-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+#dashboard .small-btn {
+  background: var(--ds-surface-2);
+  color: var(--ds-text);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-sm);
+  padding: 8px 12px;
+  font-size: var(--ds-fs-200);
+  font-weight: var(--ds-fw-semibold);
+  transition: background var(--ds-ease), border-color var(--ds-ease);
+}
+
+#dashboard .small-btn:hover:not(:disabled) {
+  background: var(--ds-surface-hover);
+  border-color: var(--ds-border-strong);
+}
+
+#dashboard .primary-btn:focus-visible,
+#dashboard .small-btn:focus-visible,
+#dashboard .th-sort-btn:focus-visible {
+  outline: 2px solid var(--ds-accent);
+  outline-offset: 2px;
+}
+
+/* ── 검색 입력 ─────────────────────────────────────── */
+#dashboard .dashboard-driver-search input,
+#dashboard .week-picker-trigger {
+  background: var(--ds-surface-2);
+  color: var(--ds-text);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-sm);
+}
+
+#dashboard .dashboard-driver-search input::placeholder {
+  color: var(--ds-text-subtle);
+}
+
+#dashboard .dashboard-driver-search input:focus,
+#dashboard .week-picker-trigger:focus-visible {
+  outline: none;
+  border-color: var(--ds-accent);
+  box-shadow: 0 0 0 3px var(--ds-accent-soft);
+}
+
+/* ── 표 통일 (색/여백/타이포만, 컬럼폭·min-width 는 건드리지 않음) ── */
+#dashboard th {
+  background: var(--ds-surface-2);
+  color: var(--ds-text-muted);
+  font-size: var(--ds-fs-100);
+  font-weight: var(--ds-fw-semibold);
+  letter-spacing: 0.01em;
+  border-bottom: 1px solid var(--ds-border);
+}
+
+#dashboard td {
+  color: var(--ds-text);
+  border-bottom: 1px solid var(--ds-border);
+}
+
+#dashboard tbody tr {
+  transition: background var(--ds-ease);
+}
+
+#dashboard tbody tr:hover {
+  background: var(--ds-surface-hover);
+}
+
+/* 숫자 셀은 표 정렬 신뢰감 위해 고정폭 숫자 */
+#dashboard .dashboard-cell-num,
+#dashboard .dashboard-cell-rate,
+#dashboard .dashboard-cell-num strong {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 정렬 버튼: 활성일 때만 강조색 */
+#dashboard .dashboard-table .th-sort-btn {
+  color: inherit;
+  font: inherit;
+  font-size: var(--ds-fs-100);
+  font-weight: var(--ds-fw-semibold);
+}
+
+#dashboard .dashboard-table .th-sort-btn:hover,
+#dashboard .dashboard-table .th-sort-btn.is-sort-active {
+  color: var(--ds-accent);
+}
+
+/* ── 지역 탭(주간 할당) ────────────────────────────── */
+#dashboard .dashboard-baemin-week-region-tabs .baemin-region-tab {
+  border-radius: var(--ds-radius-pill);
+}
+
+/* ── 공지 리스트 간격 ──────────────────────────────── */
+#dashboard .notice-list {
+  padding: var(--ds-space-2) var(--ds-space-4) var(--ds-space-4);
+}
+
+/* ── 스크롤 영역 경계 정리 ─────────────────────────── */
+#dashboard .table-scroll,
+#dashboard .dashboard-baemin-table-wrap {
+  border-radius: var(--ds-radius);
+}

@@ -130,6 +130,37 @@ async function fetchAssignedMissionRows(supabase, missionIds = []) {
   return { rows: ids.map(id => map.get(id)).filter(Boolean), error: null };
 }
 
+function resolveRiderCombinedMissionId(row) {
+  const raw = row?.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+  return String(
+    row.selected_mission_id_combined
+    || row.promotion_rule_id_combined
+    || raw.selectedMissionIdCombined
+    || raw.promotionRuleIdCombined
+    || ''
+  ).trim();
+}
+
+function collectRiderMissionIds(row) {
+  const baemin = resolveRiderPlatformMissionId(row, 'baemin');
+  const coupang = resolveRiderPlatformMissionId(row, 'coupang');
+  const combined = resolveRiderCombinedMissionId(row);
+  return {
+    baemin,
+    coupang,
+    combined,
+    ids: [...new Set([baemin, coupang, combined].filter(Boolean))]
+  };
+}
+
+function packRiderMissions(byId, ids) {
+  return {
+    baemin: ids.baemin ? (byId.get(ids.baemin) || null) : null,
+    coupang: ids.coupang ? (byId.get(ids.coupang) || null) : null,
+    combined: ids.combined ? (byId.get(ids.combined) || null) : null
+  };
+}
+
 function getAnonAuthClient() {
   const url = String(process.env.SUPABASE_URL || '').trim();
   const anonKey = String(process.env.SUPABASE_ANON_KEY || '').trim();
@@ -571,19 +602,17 @@ async function getRiderAssignedMissions(accessToken) {
   }
 
   const row = me.rider || {};
-  const baeminId = resolveRiderPlatformMissionId(row, 'baemin');
-  const coupangId = resolveRiderPlatformMissionId(row, 'coupang');
-  const ids = [...new Set([baeminId, coupangId].filter(Boolean))];
+  const missionIds = collectRiderMissionIds(row);
 
-  if (!ids.length) {
+  if (!missionIds.ids.length) {
     return {
       ok: true,
       riderId: me.riderId,
-      missions: { baemin: null, coupang: null }
+      missions: { baemin: null, coupang: null, combined: null }
     };
   }
 
-  const missionsResult = await fetchAssignedMissionRows(supabase, ids);
+  const missionsResult = await fetchAssignedMissionRows(supabase, missionIds.ids);
   if (missionsResult.error) {
     return { ok: false, status: 500, error: missionsResult.error.message || '미션 정보를 불러오지 못했습니다.' };
   }
@@ -592,10 +621,7 @@ async function getRiderAssignedMissions(accessToken) {
   return {
     ok: true,
     riderId: me.riderId,
-    missions: {
-      baemin: baeminId ? (byId.get(baeminId) || null) : null,
-      coupang: coupangId ? (byId.get(coupangId) || null) : null
-    }
+    missions: packRiderMissions(byId, missionIds)
   };
 }
 
@@ -794,15 +820,13 @@ async function getRiderAppBundle(accessToken) {
 
   const riderId = me.riderId;
   const row = me.rider || {};
-  const baeminMissionId = resolveRiderPlatformMissionId(row, 'baemin');
-  const coupangMissionId = resolveRiderPlatformMissionId(row, 'coupang');
-  const missionIds = [...new Set([baeminMissionId, coupangMissionId].filter(Boolean))];
+  const missionIds = collectRiderMissionIds(row);
   const allSettingKeys = [...new Set([
     ...RIDER_SNAPSHOT_SETTING_KEYS,
     ...RIDER_LIVE_SETTING_KEYS
   ])];
 
-  const missionQuery = fetchAssignedMissionRows(supabase, missionIds);
+  const missionQuery = fetchAssignedMissionRows(supabase, missionIds.ids);
 
   const [
     callsResult,
@@ -882,10 +906,7 @@ async function getRiderAppBundle(accessToken) {
       calls: publishedCalls,
       rejections,
       settings: snapshotSettings,
-      missions: {
-        baemin: baeminMissionId ? (byId.get(baeminMissionId) || null) : null,
-        coupang: coupangMissionId ? (byId.get(coupangMissionId) || null) : null
-      }
+      missions: packRiderMissions(byId, missionIds)
     },
     live: {
       riderId,
@@ -912,11 +933,9 @@ async function getRiderSnapshot(accessToken) {
 
   const riderId = me.riderId;
   const row = me.rider || {};
-  const baeminMissionId = resolveRiderPlatformMissionId(row, 'baemin');
-  const coupangMissionId = resolveRiderPlatformMissionId(row, 'coupang');
-  const missionIds = [...new Set([baeminMissionId, coupangMissionId].filter(Boolean))];
+  const missionIds = collectRiderMissionIds(row);
 
-  const missionQuery = fetchAssignedMissionRows(supabase, missionIds);
+  const missionQuery = fetchAssignedMissionRows(supabase, missionIds.ids);
 
   const [
     callsResult,
@@ -964,10 +983,7 @@ async function getRiderSnapshot(accessToken) {
     calls,
     rejections,
     settings: settingsRows,
-    missions: {
-      baemin: baeminMissionId ? (byId.get(baeminMissionId) || null) : null,
-      coupang: coupangMissionId ? (byId.get(coupangMissionId) || null) : null
-    }
+    missions: packRiderMissions(byId, missionIds)
   };
 }
 
@@ -1255,8 +1271,8 @@ async function fetchCoupangRiderDailyByMatch(supabase, matchKey, fromDate, toDat
 
 /**
  * 쿠팡 실시간 운행현황.
- * - 오늘 완료/거절/취소: rider_daily 오늘분
- * - 거절율: (수~어제 거절율 + 오늘 거절율) / 2  (한쪽만 있으면 그 값)
+ * - 오늘 완료/거절/취소: rider_daily 오늘분 (쿠팡 0.8/1 가중치 그대로)
+ * - 현재거절율: 오늘 완료·거절·취소 합으로 계산. 어제 비율과 평균하지 않는다.
  */
 async function loadRiderCoupangOps(supabase, rider = {}) {
   const matchKey = makeRiderLoginId(rider);
@@ -1315,16 +1331,14 @@ async function loadRiderCoupangOps(supabase, rider = {}) {
 
   const pastRate = calcRejectionRateFromCounts(past.complete, past.reject, past.cancel);
   const todayRate = calcRejectionRateFromCounts(live.complete, live.reject, live.cancel);
+  const weekComplete = Number(past.complete || 0) + Number(live.complete || 0);
+  const weekReject = Number(past.reject || 0) + Number(live.reject || 0);
+  const weekCancel = Number(past.cancel || 0) + Number(live.cancel || 0);
+  const weekRate = calcRejectionRateFromCounts(weekComplete, weekReject, weekCancel);
 
-  let rejectionRate = null;
-  let rejectionRateSource = null;
-  if (pastRate != null && todayRate != null) {
-    rejectionRate = Math.round(((pastRate + todayRate) / 2) * 10) / 10;
-    rejectionRateSource = 'past_today_avg';
-  } else if (todayRate != null) {
-    rejectionRate = todayRate;
-    rejectionRateSource = 'today';
-  } else if (pastRate != null) {
+  let rejectionRate = todayRate;
+  let rejectionRateSource = todayRate != null ? 'today_counts' : null;
+  if (rejectionRate == null && pastRate != null) {
     rejectionRate = pastRate;
     rejectionRateSource = 'past';
   }
@@ -1342,6 +1356,10 @@ async function loadRiderCoupangOps(supabase, rider = {}) {
     pastComplete: past.complete,
     pastReject: past.reject,
     pastCancel: past.cancel,
+    weekComplete,
+    weekReject,
+    weekCancel,
+    weekRejectionRate: weekRate,
     rejectionRate,
     pastRejectionRate: pastRate,
     todayRejectionRate: todayRate,

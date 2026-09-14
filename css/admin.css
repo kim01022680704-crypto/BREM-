@@ -650,6 +650,10 @@ a {
   background: var(--yellow);
 }
 
+.topbar-link--register {
+  display: none;
+}
+
 .sidebar-links {
   display: grid;
   gap: 8px;

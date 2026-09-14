@@ -131,14 +131,37 @@ function resolveRiderCollectRangeFromBody(body = {}, referenceDate = todayKST())
   const weekStart = normalizeDateKey(body.weekStart || body.settlementWeekStart);
   if (weekStart) {
     const week = computeSettlementWeekCollectRange(weekStart);
+    // 정산주 명시 시 지난주도 그대로 수집 (lookback 롤링 금지)
     if (week.fromDate && week.toDate && !week.skipped) {
-      return normalizeRiderCollectRange({ fromDate: week.fromDate, toDate: week.toDate }, referenceDate);
+      return {
+        fromDate: week.fromDate,
+        toDate: week.toDate,
+        dates: week.dates || buildDateList(week.fromDate, week.toDate),
+        dayCount: week.dayCount || (week.dates || []).length,
+        mode: 'rider_per_day',
+        skipped: false,
+        label: week.label || `${week.fromDate} ~ ${week.toDate} (정산주)`
+      };
     }
   }
   const fromDate = normalizeDateKey(body.riderFromDate || body.fromDate);
   const toDate = normalizeDateKey(body.riderToDate || body.toDate);
   if (!fromDate || !toDate) return null;
-  return normalizeRiderCollectRange({ fromDate, toDate }, referenceDate);
+  // 명시 from/to 도 지난 주 재수집을 위해 롤링하지 않음 (최신일 초과만 클램프)
+  const latest = latestQueryableDate(referenceDate);
+  let end = toDate;
+  if (latest && end > latest) end = latest;
+  if (end < fromDate) return null;
+  const dates = buildDateList(fromDate, end);
+  return {
+    fromDate,
+    toDate: end,
+    dates,
+    dayCount: dates.length,
+    mode: 'rider_per_day',
+    skipped: false,
+    label: `${fromDate} ~ ${end} (일별 수집 ${dates.length}일)`
+  };
 }
 
 module.exports = {

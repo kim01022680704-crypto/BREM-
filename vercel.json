@@ -25,6 +25,7 @@
     { "src": "/api/admin/resolve-login", "dest": "/api/admin/resolve-login.js" },
     { "src": "/api/(.*)", "dest": "/api/index.js" },
     { "src": "/", "dest": "/index.html" },
+    { "src": "/register", "dest": "/register.html" },
     { "src": "/(.*)", "dest": "/$1" }
   ],
   "headers": [

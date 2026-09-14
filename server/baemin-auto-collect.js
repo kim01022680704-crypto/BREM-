@@ -228,7 +228,8 @@ async function runAutoCollectJob(options = {}) {
     menuDateRanges,
     dailyCollectRange,
     riderCollectRange,
-    sourceMenus: options.sourceMenus || null
+    sourceMenus: options.sourceMenus || null,
+    partnerIds: options.partnerIds || null
   });
   const deliveryResult = pipelineResult.results?.delivery_status;
 

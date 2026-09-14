@@ -8,7 +8,7 @@ rem  더블클릭: 코드동기화 -> 포트 3940 정리 -> 쿠팡 세션 서버
 rem  브라우저에서 로그인/2차인증 후 대시보드를 한 번 열면 토큰이 캡처됩니다.
 rem  수집: 관리자 화면 '쿠팡 현황' 또는 POST http://127.0.0.1:3940/collect
 rem ================================================================
-set "BREM_DIR=E:\브램로컬\BREM"
+set "BREM_DIR=E:\BREM"
 
 if not exist "%BREM_DIR%\scripts\coupang-session-local-server.js" (
   echo [오류] %BREM_DIR%\scripts\coupang-session-local-server.js 를 찾지 못했습니다.
@@ -21,12 +21,11 @@ cd /d "%BREM_DIR%"
 set "PLAYWRIGHT_BROWSERS_PATH=%BREM_DIR%\.playwright-browsers"
 set "NAVER_PLAYWRIGHT_PROFILE=%BREM_DIR%\.naver-playwright-profile"
 
-echo [1/3] code sync (origin/main) ...
-if exist "%BREM_DIR%\scripts\_session-git-sync.cmd" (
-  call "%BREM_DIR%\scripts\_session-git-sync.cmd"
-) else (
-  echo   [경고] _session-git-sync.cmd 없음 - sync 건너뛰고 서버만 기동
-)
+echo [1/3] using local code %BREM_DIR% (git reset skipped)
+if exist "%BREM_DIR%\_live-coupang-profile" set "COUPANG_PLAYWRIGHT_PROFILE=%BREM_DIR%\_live-coupang-profile"
+if exist "%BREM_DIR%\_live-naver-profile" set "NAVER_PLAYWRIGHT_PROFILE=%BREM_DIR%\_live-naver-profile"
+echo   browsers=%PLAYWRIGHT_BROWSERS_PATH%
+echo   profile=%COUPANG_PLAYWRIGHT_PROFILE%
 echo.
 
 echo [2/3] 포트 3940 정리 ...
@@ -38,6 +37,7 @@ echo [3/3] 쿠팡 세션 서버 시작 (http://127.0.0.1:3940) ...
 echo   브라우저에서 쿠팡이츠 로그인 + 2차 인증 -^> 대시보드 한 번 열기
 echo   이 창은 닫지 마세요.
 echo.
+set "COUPANG_AUTO_RESUME_STATUS_LOOP=1"
 node scripts\coupang-session-local-server.js
 
 echo.

@@ -4,7 +4,7 @@ import json
 from openpyxl import load_workbook
 
 base = r"C:\Users\user\Desktop\브라더 공유폴더\★BREM 경리일보★"
-out = r"C:\Users\user\Desktop\BREM\scripts\revenue-xlsx-structure.json"
+out = r"E:\BREM\scripts\revenue-xlsx-structure.json"
 result = {}
 
 for file in sorted(os.listdir(base)):

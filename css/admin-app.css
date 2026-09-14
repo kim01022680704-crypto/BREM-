@@ -104,6 +104,32 @@ html.brem-admin-app-nav [hidden] {
   font-size: 1.35rem;
 }
 
+.admin-phone-shortcut {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 212, 0, 0.45);
+  border-radius: 16px;
+  background: #161208;
+  color: inherit;
+  text-decoration: none;
+}
+
+.admin-phone-shortcut span {
+  color: #9ca3af;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.admin-phone-shortcut strong {
+  color: #ffd400;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
 .admin-phone-week {
   margin: 0;
   font-size: 1rem;
@@ -165,6 +191,7 @@ html.brem-admin-app-nav [hidden] {
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: -0.03em;
+  text-decoration: none;
 }
 
 .admin-app-nav__item svg {

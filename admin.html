@@ -17,11 +17,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260910promoedit1">
+  <link rel="stylesheet" href="css/admin.css?v=20260910reg1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
-  <link rel="stylesheet" href="css/admin-mobile.css?v=20260817mob1">
+  <link rel="stylesheet" href="css/admin-mobile.css?v=20260910reg1">
 </head>
 <body>
   <section class="login-page" id="adminLoginPage">
@@ -140,7 +140,8 @@
         <button class="nav-btn" data-section="payroll-daily-settlement">급여 일정산</button>
         <button class="nav-btn" data-section="data-backup">데이터 백업</button>
       </nav>
-      <a class="driver-link" href="drivers.html">기사등록프로그램</a>
+      <a class="driver-link" href="rider-manage.html?register=1">기사등록</a>
+      <a class="driver-link secondary" href="drivers.html">기사 목록</a>
     </aside>
 
     <main class="main">
@@ -166,6 +167,7 @@
               <button type="button" class="primary-btn crawl-morning-start-btn" id="crawlMorningStartBtn" title="배민+쿠팡 최초 1회차(수집→콜수/거절율→라이더앱). 이후 주단위 06:30/11:00/13:30/21:30 · 확인사살 07:00/11:30/14:00/22:00 (지정 관리자 전용)">크롤링 시작</button>
             </div>
             <button type="button" class="primary-btn rider-app-publish-btn" id="riderAppPublishBtn" data-rider-app-publish title="콜수·거절율·장기근속을 기사 전용 앱에 일괄 반영 (월·주간 목표는 실시간)">라이더 앱 반영</button>
+            <a class="top-link topbar-link--register" href="rider-manage.html?register=1">기사등록</a>
             <a class="top-link topbar-link--desktop" href="drivers.html">기사등록프로그램</a>
             <a class="top-link secondary topbar-link--desktop" href="driver.html">기사 전용 페이지 열기</a>
             <button class="top-link danger" type="button" id="adminLogoutBtn">로그아웃</button>
@@ -9002,7 +9004,7 @@
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
   <script src="js/admin-lease-menus.js?v=20260813g"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-revenue-region-settlement.js?v=20260823n"></script>
+  <script src="js/admin-revenue-region-settlement.js?v=20260910region1"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
   <script src="js/payroll-slip-utils.js?v=20260814match1"></script>

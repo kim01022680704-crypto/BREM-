@@ -1178,38 +1178,146 @@
     queueNoticePopups();
   }
 
-  async function renderPlatformMission(driver, platform, missionId, assignedMission = null) {
-    const prefix = platform === 'baemin' ? 'Baemin' : 'Coupang';
+  const missionSimGuess = { baemin: '', coupang: '', combined: '' };
+
+  function moneyWon(value) {
+    return `${Number(value || 0).toLocaleString('ko-KR')}원`;
+  }
+
+  function missionSimConfig(mission) {
+    return window.BremPromotionCountSim?.extract?.(mission) || null;
+  }
+
+  function renderMissionSim(prefix, mission, currentCalls) {
+    const el = document.getElementById(`riderMission${prefix}Sim`);
+    if (!el) return;
+    const key = prefix === 'Baemin' ? 'baemin' : prefix === 'Coupang' ? 'coupang' : 'combined';
+    const config = missionSimConfig(mission);
+    if (!config) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+
+    const sim = window.BremPromotionCountSim;
+    const nowCalls = Math.max(0, Math.round(Number(currentCalls || 0)));
+    if (missionSimGuess[key] === '') missionSimGuess[key] = String(nowCalls || config.payStartCallCount);
+    const guessCalls = Math.max(0, Math.round(Number(missionSimGuess[key] || 0)));
+    const now = sim.simulate(config, nowCalls);
+    const guess = sim.simulate(config, guessCalls);
+    const rows = sim.breakpoints(config);
+    const nowText = now.started
+      ? `이번 주 ${number(nowCalls)}콜 → 약 ${moneyWon(now.amount)} (${number(now.paidCallCount)}건 × ${moneyWon(now.payPerCall)})`
+      : `이번 주 ${number(nowCalls)}콜 → 아직 지급 시작(${number(config.payStartCallCount)}콜) 전 · ${number(now.remainToStart)}콜 남음`;
+    const guessHint = guess.started
+      ? `${number(guess.paidCallCount)}건 × ${moneyWon(guess.payPerCall)}`
+      : `지급 시작 ${number(config.payStartCallCount)}콜부터`;
+
+    el.hidden = false;
+    el.innerHTML = `
+      <p class="mission-sim__label">건당 예상</p>
+      <p class="mission-sim__now">${nowText}</p>
+      <label class="mission-sim__guess">
+        <span>몇 콜이면</span>
+        <input type="number" min="0" step="1" inputmode="numeric" data-mission-sim-input="${key}" value="${guessCalls}">
+        <strong data-mission-sim-amount="${key}">${guess.started ? moneyWon(guess.amount) : '0원'}</strong>
+      </label>
+      <p class="mission-sim__note">${guessHint}</p>
+      <ul class="mission-sim__rows">
+        ${rows.map(row => `
+          <li>
+            <span>${number(row.calls)}콜</span>
+            <strong>${row.started ? moneyWon(row.amount) : '0원'}</strong>
+          </li>
+        `).join('')}
+      </ul>
+      <p class="mission-sim__note">거절율·미지급 조건은 빼고, 콜수 기준으로만 본 예상 금액입니다.${
+        config.type === 'both' ? ' 단가보장은 배달료에 따라 달라서 여기에 넣지 않았습니다.' : ''
+      }</p>
+    `;
+  }
+
+  function bindMissionSimInput() {
+    const box = document.getElementById('riderMissionBox');
+    if (!box || bindMissionSimInput.bound) return;
+    bindMissionSimInput.bound = true;
+    box.addEventListener('input', event => {
+      const input = event.target.closest('[data-mission-sim-input]');
+      if (!input) return;
+      const key = input.dataset.missionSimInput;
+      missionSimGuess[key] = String(input.value || '');
+      const wrap = input.closest('.mission-platform-block');
+      const amountEl = wrap?.querySelector(`[data-mission-sim-amount="${key}"]`);
+      const hintEl = wrap?.querySelector('.mission-sim__guess + .mission-sim__note');
+      const mission = wrap?.__bremMission || null;
+      const config = missionSimConfig(mission);
+      const sim = window.BremPromotionCountSim;
+      if (!config || !sim || !amountEl) return;
+      const guess = sim.simulate(config, input.value);
+      amountEl.textContent = guess.started ? moneyWon(guess.amount) : '0원';
+      if (hintEl) {
+        hintEl.textContent = guess.started
+          ? `${number(guess.paidCallCount)}건 × ${moneyWon(guess.payPerCall)}`
+          : `지급 시작 ${number(config.payStartCallCount)}콜부터`;
+      }
+    });
+  }
+
+  async function renderPlatformMission(driver, platform, missionId, assignedMission, currentCalls) {
+    const prefix = platform === 'baemin' ? 'Baemin' : platform === 'combined' ? 'Combined' : 'Coupang';
     const wrap = document.getElementById(`riderMission${prefix}Wrap`);
     const titleEl = document.getElementById(`riderMission${prefix}Title`);
     const descEl = document.getElementById(`riderMission${prefix}Description`);
     const condEl = document.getElementById(`riderMission${prefix}Conditions`);
-    const active = platform === 'baemin' ? Boolean(driver?.platformBaemin) : driver?.platformCoupang !== false;
+    const simEl = document.getElementById(`riderMission${prefix}Sim`);
+    const active = platform === 'combined'
+      ? Boolean(missionId || assignedMission)
+      : platform === 'baemin'
+        ? Boolean(driver?.platformBaemin)
+        : driver?.platformCoupang !== false;
 
     if (wrap) {
       wrap.hidden = !active;
       wrap.classList.remove('is-mission-assigned');
+      wrap.__bremMission = null;
     }
-    if (!active) return;
+    if (!active) {
+      if (simEl) {
+        simEl.hidden = true;
+        simEl.innerHTML = '';
+      }
+      return;
+    }
 
     const id = String(missionId || '').trim();
     if (!id) {
       if (titleEl) titleEl.textContent = '미선택';
       if (descEl) descEl.textContent = '관리자가 미션을 배정하면 설명이 표시됩니다.';
       if (condEl) condEl.hidden = true;
+      if (simEl) {
+        simEl.hidden = true;
+        simEl.innerHTML = '';
+      }
       return;
     }
 
-    let mission = assignedMission || BremStorage.missions?.getById?.(id) || null;
+    const mission = assignedMission || BremStorage.missions?.getById?.(id) || null;
 
     if (!mission) {
       if (titleEl) titleEl.textContent = '미설정';
       if (descEl) descEl.textContent = '배정된 미션 정보를 불러오지 못했습니다.';
       if (condEl) condEl.hidden = true;
+      if (simEl) {
+        simEl.hidden = true;
+        simEl.innerHTML = '';
+      }
       return;
     }
 
-    if (wrap) wrap.classList.add('is-mission-assigned');
+    if (wrap) {
+      wrap.classList.add('is-mission-assigned');
+      wrap.__bremMission = mission;
+    }
 
     if (titleEl) titleEl.textContent = mission.title || '미설정';
     if (descEl) descEl.textContent = mission.description || '';
@@ -1221,11 +1329,15 @@
         condEl.hidden = true;
       }
     }
+    renderMissionSim(prefix, mission, currentCalls);
   }
 
   async function renderRiderMission(driver) {
+    bindMissionSimInput();
     const baeminMissionId = String(driver?.selectedMissionIdBaemin || '').trim();
     const coupangMissionId = String(driver?.selectedMissionIdCoupang || '').trim();
+    const combinedMissionId = String(driver?.selectedMissionIdCombined || '').trim();
+    const weekStats = weeklyCallsByPlatform(driver?.id);
 
     let assigned = null;
     if (BremStorage.getSupabaseConfig?.().mode === 'production') {
@@ -1235,8 +1347,28 @@
       }
     }
 
-    await renderPlatformMission(driver, 'baemin', baeminMissionId, assigned?.baemin || null);
-    await renderPlatformMission(driver, 'coupang', coupangMissionId, assigned?.coupang || null);
+    const combinedMission = assigned?.combined || (combinedMissionId
+      ? BremStorage.missions?.getById?.(combinedMissionId)
+      : null);
+    if (combinedMissionId || combinedMission) {
+      await renderPlatformMission(
+        driver,
+        'combined',
+        combinedMissionId,
+        combinedMission,
+        weekStats.total
+      );
+      const baeminWrap = document.getElementById('riderMissionBaeminWrap');
+      const coupangWrap = document.getElementById('riderMissionCoupangWrap');
+      if (baeminWrap) baeminWrap.hidden = true;
+      if (coupangWrap) coupangWrap.hidden = true;
+      return;
+    }
+
+    const combinedWrap = document.getElementById('riderMissionCombinedWrap');
+    if (combinedWrap) combinedWrap.hidden = true;
+    await renderPlatformMission(driver, 'baemin', baeminMissionId, assigned?.baemin || null, weekStats.baemin);
+    await renderPlatformMission(driver, 'coupang', coupangMissionId, assigned?.coupang || null, weekStats.coupang);
   }
 
   function formatLiveOpsUpdatedAt(value) {

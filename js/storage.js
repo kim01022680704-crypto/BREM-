@@ -3100,7 +3100,8 @@ const BremStorage = (function () {
       const missions = payload.missions || {};
       const mapped = {
         baemin: missions.baemin && mapper?.rowToMission ? mapper.rowToMission(missions.baemin) : null,
-        coupang: missions.coupang && mapper?.rowToMission ? mapper.rowToMission(missions.coupang) : null
+        coupang: missions.coupang && mapper?.rowToMission ? mapper.rowToMission(missions.coupang) : null,
+        combined: missions.combined && mapper?.rowToMission ? mapper.rowToMission(missions.combined) : null
       };
 
       const current = storageAdapter.read(KEYS.missions, []) || [];

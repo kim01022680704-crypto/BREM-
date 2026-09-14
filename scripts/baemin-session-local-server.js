@@ -20,7 +20,8 @@ const {
 
 const listenConfig = getListenLocalSessionConfig();
 const PORT = listenConfig.port;
-const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
+const PROFILE_DIR = String(process.env.BAEMIN_PLAYWRIGHT_PROFILE || '').trim()
+  || path.join(__dirname, '..', '.baemin-playwright-profile');
 const {
   BAEMIN_ORIGIN,
   isDeliveryCenterHost,
@@ -1778,7 +1779,8 @@ async function runLocalFullCollect(options = {}) {
       playwrightPage: collectPage,
       dailyCollectRange,
       riderCollectRange,
-      sourceMenus
+      sourceMenus,
+      partnerIds: options.partnerIds || null
     });
 
     autoCollectRuntime = {

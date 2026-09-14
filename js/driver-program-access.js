@@ -110,8 +110,9 @@ window.BremDriverProgramAccess = (function () {
       } catch {
         /* ignore */
       }
-      // return= 자동 재진입 루프 방지
-      window.location.replace('admin.html');
+      const next = `${window.location.pathname}${window.location.search || ''}`;
+      const returnPath = next.startsWith('/') ? next : `/${next.replace(/^\/+/, '')}`;
+      window.location.replace(`admin.html?return=${encodeURIComponent(returnPath)}`);
       return false;
     }
 

@@ -18,6 +18,12 @@
   const submitBtn = document.getElementById('driverWithdrawalSubmitBtn');
   const platformCoupang = document.getElementById('driverWithdrawalPlatformCoupang');
   const platformBaemin = document.getElementById('driverWithdrawalPlatformBaemin');
+  const accountPopup = document.getElementById('driverWithdrawalAccountPopup');
+  const accountForm = document.getElementById('driverWithdrawalAccountForm');
+  const accountBankInput = document.getElementById('driverWithdrawalBankName');
+  const accountHolderInput = document.getElementById('driverWithdrawalAccountHolder');
+  const accountNumberInput = document.getElementById('driverWithdrawalAccountNumber');
+  const accountSaveBtn = document.getElementById('driverWithdrawalAccountSaveBtn');
   const toast = document.getElementById('toast');
 
   if (!panel || !openBtn) return;
@@ -35,7 +41,9 @@
     leaseText: '',
     requestSeq: 0,
     confirmed: false,
-    submitting: false
+    submitting: false,
+    accountConfigured: null,
+    accountPopupScrollY: 0
   };
 
   function showToast(message) {
@@ -44,6 +52,40 @@
     toast.classList.add('show');
     window.clearTimeout(showToast.timer);
     showToast.timer = window.setTimeout(() => toast.classList.remove('show'), 2400);
+  }
+
+  function currentDriver() {
+    const id = window.BremStorage?.auth?.getDriverSessionId?.();
+    return id ? window.BremStorage?.drivers?.getById?.(id) : null;
+  }
+
+  function hasLocalAccount(driver = currentDriver()) {
+    return Boolean(String(driver?.accountNumber || '').trim());
+  }
+
+  function setAccountPopupOpen(show) {
+    if (!accountPopup) return;
+    accountPopup.hidden = !show;
+    if (show) {
+      const driver = currentDriver() || {};
+      if (accountBankInput) accountBankInput.value = driver.bankName || '';
+      if (accountHolderInput) accountHolderInput.value = driver.accountHolder || '';
+      if (accountNumberInput) accountNumberInput.value = driver.accountNumber || '';
+      state.accountPopupScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      document.documentElement.classList.add('withdrawal-account-open');
+      document.body.classList.add('withdrawal-account-open');
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${state.accountPopupScrollY}px`;
+      document.body.style.width = '100%';
+      window.requestAnimationFrame(() => accountNumberInput?.focus({ preventScroll: true }));
+      return;
+    }
+    document.documentElement.classList.remove('withdrawal-account-open');
+    document.body.classList.remove('withdrawal-account-open');
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.width = '';
+    window.scrollTo(0, state.accountPopupScrollY);
   }
 
   function formatMoney(value) {
@@ -560,10 +602,11 @@
 
     if (!result?.ok) {
       setLoadErrorUi(result?.message || '출금신청 정보를 불러오지 못했습니다.');
-      return;
+      return result;
     }
 
     state.confirmed = true;
+    state.accountConfigured = result.accountConfigured === true;
     renderSummary(result);
     const showCallFee = result.showCallFee !== false;
     syncCallFeeHeader(showCallFee);
@@ -589,9 +632,10 @@
       }
     }
     if (contentEl) contentEl.hidden = result.enrolled === false;
+    return result;
   }
 
-  function openPanel() {
+  function showPanel() {
     document.getElementById('driverWeeklyPayslipPanel')?.setAttribute('hidden', '');
     document.getElementById('driverWeeklyPayslipBtn')?.setAttribute('aria-expanded', 'false');
     window.BremDriverRegionDashboard?.close?.();
@@ -602,13 +646,68 @@
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  async function openPanel() {
+    if (state.accountConfigured !== true && !hasLocalAccount()) {
+      if (state.accountConfigured == null) await loadWithdrawal();
+      if (state.accountConfigured !== true && !hasLocalAccount()) {
+        setAccountPopupOpen(true);
+        return;
+      }
+    }
+    showPanel();
+  }
+
   function closePanel() {
     setOpenState(false);
   }
 
-  openBtn.addEventListener('click', () => {
-    if (state.visible) closePanel();
-    else openPanel();
+  openBtn.addEventListener('click', async () => {
+    if (state.visible) {
+      closePanel();
+      return;
+    }
+    await openPanel();
+  });
+  accountPopup?.addEventListener('click', event => {
+    if (event.target.closest('[data-withdrawal-account-close]')) setAccountPopupOpen(false);
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && accountPopup && !accountPopup.hidden) {
+      setAccountPopupOpen(false);
+    }
+  });
+  accountForm?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const driver = currentDriver();
+    if (!driver) {
+      showToast('기사 정보를 찾을 수 없습니다. 다시 로그인해 주세요.');
+      return;
+    }
+    const accountNumber = String(accountNumberInput?.value || '').trim();
+    if (!accountNumber) {
+      showToast('계좌번호를 입력하세요.');
+      accountNumberInput?.focus();
+      return;
+    }
+    if (accountSaveBtn) accountSaveBtn.disabled = true;
+    try {
+      await window.BremStorage.drivers.update(driver.id, {
+        bankName: String(accountBankInput?.value || '').trim(),
+        accountHolder: String(accountHolderInput?.value || '').trim(),
+        accountNumber
+      });
+      state.accountConfigured = true;
+      setAccountPopupOpen(false);
+      document.dispatchEvent(new CustomEvent('brem-driver-profile-updated', {
+        detail: { driverId: driver.id }
+      }));
+      showToast('계좌정보가 저장되었습니다.');
+      showPanel();
+    } catch (error) {
+      showToast(error.message || '계좌정보 저장에 실패했습니다.');
+    } finally {
+      if (accountSaveBtn) accountSaveBtn.disabled = false;
+    }
   });
   closeBtn?.addEventListener('click', closePanel);
   prevBtn?.addEventListener('click', () => {
@@ -747,7 +846,9 @@
     state.enrolledPlatforms = { coupang: false, baemin: false };
     state.feesByPlatform = { coupang: null, baemin: null };
     state.enrolled = null;
+    state.accountConfigured = null;
     state.leaseText = '';
+    if (accountPopup && !accountPopup.hidden) setAccountPopupOpen(false);
     setOpenState(false);
     if (daysBody) daysBody.innerHTML = '';
     if (requestList) requestList.innerHTML = '';

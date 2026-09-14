@@ -155,6 +155,103 @@ console.log('\n[4] 배민 파일명 매칭');
 check('파일명 안의 지역 추출', M.matchRegionByFileName('2026년8월3주차_정산서_북구남부.xlsx', REGIONS, {}), '북구남부');
 check('공백·하이픈 섞여도 매칭', M.matchRegionByFileName('배민 정산서 - 창원성산 (8월3주).xlsx', REGIONS, {}), '창원성산');
 check('매칭 없으면 빈값', M.matchRegionByFileName('정산서_미지정지역.xlsx', REGIONS, {}), '');
+const dpRegions = ['배달 이글스_표준울산북필드B배달이글스_DP2607217024', '배달 이글스_표준울산남A배달이글스_DP2607289309'];
+check('주정산 파일명 → DP 지역',
+  M.matchRegionByFileName('20260826~20260831_배달 이글스_표준울산북필드B배달이글스_DP2607217024.xlsx', dpRegions, {}),
+  '배달 이글스_표준울산북필드B배달이글스_DP2607217024');
+check('화요일 분할 파일도 같은 지역',
+  M.matchRegionByFileName('20260901~20260901_배달 이글스_표준울산북필드B배달이글스_DP2607217024.xlsx', dpRegions, {}),
+  '배달 이글스_표준울산북필드B배달이글스_DP2607217024');
+
+console.log('\n[4c] 119·이글스 같은 권역으로 합치기');
+check('권역만 남김',
+  M.canonicalRegionLabel('주식회사 119컴퍼니_표준울산남A주식회사119컴퍼니_DP1'),
+  '표준울산남A');
+check('이글스도 같은 권역',
+  M.canonicalRegionLabel('배달 이글스_표준울산남A배달이글스_DP2'),
+  '표준울산남A');
+check('합친 주정산 이름은 한 권역',
+  M.canonicalRegionLabel('주식회사 119컴퍼니_표준울산남A주식회사119컴퍼니_DP1 + 배달 이글스_표준울산남A배달이글스_DP2'),
+  '표준울산남A');
+check('119 파일 → 권역명',
+  M.matchRegionByFileName('20260902~20260908_주식회사 119컴퍼니_표준울산남A주식회사119컴퍼니_DP1.xlsx', ['표준울산남A', '표준울산북필드B'], {}),
+  '표준울산남A');
+check('이글스 파일 → 같은 권역',
+  M.matchRegionByFileName('20260902~20260908_배달 이글스_표준울산남A배달이글스_DP2.xlsx', ['표준울산남A'], {}),
+  '표준울산남A');
+
+const companyGrouped = M.groupBaeminUploadRows([
+  {
+    kind: 'baemin',
+    fileName: '20260902~20260908_주식회사 119컴퍼니_표준울산남A주식회사119컴퍼니_DP1.xlsx',
+    region: '',
+    source: '119',
+    supplyPaid: 80000,
+    vat: 8000,
+    note: '119'
+  },
+  {
+    kind: 'baemin',
+    fileName: '20260902~20260908_배달 이글스_표준울산남A배달이글스_DP2.xlsx',
+    region: '',
+    source: '이글스',
+    supplyPaid: 50000,
+    vat: 5000,
+    note: '이글스'
+  },
+  {
+    kind: 'baemin',
+    fileName: '20260902~20260908_주식회사 119컴퍼니_표준울산북필드B주식회사119컴퍼니_DP3.xlsx',
+    region: '',
+    source: '북필드B',
+    supplyPaid: 10000,
+    vat: 1000,
+    note: '북필드B'
+  }
+]);
+check('119+이글스와 북필드B는 권역 2곳', companyGrouped.length, 2);
+const namA = companyGrouped.find(row => (row.fileNames || []).length === 2);
+check('남A 공급대가 합산', namA?.supplyPaid, 130000);
+check('남A 부가세 합산', namA?.vat, 13000);
+check('남A는 2파일', (namA?.fileNames || []).length, 2);
+
+console.log('\n[4b] 배민 한 지역 2파일 합산');
+const grouped = M.groupBaeminUploadRows([
+  {
+    kind: 'baemin',
+    fileName: '20260826~20260831_배달 이글스_표준울산북필드B.xlsx',
+    region: '북필드B',
+    source: '전반',
+    supplyPaid: 100000,
+    vat: 10000,
+    note: '전반'
+  },
+  {
+    kind: 'baemin',
+    fileName: '20260901~20260901_배달 이글스_표준울산북필드B.xlsx',
+    region: '북필드B',
+    source: '화요일',
+    supplyPaid: 20000,
+    vat: 2000,
+    note: '화요일'
+  },
+  {
+    kind: 'baemin',
+    fileName: '20260826~20260831_배달 이글스_표준울산남A.xlsx',
+    region: '남A',
+    source: '남A',
+    supplyPaid: 50000,
+    vat: 5000,
+    note: '남A'
+  }
+]);
+check('같은 지역 2파일은 1줄', grouped.filter(row => row.region === '북필드B').length, 1);
+check('다른 지역은 따로', grouped.filter(row => row.region === '남A').length, 1);
+const north = grouped.find(row => row.region === '북필드B');
+check('공급대가 합산', north?.supplyPaid, 120000);
+check('부가세 합산', north?.vat, 12000);
+check('파일명 + 로 연결', String(north?.fileName || '').includes(' + '), 'true');
+check('합산 줄은 2파일', (north?.fileNames || []).length, 2);
 
 // --- 표 렌더링 (열 수 · 사용률 방향) ----------------------------------------
 console.log('\n[5] 표 렌더링 · 열 수와 사용률');
@@ -223,6 +320,41 @@ check('공급대가 기준(86.4%)은 더 이상 없다', bodyText.includes('86.4
 check('세무처리비 740원', bodyText.includes('740원'), 'true');
 check('남은 금액 5,948원 남음', bodyText.some(t => t.includes('5,948원남음')), 'true');
 check('보조줄(원천세 포함)은 없앴다', bodyText.some(t => t.includes('원천세포함')), 'false');
+
+console.log('\n[5b] 지역별 정산 표 · 119·이글스 같은 권역 합산');
+window.BremDirectSettlementCalc.computeRows = settlement => [{
+  ...CALC_ROW,
+  region: settlement.region,
+  grossPay: Number(settlement.grossPay || CALC_ROW.grossPay)
+}];
+window.BremStorage.weeklySettlements.getAll = () => [
+  {
+    id: 's119',
+    region: '주식회사 119컴퍼니_표준울산남A주식회사119컴퍼니_DP1',
+    startDate: '2026-08-19',
+    grossPay: 100000
+  },
+  {
+    id: 'seagles',
+    region: '배달 이글스_표준울산남A배달이글스_DP2',
+    startDate: '2026-08-19',
+    grossPay: 40000
+  }
+];
+window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
+  weekStart: '2026-08-19',
+  taxFeePercent: 20,
+  regions: {}
+});
+const mergedRegions = M.aggregateRegions('2026-08-19').regions;
+check('같은 권역은 1줄', mergedRegions.length, 1);
+check('권역명은 표준울산남A', mergedRegions[0]?.region, '표준울산남A');
+check('지급합계는 두 정산서 합', mergedRegions[0]?.grossPay, 140000);
+
+const alreadyMerged = M.canonicalRegionLabel(
+  '주식회사 119컴퍼니_표준울산남A주식회사119컴퍼니_DP1 + 배달 이글스_표준울산남A배달이글스_DP2'
+);
+check('이미 합친 주정산도 권역명', alreadyMerged, '표준울산남A');
 
 // 사용자 예시: 공급가액 100만 + 부가세 10만 = 공급대가 110만, 105만 지출 → 105%
 const exampleBase = 1100000 - 100000;

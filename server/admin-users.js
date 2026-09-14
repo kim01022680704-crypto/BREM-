@@ -130,7 +130,7 @@ function applyCeoRegistryPrivileges(account) {
     ? editableMenus
     : [...editableMenus, 'admin-account'];
 
-  return { ...account, menus: nextMenus, editableMenus: nextEditable };
+  return { ...account, menus: nextMenus, editableMenus: nextEditable, canOperateCrawl: true };
 }
 
 function assertCeo(actorAccount) {

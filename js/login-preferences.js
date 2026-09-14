@@ -80,10 +80,8 @@
   }
 
   function isKeepLoggedIn(scope) {
-    // 관리자: 항상 로그인 유지(명시적 로그아웃 전까지). 새로고침·브라우저 재시작에도 유지.
-    if (scopeOf(scope) === SCOPES.ADMIN) return true;
-    // 네이티브 기사앱: 로그아웃 전까지 유지 (앱을 닫아도 다시 로그인하지 않음)
-    if (scopeOf(scope) === SCOPES.RIDER && isNativeRiderApp()) return true;
+    // 관리자·기사: 명시적 로그아웃 전까지 유지 (앱을 닫거나 새로고침해도 다시 로그인하지 않음)
+    if (scopeOf(scope) === SCOPES.ADMIN || scopeOf(scope) === SCOPES.RIDER) return true;
     try {
       return localStorage.getItem(prefKey('keepLoggedIn', scope)) === '1';
     } catch {
@@ -170,9 +168,8 @@
   }
 
   function getSessionStore(scope) {
-    // 관리자 세션은 항상 localStorage(영구). 로그아웃 시에만 clearPersistedSessionOnLogout로 해제.
-    if (scopeOf(scope) === SCOPES.ADMIN) return localStorage;
-    if (isNativeRiderApp()) return localStorage;
+    // 관리자·기사 세션은 항상 localStorage(영구). 로그아웃 시에만 clearPersistedSessionOnLogout로 해제.
+    if (scopeOf(scope) === SCOPES.ADMIN || scopeOf(scope) === SCOPES.RIDER) return localStorage;
     return isKeepLoggedIn(scope) ? localStorage : sessionStorage;
   }
 
@@ -189,15 +186,11 @@
     const { idInput, rememberCheckbox, keepCheckbox } = elements;
     if (rememberCheckbox) rememberCheckbox.checked = isRememberIdEnabled(scope);
     if (keepCheckbox) {
-      // 관리자: 기본 로그인 유지(로그아웃할 때까지)
-      if (scopeOf(scope) === SCOPES.ADMIN) {
-        keepCheckbox.checked = true;
-        if (!isKeepLoggedIn(scope)) setKeepLoggedIn(scope, true);
-      } else if (isNativeRiderApp()) {
-        keepCheckbox.checked = true;
-        setKeepLoggedIn(scope, true);
-      } else {
-        keepCheckbox.checked = isKeepLoggedIn(scope);
+      keepCheckbox.checked = true;
+      if (!isKeepLoggedIn(scope)) setKeepLoggedIn(scope, true);
+      const keepLabel = keepCheckbox.closest ? keepCheckbox.closest('.login-option') : null;
+      if (scopeOf(scope) === SCOPES.ADMIN || scopeOf(scope) === SCOPES.RIDER) {
+        if (keepLabel) keepLabel.hidden = true;
       }
     }
     if (idInput) {
@@ -210,12 +203,8 @@
     const { idInput, rememberCheckbox, keepCheckbox } = elements;
     const loginId = String(idInput?.value || '').trim();
     saveRememberId(scope, loginId, Boolean(rememberCheckbox?.checked));
-    // 관리자: 체크 여부와 관계없이 항상 로그인 유지
-    if (scopeOf(scope) === SCOPES.ADMIN) {
-      setKeepLoggedIn(scope, true);
-    } else {
-      setKeepLoggedIn(scope, Boolean(keepCheckbox?.checked));
-    }
+    // 관리자·기사: 체크 여부와 관계없이 항상 로그인 유지
+    setKeepLoggedIn(scope, true);
   }
 
   function restoreIdAfterLogout(scope, elements = {}) {

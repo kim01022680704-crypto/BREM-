@@ -14,6 +14,21 @@ npm-debug.log*
 .playwright-browsers/
 .vercel
 
+# 라이브 세션/자격증명 프로필 — 절대 커밋 금지 (쿠키·로그인 세션 유출 방지)
+.naver-playwright-profile/
+_live-baemin-profile/
+_live-coupang-profile/
+_live-naver-profile/
+
+# Supabase CLI 임시
+supabase/.temp/
+
+# 로컬 프리뷰 산출물 디렉터리
+preview/
+
+# 감사/디버그 로그 산출물
+logs/
+
 # scripts/_preview-*.js 가 만드는 로컬 미리보기 산출물
 _preview-*.html
 

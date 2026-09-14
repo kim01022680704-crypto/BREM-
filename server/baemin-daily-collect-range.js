@@ -130,14 +130,36 @@ function resolveDailyCollectRangeFromBody(body = {}, referenceDate = todayKST())
   const weekStart = normalizeDateKey(body.weekStart || body.settlementWeekStart);
   if (weekStart) {
     const week = computeSettlementWeekCollectRange(weekStart);
+    // 정산주 명시 시 지난주도 그대로 수집 (lookback 롤링 금지)
     if (week.fromDate && week.toDate && !week.skipped) {
-      return normalizeDailyCollectRange({ fromDate: week.fromDate, toDate: week.toDate }, referenceDate);
+      return {
+        fromDate: week.fromDate,
+        toDate: week.toDate,
+        dates: week.dates || buildDateList(week.fromDate, week.toDate),
+        dayCount: week.dayCount || (week.dates || []).length,
+        mode: 'daily_per_day',
+        skipped: false,
+        label: week.label || `${week.fromDate} ~ ${week.toDate} (정산주)`
+      };
     }
   }
   const fromDate = normalizeDateKey(body.dailyFromDate || body.fromDate);
   const toDate = normalizeDateKey(body.dailyToDate || body.toDate);
   if (!fromDate || !toDate) return null;
-  return normalizeDailyCollectRange({ fromDate, toDate }, referenceDate);
+  const latest = latestQueryableDate(referenceDate);
+  let end = toDate;
+  if (latest && end > latest) end = latest;
+  if (end < fromDate) return null;
+  const dates = buildDateList(fromDate, end);
+  return {
+    fromDate,
+    toDate: end,
+    dates,
+    dayCount: dates.length,
+    mode: 'daily_per_day',
+    skipped: false,
+    label: `${fromDate} ~ ${end} (일별 수집 ${dates.length}일)`
+  };
 }
 
 module.exports = {

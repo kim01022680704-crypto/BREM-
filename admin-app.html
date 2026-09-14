@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
   <link rel="stylesheet" href="css/admin.css?v=20260818slotsch1">
-  <link rel="stylesheet" href="css/admin-app.css?v=20260817dashui1">
+  <link rel="stylesheet" href="css/admin-app.css?v=20260910reg1">
 </head>
 <body>
   <div class="admin-app-boot-splash" id="adminAppBootSplash">
@@ -87,6 +87,10 @@
 
     <main class="admin-phone-main">
       <section class="admin-phone-panel is-active" data-admin-app-panel="home" id="dashboard">
+        <a class="admin-phone-shortcut" href="rider-manage.html?register=1">
+          <span>기사등록 프로그램</span>
+          <strong>등록하러 가기</strong>
+        </a>
         <div class="admin-phone-stats">
           <button type="button" class="admin-phone-stat" data-admin-app-jump="inquiry">
             <span>미확인 문의</span>
@@ -350,6 +354,10 @@
         <span>문의</span>
         <span class="admin-app-nav__badge" id="adminAppInquiryBadge" hidden>0</span>
       </button>
+      <a class="admin-app-nav__item" href="rider-manage.html?register=1">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6 19c.8-3.2 3-5 6-5s5.2 1.8 6 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M17.5 6.5v4M15.5 8.5h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>기사등록</span>
+      </a>
     </nav>
   </div>
 
@@ -428,21 +436,21 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>window.BREM_AUTH_SCOPE = 'admin';</script>
-  <script src="js/native-app-bridge.js?v=20260818resume1"></script>
+  <script src="js/native-app-bridge.js?v=20260909login1"></script>
   <script src="js/brem-env.js"></script>
-  <script src="js/login-preferences.js?v=20260715h"></script>
+  <script src="js/login-preferences.js?v=20260909login1"></script>
   <script src="js/session-security.js?v=20260712a"></script>
-  <script src="js/supabase-config.js?v=20260712c"></script>
+  <script src="js/supabase-config.js?v=20260909login1"></script>
   <script src="js/data-cache.js?v=20260621n"></script>
   <script src="js/storage-supabase-mapper.js?v=20260816popup1"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260816popup1"></script>
-  <script src="js/storage.js?v=20260817scope1"></script>
+  <script src="js/storage.js?v=20260909login1"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260819look8"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260910crawl1"></script>
   <script src="js/coupang-status-admin.js?v=20260818resume1"></script>
   <script src="js/payroll-slip-utils.js?v=20260814match1"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>

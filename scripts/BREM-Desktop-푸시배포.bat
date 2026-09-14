@@ -7,7 +7,7 @@ call "%~dp0brem-resolve-dir.bat"
 
 if not defined BREM_DIR (
   echo [ERROR] BREM folder not found.
-  echo   Checked E:\*\BREM and Desktop\BREM
+  echo   Checked E:\BREM and E:\*\BREM
   pause
   exit /b 1
 )

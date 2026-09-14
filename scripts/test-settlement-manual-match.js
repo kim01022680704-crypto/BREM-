@@ -136,7 +136,8 @@ deductionBaseGuards.forEach(([label, source, marker]) => {
     return;
   }
   // 마커 뒤 레코드 매핑 블록 안에 deductionBase 가 있어야 한다.
-  if (!source.slice(at, at + 900).includes('deductionBase')) {
+  // 콜수수료 보존 로직이 upsert 앞부분에 추가되어도 실제 records 매핑까지 검사한다.
+  if (!source.slice(at, at + 1600).includes('deductionBase')) {
     failures.push(`${label}: deductionBase 누락 — 재반영 시 공제가 0 으로 덮입니다`);
   }
 });

@@ -1,0 +1,76 @@
+/* =====================================================================
+   BREM Design Tokens (초안 / draft) — 값만 정의합니다.
+   이 파일은 변수만 선언하며, 어떤 요소에도 스타일을 직접 적용하지 않습니다.
+   => 이 파일만 불러와서는 화면이 절대 바뀌지 않습니다 (기능 영향 0).
+
+   전문 B2B SaaS(정돈된 다크) 방향. 강조색은 절제된 앰버 1개만.
+   실제 적용은 화면별 스타일에서 var(--ds-*) 로 참조합니다.
+   ===================================================================== */
+
+:root {
+  /* ---- Surface / 배경 (중립 슬레이트, 관리자 다크 셸과 어울림) ---- */
+  --ds-bg: #0f1115;
+  --ds-surface: #16181d;          /* 카드 기본 */
+  --ds-surface-2: #1b1e24;        /* 헤더 · 살짝 올라온 면 */
+  --ds-surface-hover: #20242c;    /* 행 hover 등 */
+
+  /* ---- Border / 구분선 (장식이 아니라 구조용, 은은하게) ---- */
+  --ds-border: rgba(255, 255, 255, 0.08);
+  --ds-border-strong: rgba(255, 255, 255, 0.14);
+
+  /* ---- Text ---- */
+  --ds-text: #e7e9ee;             /* 본문/주요 숫자 */
+  --ds-text-muted: #99a1ad;       /* 라벨·보조 */
+  --ds-text-subtle: #6b7280;      /* 더 약한 캡션 */
+
+  /* ---- Accent (절제된 앰버 하나만, 강조는 아껴 씀) ---- */
+  --ds-accent: #e0b24a;
+  --ds-accent-strong: #f0c356;
+  --ds-accent-ink: #1a1206;       /* 앰버 위 텍스트 */
+  --ds-accent-soft: rgba(224, 178, 74, 0.14);
+
+  /* ---- Semantic (상태) ---- */
+  --ds-success: #3ecb86;
+  --ds-success-soft: rgba(62, 203, 134, 0.14);
+  --ds-danger: #f26d6d;
+  --ds-danger-soft: rgba(242, 109, 109, 0.14);
+  --ds-warning: #e0b24a;
+  --ds-warning-soft: rgba(224, 178, 74, 0.14);
+  --ds-info: #6aa7f0;
+  --ds-info-soft: rgba(106, 167, 240, 0.14);
+
+  /* ---- Typography ---- */
+  --ds-font: "Noto Sans KR", "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  --ds-fs-100: 0.75rem;    /* 12px  캡션/뱃지 */
+  --ds-fs-200: 0.8125rem;  /* 13px  보조/표헤더 */
+  --ds-fs-300: 0.875rem;   /* 14px  본문 */
+  --ds-fs-400: 0.9375rem;  /* 15px  강조 본문 */
+  --ds-fs-500: 1.0625rem;  /* 17px  섹션 제목 */
+  --ds-fs-600: 1.25rem;    /* 20px  카드 큰 값 */
+  --ds-fs-700: 1.5rem;     /* 24px  통계 숫자 */
+  --ds-fw-medium: 500;
+  --ds-fw-semibold: 600;
+  --ds-fw-bold: 700;
+
+  /* ---- Spacing (4px 그리드) ---- */
+  --ds-space-1: 4px;
+  --ds-space-2: 8px;
+  --ds-space-3: 12px;
+  --ds-space-4: 16px;
+  --ds-space-5: 20px;
+  --ds-space-6: 24px;
+  --ds-space-7: 32px;
+
+  /* ---- Radius ---- */
+  --ds-radius-sm: 8px;
+  --ds-radius: 10px;
+  --ds-radius-lg: 14px;
+  --ds-radius-pill: 999px;
+
+  /* ---- Elevation (은은하게, 글로우 금지) ---- */
+  --ds-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --ds-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+
+  /* ---- Motion ---- */
+  --ds-ease: 0.16s ease;
+}

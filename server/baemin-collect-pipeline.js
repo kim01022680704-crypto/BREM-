@@ -22,6 +22,70 @@ const { discoverApiUrlViaPage } = require('./baemin-page-capture');
 const { buildCenterQueryParams, buildCenterFetchHeaders } = require('./baemin-center-context');
 const collectProgress = require('./baemin-collect-progress');
 
+function resolveCollectWorkerCount(partnerCount) {
+  const wanted = Math.max(1, Math.min(2, Number(process.env.BAEMIN_COLLECT_WORKERS || 2) || 2));
+  if (Number(partnerCount) < 4) return 1;
+  return wanted;
+}
+
+function splitPartnersByRegion(partners, workerCount = 2) {
+  const list = Array.isArray(partners) ? partners : [];
+  const n = Math.max(1, Number(workerCount) || 1);
+  if (list.length < 2 || n < 2) return [list];
+  const groups = new Map();
+  list.forEach((partner, index) => {
+    const key = String(partner.regionName || '').trim() || `_noregion_${index}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ ...partner, __globalIndex: index });
+  });
+  const shards = Array.from({ length: n }, () => []);
+  const loads = Array(n).fill(0);
+  [...groups.entries()]
+    .sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]), 'ko'))
+    .forEach(([region, rows]) => {
+      let idx = 0;
+      for (let i = 1; i < n; i += 1) {
+        if (loads[i] < loads[idx]) idx = i;
+      }
+      shards[idx].push(...rows);
+      loads[idx] += rows.length;
+    });
+  return shards.filter(shard => shard.length);
+}
+
+async function launchClonedCollectContext(sourceContext) {
+  if (!sourceContext) return null;
+  const playwright = require('playwright');
+  const state = await sourceContext.storageState();
+  const browser = await playwright.chromium.launch({
+    headless: false,
+    args: ['--disable-dev-shm-usage']
+  });
+  const context = await browser.newContext({
+    storageState: state,
+    viewport: { width: 1280, height: 900 }
+  });
+  const { attachSafeSpaGuard } = require('./baemin-page-capture');
+  await attachSafeSpaGuard(context);
+  const page = await context.newPage();
+  context.__bremCollecting = true;
+  await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 90000
+  }).catch(() => {});
+  return {
+    browser,
+    context,
+    page,
+    async close() {
+      context.__bremCollecting = false;
+      await page.close().catch(() => {});
+      await context.close().catch(() => {});
+      await browser.close().catch(() => {});
+    }
+  };
+}
+
 const BAEMIN_APPLIED_SETTINGS_KEY = 'brem_baemin_delivery_applied';
 const settingsCache = new Map();
 const SETTINGS_CACHE_MS = 30000;
@@ -417,7 +481,14 @@ async function saveCollectItems(rows) {
       try {
         const contributionAdmin = require('./contribution-admin');
         const date = [...deliveryDates][0] || contributionAdmin.todayKst();
-        contributionAdmin.scheduleAutoRefresh({ date, platform: 'baemin' });
+        const pending = contributionAdmin.scheduleAutoRefresh({
+          date,
+          platform: 'baemin',
+          autoActivate: true
+        });
+        if (pending && typeof pending.catch === 'function') {
+          pending.catch(error => console.warn('[contribution-v3] baemin:', error?.message || error));
+        }
       } catch (_e) { /* ignore */ }
     }
   }
@@ -1952,8 +2023,13 @@ async function runFullCollectPipeline(options = {}) {
     }
     progressOwned = true;
 
-    async function runForPartner(partnerContext, partnerIndex = 0, partnerTotal = 0) {
-      registry.centerContext = {
+    async function runForPartner(partnerContext, partnerIndex = 0, partnerTotal = 0, scope = null) {
+      const page = scope?.page || playwrightPage;
+      const ctx = scope?.context || playwrightContext;
+      const activeRegistry = scope?.registry || registry;
+      const pipe = scope?.pipelineContext || pipelineContext;
+      const detach = scope?.detachRef || detachRef;
+      activeRegistry.centerContext = {
         centerId: partnerContext.centerId,
         managementId: partnerContext.managementId,
         partnerId: partnerContext.partnerId,
@@ -1961,38 +2037,40 @@ async function runFullCollectPipeline(options = {}) {
         regionName: partnerContext.regionName || '',
         resolvedAt: new Date().toISOString()
       };
-      pipelineContext.partnerName = registry.centerContext.partnerName;
-      pipelineContext.regionName = registry.centerContext.regionName;
-      pipelineContext.partnerCollectIndex = partnerIndex;
-      pipelineContext.dailyItems = null;
-      pipelineContext.dailySourceUrl = '';
-      pipelineContext.currentPartnerMenuFingerprints = {};
-      pipelineContext._fingerprintRetry = {};
-      resetPartnerSpaCapture(pipelineContext, registry, playwrightPage);
+      pipe.partnerName = activeRegistry.centerContext.partnerName;
+      pipe.regionName = activeRegistry.centerContext.regionName;
+      pipe.partnerCollectIndex = partnerIndex;
+      pipe.dailyItems = null;
+      pipe.dailySourceUrl = '';
+      pipe.currentPartnerMenuFingerprints = {};
+      pipe._fingerprintRetry = {};
+      resetPartnerSpaCapture(pipe, activeRegistry, page);
 
       const label = partnerTotal > 0
-        ? `[${partnerIndex + 1}/${partnerTotal}] ${registry.centerContext.partnerName}`
-        : registry.centerContext.partnerName;
+        ? `[${partnerIndex + 1}/${partnerTotal}] ${activeRegistry.centerContext.partnerName}`
+        : activeRegistry.centerContext.partnerName;
       if (partnerTotal > 0) {
         collectProgress.updatePartner({
           index: partnerIndex + 1,
           total: partnerTotal,
-          partnerId: registry.centerContext.partnerId,
-          partnerName: registry.centerContext.partnerName
+          partnerId: activeRegistry.centerContext.partnerId,
+          partnerName: activeRegistry.centerContext.partnerName
         });
       }
-      console.log(`[BREM][collect] ${label} (${registry.centerContext.partnerId}) — 현재 협력사 확인 완료`);
+      console.log(`[BREM][collect] ${label} (${activeRegistry.centerContext.partnerId}) — 현재 협력사 확인 완료`);
 
-      if (playwrightPage && !playwrightPage.isClosed?.() && registry.centerContext.partnerId) {
+      if (page && !page.isClosed?.() && activeRegistry.centerContext.partnerId) {
         const { ensurePartnerSessionReady } = require('./baemin-center-context');
         const verified = await ensurePartnerSessionReady(
-          playwrightPage,
-          registry.centerContext.partnerId,
+          page,
+          activeRegistry.centerContext.partnerId,
           {
-            baselineFingerprint: pipelineContext.lastPartnerMenuFingerprints?.delivery_status || '',
+            baselineFingerprint: pipe.lastPartnerMenuFingerprints?.delivery_status || '',
             dateRange: historyDateRange,
-            switchCaptured: playwrightPage.context()?.__bremLastSwitchCaptured || [],
-            requireSessionChange: partnerIndex > 0
+            switchCaptured: page.context()?.__bremLastSwitchCaptured || [],
+            requireSessionChange: scope
+              ? Boolean(scope.requireSessionChange)
+              : partnerIndex > 0
           }
         );
         if (!verified.ok) {
@@ -2032,13 +2110,13 @@ async function runFullCollectPipeline(options = {}) {
           console.warn(`[BREM][collect] ${label} — history-only 수집 계속`);
         } else {
           if (verified.captured) {
-            applyCaptureToEndpointRegistry('delivery_status', registry, verified.captured);
-            pipelineContext.spaCapture = pipelineContext.spaCapture || {};
-            pipelineContext.spaCapture.delivery_status = verified.captured;
+            applyCaptureToEndpointRegistry('delivery_status', activeRegistry, verified.captured);
+            pipe.spaCapture = pipe.spaCapture || {};
+            pipe.spaCapture.delivery_status = verified.captured;
           }
-          const capturedStore = playwrightPage.context()?.__bremCapturedApiRequests || {};
+          const capturedStore = page.context()?.__bremCapturedApiRequests || {};
           Object.keys(capturedStore).forEach(menuId => {
-            applyCaptureToEndpointRegistry(menuId, registry, capturedStore[menuId]);
+            applyCaptureToEndpointRegistry(menuId, activeRegistry, capturedStore[menuId]);
           });
           console.log(`[BREM][collect] ${label} — 배달현황 API 세션 확인 완료`);
         }
@@ -2047,144 +2125,230 @@ async function runFullCollectPipeline(options = {}) {
       const collectLabel = sourceDefs.map(def => def.label).join(' · ') || '수집';
       console.log(`[BREM][collect] ${label} — ${collectLabel} 시작`);
 
-      if (playwrightPage) {
-        attachCollectCenterRoute(playwrightPage, registry, detachRef);
+      if (page) {
+        attachCollectCenterRoute(page, activeRegistry, detach);
       }
 
       const loopResult = await runPartnerSourceCollectLoop({
         cookie,
         collectDate,
-        registry,
-        pipelineContext,
+        registry: activeRegistry,
+        pipelineContext: pipe,
         menuDateRanges,
         historyDateRange,
         source,
         collectedAt,
         sourceDefs,
-        playwrightContext,
-        playwrightPage
+        playwrightContext: ctx,
+        playwrightPage: page
       });
 
       Object.entries(loopResult.results).forEach(([menuId, row]) => {
-        results[`${registry.centerContext.partnerId}:${menuId}`] = {
+        results[`${activeRegistry.centerContext.partnerId}:${menuId}`] = {
           ...row,
-          partnerId: registry.centerContext.partnerId,
-          partnerName: registry.centerContext.partnerName
+          partnerId: activeRegistry.centerContext.partnerId,
+          partnerName: activeRegistry.centerContext.partnerName
         };
       });
 
       partnerSummaries.push({
-        partnerId: registry.centerContext.partnerId,
-        partnerName: registry.centerContext.partnerName,
-        regionName: registry.centerContext.regionName,
+        partnerId: activeRegistry.centerContext.partnerId,
+        partnerName: activeRegistry.centerContext.partnerName,
+        regionName: activeRegistry.centerContext.regionName,
         ok: loopResult.anySuccess,
         savedCount: Object.values(loopResult.results).reduce((sum, row) => sum + Number(row.savedCount || 0), 0),
         results: loopResult.results
       });
 
-      console.log(`[BREM][collect] ${label} — ${loopResult.anySuccess ? '저장 완료' : '수집 실패'} (partner_id=${registry.centerContext.partnerId}, rows=${partnerSummaries[partnerSummaries.length - 1].savedCount})`);
+      console.log(`[BREM][collect] ${label} — ${loopResult.anySuccess ? '저장 완료' : '수집 실패'} (partner_id=${activeRegistry.centerContext.partnerId}, rows=${partnerSummaries[partnerSummaries.length - 1].savedCount})`);
 
       return loopResult;
     }
 
     if (playwrightPage && partnersToCollect.length > 0) {
-      const {
-        selectPartnerCenter,
-        readActivePartnerDisplayFromPage,
-        isValidPartnerId
-      } = require('./baemin-center-context');
+      const { isValidPartnerId } = require('./baemin-center-context');
       partnersToCollect = partnersToCollect.filter(partner => isValidPartnerId(partner?.partnerId));
 
-      const { readPartnerRegionMap, filterPartnersForCollect } = require('./baemin-partner-region');
-      const regionMap = await readPartnerRegionMap().catch(() => ({}));
-      const filtered = filterPartnersForCollect(partnersToCollect, regionMap);
-      if (filtered.skipped.length) {
-        const skippedNames = filtered.skipped.map(row => row.partnerName || row.partnerId).join(', ');
-        console.log(`[BREM][collect] 지역 미등록 협력사 ${filtered.skipped.length}곳 수집 생략: ${skippedNames}`);
+      const requestedPartnerIds = (Array.isArray(options.partnerIds) ? options.partnerIds : [])
+        .map(id => String(id || '').trim().toUpperCase())
+        .filter(id => /^DP\d{6,}$/.test(id));
+      if (requestedPartnerIds.length) {
+        const want = new Set(requestedPartnerIds);
+        const listed = partnersToCollect.filter(partner => want.has(String(partner.partnerId || '').trim().toUpperCase()));
+        const listedIds = new Set(listed.map(p => String(p.partnerId || '').trim().toUpperCase()));
+        const missing = requestedPartnerIds.filter(id => !listedIds.has(id));
+        // BIZ 목록에 없어도 지정 DP는 강제 포함(과거 코드 backfill용). 전환은 selectPartnerCenter가 시도.
+        missing.forEach(partnerId => {
+          listed.push({ partnerId, partnerName: partnerId, regionName: '' });
+        });
+        partnersToCollect = listed;
+        console.log(`[BREM][collect] partnerIds 지정 ${requestedPartnerIds.length}곳 · 목록매칭 ${listedIds.size} · 강제추가 ${missing.length}`);
+      } else {
+        const { readPartnerRegionMap, filterPartnersForCollect } = require('./baemin-partner-region');
+        const regionMap = await readPartnerRegionMap().catch(() => ({}));
+        const filtered = filterPartnersForCollect(partnersToCollect, regionMap);
+        if (filtered.skipped.length) {
+          const skippedNames = filtered.skipped.map(row => row.partnerName || row.partnerId).join(', ');
+          console.log(`[BREM][collect] 지역 미등록 협력사 ${filtered.skipped.length}곳 수집 생략: ${skippedNames}`);
+        }
+        partnersToCollect = filtered.partners;
       }
-      partnersToCollect = filtered.partners;
 
       const orderedPartners = partnersToCollect.slice();
       if (orderedPartners.length) {
         collectProgress.setPartnerTotal(orderedPartners.length);
       }
-      const lastPartnerMenuFingerprints = {
-        delivery_status: '',
-        daily_history: '',
-        rider_history: ''
-      };
 
-      console.log(`[BREM][collect] 협력사 ${orderedPartners.length}곳 순차 수집 (목록 순서): ${orderedPartners.map(p => p.partnerName || p.partnerId).join(' → ')}`);
+      async function collectPartnerShard(page, ctx, partners, workerId) {
+        const localRegistry = {
+          ...registry,
+          endpoints: { ...(registry.endpoints || {}) },
+          centerContext: { ...(registry.centerContext || {}) }
+        };
+        const localPipe = {
+          ...pipelineContext,
+          playwrightContext: ctx,
+          playwrightPage: page,
+          lastPartnerMenuFingerprints: {},
+          currentPartnerMenuFingerprints: {},
+          spaCapture: {}
+        };
+        const localDetach = { current: null };
+        const lastFp = { delivery_status: '', daily_history: '', rider_history: '' };
+        const scope = {
+          page,
+          context: ctx,
+          registry: localRegistry,
+          pipelineContext: localPipe,
+          detachRef: localDetach
+        };
+        const {
+          selectPartnerCenter,
+          readActivePartnerDisplayFromPage
+        } = require('./baemin-center-context');
+        const { ensureSafeBrowserTab, ensureProductionDeliveryPage } = require('./baemin-page-capture');
+        await ensureSafeBrowserTab(page).catch(() => {});
+        await ensureProductionDeliveryPage(page).catch(() => {});
 
-      for (let index = 0; index < orderedPartners.length; index += 1) {
-        const partner = orderedPartners[index];
-        const progressLabel = `[${index + 1}/${orderedPartners.length}] ${partner.partnerName || partner.partnerId}`;
-        try {
-          if (typeof detachRef.current === 'function') {
-            detachRef.current();
-            detachRef.current = () => {};
-          }
-
-          console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 시작 (${partner.partnerId})`);
-          const active = await selectPartnerCenter(playwrightPage, {
-            ...partner,
-            requireSessionChange: index > 0
-          });
-          registry.centerContext = {
-            centerId: active.centerId || partner.partnerId,
-            managementId: active.managementId || partner.partnerId,
-            partnerId: partner.partnerId,
-            partnerName: partner.partnerName || active.partnerName || partner.partnerId,
-            regionName: partner.regionName || active.regionName || '',
-            resolvedAt: new Date().toISOString()
-          };
-
-          const uiNow = await readActivePartnerDisplayFromPage(playwrightPage);
-          if (uiNow.partnerId && uiNow.partnerId !== partner.partnerId) {
-            throw new Error(`협력사 UI 확인 실패 (요청 ${partner.partnerId}, 화면 ${uiNow.partnerId})`);
-          }
-          console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 완료 · ${uiNow.partnerName || partner.partnerName} (${partner.partnerId})`);
-
-          pipelineContext.partnerCollectIndex = index;
-          pipelineContext.lastPartnerMenuFingerprints = { ...lastPartnerMenuFingerprints };
-
-          const loopResult = await runForPartner({
-            ...partner,
-            ...active,
-            partnerName: partner.partnerName || active.partnerName,
-            regionName: partner.regionName || active.regionName
-          }, index, orderedPartners.length);
-
-          ['delivery_status', 'daily_history', 'rider_history'].forEach(menuId => {
-            const row = loopResult.results[menuId];
-            const fp = row?.menuFingerprint
-              || (row?.ok
-                ? extractCollectItemsFingerprint(menuId, row.rawItems || [], partner.partnerId)
-                : '');
-            if (row?.ok && fp) {
-              lastPartnerMenuFingerprints[menuId] = fp;
+        for (let i = 0; i < partners.length; i += 1) {
+          const partner = partners[i];
+          const globalIndex = Number.isInteger(partner.__globalIndex) ? partner.__globalIndex : i;
+          const progressLabel = `[${workerId} ${i + 1}/${partners.length}] ${partner.partnerName || partner.partnerId}`;
+          try {
+            if (typeof localDetach.current === 'function') {
+              localDetach.current();
+              localDetach.current = () => {};
             }
-          });
-
-          anySuccess = anySuccess || loopResult.anySuccess;
-          sessionExpired = sessionExpired || loopResult.sessionExpired;
-        } catch (error) {
-          console.warn(`[BREM][collect] 협력사 수집 실패 (${partner.partnerName || partner.partnerId}):`, error.message);
-          collectProgress.skipPartner({
-            index: index + 1,
-            total: orderedPartners.length,
-            partnerId: partner.partnerId,
-            partnerName: partner.partnerName || partner.partnerId,
-            message: `협력사 ${index + 1}/${orderedPartners.length} · ${partner.partnerName || partner.partnerId} 실패`
-          });
-          partnerSummaries.push({
-            partnerId: partner.partnerId,
-            partnerName: partner.partnerName || partner.partnerId,
-            ok: false,
-            message: error.message,
-            savedCount: 0
-          });
+            console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 시작 (${partner.partnerId})`);
+            const active = await selectPartnerCenter(page, {
+              ...partner,
+              requireSessionChange: i > 0 || workerId !== 'A'
+            });
+            localRegistry.centerContext = {
+              centerId: active.centerId || partner.partnerId,
+              managementId: active.managementId || partner.partnerId,
+              partnerId: partner.partnerId,
+              partnerName: partner.partnerName || active.partnerName || partner.partnerId,
+              regionName: partner.regionName || active.regionName || '',
+              resolvedAt: new Date().toISOString()
+            };
+            const uiNow = await readActivePartnerDisplayFromPage(page);
+            if (uiNow.partnerId && uiNow.partnerId !== partner.partnerId) {
+              throw new Error(`협력사 UI 확인 실패 (요청 ${partner.partnerId}, 화면 ${uiNow.partnerId})`);
+            }
+            console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 완료 · ${uiNow.partnerName || partner.partnerName} (${partner.partnerId})`);
+            localPipe.partnerCollectIndex = globalIndex;
+            localPipe.lastPartnerMenuFingerprints = { ...lastFp };
+            scope.requireSessionChange = i > 0;
+            const loopResult = await runForPartner({
+              ...partner,
+              ...active,
+              partnerName: partner.partnerName || active.partnerName,
+              regionName: partner.regionName || active.regionName
+            }, globalIndex, orderedPartners.length, scope);
+            ['delivery_status', 'daily_history', 'rider_history'].forEach(menuId => {
+              const row = loopResult.results[menuId];
+              const fp = row?.menuFingerprint
+                || (row?.ok
+                  ? extractCollectItemsFingerprint(menuId, row.rawItems || [], partner.partnerId)
+                  : '');
+              if (row?.ok && fp) lastFp[menuId] = fp;
+            });
+            anySuccess = anySuccess || loopResult.anySuccess;
+            sessionExpired = sessionExpired || loopResult.sessionExpired;
+          } catch (error) {
+            console.warn(`[BREM][collect] ${progressLabel} 실패:`, error.message);
+            collectProgress.skipPartner({
+              index: globalIndex + 1,
+              total: orderedPartners.length,
+              partnerId: partner.partnerId,
+              partnerName: partner.partnerName || partner.partnerId,
+              message: `협력사 ${globalIndex + 1}/${orderedPartners.length} · ${partner.partnerName || partner.partnerId} 실패`
+            });
+            partnerSummaries.push({
+              partnerId: partner.partnerId,
+              partnerName: partner.partnerName || partner.partnerId,
+              ok: false,
+              message: error.message,
+              savedCount: 0
+            });
+          }
         }
+        if (typeof localDetach.current === 'function') {
+          localDetach.current();
+          localDetach.current = () => {};
+        }
+      }
+
+      const workerCount = resolveCollectWorkerCount(orderedPartners.length);
+      const shards = splitPartnersByRegion(orderedPartners, workerCount);
+      console.log(`[BREM][collect] 협력사 ${orderedPartners.length}곳 · 창 ${shards.length}개 (지역 분할): ${orderedPartners.map(p => `${p.regionName || '-'} ${p.partnerName || p.partnerId}`).join(' → ')}`);
+      shards.forEach((shard, idx) => {
+        const regions = [...new Set(shard.map(p => p.regionName || '-'))].join(', ');
+        console.log(`[BREM][collect] 창 ${idx === 0 ? 'A' : 'B'} ${shard.length}곳 · 지역 ${regions}`);
+      });
+
+      if (shards.length >= 2 && playwrightContext) {
+        let clone = null;
+        const runShardSafe = async (page, ctx, partners, workerId, startDelayMs = 0) => {
+          if (startDelayMs > 0) await new Promise(resolve => setTimeout(resolve, startDelayMs));
+          try {
+            await collectPartnerShard(page, ctx, partners, workerId);
+            return { workerId, ok: true };
+          } catch (error) {
+            console.warn(`[BREM][collect] 창 ${workerId} 중단:`, error.message);
+            return { workerId, ok: false, error };
+          }
+        };
+        try {
+          clone = await launchClonedCollectContext(playwrightContext);
+          if (!clone?.page) throw new Error('두 번째 Playwright 창을 열지 못했습니다.');
+          console.log('[BREM][collect] Playwright 2창 병렬 수집 시작');
+          const settled = await Promise.all([
+            runShardSafe(playwrightPage, playwrightContext, shards[0], 'A'),
+            runShardSafe(clone.page, clone.context, shards[1], 'B', 2500)
+          ]);
+          const failed = settled.filter(row => !row.ok);
+          if (failed.length) {
+            const doneIds = new Set(partnerSummaries.map(s => String(s.partnerId || '').trim()));
+            const remaining = orderedPartners.filter(p => !doneIds.has(String(p.partnerId || '').trim()));
+            if (remaining.length) {
+              console.warn(`[BREM][collect] 2창 일부 실패 → 남은 ${remaining.length}곳 1창으로 이어서 수집`);
+              await collectPartnerShard(playwrightPage, playwrightContext, remaining, 'A');
+            }
+          }
+        } catch (error) {
+          console.warn('[BREM][collect] 2창 수집 실패, 1창 순차로 전환:', error.message);
+          const doneIds = new Set(partnerSummaries.map(s => String(s.partnerId || '').trim()));
+          const remaining = orderedPartners.filter(p => !doneIds.has(String(p.partnerId || '').trim()));
+          if (remaining.length) {
+            await collectPartnerShard(playwrightPage, playwrightContext, remaining, 'A');
+          }
+        } finally {
+          if (clone) await clone.close().catch(() => {});
+        }
+      } else {
+        await collectPartnerShard(playwrightPage, playwrightContext, orderedPartners, 'A');
       }
     } else {
       const partner = partnersToCollect[0] || registry.centerContext || {};

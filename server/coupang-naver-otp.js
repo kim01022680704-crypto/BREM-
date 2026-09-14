@@ -67,12 +67,32 @@ async function ensureNaverContext(options = {}) {
   const profileDir = getProfileDir();
   fs.mkdirSync(profileDir, { recursive: true });
   const headless = options.headless === true;
-  sharedContext = await playwright.chromium.launchPersistentContext(profileDir, {
+  const launchOptions = {
     headless,
     viewport: { width: 1280, height: 900 },
     locale: 'ko-KR',
-    timezoneId: 'Asia/Seoul'
-  });
+    timezoneId: 'Asia/Seoul',
+    chromiumSandbox: true,
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--hide-crash-restore-bubble',
+      '--disable-session-crashed-bubble',
+      '--no-first-run'
+    ]
+  };
+  try {
+    sharedContext = await playwright.chromium.launchPersistentContext(profileDir, {
+      ...launchOptions,
+      channel: 'chrome'
+    });
+    console.log('[NAVER] 브라우저: 설치된 Chrome');
+  } catch (error) {
+    console.warn('[NAVER] 설치된 Chrome 실행 실패 — Chromium으로 재시도:', error?.message || error);
+    sharedContext = await playwright.chromium.launchPersistentContext(profileDir, launchOptions);
+  }
+  await sharedContext.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  }).catch(() => {});
   return sharedContext;
 }
 
@@ -98,29 +118,39 @@ async function pageLooksLoggedIntoNaver(page) {
 /** 기존 값이 남아 있으면 아이디가 두 번 붙는 문제 → 완전히 비운 뒤 입력 */
 async function clearInputCompletely(page, loc) {
   await loc.click({ timeout: 5000, force: true }).catch(() => {});
-  // 네이버 입력칸 X(지우기) 버튼
-  const clearBtn = page.locator(
-    '.input_delete, button.btn_delete, .btn_delete, [class*="delete"][role="button"], a.btn_delete'
-  ).first();
-  if (await clearBtn.isVisible().catch(() => false)) {
-    await clearBtn.click({ force: true }).catch(() => {});
-    await page.waitForTimeout(120).catch(() => {});
-  }
+  // 이 칸이 속한 줄의 X만 누른다. 페이지 전역 .first()면 비밀번호 입력 때
+  // 아이디 X가 눌려 아이디가 비고, 로그인 버튼이 먹히지 않는다.
+  await loc.evaluate((el) => {
+    const parent = el.parentElement;
+    if (!parent) return;
+    const btn = parent.querySelector(
+      '.input_delete, button.btn_delete, .btn_delete, [class*="delete"][role="button"], a.btn_delete, [id*="clear"]'
+    );
+    if (btn) btn.click();
+  }).catch(() => {});
   await loc.click({ timeout: 3000, force: true }).catch(() => {});
   await page.keyboard.press('Control+A').catch(() => {});
   await page.keyboard.press('Delete').catch(() => {});
   await page.keyboard.press('Backspace').catch(() => {});
-  await loc.fill('').catch(() => {});
   await loc.evaluate((el) => {
     el.focus();
     el.value = '';
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }).catch(() => {});
-  // 한 번 더: 삼중클릭 전체선택 후 삭제
   await loc.click({ clickCount: 3, force: true }).catch(() => {});
   await page.keyboard.press('Backspace').catch(() => {});
   await page.waitForTimeout(80).catch(() => {});
+}
+
+async function typeNaverValue(page, loc, want) {
+  if (typeof loc.pressSequentially === 'function') {
+    await loc.pressSequentially(want, { delay: 35 }).catch(async () => {
+      await page.keyboard.type(want, { delay: 35 }).catch(() => {});
+    });
+  } else {
+    await page.keyboard.type(want, { delay: 35 }).catch(() => {});
+  }
 }
 
 async function typeIntoNaverField(page, selectors, value) {
@@ -131,23 +161,14 @@ async function typeIntoNaverField(page, selectors, value) {
     if (!(await loc.isVisible().catch(() => false))) continue;
 
     await clearInputCompletely(page, loc);
-
     // 네이버는 value= 대입이 무시되는 경우가 많아 실제 타이핑 필요
-    if (typeof loc.pressSequentially === 'function') {
-      await loc.pressSequentially(want, { delay: 35 }).catch(async () => {
-        await page.keyboard.type(want, { delay: 35 }).catch(() => {});
-      });
-    } else {
-      await page.keyboard.type(want, { delay: 35 }).catch(() => {});
-    }
+    await typeNaverValue(page, loc, want);
 
     let got = String(await loc.inputValue().catch(() => '') || '');
     // 이미 있던 값에 덧붙여진 경우(아이디 중복) → 비우고 재입력
     if (got !== want) {
       await clearInputCompletely(page, loc);
-      await loc.fill(want).catch(async () => {
-        await page.keyboard.type(want, { delay: 30 }).catch(() => {});
-      });
+      await typeNaverValue(page, loc, want);
       got = String(await loc.inputValue().catch(() => '') || '');
       if (got !== want && got.includes(want) && got.length > want.length) {
         await clearInputCompletely(page, loc);
@@ -157,6 +178,26 @@ async function typeIntoNaverField(page, selectors, value) {
     return true;
   }
   return false;
+}
+
+async function readNaverIdValue(page) {
+  return String(await page.locator('#id, input[name="id"]').first().inputValue().catch(() => '') || '');
+}
+
+/** 네이버 비밀번호칸은 value가 비어 보여도 점(•)과 X 버튼이 있으면 입력된 상태 */
+async function naverPasswordLooksFilled(page) {
+  return page.evaluate(() => {
+    const el = document.querySelector('#pw, input[name="pw"], input[type="password"]');
+    if (!el) return false;
+    if (String(el.value || '').trim()) return true;
+    const parent = el.parentElement;
+    const del = parent?.querySelector('.btn_delete, .input_delete, [id*="clear"]');
+    if (del) {
+      const st = window.getComputedStyle(del);
+      if (st.display !== 'none' && st.visibility !== 'hidden' && Number(st.opacity) > 0) return true;
+    }
+    return false;
+  }).catch(() => false);
 }
 
 async function clickNaverLoginButton(page) {
@@ -176,9 +217,14 @@ async function clickNaverLoginButton(page) {
     if (!(await loc.count().catch(() => 0))) continue;
     if (!(await loc.isVisible().catch(() => false))) continue;
     await loc.scrollIntoViewIfNeeded().catch(() => {});
-    await loc.click({ timeout: 5000, force: true }).catch(async () => {
-      await loc.dispatchEvent('click').catch(() => {});
-    });
+    const box = await loc.boundingBox().catch(() => null);
+    if (box && box.width > 8 && box.height > 8) {
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2).catch(() => {});
+    } else {
+      await loc.click({ timeout: 5000 }).catch(async () => {
+        await loc.click({ timeout: 3000, force: true }).catch(() => {});
+      });
+    }
     return true;
   }
   // DOM 직접 + 마우스 이벤트
@@ -215,8 +261,32 @@ async function fillNaverLoginForm(page, id, password) {
   }
 
   const idOk = await typeIntoNaverField(page, ['#id', 'input[name="id"]', 'input[placeholder*="아이디"]'], id);
-  const pwOk = await typeIntoNaverField(page, ['#pw', 'input[name="pw"]', 'input[type="password"]'], password);
-  if (!idOk || !pwOk) {
+  await page.waitForTimeout(200);
+  // Tab으로 비밀번호칸 이동 — 클릭하면 아이디 X가 맞을 수 있음
+  await page.keyboard.press('Tab').catch(() => {});
+  await page.waitForTimeout(120);
+  const pwFocused = await page.evaluate(() => {
+    const el = document.activeElement;
+    return Boolean(el && (el.id === 'pw' || el.name === 'pw' || el.type === 'password'));
+  }).catch(() => false);
+  let pwOk = false;
+  if (pwFocused) {
+    await page.keyboard.press('Control+A').catch(() => {});
+    await page.keyboard.press('Delete').catch(() => {});
+    await page.keyboard.type(password, { delay: 35 }).catch(() => {});
+    pwOk = true;
+  } else {
+    pwOk = await typeIntoNaverField(page, ['#pw', 'input[name="pw"]', 'input[type="password"]'], password);
+  }
+
+  // 비밀번호 입력 과정에서 아이디가 지워졌으면 아이디만 다시
+  let idNow = await readNaverIdValue(page);
+  if (idNow !== id) {
+    console.log('[NAVER] 아이디가 비어 있거나 불일치 — 아이디만 재입력');
+    await typeIntoNaverField(page, ['#id', 'input[name="id"]'], id);
+    idNow = await readNaverIdValue(page);
+  }
+  if (!idOk || !pwOk || idNow !== id) {
     // fallback: 구방식 value 주입 (기존 값 완전 삭제 후)
     await page.evaluate(({ userId, userPw }) => {
       const idEl = document.querySelector('#id, input[name="id"]');
@@ -236,8 +306,18 @@ async function fillNaverLoginForm(page, id, password) {
     }, { userId: id, userPw: password }).catch(() => {});
   }
 
+  const idLen = (await readNaverIdValue(page)).length;
+  const pwFilled = await naverPasswordLooksFilled(page);
+  console.log(`[NAVER] 입력 확인 idLen=${idLen} pwFilled=${pwFilled}`);
+
   await page.waitForTimeout(400);
-  let clicked = await clickNaverLoginButton(page);
+  await page.locator('#pw, input[name="pw"], input[type="password"]').first().click({ timeout: 3000 }).catch(() => {});
+  await page.keyboard.press('Enter').catch(() => {});
+  await page.waitForTimeout(1200);
+  let clicked = true;
+  if (/nidlogin|nid\.naver\.com/.test(page.url())) {
+    clicked = await clickNaverLoginButton(page);
+  }
   await page.waitForTimeout(1500);
   // 아직 로그인 페이지면 한 번 더
   if (/nidlogin|nid\.naver\.com/.test(page.url())) {
@@ -277,8 +357,8 @@ async function ensureNaverLoggedIn(page, options = {}) {
   if (!filled.ok) return filled;
 
   // 사람 클릭 대기 없이 자동으로 로그인 버튼을 반복 클릭
-  const waitMs = Math.max(45000, Number(options.autoLoginWaitMs || 90000));
-  const deadline = Date.now() + waitMs;
+  const waitMs = Math.max(45000, Number(options.autoLoginWaitMs || 180000));
+  let deadline = Date.now() + waitMs;
   let clickRound = 0;
   while (Date.now() < deadline) {
     for (const label of ['등록안함', '다음에', '닫기', '취소']) {
@@ -294,27 +374,51 @@ async function ensureNaverLoggedIn(page, options = {}) {
       return { ok: true, via: 'password+auto' };
     }
 
+    const bodyHint = await page.evaluate(() => (document.body?.innerText || '').replace(/\s+/g, ' ')).catch(() => '');
+    if (/아이디 또는 비밀번호가 올바르지 않습니다/.test(String(bodyHint || ''))) {
+      console.log('[NAVER] 아이디/비밀번호 오류 — 자동 재시도를 중단합니다.');
+      return {
+        ok: false,
+        error: 'NAVER_BAD_CREDENTIALS',
+        message: '네이버 아이디 또는 비밀번호가 올바르지 않습니다.'
+      };
+    }
+
     const url = String(page.url() || '');
+    const protectBtn = page.locator('button:has-text("보호조치 해제"), a:has-text("보호조치 해제")').first();
+    if (/idSafetyRelease|idsafety/i.test(url) || await protectBtn.isVisible().catch(() => false)) {
+      if (await protectBtn.isVisible().catch(() => false)) {
+        await protectBtn.click({ timeout: 5000 }).catch(() => {});
+        console.log('[NAVER] 보호조치 화면 — 녹색 「보호조치 해제」를 눌렀습니다. 본인확인을 창에서 완료해 주세요.');
+      } else {
+        console.log('[NAVER] 보호조치 화면입니다. 네이버 창에서 본인확인을 완료해 주세요.');
+      }
+      if (deadline < Date.now() + 120000) deadline = Date.now() + 180000;
+      await page.waitForTimeout(4000);
+      continue;
+    }
     if (/nidlogin|nid\.naver\.com/.test(url)) {
       clickRound += 1;
-      // 비었거나(또는 아이디가 두 번 붙은 경우) 다시 비우고 채운 뒤 클릭
-      const idVal = String(await page.locator('#id, input[name="id"]').first().inputValue().catch(() => '') || '');
-      const pwVal = String(await page.locator('#pw, input[name="pw"], input[type="password"]').first().inputValue().catch(() => '') || '');
-      const idDup = idVal !== creds.id;
-      const pwMissing = !pwVal.trim();
-      if (!idVal.trim() || !pwVal.trim() || idDup || pwMissing) {
-        await fillNaverLoginForm(page, creds.id, creds.password).catch(() => {});
-      } else {
-        await clickNaverLoginButton(page).catch(() => {});
+      const idVal = await readNaverIdValue(page);
+      if (!idVal.trim()) {
+        console.log('[NAVER] 재시도: 아이디가 비어 아이디만 다시 입력');
+        await typeIntoNaverField(page, ['#id', 'input[name="id"]'], creds.id).catch(() => {});
       }
-      if (clickRound % 3 === 0) {
-        console.log(`[NAVER] 로그인 버튼 자동 클릭 재시도 (${clickRound})`);
+      if (clickRound <= 4) {
+        await clickNaverLoginButton(page).catch(() => {});
+      } else if (clickRound === 5) {
+        console.log('[NAVER] 자동 클릭이 막혔습니다. 네이버 창에서 녹색 로그인을 직접 눌러주세요.');
+      }
+      if (clickRound % 6 === 0) {
+        console.log(`[NAVER] 로그인 대기 중 (${clickRound}) — 창이 열려 있으면 녹색 로그인을 눌러주세요`);
+        const hint = await page.evaluate(() => (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 180)).catch(() => '');
+        if (hint) console.log('[NAVER] 화면:', hint);
       }
     } else if (url && !/mail\.naver\.com/.test(url)) {
       await page.goto(NAVER_MAIL_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     }
 
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(3500);
   }
 
   return {
@@ -399,7 +503,8 @@ async function openLatestCoupangVerifyMail(page) {
  */
 async function waitForCoupangOtp(options = {}) {
   const timeoutMs = Math.max(15000, Number(options.timeoutMs || 120000));
-  const sinceMs = Number(options.sinceMs || Date.now() - 10 * 60 * 1000);
+  const sinceMs = Number(options.sinceMs || Date.now() - 2 * 60 * 1000);
+  const excludeOtp = String(options.excludeOtp || '').trim();
   recovering = true;
   try {
     const context = await ensureNaverContext({ headless: options.headless === true });
@@ -417,24 +522,31 @@ async function waitForCoupangOtp(options = {}) {
     console.log('[NAVER] 전체메일에서 쿠팡 인증번호 메일 검색…');
     const deadline = Date.now() + timeoutMs;
     let lastError = '';
+    let staleOtp = excludeOtp;
     while (Date.now() < deadline) {
       try {
         await openNaverAllMailFolder(page);
         const opened = await openLatestCoupangVerifyMail(page);
         await page.waitForTimeout(800);
 
-        // 읽기 화면 URL이면 본문 우선
         const text = await page.evaluate(() => document.body?.innerText || '');
         const looksRelevant = /쿠팡|coupang|인증번호|인증\s*번호|판매자\s*2단계|이메일\s*인증\s*코드/i.test(text);
         if (looksRelevant || opened) {
           const otp = extractOtpFromText(text);
           if (otp) {
-            console.log(`[NAVER] 전체메일에서 OTP 추출 성공 (${String(otp).length}자리)`);
-            return { ok: true, otp, source: 'naver_all_mail', sinceMs };
+            const age = Date.now() - sinceMs;
+            if (staleOtp && otp === staleOtp) {
+              lastError = '이전 인증메일';
+            } else if (!staleOtp && age < 10000) {
+              staleOtp = otp;
+              console.log('[NAVER] 이전 인증메일로 보여 새 메일 대기…');
+            } else {
+              console.log(`[NAVER] 전체메일에서 OTP 추출 성공 (${String(otp).length}자리)`);
+              return { ok: true, otp, source: 'naver_all_mail', sinceMs };
+            }
           }
         }
 
-        // 검색창이 있으면 제목 검색
         const search = page.locator('input[placeholder*="메일검색"], input[placeholder*="검색"], input[type="search"]').first();
         if (await search.isVisible().catch(() => false)) {
           await search.fill('').catch(() => {});
@@ -444,7 +556,8 @@ async function waitForCoupangOtp(options = {}) {
           await openLatestCoupangVerifyMail(page);
           const searchedText = await page.evaluate(() => document.body?.innerText || '');
           const otp = extractOtpFromText(searchedText);
-          if (otp) {
+          if (otp && otp !== staleOtp && Date.now() - sinceMs >= 8000) {
+            console.log(`[NAVER] 검색에서 OTP 추출 성공 (${String(otp).length}자리)`);
             return { ok: true, otp, source: 'naver_all_mail_search', sinceMs };
           }
         }
@@ -482,16 +595,15 @@ async function fillCoupangOtpOnPage(page, otp) {
     'input[placeholder*="인증번호"]',
     'input[placeholder*="인증 번호"]',
     'input[placeholder*="발송된 인증"]',
-    'input[placeholder*="이메일"]',
-    'input[placeholder*="코드"]',
+    'input[placeholder*="인증코드"]',
+    'input[placeholder*="인증 코드"]',
     'input[autocomplete="one-time-code"]',
     'input[name*="otp" i]',
     'input[name*="code" i]',
     'input[id*="otp" i]',
     'input[id*="code" i]',
     'input[type="tel"]',
-    'input[type="number"]',
-    'input[type="text"]:not([disabled])'
+    'input[type="number"]'
   ];
 
   async function tryFillLocator(locator, selector) {

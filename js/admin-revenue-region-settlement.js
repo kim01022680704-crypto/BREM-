@@ -9,6 +9,7 @@
     rows: [],
     draftRegions: {},
     uploadRows: [],
+    baeminRaw: [],
     loading: false,
     savedAt: ''
   };
@@ -112,9 +113,9 @@
     const saved = Revenue()?.getRegionSettlementByWeek?.(weekStart);
     state.savedAt = saved?.savedAt || '';
     state.taxFeePercent = Math.max(0, Math.min(100, Number(saved?.taxFeePercent ?? 20)));
-    state.draftRegions = saved?.regions && typeof saved.regions === 'object'
-      ? { ...saved.regions }
-      : {};
+    state.draftRegions = migrateDraftRegionKeys(
+      saved?.regions && typeof saved.regions === 'object' ? saved.regions : {}
+    );
     const taxInput = $('revenueRegionTaxFeePercent');
     if (taxInput) taxInput.value = String(state.taxFeePercent);
     if (state.savedAt) {
@@ -125,7 +126,7 @@
   }
 
   function collectDraftFromInputs() {
-    const regions = { ...state.draftRegions };
+    const regions = migrateDraftRegionKeys(state.draftRegions);
     document.querySelectorAll('[data-region-supply]').forEach(input => {
       const region = String(input.dataset.regionSupply || '').trim();
       if (!region) return;
@@ -143,11 +144,22 @@
   }
 
   function draftForRegion(region) {
-    const saved = state.draftRegions[region] || {};
-    return {
-      supplyPaid: Math.round(Number(saved.supplyPaid || 0)),
-      vat: Math.round(Number(saved.vat || 0))
-    };
+    const exact = state.draftRegions[region];
+    if (exact && (Number(exact.supplyPaid) || Number(exact.vat))) {
+      return {
+        supplyPaid: Math.round(Number(exact.supplyPaid || 0)),
+        vat: Math.round(Number(exact.vat || 0))
+      };
+    }
+    const key = regionCompareKey(region);
+    let supplyPaid = 0;
+    let vat = 0;
+    Object.entries(state.draftRegions || {}).forEach(([name, values]) => {
+      if (!key || regionCompareKey(name) !== key) return;
+      supplyPaid += Math.round(Number(values?.supplyPaid || 0));
+      vat += Math.round(Number(values?.vat || 0));
+    });
+    return { supplyPaid, vat };
   }
 
   function settlementsForWeek(weekStart) {
@@ -168,7 +180,7 @@
 
     settlements.forEach(settlement => {
       calc.computeRows(settlement, { withdrawals: [] }).forEach(row => {
-        const region = String(row.region || settlement.region || '').trim() || '미지정';
+        const region = canonicalRegionLabel(row.region || settlement.region) || '미지정';
         const bucket = byRegion.get(region) || {
           region,
           grossPay: 0,
@@ -258,7 +270,7 @@
     const weekHint = $('revenueRegionWeekHint');
     if (weekHint) {
       weekHint.textContent = settlements.length
-        ? `${formatWeekRange(state.weekStart)} · 직계약 정산서 ${settlements.length}건`
+        ? `${formatWeekRange(state.weekStart)} · 직계약 정산서 ${settlements.length}건 · 권역 ${regions.length}곳`
         : `${formatWeekRange(state.weekStart)} · 저장된 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요.`;
     }
 
@@ -442,6 +454,57 @@
       .trim();
   }
 
+  // 119·이글스 회사명과 DP 코드를 떼고 권역만 남긴다.
+  // `주식회사 119컴퍼니_표준울산남A… + 배달 이글스_표준울산남A…` → 표준울산남A
+  function canonicalRegionPart(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const ws = window.BremWeeklySettlement;
+    if (typeof ws?.canonicalBaeminTeamRegion === 'function') {
+      return String(ws.canonicalBaeminTeamRegion(raw) || raw).trim();
+    }
+    return raw
+      .replace(/주식회사\s*119컴퍼니/gi, '')
+      .replace(/주식회사119컴퍼니/gi, '')
+      .replace(/119\s*라이더스/gi, '')
+      .replace(/119컴퍼니/gi, '')
+      .replace(/배달\s*이글스/gi, '')
+      .replace(/[_-\s]*DP\d+/gi, '')
+      .replace(/^[\s_+-]+|[\s_+-]+$/g, '')
+      .trim() || raw;
+  }
+
+  function canonicalRegionLabel(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const parts = raw.split(/\s*\+\s*/).map(part => canonicalRegionPart(part)).filter(Boolean);
+    if (!parts.length) return raw;
+    const unique = [];
+    const seen = new Set();
+    parts.forEach(part => {
+      const key = normalizeRegionKey(part);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      unique.push(part);
+    });
+    return unique.length ? unique.join(' + ') : raw;
+  }
+
+  function regionCompareKey(value) {
+    return normalizeRegionKey(canonicalRegionLabel(value));
+  }
+
+  function migrateDraftRegionKeys(regions) {
+    const out = {};
+    Object.entries(regions || {}).forEach(([name, values]) => {
+      const canon = canonicalRegionLabel(name) || name;
+      if (!out[canon]) out[canon] = { supplyPaid: 0, vat: 0 };
+      out[canon].supplyPaid += Math.round(Number(values?.supplyPaid || 0));
+      out[canon].vat += Math.round(Number(values?.vat || 0));
+    });
+    return out;
+  }
+
   function availableRegionNames() {
     return state.rows.map(row => row.region).filter(Boolean);
   }
@@ -450,31 +513,119 @@
     const raw = String(label || '').trim();
     if (!raw) return '';
     if (aliasMap[raw]) return aliasMap[raw];
-    const key = normalizeRegionKey(raw);
+    const key = regionCompareKey(raw) || normalizeRegionKey(raw);
     if (!key) return '';
-    const exact = regionNames.find(name => normalizeRegionKey(name) === key);
+    const exact = regionNames.find(name => {
+      const nk = regionCompareKey(name) || normalizeRegionKey(name);
+      return nk === key;
+    });
     if (exact) return exact;
     const partial = regionNames.filter(name => {
-      const nk = normalizeRegionKey(name);
+      const nk = regionCompareKey(name) || normalizeRegionKey(name);
       return nk && (nk.includes(key) || key.includes(nk));
     });
     return partial.length === 1 ? partial[0] : '';
   }
 
+  function parseBaeminUploadMeta(fileName) {
+    const ws = window.BremWeeklySettlement;
+    if (ws?.parseBaeminFileName) {
+      const parsed = ws.parseBaeminFileName(fileName) || {};
+      const startDate = String(parsed.startDate || '').slice(0, 10);
+      const weekStart = startDate
+        ? (ws.baeminWeekStartKey?.(startDate) || weekStartKey(startDate))
+        : '';
+      return {
+        teamName: String(parsed.teamName || '').trim(),
+        startDate,
+        weekStart
+      };
+    }
+    const base = String(fileName || '').replace(/\.[^.]+$/, '').trim();
+    const match = base.match(/^(\d{8})\s*[-~]\s*(\d{8})[\s_\-]*(.+)$/);
+    if (!match) return { teamName: '', startDate: '', weekStart: '' };
+    const startDate = `${match[1].slice(0, 4)}-${match[1].slice(4, 6)}-${match[1].slice(6, 8)}`;
+    return {
+      teamName: String(match[3] || '').replace(/_?정산서$/i, '').trim(),
+      startDate,
+      weekStart: weekStartKey(startDate)
+    };
+  }
+
   function matchRegionByFileName(fileName, regionNames, aliasMap) {
+    const meta = parseBaeminUploadMeta(fileName);
+    if (meta.teamName) {
+      const byTeam = matchRegionByLabel(meta.teamName, regionNames, aliasMap);
+      if (byTeam) return byTeam;
+    }
     const base = String(fileName || '').replace(/\.[^.]+$/, '').trim();
     if (aliasMap[base]) return aliasMap[base];
-    const key = normalizeRegionKey(base);
+    const key = regionCompareKey(base) || normalizeRegionKey(base);
     if (!key) return '';
     // 더 구체적인(긴) 지역명이 우선 매칭되게 정렬한다.
     const sorted = [...regionNames].sort(
-      (a, b) => normalizeRegionKey(b).length - normalizeRegionKey(a).length
+      (a, b) => (regionCompareKey(b) || normalizeRegionKey(b)).length
+        - (regionCompareKey(a) || normalizeRegionKey(a)).length
     );
     const hit = sorted.find(name => {
-      const nk = normalizeRegionKey(name);
-      return nk && key.includes(nk);
+      const nk = regionCompareKey(name) || normalizeRegionKey(name);
+      return nk && (key.includes(nk) || normalizeRegionKey(base).includes(nk));
     });
     return hit || matchRegionByLabel(base, regionNames, aliasMap);
+  }
+
+  function baeminUploadGroupKey(row) {
+    const meta = parseBaeminUploadMeta(row?.fileName || '');
+    const week = meta.weekStart || weekStartKey(state.weekStart || today());
+    const label = row?.region || meta.teamName || '';
+    const canon = regionCompareKey(label);
+    if (canon) return `region:${canon}|${week}`;
+    return `file:${String(row?.fileName || row?.source || '').trim()}`;
+  }
+
+  function groupBaeminUploadRows(rows) {
+    const groups = new Map();
+    (Array.isArray(rows) ? rows : []).forEach(row => {
+      if (!row) return;
+      const key = baeminUploadGroupKey(row);
+      const names = Array.isArray(row.fileNames) && row.fileNames.length
+        ? row.fileNames.map(name => String(name || '').trim()).filter(Boolean)
+        : [String(row.fileName || '').trim()].filter(Boolean);
+      if (!groups.has(key)) {
+        groups.set(key, {
+          kind: 'baemin',
+          fileName: names.join(' + '),
+          fileNames: [...names],
+          source: row.source || names[0] || '',
+          region: row.region || '',
+          supplyPaid: Math.round(Number(row.supplyPaid || 0)),
+          vat: Math.round(Number(row.vat || 0)),
+          note: row.note || '',
+          notes: row.note ? [row.note] : []
+        });
+        return;
+      }
+      const group = groups.get(key);
+      names.forEach(name => {
+        if (name && !group.fileNames.includes(name)) group.fileNames.push(name);
+      });
+      group.supplyPaid += Math.round(Number(row.supplyPaid || 0));
+      group.vat += Math.round(Number(row.vat || 0));
+      if (row.note && !group.notes.includes(row.note)) group.notes.push(row.note);
+      if (!group.region && row.region) group.region = row.region;
+      group.fileName = group.fileNames.join(' + ');
+      group.source = group.region || group.source;
+      group.note = group.fileNames.length > 1
+        ? `${group.fileNames.length}파일 합산 · ${group.notes.join(' / ')}`
+        : (group.notes[0] || '');
+    });
+    return [...groups.values()];
+  }
+
+  function syncUploadRowsFromRaw() {
+    const coupang = (state.uploadRows || []).filter(row => row.kind === 'coupang');
+    state.uploadRows = [...coupang, ...groupBaeminUploadRows(state.baeminRaw)];
+    renderPreview();
   }
 
   async function readSheetRows(file, password, { sheetIndexes = [0, 1, 2], validateRows } = {}) {
@@ -751,9 +902,20 @@
       }
     }
 
-    if (collected.length) mergePreviewRows(collected);
-    const matched = collected.filter(row => row.region).length;
-    const parts = [`배민 ${collected.length}개 파일 읽음 · 자동 매칭 ${matched}개`];
+    if (collected.length) {
+      collected.forEach(row => {
+        const at = state.baeminRaw.findIndex(item => item.fileName === row.fileName);
+        if (at >= 0) state.baeminRaw[at] = row;
+        else state.baeminRaw.push(row);
+      });
+      syncUploadRowsFromRaw();
+    }
+    const grouped = groupBaeminUploadRows(collected);
+    const matched = grouped.filter(row => row.region).length;
+    const splitCount = grouped.filter(row => (row.fileNames || []).length > 1).length;
+    const parts = [`배민 ${collected.length}개 파일 → ${grouped.length}개 지역`];
+    if (splitCount) parts.push(`파일 합산 ${splitCount}곳`);
+    parts.push(`자동 매칭 ${matched}개`);
     if (failed.length) parts.push(`실패 ${failed.length}건: ${failed.join(' / ')}`);
     setUploadStatus(parts.join(' · '));
   }
@@ -761,16 +923,23 @@
   function mergePreviewRows(rows) {
     const next = [...state.uploadRows];
     rows.forEach(row => {
+      if (row.kind === 'baemin') {
+        const at = state.baeminRaw.findIndex(item => item.fileName === row.fileName);
+        if (at >= 0) state.baeminRaw[at] = row;
+        else state.baeminRaw.push(row);
+        return;
+      }
       const at = next.findIndex(item => item.kind === row.kind && item.source === row.source);
       if (at >= 0) next[at] = row;
       else next.push(row);
     });
-    state.uploadRows = next;
-    renderPreview();
+    state.uploadRows = next.filter(row => row.kind !== 'baemin');
+    syncUploadRowsFromRaw();
   }
 
   function clearPreview() {
     state.uploadRows = [];
+    state.baeminRaw = [];
     renderPreview();
     setUploadStatus('미리보기를 지웠습니다.');
   }
@@ -800,7 +969,11 @@
       return `
         <tr class="${row.region ? '' : 'revenue-region-preview-unmatched'}">
           <td>${row.kind === 'coupang' ? '쿠팡' : '배민'}</td>
-          <td>${escapeHtml(row.source)}<br><span class="muted-inline">${escapeHtml(row.fileName)}</span></td>
+          <td>${escapeHtml(row.source)}<br><span class="muted-inline">${escapeHtml(row.fileName)}</span>${
+            (row.fileNames || []).length > 1
+              ? `<br><span class="muted-inline">${(row.fileNames || []).length}파일 합산</span>`
+              : ''
+          }</td>
           <td><select class="admin-period-input" data-preview-region="${index}">${options}</select></td>
           <td class="weekly-amount-cell">${formatMoney(row.supplyPaid)}</td>
           <td class="weekly-amount-cell">${formatMoney(row.vat)}</td>
@@ -825,6 +998,9 @@
       merged[row.region].supplyPaid += Math.round(Number(row.supplyPaid || 0));
       merged[row.region].vat += Math.round(Number(row.vat || 0));
       aliases[row.source] = row.region;
+      (row.fileNames || [row.fileName]).forEach(name => {
+        if (name) aliases[String(name).replace(/\.[^.]+$/, '')] = row.region;
+      });
     });
 
     const appliedRegions = Object.keys(merged).length;
@@ -838,8 +1014,16 @@
     });
     Revenue()?.saveRegionAliases?.(aliases);
 
-    // 반영한 줄은 목록에서 지우고, 매칭 못 한 줄만 남겨 이어서 처리하게 한다.
-    state.uploadRows = leftover;
+    const leftoverNames = new Set();
+    leftover.forEach(row => {
+      (row.fileNames || String(row.fileName || '').split(/\s*\+\s*/))
+        .map(name => String(name || '').trim())
+        .filter(Boolean)
+        .forEach(name => leftoverNames.add(name));
+    });
+    state.baeminRaw = state.baeminRaw.filter(row => leftoverNames.has(row.fileName));
+    state.uploadRows = leftover.filter(row => row.kind === 'coupang')
+      .concat(groupBaeminUploadRows(state.baeminRaw));
     render();
     saveDraft({ silent: true });
 
@@ -934,8 +1118,53 @@
       if (!select) return;
       const index = Number(select.dataset.previewRegion);
       if (!state.uploadRows[index]) return;
-      state.uploadRows[index].region = String(select.value || '');
-      renderPreview();
+      const region = String(select.value || '');
+      state.uploadRows[index].region = region;
+      const names = new Set(
+        (state.uploadRows[index].fileNames || [state.uploadRows[index].fileName])
+          .map(name => String(name || '').trim())
+          .filter(Boolean)
+      );
+      state.baeminRaw.forEach(row => {
+        if (names.has(row.fileName)) row.region = region;
+      });
+      syncUploadRowsFromRaw();
+    });
+
+    bindDropZone($('revenueRegionCoupangDrop'), files => handleCoupangUpload(files[0]));
+    bindDropZone($('revenueRegionBaeminDrop'), files => handleBaeminUpload(files));
+  }
+
+  function excelFilesFromList(fileList) {
+    return Array.from(fileList || []).filter(file => /\.xlsx?$/i.test(file.name || ''));
+  }
+
+  function bindDropZone(el, onFiles) {
+    if (!el) return;
+    const setHover = on => el.classList.toggle('is-dragover', !!on);
+    ['dragenter', 'dragover'].forEach(type => {
+      el.addEventListener(type, event => {
+        if (![...event.dataTransfer?.types || []].includes('Files')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+        setHover(true);
+      });
+    });
+    el.addEventListener('dragleave', event => {
+      if (event.relatedTarget && el.contains(event.relatedTarget)) return;
+      setHover(false);
+    });
+    el.addEventListener('drop', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      setHover(false);
+      const files = excelFilesFromList(event.dataTransfer?.files);
+      if (!files.length) {
+        showToast('엑셀 파일(.xlsx, .xls)만 올릴 수 있습니다.');
+        return;
+      }
+      void onFiles(files);
     });
   }
 
@@ -965,6 +1194,10 @@
     parseBaeminSheet,
     normalizeRegionKey,
     matchRegionByLabel,
-    matchRegionByFileName
+    matchRegionByFileName,
+    groupBaeminUploadRows,
+    baeminUploadGroupKey,
+    canonicalRegionLabel,
+    aggregateRegions
   };
 })();

@@ -142,5 +142,12 @@ const saveSrc = fs.readFileSync(path.join(root, 'server', 'rider-region-dashboar
 check('DEFAULT 모드일 때만 delete', /if \(mode === DEFAULT_RIDER_REGION_MODE\) \{[\s\S]{0,200}delete riders\[id\]/.test(saveSrc), 'true');
 check("더 이상 mode === 'full' 로 delete 하지 않음", /if \(mode === 'full'\)\s*\{\s*\n\s*\/\/[^\n]*\n\s*delete riders/.test(saveSrc), 'false');
 
+console.log('\n[7] 배정 기사 이름 옆에 ERP ID');
+check('이름 셀 헬퍼', /function regionAssignedNameHtml\(driver\)/.test(src), 'true');
+check('ERP ID 클래스', src.includes('driver-region-erp-id'), 'true');
+check('이름 셀에서 헬퍼 사용', src.includes('regionAssignedNameHtml(row.driver)'), 'true');
+const adminHtml = fs.readFileSync(path.join(root, 'admin.html'), 'utf8');
+check('표 헤더에 ERP ID', adminHtml.includes('이름 · ERP ID'), 'true');
+
 console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
 process.exit(failed ? 1 : 0);

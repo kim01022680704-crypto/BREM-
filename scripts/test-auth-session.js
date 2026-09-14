@@ -26,7 +26,8 @@ function loadSupabaseConfig(localStorage, sessionStorage) {
       BremEnv: { isProductionHost: () => true },
       localStorage,
       sessionStorage,
-      document: { dispatchEvent() {} }
+      document: { dispatchEvent() {} },
+      supabase: { createClient: () => ({ auth: {} }) }
     },
     localStorage,
     sessionStorage,
@@ -34,21 +35,53 @@ function loadSupabaseConfig(localStorage, sessionStorage) {
     fetch: async () => ({ ok: false })
   };
   context.window.window = context.window;
+  vm.createContext(context);
   vm.runInContext(code, context);
   return context.window;
+}
+
+function loadLoginPrefs(localStorage, sessionStorage, nativeApp) {
+  const code = fs.readFileSync(path.join(__dirname, '..', 'js', 'login-preferences.js'), 'utf8');
+  const context = {
+    window: {
+      BREM_IS_NATIVE_APP: Boolean(nativeApp),
+      localStorage,
+      sessionStorage
+    },
+    localStorage,
+    sessionStorage
+  };
+  context.window.window = context.window;
+  vm.createContext(context);
+  vm.runInContext(code, context);
+  return context.window.BremLoginPrefs;
 }
 
 function loadStorage(localStorage, sessionStorage) {
   const code = fs.readFileSync(path.join(__dirname, '..', 'js', 'storage.js'), 'utf8');
   const context = {
-    window: { localStorage, sessionStorage, BremSupabaseConfig: { createClient() { return {}; } } },
+    window: {
+      localStorage,
+      sessionStorage,
+      BremSupabaseConfig: { createClient() { return {}; } },
+      document: { dispatchEvent() {}, addEventListener() {}, removeEventListener() {} }
+    },
     localStorage,
     sessionStorage,
-    document: { dispatchEvent() {} },
-    console
+    document: { dispatchEvent() {}, addEventListener() {}, removeEventListener() {} },
+    console,
+    CustomEvent: class CustomEvent {
+      constructor(type, init) {
+        this.type = type;
+        this.detail = init && init.detail;
+      }
+    },
+    setTimeout,
+    clearTimeout
   };
+  vm.createContext(context);
   vm.runInContext(code, context);
-  return context.BremStorage;
+  return context.window.BremStorage || context.BremStorage;
 }
 
 let errors = 0;
@@ -66,9 +99,13 @@ function assert(name, condition) {
   const localStorage = makeStore();
   const sessionStorage = makeStore();
   localStorage.setItem('brem-auth-token', 'legacy-local-token');
+  localStorage.setItem('brem-auth-rider-sb-demo-auth-token', '{"access_token":"rider"}');
+  localStorage.setItem('brem-auth-admin-sb-demo-auth-token', '{"access_token":"admin"}');
 
   const win = loadSupabaseConfig(localStorage, sessionStorage);
   assert('legacy local auth purged on config load', localStorage.getItem('brem-auth-token') == null);
+  assert('rider keep-login token kept on config load', localStorage.getItem('brem-auth-rider-sb-demo-auth-token') === '{"access_token":"rider"}');
+  assert('admin keep-login token kept on config load', localStorage.getItem('brem-auth-admin-sb-demo-auth-token') === '{"access_token":"admin"}');
 
   const client = win.BremSupabaseConfig.createClient('https://example.supabase.co', 'anon');
   assert('createClient returns client wrapper', Boolean(client));
@@ -77,18 +114,30 @@ function assert(name, condition) {
   assert('session token readable from sessionStorage', sessionStorage.getItem('brem-auth-token') === 'session-token');
 })();
 
+(function testRiderKeepLoginPrefs() {
+  const localStorage = makeStore();
+  const sessionStorage = makeStore();
+  const prefs = loadLoginPrefs(localStorage, sessionStorage, false);
+  assert('rider keep-logged-in is always on', prefs.isKeepLoggedIn('rider') === true);
+  assert('rider session store is localStorage', prefs.getSessionStore('rider') === localStorage);
+})();
+
 (function testStoragePurge() {
   const localStorage = makeStore();
   const sessionStorage = makeStore();
   localStorage.setItem('brem-auth-token', 'x');
   localStorage.setItem('brem_admin_logged_in', 'true');
+  localStorage.setItem('brem_driver_logged_in_id', 'driver-1');
+  localStorage.setItem('brem-auth-rider-sb-demo-auth-token', 'keep-rider');
   localStorage.setItem('brem_session_last_activity', '123');
 
   const BremStorage = loadStorage(localStorage, sessionStorage);
   BremStorage.purgeLegacyAuthFromLocalStorage();
 
-  assert('purge removes auth token from localStorage', localStorage.getItem('brem-auth-token') == null);
-  assert('purge removes admin session flag from localStorage', localStorage.getItem('brem_admin_logged_in') == null);
+  assert('purge removes unscoped auth token from localStorage', localStorage.getItem('brem-auth-token') == null);
+  assert('purge keeps admin session flag in localStorage', localStorage.getItem('brem_admin_logged_in') === 'true');
+  assert('purge keeps rider session id in localStorage', localStorage.getItem('brem_driver_logged_in_id') === 'driver-1');
+  assert('purge keeps rider scoped token in localStorage', localStorage.getItem('brem-auth-rider-sb-demo-auth-token') === 'keep-rider');
   assert('purge removes idle marker from localStorage', localStorage.getItem('brem_session_last_activity') == null);
 })();
 
@@ -97,3 +146,4 @@ if (errors) {
   process.exit(1);
 }
 console.log('\nAll auth session tests passed.');
+process.exit(0);

@@ -12,7 +12,7 @@ if not defined PROJECT_DIR (
 
 if not defined PROJECT_DIR (
   echo [ERROR] BREM folder not found.
-  echo   Checked E:\*\BREM and Desktop\BREM
+  echo   Checked E:\BREM and E:\*\BREM
   pause
   exit /b 1
 )

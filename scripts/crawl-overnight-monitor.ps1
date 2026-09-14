@@ -1,8 +1,12 @@
 param(
-  [string]$LogPath = 'C:\Users\user\Desktop\BREM\logs\crawl-monitor.log',
-  [string]$StatePath = 'C:\Users\user\Desktop\BREM\logs\crawl-monitor-state.json',
+  [string]$LogPath = '',
+  [string]$StatePath = '',
   [switch]$ResetArm
 )
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+if (-not $LogPath) { $LogPath = Join-Path $repoRoot 'logs\crawl-monitor.log' }
+if (-not $StatePath) { $StatePath = Join-Path $repoRoot 'logs\crawl-monitor-state.json' }
 
 $ErrorActionPreference = 'Continue'
 $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
@@ -180,7 +184,7 @@ if (-not (Test-Path -LiteralPath $dir)) {
 Add-Content -Path $LogPath -Value $line -Encoding UTF8
 
 $payload = @{
-  prompt = 'crawl overnight monitor tick: read crawl-monitor.log last 8 lines; health 3939/3940; auto-restart ONLY after armed; skip restart while weekly/ERP busy; continue until 2026-08-13 13:00 KST then summarize.'
+  prompt = 'crawl overnight monitor tick: read crawl-monitor.log last 8 lines; health 3939/3940; auto-restart ONLY after armed; skip restart while weekly/ERP busy; note crawl speed (baemin/coupang rounds, collect duration); continue until 2026-08-14 01:00 KST then summarize health + speed findings.'
   ts = $ts
   armed = $armed
   baemin = @{ active = $bActive; phase = $bPhase; round = $bRound; err = $bErr; auth = $bAuth }
