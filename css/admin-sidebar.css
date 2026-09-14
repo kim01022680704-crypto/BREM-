@@ -4,7 +4,16 @@
 @media (min-width: 901px) {
   .admin-app { grid-template-columns: 292px 1fr; }
 }
-.sidebar { padding-left: 16px; padding-right: 16px; }
+/* 사이드바만 모던 한글 폰트(Pretendard)로 통일 — 다른 화면/기능엔 영향 없음.
+   Pretendard 미로딩 환경은 Noto Sans KR → 시스템 폰트로 폴백. */
+.sidebar {
+  padding-left: 16px;
+  padding-right: 16px;
+  font-family: "Pretendard Variable", Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.02em;
+}
 
 /* 검색 */
 .sb-search { flex-shrink: 0; }
@@ -50,7 +59,7 @@
   cursor: pointer; font-size: 1.08rem;
 }
 .sb-fav-item:hover { background: var(--black); color: var(--text); }
-.sb-fav-item.active { background: rgba(255, 212, 0, 0.12); color: var(--yellow); font-weight: 800; }
+.sb-fav-item.active { background: rgba(255, 212, 0, 0.12); color: var(--yellow); font-weight: 700; }
 .sb-fav-item .dot { width: 5px; height: 5px; border-radius: 50%; background: #3f3f46; flex: none; }
 .sb-fav-item.active .dot { background: var(--yellow); }
 .sb-fav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -61,7 +70,7 @@
 .sb-ghead {
   width: 100%; display: flex; align-items: center; gap: 10px;
   padding: 9px 10px; border: 0; background: transparent; color: var(--text);
-  border-radius: 10px; font-size: 1.08rem; font-weight: 800; cursor: pointer; text-align: left;
+  border-radius: 10px; font-size: 1.08rem; font-weight: 700; cursor: pointer; text-align: left;
 }
 .sb-ghead:hover { background: var(--black); }
 .sb-ghead .sb-ic { width: 17px; height: 17px; color: var(--muted); flex: none; }
@@ -80,7 +89,7 @@
   padding: 10px 28px 10px 26px !important;
   border-radius: 9px !important;
   font-size: 1.08rem !important;
-  font-weight: 600 !important;
+  font-weight: 500 !important;
   color: var(--muted) !important;
   background: transparent !important;
   border: 0 !important;
@@ -95,7 +104,7 @@
 }
 .sb-item .nav-btn:hover { background: var(--black) !important; color: var(--text) !important; }
 .sb-item .nav-btn.active {
-  background: rgba(255, 212, 0, 0.12) !important; color: var(--yellow) !important; font-weight: 800 !important;
+  background: rgba(255, 212, 0, 0.12) !important; color: var(--yellow) !important; font-weight: 700 !important;
 }
 .sb-item .nav-btn.active::before {
   width: 4px; height: 15px; border-radius: 3px; background: var(--yellow);
