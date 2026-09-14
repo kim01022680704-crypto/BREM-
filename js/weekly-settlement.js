@@ -1786,6 +1786,65 @@ const BremWeeklySettlement = (function () {
     return matchedRiders.map(item => item.driverName || item.riderName).filter(Boolean).join(', ');
   }
 
+  // 정산서 엑셀의 "금액 열 밀림"(플랫폼이 열을 추가/이동) 감지 — 비차단 경고용.
+  // 계산식은 절대 건드리지 않는다. 파일 내부의 항등식/총합만으로 판단한다.
+  //  · 배민: 총배달료(G) = 배달료(E) + 추가지급(F) 가 성립해야 한다(G는 계산에 안 쓰는 참조값).
+  //          열이 밀리면 이 항등식이 대부분의 행에서 깨진다.
+  //  · 공통: 데이터 행이 많은데 지급 총합이 0원이면 금액 열이 빈/글자 열을 가리키는 것.
+  // 표본이 적으면(5행 미만) 오탐 방지를 위해 검사하지 않는다.
+  function detectAmountColumnAnomaly(riders, platform) {
+    const p = normalizePlatform(platform);
+    const list = (Array.isArray(riders) ? riders : []).filter(r => r && r.amounts);
+    if (list.length < 5) return null;
+    const reasons = [];
+
+    if (p === 'baemin') {
+      let moneyRows = 0;
+      let mismatch = 0;
+      let sumTotal = 0;
+      list.forEach(r => {
+        const e = Math.round(Number(r.amounts.deliveryFee || 0));
+        const f = Math.round(Number(r.amounts.missionPay || 0));
+        const g = Math.round(Number(r.amounts.totalDeliveryPay || 0));
+        sumTotal += g;
+        if (Math.abs(e) + Math.abs(f) + Math.abs(g) === 0) return;
+        moneyRows += 1;
+        const tol = Math.max(10, Math.round(Math.abs(g) * 0.01));
+        if (Math.abs(g - (e + f)) > tol) mismatch += 1;
+      });
+      if (moneyRows >= 5 && sumTotal <= 0) {
+        reasons.push('총배달료(G) 합계가 0원 — 금액 열이 빈 열/글자 열을 가리킴');
+      } else if (moneyRows >= 5 && mismatch / moneyRows > 0.5) {
+        reasons.push(`총배달료(G) ≠ 배달료(E)+추가지급(F) 인 행 ${mismatch}/${moneyRows}`);
+      }
+    } else {
+      let moneyRows = 0;
+      let zeroDelivery = 0;
+      let sumDelivery = 0;
+      list.forEach(r => {
+        const am = Math.round(Number(r.amounts.deliveryFeeAm || 0));
+        const other = Math.abs(Number(r.amounts.deductionBase || 0))
+          + Math.abs(Number(r.amounts.sheetPayout || 0));
+        if (Math.abs(am) + other === 0) return;
+        moneyRows += 1;
+        sumDelivery += am;
+        if (am === 0) zeroDelivery += 1;
+      });
+      if (moneyRows >= 5 && sumDelivery <= 0) {
+        reasons.push('배달료(AM) 합계가 0원 — 금액 열이 빈 열/글자 열을 가리킴');
+      } else if (moneyRows >= 5 && zeroDelivery / moneyRows > 0.7) {
+        reasons.push(`배달료(AM)=0 인 행 ${zeroDelivery}/${moneyRows}`);
+      }
+    }
+
+    if (!reasons.length) return null;
+    return {
+      suspected: true,
+      platform: p,
+      message: `${p === 'coupang' ? '쿠팡' : '배민'} 정산서의 금액 열 위치가 바뀐 것 같습니다: ${reasons.join(' · ')}. 열 설정(금액/공제 열)을 확인하세요.`
+    };
+  }
+
   function buildWeeklySettlementId({ platform, region, year, month, week, startDate, channel }) {
     const p = normalizePlatform(platform);
     const regionSlug = slugify(region);
@@ -1847,7 +1906,12 @@ const BremWeeklySettlement = (function () {
       uploadedAt: payload.uploadedAt || new Date().toISOString(),
       matchedNamesLabel: buildMatchedNamesLabel(matchedRiders),
       riders: matchedRiders,
-      summary: buildWeeklySummary(matchedRiders, payload.unmatchedRiders || [])
+      summary: buildWeeklySummary(matchedRiders, payload.unmatchedRiders || []),
+      // 금액 열 밀림 의심(비차단 경고용). 없으면 undefined.
+      columnAnomaly: detectAmountColumnAnomaly(
+        matchedRiders.concat(payload.unmatchedRiders || []),
+        platform
+      ) || undefined
     };
   }
 
@@ -2411,6 +2475,7 @@ const BremWeeklySettlement = (function () {
     findBaeminSettlementSheet,
     extractCoupangWeeklyRiders,
     extractBaeminWeeklyRiders,
+    detectAmountColumnAnomaly,
     applySheetPayoutOverride,
     includeSheetPayoutRiders,
     riderPayoutSelectKey,

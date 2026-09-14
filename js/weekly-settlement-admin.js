@@ -643,6 +643,18 @@ const BremWeeklySettlementAdmin = (function () {
 
       // 배민 여러 지역 묶음: 각각 합친 뒤 바로 저장(미리보기 생략)
       if (result?.multi && Array.isArray(result.records)) {
+        // 금액 열 밀림 의심 시 자동저장 전에 한 번 경고(비차단)
+        const batchAnomalies = result.records
+          .map(rec => BremWeeklySettlement.detectAmountColumnAnomaly?.(rec.riders || [], platform))
+          .filter(Boolean);
+        if (batchAnomalies.length) {
+          const okAnomaly = window.confirm(
+            '⚠️ ' + batchAnomalies[0].message + '\n\n'
+            + `이대로 저장하면 금액이 잘못 반영될 수 있습니다. (의심 지역 ${batchAnomalies.length}개)\n\n`
+            + '그래도 저장할까요? (취소 권장 — 열 설정 확인 후 재업로드)'
+          );
+          if (!okAnomaly) { showToast('저장을 취소했습니다. 정산서 열 설정을 확인하세요.'); return; }
+        }
         let batchCallFeeUnit;
         if (ch === 'direct') {
           const firstRecord = result.records[0];
@@ -721,6 +733,8 @@ const BremWeeklySettlementAdmin = (function () {
           ? ' · 콜수수료 설정 후 저장할 수 있습니다'
           : ` · 콜수수료 ${formatNumber(selectedCallFeeUnit)}원/콜`;
       }
+      const previewAnomaly = BremWeeklySettlement.detectAmountColumnAnomaly?.(record.riders || [], platform);
+      if (previewAnomaly) toastMessage = '⚠️ 열 위치 의심! ' + toastMessage;
       showToast(toastMessage);
     } catch (uploadError) {
       showToast(uploadError.message || '주간정산서 처리 중 오류가 발생했습니다.');
@@ -745,6 +759,16 @@ const BremWeeklySettlementAdmin = (function () {
     if (!toSavePreview.riders?.length) {
       showToast('매칭된 기사가 없어 저장할 수 없습니다.');
       return;
+    }
+    // 금액 열 밀림 의심 시 저장(금액 커밋) 직전에 강한 확인(비차단)
+    const saveAnomaly = BremWeeklySettlement.detectAmountColumnAnomaly?.(toSavePreview.riders || [], platform);
+    if (saveAnomaly) {
+      const okAnomaly = window.confirm(
+        '⚠️ ' + saveAnomaly.message + '\n\n'
+        + '이대로 저장하면 금액이 잘못 반영될 수 있습니다.\n\n'
+        + '그래도 저장할까요? (취소 권장 — 열 설정 확인 후 재업로드)'
+      );
+      if (!okAnomaly) { showToast('저장을 취소했습니다. 정산서 열 설정을 확인하세요.'); return; }
     }
     let callFeeUnit;
     if (ch === 'direct') {
