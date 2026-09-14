@@ -1709,14 +1709,34 @@ const BremSettlementResultDirect = (function () {
     const preview = finalRows().filter(r => r.driverId);
     if (!preview.length) { showToast('반영할 정산 행이 없습니다.'); return; }
     const week = finalWeek();
+    // 음수(총지급액<0) 명세서가 기사앱에 노출되지 않게 반영 직전에 강한 경고를 붙인다.
+    const negatives = preview.filter(r => Math.round(Number(r.netPay || 0)) < 0);
+    if (negatives.length) {
+      const sample = negatives.slice(0, 8)
+        .map(r => `${r.name || r.driverId}(${formatNumber(Math.round(Number(r.netPay || 0)))}원)`)
+        .join(', ');
+      const negOk = window.confirm(
+        [
+          `⚠️ 총지급액이 마이너스(음수)인 기사가 ${negatives.length}명 있습니다.`,
+          sample + (negatives.length > 8 ? ' 외' : ''),
+          '',
+          '이대로 반영하면 기사앱 주급명세서에 음수 금액이 그대로 노출됩니다.',
+          '먼저 「마이너스 일괄 맞추기」로 0원 처리(소급분 이관)하는 것을 강력히 권장합니다.',
+          '',
+          '그래도 음수인 채로 반영할까요? (일반적으로 「취소」가 맞습니다)'
+        ].join('\n')
+      );
+      if (!negOk) { showToast('반영을 취소했습니다. 「마이너스 일괄 맞추기」로 먼저 0원 처리하세요.'); return; }
+    }
     const ok = window.confirm(
       [
         `${week}(수) 주 전체 ${preview.length}줄을 기사앱 주급명세서로 반영합니다.`,
         '쿠팡·배민 각 줄이 각각 반영되고, 라이더앱에 즉시 노출됩니다.',
         '팝업에서 고친 추가지급·기타지급·리스·대여는 그대로 반영됩니다.',
+        negatives.length ? `※ 음수 명세서 ${negatives.length}명 포함됨` : '',
         '',
         '반영할까요?'
-      ].join('\n')
+      ].filter(Boolean).join('\n')
     );
     if (!ok) return;
     const publishBtn = $('#settlementFinalPublishBtn');
