@@ -153,3 +153,18 @@
     }
   };
 })();
+
+/* 실적 탭 — 주간 실적 카드 "상세보기" 토글 (뷰포트 무관 항상 동작) */
+(function () {
+  document.addEventListener('click', (event) => {
+    const toggle = event.target.closest?.('.ds-detail-toggle');
+    if (!toggle) return;
+    const id = toggle.getAttribute('data-detail');
+    const panel = id ? document.getElementById(id) : null;
+    if (!panel) return;
+    const open = panel.hidden;
+    panel.hidden = !open;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.textContent = open ? '접기 ▴' : '상세보기 ▾';
+  });
+})();

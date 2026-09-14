@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
   <link rel="stylesheet" href="css/driver-tokens.css?v=20260914dark1">
-  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260914perf2">
+  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260914perf3">
 </head>
 <body>
   <section class="login-page" id="driverLoginCard">
@@ -161,6 +161,31 @@
               </div>
             </div>
           </div>
+
+          <section class="driver-home-block driver-goals">
+            <button type="button" class="driver-goal-card summary-card--action" id="monthTargetCard" aria-label="월간 목표 설정">
+              <div class="driver-goal-card__top">
+                <span class="driver-goal-card__label">월간 목표</span>
+                <span class="driver-goal-card__rate" id="monthAchievementRate">0%</span>
+              </div>
+              <strong class="driver-goal-card__value summary-card__value--unset" id="monthTarget">클릭해서 설정</strong>
+              <div class="driver-goal-card__calls">
+                <span><i class="driver-goal-dot driver-goal-dot--baemin"></i>배민 <b id="monthCallsBaemin">0콜</b></span>
+                <span><i class="driver-goal-dot driver-goal-dot--coupang"></i>쿠팡 <b id="monthCallsCoupang">0콜</b></span>
+              </div>
+            </button>
+            <button type="button" class="driver-goal-card summary-card--action" id="weekTargetCard" aria-label="주간 목표 설정">
+              <div class="driver-goal-card__top">
+                <span class="driver-goal-card__label">주간 목표</span>
+                <span class="driver-goal-card__rate" id="weeklyAchievementRate">0%</span>
+              </div>
+              <strong class="driver-goal-card__value summary-card__value--unset" id="weekTarget">클릭해서 설정</strong>
+              <div class="driver-goal-card__calls">
+                <span><i class="driver-goal-dot driver-goal-dot--baemin"></i>배민 <b id="weekCallsBaemin">0콜</b></span>
+                <span><i class="driver-goal-dot driver-goal-dot--coupang"></i>쿠팡 <b id="weekCallsCoupang">0콜</b></span>
+              </div>
+            </button>
+          </section>
 
           <section class="live-ops-card driver-home-block" id="driverBaeminLiveOps" hidden>
             <div class="live-ops-card__head">
@@ -790,101 +815,54 @@
           </div>
 
           <section class="driver-perf-panel" id="driverPerfPanel">
-          <div class="week-nav week-nav--perf">
-            <button type="button" id="prevWeekBtn">&lt;&lt;</button>
-            <span id="dailyRange">전체 기록</span>
-            <button type="button" id="nextWeekBtn">&gt;&gt;</button>
+          <div class="week-nav week-nav--perf ds-week-switch">
+            <button type="button" id="prevWeekBtn" class="ds-week-switch__nav" aria-label="이전 주">‹</button>
+            <div class="ds-week-switch__center">
+              <span class="ds-week-switch__cap">정산주 · 수~화</span>
+              <span id="dailyRange" class="ds-week-switch__label">전체 기록</span>
+            </div>
+            <button type="button" id="nextWeekBtn" class="ds-week-switch__nav" aria-label="다음 주">›</button>
           </div>
 
-          <section class="summary-section">
-            <div class="summary-grid summary-grid--metrics">
-              <button type="button" class="summary-card summary-card--metric summary-card--action" id="monthTargetCard" aria-label="월간 목표 설정">
-                <span class="summary-card__label">월간 목표</span>
-                <strong class="summary-card__value summary-card__value--unset" id="monthTarget">클릭해서 설정</strong>
-              </button>
-              <button type="button" class="summary-card summary-card--metric summary-card--action" id="weekTargetCard" aria-label="주간 목표 설정">
-                <span class="summary-card__label">주간 목표</span>
-                <strong class="summary-card__value summary-card__value--unset" id="weekTarget">클릭해서 설정</strong>
-              </button>
-              <article class="summary-card summary-card--baemin">
-                <span class="summary-card__label">이번 달 콜수 (배민)</span>
-                <strong class="summary-card__value" id="monthCallsBaemin">0콜</strong>
-              </article>
-              <article class="summary-card summary-card--baemin">
-                <span class="summary-card__label">주간 콜수 (배민)</span>
-                <strong class="summary-card__value" id="weekCallsBaemin">0콜</strong>
-              </article>
-              <article class="summary-card summary-card--coupang">
-                <span class="summary-card__label">이번 달 콜수 (쿠팡)</span>
-                <strong class="summary-card__value" id="monthCallsCoupang">0콜</strong>
-              </article>
-              <article class="summary-card summary-card--coupang">
-                <span class="summary-card__label">주간 콜수 (쿠팡)</span>
-                <strong class="summary-card__value" id="weekCallsCoupang">0콜</strong>
-              </article>
-              <article class="summary-card summary-card--metric">
-                <span class="summary-card__label">월간 목표 달성률</span>
-                <strong class="summary-card__value" id="monthAchievementRate">0%</strong>
-              </article>
-              <article class="summary-card summary-card--metric">
-                <span class="summary-card__label">주간 목표 달성률</span>
-                <strong class="summary-card__value" id="weeklyAchievementRate">0%</strong>
-              </article>
+          <section class="summary-section summary-section--perf">
+            <div class="ds-card ds-statcard ds-statcard--baemin">
+              <div class="ds-statcard__head">
+                <span class="ds-statcard__title"><span class="ds-plat-chip ds-plat-chip--baemin">배민</span> 주간 실적</span>
+                <span class="ds-statcard__when">수~화</span>
+              </div>
+              <div class="ds-stats">
+                <div class="ds-stat ds-stat--complete"><span>완료</span><strong id="baeminRateComplete">-</strong></div>
+                <div class="ds-stat ds-stat--reject"><span>거절</span><strong id="baeminRateReject">-</strong></div>
+                <div class="ds-stat"><span>취소</span><strong id="baeminRateDispatchCancel">-</strong></div>
+                <div class="ds-stat ds-stat--rate"><span>수락율</span><strong id="weeklyAcceptanceRateBaemin">-</strong></div>
+              </div>
+              <button type="button" class="ds-detail-toggle" data-detail="baeminPerfDetail" aria-expanded="false">상세보기 ▾</button>
+              <div class="ds-detail" id="baeminPerfDetail" hidden>
+                <dl>
+                  <dt>거절 · 푸드/비마트/스토어</dt><dd><span id="baeminRateRejectFood">-</span> / <span id="baeminRateRejectBmart">-</span> / <span id="baeminRateRejectStore">-</span></dd>
+                  <dt>배차취소 · 푸드/비마트/스토어</dt><dd><span id="baeminRateDispatchFood">-</span> / <span id="baeminRateDispatchBmart">-</span> / <span id="baeminRateDispatchStore">-</span></dd>
+                  <dt>배차취소(라이더귀책)</dt><dd><span id="baeminRateRiderFood">-</span> / <span id="baeminRateRiderBmart">-</span> / <span id="baeminRateRiderStore">-</span> · 합계 <span id="baeminRateRiderCancel">-</span></dd>
+                  <dt>수락율(계산)</dt><dd id="baeminRateCalculated">-</dd>
+                </dl>
+              </div>
             </div>
 
-            <div class="summary-grid summary-grid--rates">
-              <div class="rate-card-stack">
-                <button type="button" class="summary-card summary-card--baemin summary-card--action" id="weeklyAcceptanceRateBaeminCard" aria-expanded="false" aria-controls="weeklyAcceptanceRateBaeminDetail">
-                  <span class="summary-card__label">주간 수락율 (배민)</span>
-                  <strong class="summary-card__value" id="weeklyAcceptanceRateBaemin">-</strong>
-                </button>
-                <div class="rate-detail-panel" id="weeklyAcceptanceRateBaeminDetail" hidden>
-                  <dl class="rate-detail-list rate-detail-list--service-breakdown">
-                    <div><dt>합계</dt><dd id="baeminRateComplete">-</dd></div>
-                    <div class="rate-detail-group">
-                      <dt>거절</dt>
-                      <dd class="rate-detail-breakdown">
-                        <span>푸드 <strong id="baeminRateRejectFood">-</strong></span>
-                        <span>비마트 <strong id="baeminRateRejectBmart">-</strong></span>
-                        <span>스토어 <strong id="baeminRateRejectStore">-</strong></span>
-                        <span>합계 <strong id="baeminRateReject">-</strong></span>
-                      </dd>
-                    </div>
-                    <div class="rate-detail-group">
-                      <dt>배차취소</dt>
-                      <dd class="rate-detail-breakdown">
-                        <span>푸드 <strong id="baeminRateDispatchFood">-</strong></span>
-                        <span>비마트 <strong id="baeminRateDispatchBmart">-</strong></span>
-                        <span>스토어 <strong id="baeminRateDispatchStore">-</strong></span>
-                        <span>합계 <strong id="baeminRateDispatchCancel">-</strong></span>
-                      </dd>
-                    </div>
-                    <div class="rate-detail-group">
-                      <dt>배차취소(라이더귀책)</dt>
-                      <dd class="rate-detail-breakdown">
-                        <span>푸드 <strong id="baeminRateRiderFood">-</strong></span>
-                        <span>비마트 <strong id="baeminRateRiderBmart">-</strong></span>
-                        <span>스토어 <strong id="baeminRateRiderStore">-</strong></span>
-                        <span>합계 <strong id="baeminRateRiderCancel">-</strong></span>
-                      </dd>
-                    </div>
-                    <div><dt>수락율</dt><dd id="baeminRateCalculated">-</dd></div>
-                  </dl>
-                </div>
+            <div class="ds-card ds-statcard ds-statcard--coupang">
+              <div class="ds-statcard__head">
+                <span class="ds-statcard__title"><span class="ds-plat-chip ds-plat-chip--coupang">쿠팡</span> 주간 실적</span>
+                <span class="ds-statcard__when">수~화</span>
               </div>
-              <div class="rate-card-stack">
-                <button type="button" class="summary-card summary-card--coupang summary-card--action" id="weeklyRejectionRateCoupangCard" aria-expanded="false" aria-controls="weeklyRejectionRateCoupangDetail">
-                  <span class="summary-card__label">주간 거절율 (쿠팡)</span>
-                  <strong class="summary-card__value" id="weeklyRejectionRateCoupang">-</strong>
-                </button>
-                <div class="rate-detail-panel" id="weeklyRejectionRateCoupangDetail" hidden>
-                  <dl class="rate-detail-list">
-                    <div><dt>완료</dt><dd id="coupangRateComplete">-</dd></div>
-                    <div><dt>거절</dt><dd id="coupangRateReject">-</dd></div>
-                    <div><dt>취소</dt><dd id="coupangRateCancel">-</dd></div>
-                    <div><dt>거절율</dt><dd id="coupangRateCalculated">-</dd></div>
-                  </dl>
-                </div>
+              <div class="ds-stats">
+                <div class="ds-stat ds-stat--complete"><span>완료</span><strong id="coupangRateComplete">-</strong></div>
+                <div class="ds-stat ds-stat--reject"><span>거절</span><strong id="coupangRateReject">-</strong></div>
+                <div class="ds-stat"><span>취소</span><strong id="coupangRateCancel">-</strong></div>
+                <div class="ds-stat ds-stat--rate"><span>거절율</span><strong id="weeklyRejectionRateCoupang">-</strong></div>
+              </div>
+              <button type="button" class="ds-detail-toggle" data-detail="coupangPerfDetail" aria-expanded="false">상세보기 ▾</button>
+              <div class="ds-detail" id="coupangPerfDetail" hidden>
+                <dl>
+                  <dt>거절율(계산 기준)</dt><dd id="coupangRateCalculated">-</dd>
+                </dl>
               </div>
             </div>
           </section>
@@ -1216,7 +1194,7 @@
   <script src="js/driver-inquiries.js?v=20260817inq7"></script>
   <script src="js/promotion-count-sim.js?v=20260910missim1"></script>
   <script src="js/driver.js?v=20260910missim1"></script>
-  <script src="js/driver-app-nav.js?v=20260914perf1"></script>
+  <script src="js/driver-app-nav.js?v=20260914perf3"></script>
   <script src="js/driver-perf-calendar.js?v=20260914perf2"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>

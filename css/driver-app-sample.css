@@ -1190,3 +1190,81 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .ds-cal__dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 .rider-ds .ds-cal__dot--call { background: var(--rd-text); }
 .rider-ds .ds-cal__dot--amt { background: var(--rd-accent-strong); }
+
+/* =====================================================================
+   실적 탭 — 주간 실적 statcard + 주 스위처 (프리뷰 매칭)
+   ===================================================================== */
+.rider-ds .summary-section--perf { display: grid; gap: 12px; padding: 0; margin: 0; }
+
+/* 주 스위처 (ds-week-switch) */
+.rider-ds .week-nav--perf.ds-week-switch {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px; margin: 0 0 12px;
+  background: var(--rd-card); border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+}
+.rider-ds .ds-week-switch__nav {
+  flex-shrink: 0; width: 38px; height: 38px;
+  border: 1px solid var(--rd-border-strong); border-radius: var(--rd-radius-sm);
+  background: var(--rd-card-2); color: var(--rd-accent);
+  font-size: 1.25rem; font-weight: 700; line-height: 1; cursor: pointer;
+}
+.rider-ds .ds-week-switch__nav:hover { background: var(--rd-hover); }
+.rider-ds .ds-week-switch__center { flex: 1; text-align: center; display: flex; flex-direction: column; gap: 2px; }
+.rider-ds .ds-week-switch__cap { color: var(--rd-text-muted); font-size: var(--rd-fs-100); font-weight: 600; }
+.rider-ds .ds-week-switch__label { color: var(--rd-text); font-size: var(--rd-fs-500); font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* 카드 공통 */
+.rider-ds .ds-card { background: var(--rd-card); border: 1px solid var(--rd-border); border-radius: var(--rd-radius-lg); box-shadow: var(--rd-shadow-sm); }
+
+/* 플랫폼 칩 */
+.rider-ds .ds-plat-chip { flex-shrink: 0; min-width: 40px; text-align: center; padding: 4px 8px; border-radius: 999px; font-size: var(--rd-fs-100); font-weight: 700; }
+.rider-ds .ds-plat-chip--baemin { color: var(--rd-teal); background: var(--rd-teal-soft); }
+.rider-ds .ds-plat-chip--coupang { color: var(--rd-warning); background: var(--rd-warning-soft); }
+
+/* statcard */
+.rider-ds .ds-statcard { overflow: hidden; }
+.rider-ds .ds-statcard--baemin { box-shadow: var(--rd-shadow-sm), inset 0 2px 0 var(--rd-teal); }
+.rider-ds .ds-statcard--coupang { box-shadow: var(--rd-shadow-sm), inset 0 2px 0 var(--rd-warning); }
+.rider-ds .ds-statcard__head { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; }
+.rider-ds .ds-statcard__title { display: flex; align-items: center; gap: 8px; color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 700; }
+.rider-ds .ds-statcard__when { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+.rider-ds .ds-stats { display: flex; padding: 4px 15px 12px; }
+.rider-ds .ds-stat { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rider-ds .ds-stat span { color: var(--rd-text-muted); font-size: var(--rd-fs-100); }
+.rider-ds .ds-stat strong { color: var(--rd-text); font-size: var(--rd-fs-600); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rider-ds .ds-stat--complete strong { color: var(--rd-success); }
+.rider-ds .ds-stat--reject strong { color: var(--rd-danger); }
+.rider-ds .ds-stat--rate strong { color: var(--rd-info); }
+
+/* 상세보기 토글 + 상세 */
+.rider-ds .ds-detail-toggle { width: 100%; text-align: center; padding: 9px; border: 0; border-top: 1px solid var(--rd-border); background: transparent; color: var(--rd-text-muted); font-size: var(--rd-fs-200); font-weight: 600; cursor: pointer; }
+.rider-ds .ds-detail-toggle:hover { color: var(--rd-text); }
+.rider-ds .ds-detail { padding: 12px 15px; border-top: 1px solid var(--rd-border); background: var(--rd-card-2); }
+.rider-ds .ds-detail[hidden] { display: none; }
+.rider-ds .ds-detail dl { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; margin: 0; }
+.rider-ds .ds-detail dt { color: var(--rd-text-muted); font-size: var(--rd-fs-200); }
+.rider-ds .ds-detail dd { margin: 0; color: var(--rd-text); font-size: var(--rd-fs-200); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* =====================================================================
+   홈 — 월간/주간 목표 카드 (프리뷰 매칭)
+   ===================================================================== */
+.rider-ds .driver-goals { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rider-ds .driver-goal-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 14px; text-align: left; cursor: pointer;
+  background: var(--rd-card); border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius-lg); box-shadow: var(--rd-shadow-sm);
+}
+.rider-ds .driver-goal-card:hover { border-color: var(--rd-border-strong); background: var(--rd-hover); }
+.rider-ds .driver-goal-card__top { display: flex; align-items: center; justify-content: space-between; }
+.rider-ds .driver-goal-card__label { color: var(--rd-text-muted); font-size: var(--rd-fs-200); font-weight: 600; }
+.rider-ds .driver-goal-card__rate { color: var(--rd-accent); font-size: var(--rd-fs-200); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rider-ds .driver-goal-card__value { color: var(--rd-text); font-size: var(--rd-fs-500); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rider-ds .driver-goal-card__value.summary-card__value--unset { color: var(--rd-text-subtle); font-size: var(--rd-fs-300); font-weight: 600; }
+.rider-ds .driver-goal-card__calls { display: flex; flex-direction: column; gap: 3px; }
+.rider-ds .driver-goal-card__calls span { display: inline-flex; align-items: center; gap: 5px; color: var(--rd-text-muted); font-size: var(--rd-fs-100); }
+.rider-ds .driver-goal-card__calls b { color: var(--rd-text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.rider-ds .driver-goal-dot { width: 7px; height: 7px; border-radius: 999px; display: inline-block; }
+.rider-ds .driver-goal-dot--baemin { background: var(--rd-teal); }
+.rider-ds .driver-goal-dot--coupang { background: var(--rd-warning); }
