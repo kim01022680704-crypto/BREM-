@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
   <link rel="stylesheet" href="css/admin-mobile.css?v=20260910reg1">
+  <link rel="stylesheet" href="css/admin-sidebar.css?v=20260914grp1">
 </head>
 <body>
   <section class="login-page" id="adminLoginPage">
@@ -102,6 +103,14 @@
           <a class="brand-home-link" href="index.html">홈페이지로 돌아가기</a>
         </div>
         <span>배달대행 관리자</span>
+      </div>
+      <div class="sb-search">
+        <input id="adminMenuSearch" type="text" placeholder="메뉴 검색… (예: 급여, 콜수, 프로모션)" autocomplete="off" aria-label="메뉴 검색">
+      </div>
+      <div class="sb-scroll" id="adminNavScroll">
+        <div class="sb-fav" id="adminFavHost"></div>
+        <div class="sb-groups" id="adminNavGroups"></div>
+        <p class="sb-empty" id="adminMenuNoResult" hidden>검색 결과가 없습니다.</p>
       </div>
             <nav>
         <button class="nav-btn" data-section="notices">공지사항</button>
@@ -9047,6 +9056,7 @@
   <script src="js/table-sort.js"></script>
     <script src="js/admin.js?v=20260910crawlfix1"></script>
   <script src="js/admin-driver-popups.js?v=20260914popup2" defer></script>
+  <script src="js/admin-sidebar-groups.js?v=20260914grp1" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

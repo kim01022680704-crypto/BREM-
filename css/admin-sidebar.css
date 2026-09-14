@@ -1,0 +1,108 @@
+/* ERP 사이드바 그룹형 네비게이션 (표시 전용, admin.css 다크+옐로 톤) */
+
+/* 검색 */
+.sb-search { flex-shrink: 0; }
+.sb-search input {
+  width: 100%;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--black);
+  color: var(--text);
+  padding: 0 12px 0 34px;
+  font-size: 0.85rem;
+  outline: none;
+  background-repeat: no-repeat;
+  background-position: 11px center;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2371717a' stroke-width='2' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.3-4.3'/%3E%3C/svg%3E");
+}
+.sb-search input:focus { border-color: var(--yellow); box-shadow: 0 0 0 3px rgba(255, 212, 0, 0.14); }
+
+/* 스크롤 영역 */
+.sb-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 4px;
+  margin-right: -4px;
+}
+.sb-scroll::-webkit-scrollbar { width: 8px; }
+.sb-scroll::-webkit-scrollbar-thumb { background: #2a2a2e; border-radius: 8px; }
+
+/* 즐겨찾기 */
+.sb-fav { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.sb-fav-title {
+  color: #6b7280; font-size: 0.66rem; font-weight: 800; letter-spacing: 0.6px;
+  padding: 4px 10px 4px; text-transform: uppercase;
+}
+.sb-fav-empty { color: #6b7280; font-size: 0.72rem; padding: 6px 10px; }
+.sb-fav-item {
+  position: relative; display: flex; align-items: center; gap: 9px;
+  padding: 8px 34px 8px 12px; border-radius: 9px; color: var(--muted);
+  cursor: pointer; font-size: 0.82rem;
+}
+.sb-fav-item:hover { background: var(--black); color: var(--text); }
+.sb-fav-item.active { background: rgba(255, 212, 0, 0.12); color: var(--yellow); font-weight: 800; }
+.sb-fav-item .dot { width: 5px; height: 5px; border-radius: 50%; background: #3f3f46; flex: none; }
+.sb-fav-item.active .dot { background: var(--yellow); }
+.sb-fav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 그룹 */
+.sb-group { margin-top: 2px; }
+.sb-group--empty { display: none; }
+.sb-ghead {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border: 0; background: transparent; color: var(--text);
+  border-radius: 10px; font-size: 0.82rem; font-weight: 800; cursor: pointer; text-align: left;
+}
+.sb-ghead:hover { background: var(--black); }
+.sb-ghead .sb-ic { width: 17px; height: 17px; color: var(--muted); flex: none; }
+.sb-gtitle { flex: 1; min-width: 0; }
+.sb-gcount { color: #6b7280; font-size: 0.7rem; font-weight: 800; }
+.sb-chev { width: 14px; height: 14px; color: #6b7280; transition: transform 0.18s ease; flex: none; }
+.sb-group.collapsed .sb-chev { transform: rotate(-90deg); }
+.sb-group.collapsed .sb-gbody { display: none; }
+.sb-gbody { padding: 2px 0 4px; }
+
+/* 항목(실제 .nav-btn을 그룹 항목처럼 재스타일) */
+.sb-item { position: relative; }
+.sb-item--hidden { display: none !important; }
+.sb-item .nav-btn {
+  width: 100%;
+  padding: 8px 34px 8px 34px !important;
+  border-radius: 9px !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  color: var(--muted) !important;
+  background: transparent !important;
+  border: 0 !important;
+  position: relative;
+}
+.sb-item .nav-btn::before {
+  content: ""; position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+  width: 5px; height: 5px; border-radius: 50%; background: #3f3f46;
+}
+.sb-item .nav-btn:hover { background: var(--black) !important; color: var(--text) !important; }
+.sb-item .nav-btn.active {
+  background: rgba(255, 212, 0, 0.12) !important; color: var(--yellow) !important; font-weight: 800 !important;
+}
+.sb-item .nav-btn.active::before {
+  width: 4px; height: 15px; border-radius: 3px; background: var(--yellow);
+}
+
+/* 즐겨찾기 별 토글 */
+.fav-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 24px; height: 24px; border: 0; background: transparent; color: #52525b;
+  display: grid; place-items: center; cursor: pointer; border-radius: 6px; opacity: 0; padding: 0; z-index: 2;
+}
+.sb-item:hover .fav-toggle, .sb-fav-item:hover .fav-toggle { opacity: 1; }
+.fav-toggle.on { opacity: 1; color: var(--yellow); }
+.fav-toggle:hover { background: var(--black-2); }
+.fav-toggle svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.fav-toggle.on svg { fill: var(--yellow); stroke: var(--yellow); }
+
+/* 검색 결과 없음 */
+.sb-empty { color: #6b7280; font-size: 0.8rem; text-align: center; padding: 14px; }
