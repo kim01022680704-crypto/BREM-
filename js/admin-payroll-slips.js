@@ -3048,6 +3048,9 @@
         }
       });
 
+      // 라인마다 전체 기사목록을 재생성/선형탐색(find)하면 O(라인×기사)로 느리다.
+      // 저장 루프 밖에서 id→기사 Map을 한 번만 만들어 조회한다. (기능·계산 동일)
+      const driverByIdForSave = new Map((getMatchingDrivers() || []).map(d => [d.id, d]));
       const payload = state.parsedLines.map(line => {
         const payslip = utils.buildPayslipRecord(line);
         return {
@@ -3055,7 +3058,7 @@
         payMonth,
         driverId: line.selectedDriverId || '',
         riderName: payslip.riderName || line.riderName,
-        employeeNo: (getMatchingDrivers().find(d => d.id === line.selectedDriverId)?.employeeNo) || '',
+        employeeNo: (driverByIdForSave.get(line.selectedDriverId)?.employeeNo) || '',
         department: line.branchName || '',
         basePay: line.totalDeliveryFee,
         allowance: line.baeminMission + line.otherPayment + line.bremPromotion,

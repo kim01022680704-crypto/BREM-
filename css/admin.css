@@ -6915,6 +6915,18 @@ td.settle-fee-editable {
   text-underline-offset: 3px;
 }
 
+/* 반영 후 조정됨 — 재반영 필요 안내 */
+.final-restale-note {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #b45309;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
 /* Z열 지급 고정 배지(표시 전용 — 총지급액이 시트 Z값으로 고정된 기사) */
 .z-lock-badge {
   display: inline-block;

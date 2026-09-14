@@ -14,7 +14,11 @@ const BremSettlementResultDirect = (function () {
     retroWeekFilter: '',
     retroSearch: '',
     finalSearch: '',
-    spillFilter: 'crossed'
+    spillFilter: 'crossed',
+    // 반영(급여명세서 반영) 안전장치용
+    publishing: false,            // 반영 진행 중(더블클릭 방지)
+    publishedWeeks: new Set(),    // 이번 세션에서 반영한 주(수요일 시작 키)
+    finalStaleWeek: ''            // 반영 후 조정되어 재반영이 필요한 주
   };
   const detailInitial = {
     missionPay: 0,
@@ -400,6 +404,7 @@ const BremSettlementResultDirect = (function () {
   }
 
   function refreshAfterDetailSave() {
+    markFinalStale();
     if (state.viewMode === 'final') renderFinal();
     else {
       render();
@@ -712,6 +717,7 @@ const BremSettlementResultDirect = (function () {
     if (kind !== 'promotion' && (!trimmed || trimmed === '자동' || trimmed.toLowerCase() === 'auto')) {
       store.removeDriver(kind, settlementId, driverId);
       void window.BremStorage.flushStorage?.();
+      markFinalStale();
       showToast(kind === 'leaseFee'
         ? `${label} 수기 해제 · 0원`
         : `${label} 자동계산으로 복원했습니다.`);
@@ -737,6 +743,7 @@ const BremSettlementResultDirect = (function () {
       patchRiderManualAdjustments(settlementId, driverId, { promo: amount });
     }
     void window.BremStorage.flushStorage?.();
+    markFinalStale();
     showToast(`${label} ${amount.toLocaleString('ko-KR')}원으로 반영했습니다.`);
     if (state.viewMode === 'final') renderFinal();
     else {
@@ -899,6 +906,7 @@ const BremSettlementResultDirect = (function () {
     });
     window.BremStorage?.directRetroAdjustments?.add?.(week, retro);
     await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    markFinalStale();
     if (typeof BremFinalDeposit !== 'undefined') void BremFinalDeposit.refresh?.();
     showToast(`${retro.length}명 일괄 맞춤 완료 · 총지급액 0원 처리 (소급분 기록)`);
     return true;
@@ -1571,7 +1579,10 @@ const BremSettlementResultDirect = (function () {
       const negNote = negativeCount
         ? ` · <span class="muted-inline">총지급액 음수 <strong>${negativeCount}</strong>명 — 「마이너스 일괄 맞추기」로 한 번에 0원 처리</span>`
         : '';
-      summaryEl.innerHTML = `표시 <strong>${rows.length}</strong>줄 / 전체 ${allRows.length}줄 (쿠팡 ${coupangCount} · 배민 ${baeminCount})${searchNote}`
+      const staleNote = (state.finalStaleWeek && state.finalStaleWeek === finalWeek())
+        ? `<div class="final-restale-note">⚠️ 반영 후 조정됨 — 「급여명세서 반영하기」를 다시 눌러 기사앱에 최신 값을 반영하세요.</div>`
+        : '';
+      summaryEl.innerHTML = staleNote + `표시 <strong>${rows.length}</strong>줄 / 전체 ${allRows.length}줄 (쿠팡 ${coupangCount} · 배민 ${baeminCount})${searchNote}`
         + ` · 총프로모션 <strong>${formatNumber(t.promo)}</strong>`
         + ` · 총기타지급 <strong>${formatNumber(t.other)}</strong>`
         + ` · 총선정산 <strong>${formatNumber(t.prepaid)}</strong>`
@@ -1685,7 +1696,16 @@ const BremSettlementResultDirect = (function () {
     setSettlementView(show ? 'final' : 'platform');
   }
 
+  // 반영 후 조정이 생기면 "재반영 필요"로 표시한다(이번 세션에서 반영한 주에 한함).
+  function markFinalStale() {
+    const week = finalWeek();
+    if (week && state.publishedWeeks.has(week)) {
+      state.finalStaleWeek = week;
+    }
+  }
+
   async function publishFinalPayslips() {
+    if (state.publishing) return; // 더블클릭 방지
     const preview = finalRows().filter(r => r.driverId);
     if (!preview.length) { showToast('반영할 정산 행이 없습니다.'); return; }
     const week = finalWeek();
@@ -1699,6 +1719,9 @@ const BremSettlementResultDirect = (function () {
       ].join('\n')
     );
     if (!ok) return;
+    const publishBtn = $('#settlementFinalPublishBtn');
+    state.publishing = true;
+    if (publishBtn) { publishBtn.disabled = true; }
     try {
       await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
       await window.BremStorage.flushStorage?.();
@@ -1706,12 +1729,18 @@ const BremSettlementResultDirect = (function () {
       if (!rows.length) { showToast('반영할 정산 행이 없습니다.'); return; }
       const result = await window.BremStorage.publishDirectSettlementPayslips({ weekStart: week, rows });
       if (!result?.ok) throw new Error(result?.error || result?.message || '반영 실패');
+      // 반영 성공: 이 주를 반영완료로 기록하고 재반영 필요 표시 해제
+      state.publishedWeeks.add(week);
+      if (state.finalStaleWeek === week) state.finalStaleWeek = '';
       showToast(result.message || `급여명세서 반영 완료 · ${result.published || rows.length}건 (라이더앱 즉시 공개)`);
       await window.BremStorage.directSettlementAdjustments?.reloadFromServer?.();
       renderFinal();
     } catch (error) {
       console.error('[direct payslip publish]', error);
       showToast(error.message || '급여명세서 반영에 실패했습니다.');
+    } finally {
+      state.publishing = false;
+      if (publishBtn) { publishBtn.disabled = false; }
     }
   }
 

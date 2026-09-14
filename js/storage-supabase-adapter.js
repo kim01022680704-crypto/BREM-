@@ -1839,7 +1839,12 @@ window.BremSupabaseStorageAdapter = (function () {
       setCache(keys.drivers, merged);
       ridersMeta = {
         total: count ?? merged.length,
-        hasMore: offset + page.length < (count ?? 0),
+        // count(전체 건수)를 못 구하면(RLS·HEAD count 실패 등) 0으로 보고 조기 종료되어
+        // 기사목록이 1페이지에서 잘리는 문제가 있었다. count 미상이면 "꽉 찬 페이지면 더 있다"로
+        // 판단해 마지막(부분) 페이지가 올 때까지 계속 로드한다. → 누락 방지.
+        hasMore: count != null
+          ? (offset + page.length < count)
+          : (page.length >= pageSize),
         pageSize,
         offset
       };

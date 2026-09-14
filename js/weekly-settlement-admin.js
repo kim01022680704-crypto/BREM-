@@ -17,6 +17,10 @@ const BremWeeklySettlementAdmin = (function () {
 
   const $ = selector => document.querySelector(selector);
 
+  // 저장/업로드 더블클릭 방지용 in-flight 키(채널:플랫폼)
+  const savingKeys = new Set();
+  const uploadingKeys = new Set();
+
   function normChannel(channel) {
     return channel === 'direct' ? 'direct' : 'bro';
   }
@@ -594,6 +598,10 @@ const BremWeeklySettlementAdmin = (function () {
 
   async function uploadAndMatch(channel, platform) {
     const ch = normChannel(channel);
+    const guardKey = `${ch}:${platform}`;
+    if (uploadingKeys.has(guardKey)) return; // 더블클릭 방지
+    uploadingKeys.add(guardKey);
+    try {
     // 배민: 업로드 직전에 파일 1·2 기간으로 폼·적용주를 다시 맞춤 (주차 어긋남 방지)
     if (platform === 'baemin') {
       syncBaeminPeriodFields(ch, collectBaeminFileNames(ch));
@@ -717,10 +725,17 @@ const BremWeeklySettlementAdmin = (function () {
     } catch (uploadError) {
       showToast(uploadError.message || '주간정산서 처리 중 오류가 발생했습니다.');
     }
+    } finally {
+      uploadingKeys.delete(guardKey);
+    }
   }
 
   async function savePreview(channel, platform) {
     const ch = normChannel(channel);
+    const guardKey = `${ch}:${platform}`;
+    if (savingKeys.has(guardKey)) return; // 더블클릭 방지
+    savingKeys.add(guardKey);
+    try {
     const record = getPreview(ch, platform);
     if (!record) {
       showToast('먼저 업로드 및 매칭을 실행하세요.');
@@ -815,6 +830,9 @@ const BremWeeklySettlementAdmin = (function () {
         ? `${toSavePreview.region} · ${toSavePreview.riders.length}명 저장 (Z지급 ${zSaved}명 포함)`
         : `${toSavePreview.region} · 매칭 ${toSavePreview.riders.length}명 저장 완료`
     );
+    } finally {
+      savingKeys.delete(guardKey);
+    }
   }
 
   function formatCallMismatchWarnings(rider) {

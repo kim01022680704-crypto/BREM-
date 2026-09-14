@@ -538,13 +538,30 @@ const BremFinalDeposit = (function () {
       return;
     }
 
-    // 엑셀은 화면 체크와 무관하게 「그 주 정산서 전원」을 넣는다. (누락 방지)
+    // 화면에서 제외한 항목이 있으면 "화면과 동일하게 제외" vs "전원 포함(기본·누락 방지)" 중 고른다.
     const excludedSettlementCount = weekList.filter(record =>
       state.excludedSettlementIds.has(String(record.id))
     ).length;
-    const rows = mergedRows({ allSettlements: true, allDrivers: true });
+    const screenRows = mergedRows();
+    const excludedDriverCount = screenRows.filter(row => !row.checked).length;
+    const hasExclusion = excludedSettlementCount > 0 || excludedDriverCount > 0;
+
+    let matchScreen = false;
+    if (hasExclusion) {
+      matchScreen = window.confirm(
+        '화면에서 제외한 항목이 있습니다.\n'
+        + (excludedSettlementCount ? `· 끈 정산서 ${excludedSettlementCount}건\n` : '')
+        + (excludedDriverCount ? `· 끈 기사 ${excludedDriverCount}명\n` : '')
+        + '\n엑셀을 어떻게 내보낼까요?\n\n'
+        + '[확인] 화면과 동일하게 제외하고 내보내기\n'
+        + '[취소] 전원 포함 (기본 · 누락 방지)'
+      );
+    }
+    const rows = matchScreen
+      ? screenRows.filter(row => row.checked)
+      : mergedRows({ allSettlements: true, allDrivers: true });
     if (!rows.length) {
-      showToast('정산서에 라이더가 없습니다.');
+      showToast(matchScreen ? '선택된 라이더가 없습니다. (화면에서 전원 제외됨)' : '정산서에 라이더가 없습니다.');
       return;
     }
 
@@ -558,14 +575,16 @@ const BremFinalDeposit = (function () {
     const weekLabel = formatDate(ensureWeek());
 
     if (!window.confirm(
-      `${weekLabel}(수) 주 최종입금 엑셀 — 전원 · 플랫폼별 각각 입금\n\n`
+      `${weekLabel}(수) 주 최종입금 엑셀 — ${matchScreen ? '화면 선택분' : '전원'} · 플랫폼별 각각 입금\n\n`
       + `· 정산서 ${weekList.length}건 · 파일 라이더칸 합 ${slotCount}\n`
       + `· 「입금」·「입금_이체가능」: ${allPeople.length}건 (0원·계좌미등록 포함)\n`
       + `  └ 이체가능 ${ready.length} · 계좌미등록 ${missing.length} · 입금0원 ${zeroPay.length}\n\n`
       + `※ 0원도 입금 시트에 넣습니다. 필요 없으면 엑셀에서 직접 지우세요.\n`
       + `※ 같은 기사라도 쿠팡·배민은 각각 따로 입금됩니다.\n`
-      + (excludedSettlementCount
-        ? `※ 화면에서 끈 정산서 ${excludedSettlementCount}건도 엑셀에는 포함됩니다.`
+      + (hasExclusion
+        ? (matchScreen
+          ? `※ 화면에서 제외한 항목은 이 엑셀에서도 빠집니다. (화면과 동일)`
+          : `※ 화면에서 끈 항목도 이 엑셀에는 전원 포함됩니다. (누락 방지)`)
         : '')
     )) return;
 
