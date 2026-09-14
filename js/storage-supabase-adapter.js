@@ -25,8 +25,13 @@ window.BremSupabaseStorageAdapter = (function () {
     'admin_rejection_rates',
     'admin_targets',
     'daily_settlements',
+    // weekly_settlements: 지사·직계약 × 쿠팡·배민 × 주차가 한 테이블에 쌓여 1년만 지나도
+    // 1000행(Supabase 기본 상한)을 넘긴다. 페이지네이션 없으면 초과분 정산서가 조용히
+    // 누락되므로 반드시 전 페이지를 받는다.
+    'weekly_settlements',
     'settlement_upload_logs',
     'settlement_unmatched',
+    'promotion_apply_results',
     'payroll_slip_lines',
     'lease_vehicles',
     'lease_contracts',
@@ -483,6 +488,9 @@ window.BremSupabaseStorageAdapter = (function () {
             if (order?.column) {
               pageQuery = pageQuery.order(order.column, { ascending: order.ascending !== false });
             }
+            // 페이지 경계 중복/누락 방지: 정렬 키(uploaded_at·period·created_at 등)가 유니크가
+            // 아닐 수 있으므로 항상 PK(id)로 tie-break 해 페이지 간 순서를 확정한다.
+            pageQuery = pageQuery.order('id', { ascending: true });
             return pageQuery;
           }, fromRow)
           : (async () => {
