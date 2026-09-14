@@ -140,8 +140,8 @@
         <button class="nav-btn" data-section="payroll-daily-settlement">급여 일정산</button>
         <button class="nav-btn" data-section="data-backup">데이터 백업</button>
       </nav>
-      <a class="driver-link" href="rider-manage.html?register=1">기사등록</a>
-      <a class="driver-link secondary" href="drivers.html">기사 목록</a>
+      <a class="driver-link" href="rider-manage.html?register=1" data-driver-popup="register">기사등록</a>
+      <a class="driver-link secondary" href="drivers.html" data-driver-popup="list">기사 목록</a>
     </aside>
 
     <main class="main">
@@ -168,7 +168,7 @@
             </div>
             <button type="button" class="primary-btn rider-app-publish-btn" id="riderAppPublishBtn" data-rider-app-publish title="콜수·거절율·장기근속을 기사 전용 앱에 일괄 반영 (월·주간 목표는 실시간)">라이더 앱 반영</button>
             <a class="top-link topbar-link--register" href="rider-manage.html?register=1">기사등록</a>
-            <a class="top-link topbar-link--desktop" href="drivers.html">기사등록프로그램</a>
+            <a class="top-link topbar-link--desktop" href="rider-manage.html?register=1">기사등록프로그램</a>
             <a class="top-link secondary topbar-link--desktop" href="driver.html">기사 전용 페이지 열기</a>
             <button class="top-link danger" type="button" id="adminLogoutBtn">로그아웃</button>
           </div>
@@ -8955,6 +8955,23 @@
     </section>
   </div>
 
+  <!-- 기사등록/기사목록 간이 팝업(모달+iframe). 기존 페이지를 그대로 재사용 — 계산/DB 로직 미수정 -->
+  <div class="driver-popup-modal" id="driverPopupModal" hidden>
+    <div class="driver-popup-modal__backdrop" data-close-driver-popup></div>
+    <div class="driver-popup-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="driverPopupTitle">
+      <div class="driver-popup-modal__head">
+        <h3 id="driverPopupTitle">기사 등록</h3>
+        <div class="driver-popup-modal__head-actions">
+          <a class="driver-popup-modal__expand" id="driverPopupExpand" href="rider-manage.html?register=1" target="_blank" rel="noopener" title="전체 화면(새 탭)으로 열기">전체화면 ↗</a>
+          <button type="button" class="driver-popup-modal__close" data-close-driver-popup aria-label="닫기">✕</button>
+        </div>
+      </div>
+      <div class="driver-popup-modal__body">
+        <iframe class="driver-popup-modal__frame" id="driverPopupFrame" title="기사 등록/목록" src="about:blank" loading="lazy"></iframe>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="js/platforms.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -9028,6 +9045,7 @@
   <script src="js/admin-missions.js?v=20260827mission10"></script>
   <script src="js/table-sort.js"></script>
     <script src="js/admin.js?v=20260910crawlfix1"></script>
+  <script src="js/admin-driver-popups.js?v=20260914popup1" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
