@@ -24,6 +24,13 @@ function baeminIdMatchKey(value) {
   return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
 }
 
+const METRIC_KEYS = [
+  'complete',
+  'foodReject', 'bmartReject', 'storeReject',
+  'foodCancel', 'bmartCancel', 'storeCancel',
+  'foodRiderFault', 'bmartRiderFault', 'storeRiderFault'
+];
+
 function extractMetrics(parsed = {}) {
   // 콜수입력 기준 = 화면 「총 배달완료」(allDayComplete). SLA 합계(totalComplete)보다 우선.
   const complete = Math.max(0, Number(
@@ -33,31 +40,61 @@ function extractMetrics(parsed = {}) {
     ?? parsed.completeCount
     ?? 0
   ) || 0);
+  const n = v => Math.max(0, Number(v || 0) || 0);
+  // 거절/배차취소/라이더귀책을 서비스(푸드·비마트·스토어)별로 모두 보존해 상세 집계가 가능하게 한다.
   return {
     complete,
-    foodReject: Math.max(0, Number(parsed.foodReject || 0) || 0),
-    foodCancel: Math.max(0, Number(parsed.foodCancel || 0) || 0),
-    foodRiderFault: Math.max(0, Number(parsed.foodRiderFault || 0) || 0)
+    foodReject: n(parsed.foodReject),
+    bmartReject: n(parsed.bmartReject),
+    storeReject: n(parsed.storeReject),
+    foodCancel: n(parsed.foodCancel),
+    bmartCancel: n(parsed.bmartCancel),
+    storeCancel: n(parsed.storeCancel),
+    foodRiderFault: n(parsed.foodRiderFault),
+    bmartRiderFault: n(parsed.bmartRiderFault),
+    storeRiderFault: n(parsed.storeRiderFault)
   };
 }
 
 function mergeMetrics(a = {}, b = {}) {
-  return {
-    complete: Number(a.complete || 0) + Number(b.complete || 0),
-    foodReject: Number(a.foodReject || 0) + Number(b.foodReject || 0),
-    foodCancel: Number(a.foodCancel || 0) + Number(b.foodCancel || 0),
-    foodRiderFault: Number(a.foodRiderFault || 0) + Number(b.foodRiderFault || 0)
-  };
+  const out = {};
+  for (const k of METRIC_KEYS) out[k] = Number(a[k] || 0) + Number(b[k] || 0);
+  return out;
+}
+
+function denyTotal(metrics = {}) {
+  return Number(metrics.foodReject || 0) + Number(metrics.bmartReject || 0) + Number(metrics.storeReject || 0)
+    + Number(metrics.foodCancel || 0) + Number(metrics.bmartCancel || 0) + Number(metrics.storeCancel || 0)
+    + Number(metrics.foodRiderFault || 0) + Number(metrics.bmartRiderFault || 0) + Number(metrics.storeRiderFault || 0);
 }
 
 function calcAcceptRate(metrics = {}) {
   const complete = Number(metrics.complete || 0);
-  const deny = Number(metrics.foodReject || 0)
-    + Number(metrics.foodCancel || 0)
-    + Number(metrics.foodRiderFault || 0);
+  const deny = denyTotal(metrics);
   const denom = complete + deny;
   if (denom <= 0) return null;
   return Math.round((100 - (deny / denom) * 100) * 10) / 10;
+}
+
+/** 거절율 stats: 헤드라인 합계 + 서비스별(푸드·비마트·스토어) 상세 (크롤 원본 기준) */
+function buildRejectionStats(metrics = {}) {
+  const m = k => Number(metrics[k] || 0);
+  const rejectFood = m('foodReject'), rejectBmart = m('bmartReject'), rejectStore = m('storeReject');
+  const cancelFood = m('foodCancel'), cancelBmart = m('bmartCancel'), cancelStore = m('storeCancel');
+  const riderFood = m('foodRiderFault'), riderBmart = m('bmartRiderFault'), riderStore = m('storeRiderFault');
+  const rejectTotal = rejectFood + rejectBmart + rejectStore;
+  const cancelTotal = cancelFood + cancelBmart + cancelStore;
+  const riderTotal = riderFood + riderBmart + riderStore;
+  return {
+    completeTotal: m('complete'),
+    rejectCount: rejectTotal,
+    dispatchCancelCount: cancelTotal,
+    riderCancelCount: riderTotal,
+    rejectByService: { food: rejectFood, bmart: rejectBmart, store: rejectStore, total: rejectTotal },
+    dispatchCancelByService: { food: cancelFood, bmart: cancelBmart, store: cancelStore, total: cancelTotal },
+    riderFaultByService: { food: riderFood, bmart: riderBmart, store: riderStore, total: riderTotal },
+    unmeasured: false
+  };
 }
 
 function resolveRiderBusinessDate(row = {}) {
@@ -297,13 +334,7 @@ async function syncBaeminCallsAndRejections(options = {}) {
         platform: 'baemin',
         rate: Number(rate),
         source: useLive ? SYNC_SOURCE_LIVE : SYNC_SOURCE_PAST,
-        stats: {
-          completeTotal: entry.metrics.complete || 0,
-          rejectCount: entry.metrics.foodReject || 0,
-          dispatchCancelCount: entry.metrics.foodCancel || 0,
-          riderCancelCount: entry.metrics.foodRiderFault || 0,
-          unmeasured: false
-        },
+        stats: buildRejectionStats(entry.metrics),
         updated_at: now,
         rider_published_at: existing?.rider_published_at || null
       });
