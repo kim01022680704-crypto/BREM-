@@ -855,6 +855,21 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
    출금 신청 패널 (다크)
    ===================================================================== */
 .rider-ds .form-help { color: var(--rd-text-muted); }
+
+/* 출금 정산기간: 라벨↕주선택 2줄 → 가로 1줄(라벨 좌측·주선택 우측, 풀폭)로 정리
+   ※ 출금 패널에만 적용(명세서/지사/크루장 패널은 그대로) */
+.rider-ds .driver-withdrawal-panel .driver-payslip-meta { grid-template-columns: 1fr; }
+.rider-ds .driver-withdrawal-panel .driver-payslip-meta__item--period {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.rider-ds .driver-withdrawal-panel .driver-payslip-meta__item--period .driver-payslip-meta__label {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+.rider-ds .driver-withdrawal-panel .driver-payslip-meta__item--period .driver-payslip-week-nav { flex: 0 0 auto; }
 .rider-ds .driver-withdrawal-available {
   background: linear-gradient(135deg, var(--rd-card) 0%, var(--rd-card-2) 100%);
   border: 1px solid var(--rd-border);
