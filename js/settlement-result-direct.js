@@ -375,8 +375,16 @@ const BremSettlementResultDirect = (function () {
         data-settlement-id="${escapeHtml(row.settlementId)}"
         data-driver-id="${escapeHtml(row.driverId)}"
         data-driver-name="${escapeHtml(row.name || '')}"
+        data-z-lock="${row.useSheetPayout ? '1' : '0'}"
         data-current-amount="${Math.max(0, Math.round(Number(row[col.key] || 0)))}"
         style="cursor:pointer;">${value}</td>`;
+    }
+
+    // 총지급액이 Z열 지급액으로 고정된 기사는 배지를 붙여 한눈에 식별시킨다.
+    // (배지는 화면 표시 전용 — 계산·엑셀 값에는 영향 없음)
+    if (col.key === 'netPay' && row.useSheetPayout) {
+      const inner = col.strong ? `<strong>${value}</strong>` : value;
+      return `<td class="${classes.join(' ')}" title="Z열 지급액 고정 — 지급·차감을 수정해도 총지급액은 이 값으로 고정됩니다. 상세에서 「Z고정 해제」 가능">${inner} <span class="z-lock-badge">Z고정</span></td>`;
     }
 
     return `<td class="${classes.join(' ')}">${col.strong ? `<strong>${value}</strong>` : value}</td>`;
@@ -426,6 +434,25 @@ const BremSettlementResultDirect = (function () {
     if (titleEl) titleEl.textContent = `${row.name || '-'} · 지급·차감 조정`;
     if (metaEl) {
       metaEl.textContent = `${platKo} · ID ${row.idLabel || '-'} · 건수 ${formatNumber(row.callCount)} · 총지급액 ${formatNumber(row.netPay)}원`;
+    }
+    // Z열 지급 고정 기사: 수정해도 총지급액이 안 바뀐다는 것을 경고하고 해제 버튼을 노출한다.
+    const zLocked = row.useSheetPayout === true;
+    state.detailZLocked = zLocked;
+    const zBanner = $('#settlementFinalDetailZLock');
+    if (zBanner) {
+      zBanner.hidden = !zLocked;
+      if (zLocked) {
+        zBanner.innerHTML = `⚠️ 이 기사는 <strong>Z열 지급 고정</strong>(총지급액 ${formatNumber(row.netPay)}원)입니다. `
+          + `아래 지급·차감을 수정해도 <strong>총지급액은 바뀌지 않습니다.</strong> `
+          + `수정을 총지급액에 반영하려면 「Z고정 해제」를 누르세요.`;
+      }
+    }
+    const releaseBtn = $('#settlementFinalDetailReleaseZBtn');
+    if (releaseBtn) {
+      releaseBtn.hidden = !zLocked;
+      releaseBtn.dataset.settlementId = row.settlementId || '';
+      releaseBtn.dataset.driverId = row.driverId || '';
+      releaseBtn.dataset.driverName = row.name || '';
     }
     if (payList) {
       payList.innerHTML = [
@@ -523,6 +550,44 @@ const BremSettlementResultDirect = (function () {
     weekly.save({ ...settlement, riders });
   }
 
+  // Z열 지급 고정 해제: rider.amounts.useSheetPayout/payoutOverride 만 끈다.
+  // 계산식은 손대지 않으며, 해제되면 netPay 가 기존 계산식(지급합계−공제합계)으로 복귀한다.
+  async function releaseSheetPayoutLock(settlementId, driverId, driverName) {
+    const weekly = window.BremStorage?.weeklySettlements;
+    if (!weekly?.getById || !weekly?.save) {
+      showToast('저장소를 불러오지 못했습니다.');
+      return;
+    }
+    const settlement = weekly.getById(settlementId, 'direct') || weekly.getById(settlementId);
+    if (!settlement) {
+      showToast('정산서를 찾을 수 없습니다.');
+      return;
+    }
+    const target = String(driverId || '').trim();
+    let changed = false;
+    const riders = (settlement.riders || []).map(rider => {
+      if (String(rider.matchedRiderId || '').trim() !== target) return rider;
+      const amounts = rider.amounts;
+      if (!amounts) return rider;
+      const locked = amounts.useSheetPayout === true
+        || amounts.useSheetPayout === 1
+        || amounts.useSheetPayout === 'true'
+        || Number(amounts.payoutOverride) > 0;
+      if (!locked) return rider;
+      changed = true;
+      return { ...rider, amounts: { ...amounts, useSheetPayout: false, payoutOverride: 0 } };
+    });
+    if (!changed) {
+      showToast('이미 Z고정이 해제된 상태입니다.');
+      return;
+    }
+    weekly.save({ ...settlement, riders });
+    await window.BremStorage.flushStorage?.();
+    showToast(`${driverName || driverId} · Z고정 해제 · 총지급액이 계산식(지급합계−공제합계)으로 복귀`);
+    closeFinalDetailModal();
+    refreshAfterDetailSave();
+  }
+
   async function saveFinalDetailFees({ restoreAuto = false } = {}) {
     const settlementId = String($('#settlementFinalDetailSettlementId')?.value || '').trim();
     const driverId = String($('#settlementFinalDetailDriverId')?.value || '').trim();
@@ -555,6 +620,23 @@ const BremSettlementResultDirect = (function () {
     if (![missionPay, otherPay, promo, leaseFee, loanFee].every(Number.isFinite)) {
       showToast('금액은 숫자로 입력하세요.');
       return;
+    }
+    // Z열 지급 고정 기사는 저장해도 총지급액이 안 바뀌므로, 바뀐 값이 있으면 명확히 경고한다.
+    if (state.detailZLocked) {
+      const willChange = missionPay !== detailInitial.missionPay
+        || otherPay !== detailInitial.other
+        || promo !== detailInitial.promo
+        || leaseFee !== detailInitial.leaseFee
+        || loanFee !== detailInitial.loanFee;
+      if (willChange) {
+        const ok = window.confirm(
+          '이 기사는 Z열 지급 고정입니다.\n'
+          + '지급·차감을 저장해도 총지급액은 그대로 유지됩니다.\n\n'
+          + '총지급액에 반영하려면 저장을 취소하고 「Z고정 해제」를 먼저 누르세요.\n\n'
+          + '그래도 이대로 저장할까요? (총지급액은 안 바뀜)'
+        );
+        if (!ok) return;
+      }
     }
     const entry = { driverId, driverName, source: 'manual' };
     const patch = {};
@@ -604,6 +686,16 @@ const BremSettlementResultDirect = (function () {
     if (!store?.applyEntries || !store?.removeDriver) {
       showToast('저장소를 불러오지 못했습니다.');
       return;
+    }
+    // Z열 지급 고정 기사: 이 칸을 수정해도 총지급액은 안 바뀐다는 것을 먼저 경고한다.
+    if (cell.getAttribute('data-z-lock') === '1') {
+      const ok = window.confirm(
+        `${driverName || driverId} 님은 Z열 지급 고정입니다.\n`
+        + '이 값을 수정해도 총지급액은 바뀌지 않습니다.\n\n'
+        + '총지급액에 반영하려면 정산 상세(행 클릭)에서 「Z고정 해제」를 먼저 누르세요.\n\n'
+        + '그래도 이 항목만 수정할까요?'
+      );
+      if (!ok) return;
     }
     const label = kind === 'promotion' ? 'BREM프로모션' : (kind === 'leaseFee' ? '리스차감' : '대여차감');
     const help = kind === 'promotion'
@@ -1705,6 +1797,21 @@ const BremSettlementResultDirect = (function () {
     });
     $('#settlementFinalDetailSaveBtn')?.addEventListener('click', () => { void saveFinalDetailFees(); });
     $('#settlementFinalDetailAutoBtn')?.addEventListener('click', () => { void saveFinalDetailFees({ restoreAuto: true }); });
+    $('#settlementFinalDetailReleaseZBtn')?.addEventListener('click', () => {
+      const btn = $('#settlementFinalDetailReleaseZBtn');
+      const sid = btn?.dataset.settlementId || '';
+      const did = btn?.dataset.driverId || '';
+      const dname = btn?.dataset.driverName || '';
+      if (!sid || !did) { showToast('해제할 수 없습니다.'); return; }
+      const ok = window.confirm(
+        `${dname || did} 님의 Z열 지급 고정을 해제합니다.\n\n`
+        + '해제하면 총지급액이 「지급합계 − 공제합계」 계산식으로 바뀝니다.\n'
+        + '(지금까지 수정한 지급·차감·프로모션이 총지급액에 반영됩니다.)\n\n'
+        + '해제할까요?'
+      );
+      if (!ok) return;
+      void releaseSheetPayoutLock(sid, did, dname);
+    });
     ['#settlementFinalDetailPromo', '#settlementFinalDetailOtherPay'].forEach(selector => {
       $(selector)?.addEventListener('input', () => updatePromoTaxHint());
     });

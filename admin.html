@@ -17,12 +17,12 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260910reg1">
+  <link rel="stylesheet" href="css/admin.css?v=20260915zlock1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
   <link rel="stylesheet" href="css/admin-mobile.css?v=20260910reg1">
-  <link rel="stylesheet" href="css/admin-sidebar.css?v=20260914grp5">
+  <link rel="stylesheet" href="css/admin-sidebar.css?v=20260914grp6">
 </head>
 <body>
   <section class="login-page" id="adminLoginPage">
@@ -5360,6 +5360,7 @@
                 <button type="button" class="small-btn" data-close-settlement-final-detail>닫기</button>
               </div>
               <p class="form-help" id="settlementFinalDetailMeta">-</p>
+              <p class="form-help" id="settlementFinalDetailZLock" style="margin:0.4rem 0 0; padding:0.5rem 0.6rem; border-radius:8px; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4); color:#b45309; font-weight:700;" hidden></p>
             </div>
             <div class="lease-form-grid" style="padding:0 1rem 0.5rem; gap:0.75rem 1rem;">
               <div>
@@ -5403,6 +5404,7 @@
                 </label>
               </div>
               <div class="promotion-form-actions" style="margin-top:0.75rem; justify-content:flex-end;">
+                <button type="button" class="small-btn" id="settlementFinalDetailReleaseZBtn" style="border-color:#f59e0b; color:#b45309; font-weight:700;" title="Z열 지급 고정을 해제하면 총지급액이 계산식(지급합계−공제합계)으로 복귀합니다" hidden>Z고정 해제</button>
                 <button type="button" class="small-btn" id="settlementFinalDetailAutoBtn" title="추가지급=주정산서 금액, 리스·대여=ERP 자동. 기타지급은 0. BREM프로모션은 그대로">자동복원</button>
                 <button type="button" class="small-btn primary-btn" id="settlementFinalDetailSaveBtn">저장</button>
               </div>
@@ -9040,7 +9042,7 @@
   <script src="js/direct-adjustment-bulk.js?v=20260905a"></script>
   <script src="js/direct-adjustment-admin.js?v=20260905a"></script>
   <script src="js/direct-settlement-calc.js?v=20260910promoedit1"></script>
-  <script src="js/settlement-result-direct.js?v=20260910promoedit1"></script>
+  <script src="js/settlement-result-direct.js?v=20260915zlock1"></script>
   <script src="js/final-deposit.js?v=20260823c"></script>
   <script src="js/tax-management-admin.js?v=20260830tax2"></script>
   <script src="js/driver-management-admin.js?v=20260910branch1"></script>
