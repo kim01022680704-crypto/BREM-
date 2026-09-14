@@ -91,6 +91,49 @@ let activeSetup = { setupId: '', setupSecret: '', apiBase: 'https://brem.kr' };
 let sessionPaused = false;
 let authRecovering = false;
 let authRequiredReason = '';
+
+// 배민 재인증 필요 시 관리자앱 푸시 (프로덕션 /api/internal/baemin-auth-alert 경유)
+let baeminAuthRequiredSince = 0;
+let baeminAuthAlertSentAt = 0;
+const BAEMIN_AUTH_ALERT_DELAY_MS = 60 * 1000;        // 60초 이상 지속 시에만 알림(내비게이션 순간 오탐 방지)
+const BAEMIN_AUTH_ALERT_REMIND_MS = 30 * 60 * 1000;  // 계속 막혀 있으면 30분마다 재알림
+
+async function postBaeminAuthAlert(reason, recovered) {
+  const base = (activeSetup && activeSetup.apiBase) || 'https://brem.kr';
+  const secret = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '').trim();
+  if (!secret) {
+    console.warn('[BREM] 배민 인증 알림 전송 불가: SUPABASE_SERVICE_ROLE_KEY 없음');
+    return;
+  }
+  try {
+    const res = await fetch(`${base}/api/internal/baemin-auth-alert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+      body: JSON.stringify({ reason: String(reason || ''), recovered: Boolean(recovered) })
+    });
+    const j = await res.json().catch(() => ({}));
+    console.log(`[BREM] 배민 ${recovered ? '복구' : '재인증 필요'} → 관리자앱 푸시 status ${res.status} ${JSON.stringify(j).slice(0, 160)}`);
+  } catch (e) {
+    console.warn('[BREM] 배민 인증 알림 전송 실패:', e.message || e);
+  }
+}
+
+function markBaeminAuthRequired(reason) {
+  const now = Date.now();
+  if (!baeminAuthRequiredSince) baeminAuthRequiredSince = now;
+  if (now - baeminAuthRequiredSince < BAEMIN_AUTH_ALERT_DELAY_MS) return;
+  if (baeminAuthAlertSentAt && (now - baeminAuthAlertSentAt) < BAEMIN_AUTH_ALERT_REMIND_MS) return;
+  baeminAuthAlertSentAt = now;
+  void postBaeminAuthAlert(reason, false);
+}
+
+function clearBaeminAuthRequired() {
+  if (baeminAuthAlertSentAt) {
+    void postBaeminAuthAlert('', true); // 복구 알림 1회
+  }
+  baeminAuthRequiredSince = 0;
+  baeminAuthAlertSentAt = 0;
+}
 let lastRunSlotKey = null;
 let collectRunning = false;
 let shutdownRequested = false;
@@ -770,6 +813,7 @@ async function detectAndMarkAuthRequired() {
     sessionPaused = false;
     authRequiredReason = '';
     authRecovering = false;
+    clearBaeminAuthRequired();
     return false;
   }
   if (auth.isBaeminPhoneAuthLikeUrl(browser.currentUrl) || auth.isBaeminLoginLikeUrl(browser.currentUrl)) {
@@ -784,12 +828,14 @@ async function detectAndMarkAuthRequired() {
         updatedAt: Date.now()
       };
     }
+    markBaeminAuthRequired(authRequiredReason);
     return true;
   }
   if (browser.sessionLoggedIn && sessionPaused) {
     sessionPaused = false;
     authRequiredReason = '';
     authRecovering = false;
+    clearBaeminAuthRequired();
   }
   return false;
 }

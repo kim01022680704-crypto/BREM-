@@ -336,6 +336,37 @@ app.post('/api/admin/push-token', async (req, res) => {
   }
 });
 
+// 내부용: 크롤 세션서버 → 관리자앱 푸시(배민 재인증 필요/복구). 서비스롤키로 인증.
+app.post('/api/internal/baemin-auth-alert', async (req, res) => {
+  try {
+    const token = getBearerToken(req);
+    const secret = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '').trim();
+    if (!secret || token !== secret) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    const body = req.body || {};
+    const recovered = body.recovered === true;
+    const reason = String(body.reason || '').slice(0, 300);
+    const payload = recovered
+      ? {
+          title: '✅ 배민 크롤링 세션 복구',
+          body: '배민 로그인/인증이 복구되어 자동 수집이 재개됐습니다.',
+          channelId: 'brem_inquiry',
+          data: { type: 'baemin-auth-recovered' }
+        }
+      : {
+          title: '⚠️ 배민 크롤링 재로그인 필요',
+          body: (reason || '배민 세션이 만료됐습니다 — 크롤 PC에서 로그인/휴대폰 인증을 해주세요.').slice(0, 180),
+          channelId: 'brem_inquiry',
+          data: { type: 'baemin-auth-required', reason }
+        };
+    const result = await adminAppPush.sendToAdmins(payload);
+    res.json({ ok: true, result });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '푸시 전송에 실패했습니다.' });
+  }
+});
+
 app.post('/api/rider/urgent-missions/:missionId/accept', async (req, res) => {
   try {
     const result = await urgentMissions.acceptMission(getBearerToken(req), req.params.missionId);
