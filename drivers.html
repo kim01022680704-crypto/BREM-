@@ -17,26 +17,39 @@
     (function () {
       try {
         var p = new URLSearchParams(location.search);
-        if (p.get('embed') === '1') document.documentElement.classList.add('is-embed-popup');
-        if (p.get('simple') === '1') document.documentElement.classList.add('is-embed-simple');
+        var simple = p.get('simple') === '1';
+        var root = document.documentElement;
+        if (p.get('embed') === '1') root.classList.add('is-embed-popup');
+        if (simple) root.classList.add('is-embed-simple');
+        if (simple) {
+          // 행 클릭 → 상세(수정) 화면으로 이동(등록 비밀번호까지 표시). 관리 버튼은 숨김.
+          document.addEventListener('click', function (e) {
+            if (e.target.closest('button, a, input, label, select')) return;
+            var tr = e.target.closest('tr[data-driver-id]');
+            if (!tr) return;
+            var id = tr.getAttribute('data-driver-id');
+            if (id) location.href = 'rider-manage.html?edit=' + encodeURIComponent(id) + '&embed=1&simple=1&from=list';
+          });
+        }
       } catch (e) {}
     })();
   </script>
   <style>
+    /* 임베드: 사이드바/헤더만 숨기고 원래(라이트) 테마 유지 → 가독성 보장 */
     html.is-embed-popup .app.index-app { width: 100%; padding: 0; }
     html.is-embed-popup .index-layout { grid-template-columns: 1fr; gap: 0; min-height: 100vh; }
     html.is-embed-popup .index-sidebar { display: none !important; }
     html.is-embed-popup .drivers-header { display: none !important; }
     html.is-embed-popup .drivers-page .index-content,
     html.is-embed-popup .index-content { max-height: none; padding: 14px 16px; }
-    html.is-embed-popup body { background: #0a0a0a; }
-    /* 간이 목록: 관리/삭제 버튼·선택·관리 컬럼 숨겨 "확인 전용" (표시 전용, 기능 영향 없음) */
+    /* 간이 목록: 관리/삭제 버튼·선택·민감·관리 컬럼 숨겨 "확인 전용" */
     html.is-embed-simple .filters--compact { display: none !important; }
     html.is-embed-simple .list-selection-bar { display: none !important; }
     html.is-embed-simple .col-select,
     html.is-embed-simple .col-privacy,
     html.is-embed-simple .col-actions { display: none !important; }
-    html.is-embed-simple .list-panel { border: 0; box-shadow: none; background: transparent; }
+    /* 행 전체가 클릭 가능(상세보기) */
+    html.is-embed-simple .driver-table tbody tr { cursor: pointer; }
   </style>
 </head>
 <body class="drivers-page">

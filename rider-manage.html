@@ -17,24 +17,63 @@
     (function () {
       try {
         var p = new URLSearchParams(location.search);
-        if (p.get('embed') === '1') document.documentElement.classList.add('is-embed-popup');
-        if (p.get('simple') === '1') document.documentElement.classList.add('is-embed-simple');
+        var embed = p.get('embed') === '1';
+        var simple = p.get('simple') === '1';
+        var isEdit = !!p.get('edit');
+        var fromList = p.get('from') === 'list';
+        var root = document.documentElement;
+        if (embed) root.classList.add('is-embed-popup');
+        if (simple) root.classList.add('is-embed-simple');
+        if (simple && !isEdit) root.classList.add('is-embed-new');       // 신규 간이등록
+        if (embed && isEdit && fromList) root.classList.add('is-embed-detail'); // 목록→상세
+        document.addEventListener('DOMContentLoaded', function () {
+          // 간이: 은행/계좌 선택입력을 펼쳐서 인라인 노출
+          if (simple) {
+            document.querySelectorAll('details.form-section--optional').forEach(function (d) { d.open = true; });
+          }
+          // 목록에서 상세로 들어온 경우 '목록으로' 복귀 버튼
+          if (embed && isEdit && fromList) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.id = 'embedBackToList';
+            b.textContent = '← 목록으로';
+            b.addEventListener('click', function () { history.back(); });
+            document.body.appendChild(b);
+          }
+        });
       } catch (e) {}
     })();
   </script>
   <style>
+    /* 임베드: 사이드바/헤더만 숨기고 원래(라이트) 테마 유지 → 가독성 보장 */
     html.is-embed-popup .app.index-app { width: 100%; padding: 0; }
     html.is-embed-popup .index-layout { grid-template-columns: 1fr; gap: 0; min-height: 100vh; }
     html.is-embed-popup .index-sidebar { display: none !important; }
     html.is-embed-popup .drivers-header { display: none !important; }
     html.is-embed-popup .index-content,
     html.is-embed-popup .index-content--register { max-height: none; padding: 14px 16px; }
-    html.is-embed-popup body { background: #0a0a0a; }
-    /* 간이 등록: 상단 툴바/모드탭/제목 숨겨 핵심 입력만 (표시 전용, 기능 영향 없음) */
+    /* 간이 등록: 상단 툴바/모드탭/제목 숨겨 핵심 입력만 */
     html.is-embed-simple .register-top--desktop { display: none !important; }
     html.is-embed-simple .panel-header--register { display: none !important; }
     html.is-embed-simple .layout--register { padding: 0; }
-    html.is-embed-simple .form-panel--register { border: 0; box-shadow: none; background: transparent; padding: 4px 2px; }
+    html.is-embed-simple .form-panel--register { border: 0; box-shadow: none; padding: 4px 2px; }
+    /* 간이: 선택입력 토글 숨기고 은행/계좌를 인라인으로 노출 */
+    html.is-embed-simple .form-section--optional > summary { display: none !important; }
+    html.is-embed-simple .form-section--optional { border: 0; padding: 0; margin: 0; }
+    /* 신규 간이등록: 비밀번호·주민번호·이벤트·안내문 숨김(스크린샷처럼 컴팩트). 상세(수정)에선 전부 표시 */
+    html.is-embed-new label.field:has(#driverPassword) { display: none !important; }
+    html.is-embed-new label.field:has(#driverResidentNumber) { display: none !important; }
+    html.is-embed-new .register-optional-grid { display: none !important; }
+    html.is-embed-new .register-note--desktop { display: none !important; }
+    /* 목록→상세 '목록으로' 복귀 버튼 */
+    html.is-embed-detail .index-content--register { padding-top: 50px; }
+    #embedBackToList {
+      position: fixed; top: 10px; left: 12px; z-index: 60;
+      padding: 8px 13px; border: 1px solid var(--border);
+      border-radius: 9px; background: #fff; color: #171717;
+      font-size: 0.84rem; font-weight: 700; cursor: pointer;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    }
   </style>
 </head>
 <body class="register-page drivers-page">

@@ -9541,7 +9541,7 @@ body.driver-popup-open {
 .driver-popup-modal__body {
   flex: 1;
   min-height: 0;
-  background: #0a0a0a;
+  background: #f5f6f8;
 }
 
 .driver-popup-modal__frame {
