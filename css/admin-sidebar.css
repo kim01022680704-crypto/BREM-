@@ -41,7 +41,7 @@
 .sb-fav-item {
   position: relative; display: flex; align-items: center; gap: 9px;
   padding: 10px 34px 10px 12px; border-radius: 9px; color: var(--muted);
-  cursor: pointer; font-size: 1rem;
+  cursor: pointer; font-size: 1.08rem;
 }
 .sb-fav-item:hover { background: var(--black); color: var(--text); }
 .sb-fav-item.active { background: rgba(255, 212, 0, 0.12); color: var(--yellow); font-weight: 800; }
@@ -55,7 +55,7 @@
 .sb-ghead {
   width: 100%; display: flex; align-items: center; gap: 10px;
   padding: 9px 10px; border: 0; background: transparent; color: var(--text);
-  border-radius: 10px; font-size: 1rem; font-weight: 800; cursor: pointer; text-align: left;
+  border-radius: 10px; font-size: 1.08rem; font-weight: 800; cursor: pointer; text-align: left;
 }
 .sb-ghead:hover { background: var(--black); }
 .sb-ghead .sb-ic { width: 17px; height: 17px; color: var(--muted); flex: none; }
@@ -73,7 +73,7 @@
   width: 100%;
   padding: 10px 34px 10px 34px !important;
   border-radius: 9px !important;
-  font-size: 1rem !important;
+  font-size: 1.08rem !important;
   font-weight: 600 !important;
   color: var(--muted) !important;
   background: transparent !important;
