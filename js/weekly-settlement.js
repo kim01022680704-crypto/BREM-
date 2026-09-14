@@ -1845,6 +1845,90 @@ const BremWeeklySettlement = (function () {
     };
   }
 
+  // ③ 배민 재업로드 이중계상 감지(비차단 경고).
+  // 새로 올린 기간이 이미 저장된(파일명이 다른) 파트와 겹치면, 저장 시 콜수·금액이
+  // 합산되어 2배가 될 수 있다. 같은 파일명은 교체되므로 안전, 기간이 안 겹치면 월말분할로 정상.
+  function detectBaeminReuploadOverlap(record, channel) {
+    if (normalizePlatform(record?.platform) !== 'baemin') return null;
+    const ch = channel === 'direct' || record?.channel === 'direct' ? 'direct' : 'bro';
+    let existingList;
+    try {
+      existingList = listExistingBaeminWeeklyRecords(record, ch);
+    } catch (_e) {
+      return null;
+    }
+    if (!existingList || !existingList.length) return null;
+    const incomingParts = (Array.isArray(record?.sourceParts) && record.sourceParts.length)
+      ? record.sourceParts
+      : [{
+        fileName: String(record?.fileName || '').trim(),
+        startDate: String(record?.startDate || '').slice(0, 10),
+        endDate: String(record?.endDate || record?.startDate || '').slice(0, 10)
+      }];
+    const existingParts = [];
+    existingList.forEach(rec => listBaeminSourceParts(rec).forEach(p => existingParts.push(p)));
+    const overlaps = [];
+    incomingParts.forEach(inc => {
+      const incName = String(inc.fileName || '').trim();
+      existingParts.forEach(ex => {
+        const exName = String(ex.fileName || '').trim();
+        if (incName && exName && incName === exName) return; // 같은 파일 → 교체(안전)
+        if (baeminDateRangesOverlap(inc.startDate, inc.endDate, ex.startDate, ex.endDate)) {
+          overlaps.push({ incoming: incName || '(파일명 없음)', existing: exName || '(파일명 없음)' });
+        }
+      });
+    });
+    if (!overlaps.length) return null;
+    const sample = overlaps.slice(0, 5)
+      .map(o => `${o.incoming} ↔ ${o.existing}`)
+      .join(', ');
+    return {
+      count: overlaps.length,
+      overlaps,
+      message: `이미 반영된 기간과 겹치는 재업로드가 감지되었습니다(${overlaps.length}건: ${sample}${overlaps.length > 5 ? ' 외' : ''}). `
+        + '저장하면 겹치는 기간의 콜수·금액이 합산(이중계상)될 수 있습니다. 같은 파일 재업로드면 취소하세요.'
+    };
+  }
+
+  // ④ 기사 매칭 모호성 감지(비차단 경고).
+  // 정산서 라이더의 플랫폼 ID가 기사DB에서 2명 이상과 매칭되면(중복 ID/동명이인 정리 누락)
+  // 매칭이 엉뚱한 기사에 붙을 수 있다. 계산·매칭 로직은 건드리지 않고 경고만 한다.
+  function detectAmbiguousDriverMatches(riders, platform) {
+    const p = normalizePlatform(platform);
+    const drivers = (typeof BremStorage !== 'undefined' ? (BremStorage.drivers.getAll() || []) : []);
+    if (!drivers.length) return null;
+    const list = Array.isArray(riders) ? riders : [];
+    const ambiguous = [];
+    const seen = new Set();
+    list.forEach(r => {
+      let matches = [];
+      let label = r.riderName || r.driverName || r.originalName || '';
+      if (p === 'baemin') {
+        const key = baeminIdMatchKey(r.baeminUserId);
+        if (!key) return;
+        matches = drivers.filter(d => baeminIdMatchKey(d.baeminId) === key);
+        label = `${label}(${r.baeminUserId || key})`;
+      } else {
+        const key = normalizeCoupangLoginKey(r.coupangLoginKey || r.originalName);
+        if (!key || !/\d{3,}/.test(key)) return; // 숫자 ID가 아닌(이름 기반) 키는 제외 — 오탐 방지
+        matches = drivers.filter(d => normalizeCoupangLoginKey(d.coupangId) === key);
+        label = `${label}(${key})`;
+      }
+      if (matches.length > 1 && !seen.has(label)) {
+        seen.add(label);
+        ambiguous.push({ rider: label, count: matches.length });
+      }
+    });
+    if (!ambiguous.length) return null;
+    const sample = ambiguous.slice(0, 5).map(a => `${a.rider}=${a.count}명`).join(', ');
+    return {
+      count: ambiguous.length,
+      ambiguous,
+      message: `한 ID에 기사가 2명 이상 매칭되는 라이더가 ${ambiguous.length}명 있습니다(${sample}${ambiguous.length > 5 ? ' 외' : ''}). `
+        + '엉뚱한 기사에 정산이 붙을 수 있으니 기사목록에서 중복 ID를 정리하세요.'
+    };
+  }
+
   function buildWeeklySettlementId({ platform, region, year, month, week, startDate, channel }) {
     const p = normalizePlatform(platform);
     const regionSlug = slugify(region);
@@ -2476,6 +2560,8 @@ const BremWeeklySettlement = (function () {
     extractCoupangWeeklyRiders,
     extractBaeminWeeklyRiders,
     detectAmountColumnAnomaly,
+    detectBaeminReuploadOverlap,
+    detectAmbiguousDriverMatches,
     applySheetPayoutOverride,
     includeSheetPayoutRiders,
     riderPayoutSelectKey,

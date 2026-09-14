@@ -655,6 +655,22 @@ const BremWeeklySettlementAdmin = (function () {
           );
           if (!okAnomaly) { showToast('저장을 취소했습니다. 정산서 열 설정을 확인하세요.'); return; }
         }
+        // ③ 재업로드 이중계상 의심(자동저장 전)
+        const batchDupes = result.records
+          .map(rec => BremWeeklySettlement.detectBaeminReuploadOverlap?.(rec, ch))
+          .filter(Boolean);
+        if (batchDupes.length) {
+          const okDup = window.confirm('⚠️ ' + batchDupes[0].message + `\n\n(의심 지역 ${batchDupes.length}개) 그래도 저장할까요? (취소 권장)`);
+          if (!okDup) { showToast('저장을 취소했습니다. 재업로드 중복을 확인하세요.'); return; }
+        }
+        // ④ 매칭 모호성 의심(자동저장 전)
+        const batchAmbiguous = result.records
+          .map(rec => BremWeeklySettlement.detectAmbiguousDriverMatches?.(rec.riders || [], platform))
+          .filter(Boolean);
+        if (batchAmbiguous.length) {
+          const okAmb = window.confirm('⚠️ ' + batchAmbiguous[0].message + `\n\n(의심 지역 ${batchAmbiguous.length}개) 그래도 저장할까요?`);
+          if (!okAmb) { showToast('저장을 취소했습니다. 기사 중복 ID를 확인하세요.'); return; }
+        }
         let batchCallFeeUnit;
         if (ch === 'direct') {
           const firstRecord = result.records[0];
@@ -769,6 +785,18 @@ const BremWeeklySettlementAdmin = (function () {
         + '그래도 저장할까요? (취소 권장 — 열 설정 확인 후 재업로드)'
       );
       if (!okAnomaly) { showToast('저장을 취소했습니다. 정산서 열 설정을 확인하세요.'); return; }
+    }
+    // ③ 배민 재업로드 이중계상(겹치는 기간·다른 파일명) 의심 시 확인
+    const reupOverlap = BremWeeklySettlement.detectBaeminReuploadOverlap?.(record, ch);
+    if (reupOverlap) {
+      const okDup = window.confirm('⚠️ ' + reupOverlap.message + '\n\n그래도 저장할까요? (취소 권장)');
+      if (!okDup) { showToast('저장을 취소했습니다. 재업로드 중복을 확인하세요.'); return; }
+    }
+    // ④ 한 ID에 기사 2명 이상 매칭(중복 ID/동명이인) 의심 시 확인
+    const ambiguous = BremWeeklySettlement.detectAmbiguousDriverMatches?.(toSavePreview.riders || [], platform);
+    if (ambiguous) {
+      const okAmb = window.confirm('⚠️ ' + ambiguous.message + '\n\n그래도 저장할까요? (권장: 중복 ID 정리 후 재저장)');
+      if (!okAmb) { showToast('저장을 취소했습니다. 기사 중복 ID를 확인하세요.'); return; }
     }
     let callFeeUnit;
     if (ch === 'direct') {
