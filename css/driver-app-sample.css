@@ -1417,16 +1417,16 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 html.rider-ds.brem-app-nav[data-driver-tab]:not([data-driver-tab="home"]) .driver-home-v2 { display: none !important; }
 
 /* 프로필 */
-.rider-ds .ds-profile { display: flex; align-items: center; gap: 12px; padding: 13px 15px; }
+.rider-ds .ds-profile { display: flex; align-items: center; gap: 8px; padding: 13px 15px; }
 .rider-ds .ds-profile__avatar { flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--rd-accent-soft); color: var(--rd-accent); font-weight: 800; font-size: 1rem; }
 .rider-ds .ds-profile__body { min-width: 0; flex: 1; }
-.rider-ds .ds-profile__name { color: var(--rd-text); font-size: var(--rd-fs-500); font-weight: 700; }
+.rider-ds .ds-profile__name { color: var(--rd-text); font-size: var(--rd-fs-500); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rider-ds .ds-profile__sub { margin-top: 3px; display: flex; gap: 6px; }
 .rider-ds .ds-profile__inquiry {
-  flex-shrink: 0; margin-left: auto; padding: 7px 11px;
+  flex-shrink: 0; margin-left: auto; padding: 6px 8px;
   border: 1px solid var(--rd-accent); border-radius: var(--rd-radius-sm);
   background: var(--rd-accent-soft); color: var(--rd-accent-strong);
-  font-size: var(--rd-fs-200); font-weight: 700; cursor: pointer; white-space: nowrap;
+  font-size: var(--rd-fs-100); font-weight: 700; cursor: pointer; white-space: nowrap;
 }
 .rider-ds .ds-profile__inquiry:hover { background: var(--rd-hover); }
 .rider-ds .ds-profile__edit { flex-shrink: 0; padding: 7px 12px; border: 1px solid var(--rd-border-strong); border-radius: var(--rd-radius-sm); background: var(--rd-card-2); color: var(--rd-text); font-size: var(--rd-fs-200); font-weight: 600; cursor: pointer; }
