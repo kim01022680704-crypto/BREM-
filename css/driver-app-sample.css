@@ -1481,6 +1481,17 @@ html.rider-ds.brem-app-nav[data-driver-tab]:not([data-driver-tab="home"]) .drive
 .rider-ds .ds-mrow__calls { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
 .rider-ds .ds-mrow__amt { margin-left: auto; color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 700; font-variant-numeric: tabular-nums; }
 .rider-ds .ds-mnote { margin-top: 8px; color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+
+/* 관리자 문의하기 (홈 하단) */
+.rider-ds .ds-inquiry-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 13px 15px;
+  background: var(--rd-card); border: 1px solid var(--rd-border-strong);
+  border-radius: var(--rd-radius); color: var(--rd-text);
+  font-size: var(--rd-fs-300); font-weight: 700; cursor: pointer;
+}
+.rider-ds .ds-inquiry-btn:hover { background: var(--rd-hover); }
+.rider-ds .ds-inquiry-btn svg { width: 18px; height: 18px; color: var(--rd-accent); }
 .rider-ds .ds-mini-progress { margin-top: 10px; }
 .rider-ds .ds-mini-progress[hidden] { display: none !important; }
 .rider-ds .ds-mini-progress__label { display: flex; justify-content: space-between; gap: 8px; color: var(--rd-text-muted); font-size: var(--rd-fs-100); margin-bottom: 5px; }

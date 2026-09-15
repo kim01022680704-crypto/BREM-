@@ -64,6 +64,10 @@
     const infoBtn = $('hv2InfoBtn');
     if (infoBtn) infoBtn.addEventListener('click', function () { $('driverProfileEditToggle')?.click(); });
 
+    // 관리자 문의하기 버튼 → 기존 문의 팝업 (레거시 버튼 클릭)
+    const inquiryBtn = $('hv2InquiryBtn');
+    if (inquiryBtn) inquiryBtn.addEventListener('click', function () { $('driverAdminInquiryBtn')?.click(); });
+
     // 관리메뉴 버튼 → 기존 대시보드 버튼 클릭
     const adminMap = [
       ['hv2AdminDash', 'driverRegionDashboardBtn'],
