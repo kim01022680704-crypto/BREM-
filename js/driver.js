@@ -174,15 +174,21 @@
 
   function coupangLiveWeekPerf(ops) {
     if (!ops?.available) return null;
-    const complete = Number(ops.weekComplete ?? (Number(ops.pastComplete || 0) + Number(ops.complete || 0)));
-    const reject = Number(ops.weekReject ?? (Number(ops.pastReject || 0) + Number(ops.reject || 0)));
-    const cancel = Number(ops.weekCancel ?? (Number(ops.pastCancel || 0) + Number(ops.cancel || 0)));
+    // 이번 주 주간 거절율 = 현재거절율(오늘 최신). 어제와 합산·평균하지 않는다.
+    const todayComplete = Number(ops.complete || 0);
+    const todayReject = Number(ops.reject || 0);
+    const todayCancel = Number(ops.cancel || 0);
+    const hasToday = todayComplete + todayReject + todayCancel > 0;
+    const complete = hasToday ? todayComplete : Number(ops.pastComplete || 0);
+    const reject = hasToday ? todayReject : Number(ops.pastReject || 0);
+    const cancel = hasToday ? todayCancel : Number(ops.pastCancel || 0);
     if (complete + reject + cancel <= 0) return null;
+    const liveRate = Number(ops.rejectionRate);
     return {
       complete,
       reject,
       cancel,
-      rate: calcCoupangRejectRate(complete, reject, cancel)
+      rate: Number.isFinite(liveRate) ? liveRate : calcCoupangRejectRate(complete, reject, cancel)
     };
   }
 
@@ -196,6 +202,29 @@
         rejectCount: perf.reject,
         cancelCount: perf.cancel,
         unmeasured: perf.rate == null
+      }
+    };
+  }
+
+  function baeminLiveWeekEntry(ops) {
+    if (!ops?.available) return null;
+    const rate = Number(ops.weekAcceptRate ?? ops.acceptRate);
+    if (!Number.isFinite(rate)) return null;
+    const complete = Number(ops.weekComplete ?? ops.complete || 0);
+    const reject = Number(ops.weekFoodReject ?? ops.foodReject || 0);
+    const cancel = Number(ops.weekFoodCancel ?? ops.foodCancel || 0);
+    const fault = Number(ops.weekFoodRiderFault ?? ops.foodRiderFault || 0);
+    return {
+      rate,
+      stats: {
+        completeTotal: complete,
+        rejectCount: reject,
+        dispatchCancelCount: cancel,
+        riderCancelCount: fault,
+        rejectByService: { food: reject, bmart: 0, store: 0 },
+        dispatchCancelByService: { food: cancel, bmart: 0, store: 0 },
+        riderFaultByService: { food: fault, bmart: 0, store: 0 },
+        unmeasured: false
       }
     };
   }
@@ -1443,6 +1472,14 @@
         ? `${Number(ops.acceptRate)}%`
         : '-'
     );
+    const selectedWeek = state.selectedWeekStart || weekStartKey();
+    if (available && selectedWeek === weekStartKey()) {
+      const liveWeek = baeminLiveWeekEntry(ops);
+      if (liveWeek) {
+        setText('weeklyAcceptanceRateBaemin', liveWeek.rate == null ? '-' : formatPercent(liveWeek.rate));
+        renderRateDetail('baemin', liveWeek);
+      }
+    }
     setText(
       'driverBaeminLiveOpsUpdated',
       `마지막 업데이트: ${formatLiveOpsUpdatedAt(pickLiveOpsDisplayTime(ops))}`
@@ -1656,7 +1693,14 @@
     const currentWeekCalls = weekStats.total;
     const weeklyTarget = weeklyTargetFor(driver.id, weekStart);
     const weeklyRate = weeklyTarget ? Math.round((currentWeekCalls / weeklyTarget) * 100) : 0;
-    const weeklyAcceptanceBaemin = weeklyRateForPlatform(driver.id, weekStart, 'baemin');
+    const storedBaeminEntry = weeklyEntryForPlatform(driver.id, weekStart, 'baemin');
+    const liveBaeminEntry = weekStart === weekStartKey()
+      ? baeminLiveWeekEntry(BremStorage.getRiderBaeminOps?.())
+      : null;
+    const baeminRateEntry = liveBaeminEntry || storedBaeminEntry;
+    const weeklyAcceptanceBaemin = liveBaeminEntry
+      ? liveBaeminEntry.rate
+      : weeklyRateForPlatform(driver.id, weekStart, 'baemin');
     const storedCoupangEntry = weeklyEntryForPlatform(driver.id, weekStart, 'coupang');
     const liveCoupangEntry = weekStart === weekStartKey()
       ? coupangLiveWeekEntry(BremStorage.getRiderCoupangOps?.())
@@ -1665,7 +1709,6 @@
     const weeklyRejectionCoupang = liveCoupangEntry
       ? liveCoupangEntry.rate
       : weeklyRateForPlatform(driver.id, weekStart, 'coupang');
-    const baeminRateEntry = weeklyEntryForPlatform(driver.id, weekStart, 'baemin');
     const item = eventItemFor(driver);
     const eventProgress = BremStorage.events.getProgressForDriver(driver);
     const isEventUnset = eventProgress.status === 'unset'

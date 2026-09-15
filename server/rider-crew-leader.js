@@ -391,12 +391,8 @@ async function loadCoupangRejectRatesBatch(supabase, riders) {
     const todayAgg = sumCoupangRiderDailyRows(todayRows);
     const pastRate = calcRejectionRateFromCounts(pastAgg.complete, pastAgg.reject, pastAgg.cancel);
     const todayRate = calcRejectionRateFromCounts(todayAgg.complete, todayAgg.reject, todayAgg.cancel);
-    let rejectionRate = null;
-    if (pastRate != null && todayRate != null) {
-      rejectionRate = Math.round(((pastRate + todayRate) / 2) * 10) / 10;
-    } else {
-      rejectionRate = todayRate ?? pastRate;
-    }
+    // 기사앱 현재거절율과 동일: 오늘 완료·거절·취소만. 어제와 평균하지 않는다.
+    const rejectionRate = todayRate ?? pastRate;
     if (rejectionRate != null) rates.set(driverId, rejectionRate);
   });
   return rates;
@@ -436,7 +432,7 @@ async function loadBaeminLiveByRiders(supabase, riders) {
         .eq('source_menu', 'delivery_status')
         .in('rider_user_id', chunk)
         .order('collected_at', { ascending: false })
-        .limit(500);
+        .limit(Math.max(400, chunk.length * 8));
       if (error) {
         if (/does not exist|Could not find the table/i.test(String(error.message || ''))) break;
         console.warn(`[BREM] crew-leader baemin ops (${table}):`, error.message || error);

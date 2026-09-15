@@ -1201,6 +1201,18 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
   const hasAccept = acceptRate != null;
   if (!hasDelivery && !hasAccept) return empty;
 
+  // 이번 주 주간 수락율 = 현재수락과 동일 소스. 수요일은 오늘 배달현황, 목~화는 주간 스냅샷.
+  const weekMetrics = (isSettlementWeekStartDay && deliveryRate != null)
+    ? metrics
+    : (acceptRow && acceptRow.current_complete != null
+      ? {
+        complete: Number(acceptRow.current_complete) || 0,
+        foodReject: Number(acceptRow.current_food_reject) || 0,
+        foodCancel: Number(acceptRow.current_food_cancel) || 0,
+        foodRiderFault: Number(acceptRow.current_food_rider_fault) || 0
+      }
+      : metrics);
+
   return {
     available: true,
     riderId: driverId,
@@ -1211,6 +1223,11 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
     foodRiderFault: metrics.foodRiderFault,
     acceptRate,
     acceptRateSource,
+    weekComplete: weekMetrics.complete,
+    weekFoodReject: weekMetrics.foodReject,
+    weekFoodCancel: weekMetrics.foodCancel,
+    weekFoodRiderFault: weekMetrics.foodRiderFault,
+    weekAcceptRate: acceptRate,
     weekStart: acceptRow?.week_start || null,
     collectDate: deliveryHit?.row?.collect_date || acceptRow?.source_capture_date || null,
     collectedAt: deliveryHit?.row?.collected_at || null,
