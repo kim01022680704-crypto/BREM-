@@ -210,10 +210,10 @@
     if (!ops?.available) return null;
     const rate = Number(ops.weekAcceptRate ?? ops.acceptRate);
     if (!Number.isFinite(rate)) return null;
-    const complete = Number(ops.weekComplete ?? ops.complete || 0);
-    const reject = Number(ops.weekFoodReject ?? ops.foodReject || 0);
-    const cancel = Number(ops.weekFoodCancel ?? ops.foodCancel || 0);
-    const fault = Number(ops.weekFoodRiderFault ?? ops.foodRiderFault || 0);
+    const complete = Number(ops.weekComplete ?? ops.complete ?? 0);
+    const reject = Number(ops.weekFoodReject ?? ops.foodReject ?? 0);
+    const cancel = Number(ops.weekFoodCancel ?? ops.foodCancel ?? 0);
+    const fault = Number(ops.weekFoodRiderFault ?? ops.foodRiderFault ?? 0);
     return {
       rate,
       stats: {
