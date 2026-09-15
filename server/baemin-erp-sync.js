@@ -159,12 +159,13 @@ async function loadProtectedRejectionMap(supabase, weekStarts) {
   const map = new Map();
   const weeks = [...new Set((weekStarts || []).filter(Boolean))];
   if (!weeks.length) return map;
-  const { data, error } = await supabase
+  const data = await fetchAllPages((offset, pageSize) => supabase
     .from('admin_rejection_rates')
     .select('id,driver_id,week_start,platform,source,rate,rider_published_at')
     .eq('platform', 'baemin')
-    .in('week_start', weeks);
-  if (error) throw new Error(error.message || '거절율 조회 실패');
+    .in('week_start', weeks)
+    .order('id', { ascending: true })
+    .range(offset, offset + pageSize - 1), { pageSize: 1000 });
   (data || []).forEach(row => {
     const key = `${row.driver_id}|${row.week_start}|baemin`;
     map.set(key, row);
@@ -176,12 +177,13 @@ async function loadExistingCallsMap(supabase, dates) {
   const map = new Map();
   const days = [...new Set((dates || []).filter(Boolean))];
   if (!days.length) return map;
-  const { data, error } = await supabase
+  const data = await fetchAllPages((offset, pageSize) => supabase
     .from('admin_calls')
     .select('id,driver_id,date,platform,rider_published_at')
     .eq('platform', 'baemin')
-    .in('date', days);
-  if (error) throw new Error(error.message || '콜수 조회 실패');
+    .in('date', days)
+    .order('id', { ascending: true })
+    .range(offset, offset + pageSize - 1), { pageSize: 1000 });
   (data || []).forEach(row => map.set(row.id, row));
   return map;
 }

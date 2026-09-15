@@ -787,6 +787,7 @@
         }
 
         refreshDriverDashboard(BremStorage.drivers.getById(driverId) || freshDriver);
+        window.BremDriverPerfCalendar?.render?.();
         const readyDriver = BremStorage.drivers.getById(driverId) || freshDriver;
         if (driverHasBaemin(readyDriver)) {
           // 초기 로드 직후 바로 1회 조회 + 2분 폴링 시작 (Supabase 반영분 수신)
