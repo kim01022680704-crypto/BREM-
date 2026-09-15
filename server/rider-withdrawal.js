@@ -5,6 +5,7 @@ const {
   normalizeSettlementWeekStart,
   settlementWeekEnd
 } = require('./rider-weekly-payslip');
+const { fetchAllPages } = require('./supabase-paginate');
 
 const ROSTER_KEY = 'brem_payroll_daily_settlement_roster_v1';
 const FEES_KEY = 'brem_payroll_daily_settlement_fees_v1';
@@ -1926,10 +1927,11 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
   // 기사 기본정보(이름/전화/계좌) 1회 조회
   const ridersById = new Map();
   try {
-    const { data: ridersData } = await supabase
+    const ridersData = await fetchAllPages((offset, pageSize) => supabase
       .from('riders')
       .select('id,name,phone,bank_name,account_number')
-      .limit(10000);
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1), { pageSize: 1000 });
     (ridersData || []).forEach(row => {
       ridersById.set(String(row.id), row);
     });

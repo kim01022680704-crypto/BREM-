@@ -21,6 +21,7 @@ const { sumStats, extractStatsFromItem, pickAcceptance, readAllDayComplete, serv
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
 const { buildCenterQueryParams, buildCenterFetchHeaders } = require('./baemin-center-context');
 const collectProgress = require('./baemin-collect-progress');
+const { fetchAllPages } = require('./supabase-paginate');
 
 function resolveCollectWorkerCount(partnerCount) {
   const wanted = Math.max(1, Math.min(2, Number(process.env.BAEMIN_COLLECT_WORKERS || 2) || 2));
@@ -4972,22 +4973,26 @@ async function rebuildLiveAcceptRatesForAppliedWeek(options = {}) {
 
   const captureDate = String(applied?.collectDate || today).slice(0, 10);
 
-  const [deliveryResult, ridersResult] = await Promise.all([
-    supabase
-      .from('baemin_delivery_applied_items')
-      .select('rider_name, rider_user_id, phone_number, parsed_json, dedupe_key, collected_at')
-      .eq('batch_id', batchId)
-      .eq('source_menu', 'delivery_status')
-      .limit(15000),
-    supabase
-      .from('riders')
-      .select('id, baemin_id')
-      .not('baemin_id', 'is', null)
-      .limit(10000)
-  ]);
-
-  if (deliveryResult.error) {
-    return { ok: false, message: deliveryResult.error.message || '배달현황 조회 실패' };
+  let deliveryRows = [];
+  let riderRows = [];
+  try {
+    [deliveryRows, riderRows] = await Promise.all([
+      fetchAllPages((offset, pageSize) => supabase
+        .from('baemin_delivery_applied_items')
+        .select('rider_name, rider_user_id, phone_number, parsed_json, dedupe_key, collected_at')
+        .eq('batch_id', batchId)
+        .eq('source_menu', 'delivery_status')
+        .order('id', { ascending: true })
+        .range(offset, offset + pageSize - 1), { pageSize: 1000 }),
+      fetchAllPages((offset, pageSize) => supabase
+        .from('riders')
+        .select('id, baemin_id')
+        .not('baemin_id', 'is', null)
+        .order('id', { ascending: true })
+        .range(offset, offset + pageSize - 1), { pageSize: 1000 })
+    ]);
+  } catch (loadError) {
+    return { ok: false, message: loadError.message || '배달현황/기사 조회 실패' };
   }
 
   let pastItems = [];
@@ -5004,7 +5009,7 @@ async function rebuildLiveAcceptRatesForAppliedWeek(options = {}) {
   }
 
   const driverByBaemin = new Map();
-  (ridersResult.data || []).forEach(row => {
+  (riderRows || []).forEach(row => {
     const baeminId = normalizeBaeminUserIdForOps(row.baemin_id);
     const key = baeminIdMatchKeyForOps(baeminId);
     const driverId = String(row.id || '').trim();
@@ -5043,7 +5048,7 @@ async function rebuildLiveAcceptRatesForAppliedWeek(options = {}) {
   };
 
   pastItems.forEach(row => upsert(row, 'past'));
-  (deliveryResult.data || []).forEach(row => upsert(row, 'live'));
+  (deliveryRows || []).forEach(row => upsert(row, 'live'));
 
   const rows = [...byKey.values()]
     .filter(entry => entry.riderUserId)
@@ -5096,7 +5101,7 @@ async function rebuildLiveAcceptRatesForAppliedWeek(options = {}) {
     captureDate,
     riderCount: rows.length,
     matchedDriverCount: matched,
-    deliveryCount: (deliveryResult.data || []).length,
+    deliveryCount: (deliveryRows || []).length,
     pastCount: pastItems.length,
     upserted: rows.length,
     skipped: Boolean(saved.skipped),
