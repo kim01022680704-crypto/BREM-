@@ -6,6 +6,7 @@ const BremDriverManagementAdmin = (function () {
   const state = {
     tab: 'org',
     org: { nodes: [], topRepNodeId: '', topRepRegions: [] },
+    orgDirty: false,
     selectedNodeId: '',
     memberSearch: '',
     weekStart: '',
@@ -334,13 +335,22 @@ const BremDriverManagementAdmin = (function () {
     startRegionRankingPoll();
   }
 
-  function loadOrg() {
+  /** 저장하지 않은 조직도 편집이 있는지 표시 — 백그라운드 새로고침이 덮어쓰는 것을 막는다. */
+  function markOrgDirty() {
+    state.orgDirty = true;
+  }
+
+  function loadOrg(options = {}) {
+    // 저장 안 한 편집 내용을 백그라운드 데이터 동기화(brem-*-data-ready)가 덮어써 사라지게 하던 문제 방지.
+    // 명시적으로 force 를 준 경우(저장 직후 등)에만 서버 값으로 다시 읽는다.
+    if (state.orgDirty && options.force !== true) return;
     const chart = window.BremStorage?.driverOrgChart?.get?.() || { nodes: [], topRepNodeId: '', topRepRegions: [] };
     state.org = {
       nodes: Array.isArray(chart.nodes) ? chart.nodes : [],
       topRepNodeId: String(chart.topRepNodeId || '').trim(),
       topRepRegions: Array.isArray(chart.topRepRegions) ? chart.topRepRegions : []
     };
+    state.orgDirty = false;
   }
 
   function resolveLeaderName(leaderRef) {
@@ -434,6 +444,7 @@ const BremDriverManagementAdmin = (function () {
       });
     }
     state.org.topRepRegions = list;
+    markOrgDirty();
     renderOrgMemberPanel();
   }
 
@@ -911,8 +922,9 @@ const BremDriverManagementAdmin = (function () {
     }
     try {
       await window.BremStorage.driverOrgChart.save(state.org);
+      state.orgDirty = false;
       showToast('박스에서 제외했습니다.');
-      loadOrg();
+      loadOrg({ force: true });
       renderOrg();
     } catch (error) {
       showToast(error.message || '제외에 실패했습니다.');
@@ -1510,6 +1522,7 @@ const BremDriverManagementAdmin = (function () {
     });
 
     node.memberRefs = [...next.values()];
+    markOrgDirty();
     state.memberSearch = '';
     const searchInput = $('#driverOrgMemberSearch');
     if (searchInput) searchInput.value = '';
@@ -1739,6 +1752,7 @@ const BremDriverManagementAdmin = (function () {
     // 하위 추가 후에도 부모를 선택 유지 → 연속 추가 시 옆으로(형제) 붙는다.
     // (새 박스를 선택하면 그다음 추가가 또 그 아래로만 깊어졌다.)
     state.selectedNodeId = parent || node.id;
+    markOrgDirty();
     renderOrg();
   }
 
@@ -1761,6 +1775,7 @@ const BremDriverManagementAdmin = (function () {
     state.org.nodes.push(parent);
     node.parentId = parent.id;
     state.selectedNodeId = parent.id;
+    markOrgDirty();
     renderOrg();
     showToast('상위 박스를 추가했습니다. 이름을 바꾼 뒤 「조직도 저장」하세요.');
   }
@@ -1780,6 +1795,7 @@ const BremDriverManagementAdmin = (function () {
     const parent = state.org.nodes.find(item => item.id === parentId);
     if (!parent) {
       node.parentId = '';
+      markOrgDirty();
       renderOrg();
       return;
     }
@@ -1787,6 +1803,7 @@ const BremDriverManagementAdmin = (function () {
     node.sortOrder = Number.isFinite(Number(parent.sortOrder))
       ? Number(parent.sortOrder) + 0.001
       : state.org.nodes.length;
+    markOrgDirty();
     renderOrg();
     showToast(`「${node.label}」을(를) 한 단계 올렸습니다. 저장하려면 「조직도 저장」을 누르세요.`);
   }
@@ -1801,6 +1818,7 @@ const BremDriverManagementAdmin = (function () {
     state.org.nodes = state.org.nodes.filter(item => item.id !== node.id);
     if (state.org.topRepNodeId === node.id) state.org.topRepNodeId = '';
     state.selectedNodeId = '';
+    markOrgDirty();
     renderOrg();
   }
 
@@ -1818,6 +1836,7 @@ const BremDriverManagementAdmin = (function () {
       showToast(`「${node.label}」을(를) 대표박스로 지정했습니다. 「조직도 저장」을 누르세요.`);
       void ensureOrgRegionsLoaded();
     }
+    markOrgDirty();
     renderOrg();
   }
 
@@ -1827,6 +1846,7 @@ const BremDriverManagementAdmin = (function () {
     const raw = String(value || '').trim();
     if (!raw) {
       node.leaderRef = null;
+      markOrgDirty();
       renderOrg();
       return;
     }
@@ -1839,14 +1859,16 @@ const BremDriverManagementAdmin = (function () {
       return;
     }
     node.leaderRef = { kind, id };
+    markOrgDirty();
     renderOrg();
   }
 
   async function saveOrg() {
     try {
       await window.BremStorage.driverOrgChart.save(state.org);
+      state.orgDirty = false;
       showToast('조직도를 저장했습니다.');
-      loadOrg();
+      loadOrg({ force: true });
       renderOrg();
     } catch (error) {
       showToast(error.message || '조직도 저장에 실패했습니다.');
@@ -4245,6 +4267,7 @@ const BremDriverManagementAdmin = (function () {
           }
         }
         node.memberRefs = [...next.values()];
+        markOrgDirty();
         renderOrg();
         return;
       }
@@ -4261,6 +4284,7 @@ const BremDriverManagementAdmin = (function () {
           state.org.topRepRegions = (state.org.topRepRegions || []).filter(item => !(
             item.platform === platform && String(item.key) === String(key)
           ));
+          markOrgDirty();
           renderOrgMemberPanel();
         }
       }
@@ -4311,6 +4335,7 @@ const BremDriverManagementAdmin = (function () {
       const node = selectedNode();
       if (!node) return;
       node.label = String(event.target.value || '').trim() || node.label;
+      markOrgDirty();
       renderOrg();
     });
     $('#driverOrgMemberSearch')?.addEventListener('input', event => {
