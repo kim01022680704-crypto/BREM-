@@ -9804,6 +9804,24 @@ body.driver-popup-open {
   width: auto !important;
 }
 
+.settlement-match-account-block {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.settlement-match-account-block > span {
+  grid-column: 1 / -1;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
 .settlement-match-memo {
   grid-column: 1 / -1;
 }
@@ -9825,6 +9843,10 @@ body.driver-popup-open {
   }
 
   .settlement-match-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settlement-match-account-block {
     grid-template-columns: 1fr;
   }
 }

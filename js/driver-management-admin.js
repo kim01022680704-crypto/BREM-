@@ -3179,6 +3179,7 @@ const BremDriverManagementAdmin = (function () {
     const joinEl = $('#driverRegionBulkCreateJoinDate');
     const statusEl = $('#driverRegionBulkCreateStatus');
     const bankEl = $('#driverRegionBulkCreateBankName');
+    const holderEl = $('#driverRegionBulkCreateAccountHolder');
     const accountEl = $('#driverRegionBulkCreateAccountNumber');
     const regionBaeminEl = $('#driverRegionBulkCreateRegionBaemin');
     const regionCoupangEl = $('#driverRegionBulkCreateRegionCoupang');
@@ -3193,6 +3194,10 @@ const BremDriverManagementAdmin = (function () {
     if (joinEl) joinEl.value = localDateKey(new Date());
     if (statusEl) statusEl.value = '근무중';
     if (bankEl) bankEl.value = '';
+    if (holderEl) {
+      holderEl.value = nameEl?.value || '';
+      holderEl.dataset.auto = '1';
+    }
     if (accountEl) accountEl.value = '';
     if (memoEl) {
       memoEl.value = state.bulkCreateSource === 'crawl'
@@ -3879,7 +3884,7 @@ const BremDriverManagementAdmin = (function () {
         regionCoupang,
         bankName: String($('#driverRegionBulkCreateBankName')?.value || '').trim(),
         accountNumber: String($('#driverRegionBulkCreateAccountNumber')?.value || '').trim(),
-        accountHolder: name,
+        accountHolder: String($('#driverRegionBulkCreateAccountHolder')?.value || '').trim() || name,
         joinDate,
         status: String($('#driverRegionBulkCreateStatus')?.value || '근무중'),
         memo: String($('#driverRegionBulkCreateMemo')?.value || '').trim()
@@ -4399,6 +4404,17 @@ const BremDriverManagementAdmin = (function () {
     $('#driverRegionBulkApplyBtn')?.addEventListener('click', () => { void applyBulk(); });
     $('#driverRegionBulkCreateForm')?.addEventListener('submit', event => {
       void submitBulkCreate(event);
+    });
+    $('#driverRegionBulkCreateName')?.addEventListener('input', () => {
+      const holder = $('#driverRegionBulkCreateAccountHolder');
+      if (!holder || holder.dataset.auto !== '1') return;
+      holder.value = String($('#driverRegionBulkCreateName')?.value || '').trim();
+    });
+    $('#driverRegionBulkCreateAccountHolder')?.addEventListener('input', () => {
+      const holder = $('#driverRegionBulkCreateAccountHolder');
+      if (!holder) return;
+      const name = String($('#driverRegionBulkCreateName')?.value || '').trim();
+      holder.dataset.auto = holder.value.trim() === name ? '1' : '0';
     });
     $('#driverRegionBulkPlatform')?.addEventListener('change', () => {
       state.bulkRows = [];

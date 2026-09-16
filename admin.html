@@ -18,7 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260915audit2">
+  <link rel="stylesheet" href="css/admin.css?v=20260916acct1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -8614,14 +8614,21 @@
                 <option value="퇴사">퇴사</option>
               </select>
             </label>
-            <label>
-              은행
-              <input type="text" id="settlementMatchBankName" placeholder="예: 국민">
-            </label>
-            <label>
-              계좌번호
-              <input type="text" id="settlementMatchAccountNumber" placeholder="- 없이 입력">
-            </label>
+            <div class="settlement-match-account-block">
+              <span>입금 계좌</span>
+              <label>
+                은행
+                <input type="text" id="settlementMatchBankName" placeholder="예: 국민" autocomplete="off">
+              </label>
+              <label>
+                예금주
+                <input type="text" id="settlementMatchAccountHolder" placeholder="예: 홍길동" autocomplete="off">
+              </label>
+              <label>
+                계좌번호
+                <input type="text" id="settlementMatchAccountNumber" placeholder="- 없이 입력" inputmode="numeric" autocomplete="off">
+              </label>
+            </div>
             <label>
               배민 지역
               <select id="settlementMatchRegionBaemin">
@@ -8828,14 +8835,21 @@
               <option value="퇴사">퇴사</option>
             </select>
           </label>
-          <label>
-            은행
-            <input type="text" id="driverRegionBulkCreateBankName" placeholder="예: 국민">
-          </label>
-          <label>
-            계좌번호
-            <input type="text" id="driverRegionBulkCreateAccountNumber" placeholder="- 없이 입력">
-          </label>
+          <div class="settlement-match-account-block">
+            <span>입금 계좌</span>
+            <label>
+              은행
+              <input type="text" id="driverRegionBulkCreateBankName" placeholder="예: 국민" autocomplete="off">
+            </label>
+            <label>
+              예금주
+              <input type="text" id="driverRegionBulkCreateAccountHolder" placeholder="예: 홍길동" autocomplete="off">
+            </label>
+            <label>
+              계좌번호
+              <input type="text" id="driverRegionBulkCreateAccountNumber" placeholder="- 없이 입력" inputmode="numeric" autocomplete="off">
+            </label>
+          </div>
           <label>
             배민 지역
             <select id="driverRegionBulkCreateRegionBaemin">
@@ -9047,7 +9061,7 @@
   <script src="js/settlement-result-direct.js?v=20260915negguard1"></script>
   <script src="js/final-deposit.js?v=20260915audit2"></script>
   <script src="js/tax-management-admin.js?v=20260830tax2"></script>
-  <script src="js/driver-management-admin.js?v=20260915orgdirty1"></script>
+  <script src="js/driver-management-admin.js?v=20260916acct1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260915audit2"></script>
   <script src="js/admin-payroll-slip-search.js?v=20260817pay6"></script>
@@ -9058,7 +9072,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260827mission10"></script>
   <script src="js/admin-missions.js?v=20260827mission10"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260910crawlfix1"></script>
+    <script src="js/admin.js?v=20260916acct1"></script>
   <script src="js/admin-driver-popups.js?v=20260914popup2" defer></script>
   <script src="js/admin-sidebar-groups.js?v=20260914grp2" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>

@@ -5376,7 +5376,10 @@
     setValue('#settlementMatchJoinDate', String(record.period || '').slice(0, 10));
     setValue('#settlementMatchStatus', '근무중');
     setValue('#settlementMatchBankName', '');
+    setValue('#settlementMatchAccountHolder', String(record.name || record.rawName || '').trim());
     setValue('#settlementMatchAccountNumber', '');
+    const holderEl = $('#settlementMatchAccountHolder');
+    if (holderEl) holderEl.dataset.auto = '1';
     setValue('#settlementMatchRegionBaemin', '');
     setValue('#settlementMatchRegionCoupang', '');
     setValue('#settlementMatchMemo', `${platformLabel(p)} 일정산 미매칭에서 등록 (${formatDate(record.period)})`);
@@ -5708,7 +5711,7 @@
         regionCoupang: String($('#settlementMatchRegionCoupang')?.value || '').trim(),
         bankName: String($('#settlementMatchBankName')?.value || '').trim(),
         accountNumber: String($('#settlementMatchAccountNumber')?.value || '').trim(),
-        accountHolder: name,
+        accountHolder: String($('#settlementMatchAccountHolder')?.value || '').trim() || name,
         joinDate,
         status: String($('#settlementMatchStatus')?.value || '근무중'),
         memo: String($('#settlementMatchMemo')?.value || '').trim()
@@ -5767,6 +5770,17 @@
         const record = settlementMatchRecord();
         if (record) updateSettlementMatchCreateHint(record);
       });
+    });
+    $('#settlementMatchName')?.addEventListener('input', () => {
+      const holder = $('#settlementMatchAccountHolder');
+      if (!holder || holder.dataset.auto !== '1') return;
+      holder.value = String($('#settlementMatchName')?.value || '').trim();
+    });
+    $('#settlementMatchAccountHolder')?.addEventListener('input', () => {
+      const holder = $('#settlementMatchAccountHolder');
+      if (!holder) return;
+      const name = String($('#settlementMatchName')?.value || '').trim();
+      holder.dataset.auto = holder.value.trim() === name ? '1' : '0';
     });
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && !modal.hidden) closeSettlementMatchModal();
