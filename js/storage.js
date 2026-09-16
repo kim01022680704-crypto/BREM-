@@ -1737,7 +1737,11 @@ const BremStorage = (function () {
           ? window.BremDataCache?.isCoreReady?.()
           : true;
       }
-      if (sectionKeys.includes(KEYS.drivers) && !driversLoadMeta.complete) return false;
+      if (sectionKeys.includes(KEYS.drivers) && !driversLoadMeta.complete) {
+        const hasDrivers = window.BremDataCache?.isValid?.(KEYS.drivers) && drivers.getAll().length > 0;
+        const fetchInFlight = Boolean(driversBackgroundFetchPromise || driversFetchAllPromise || driversFullFetchInProgress);
+        if (!hasDrivers && !fetchInFlight) return false;
+      }
       if (sectionKeys.includes(KEYS.missions) && !window.BremDataCache?.isValid?.(KEYS.missions)) return false;
       if (sectionId === 'dashboard') {
         const restReady = sectionKeys
@@ -1885,10 +1889,14 @@ const BremStorage = (function () {
         logDataSource('riders', true, sectionId);
       } else if (needsFullDrivers) {
         const forceMissionDrivers = sectionId === 'mission-management' && (force || options.forceDrivers);
-        tasks.push(
-          reloadDrivers(Boolean(forceMissionDrivers || options.forceDrivers || options.force))
-            .then(() => awaitDriversFullyLoaded())
-        );
+        const reload = reloadDrivers(Boolean(forceMissionDrivers || options.forceDrivers || options.force));
+        // 기사관리는 전원 로드를 기다리면 "데이터 불러오는 중"이 수 분~수시간 남는다.
+        // 있는 목록으로 먼저 열고, 나머지는 백그라운드 페이지로 이어 받는다.
+        if (sectionId === 'driver-management') {
+          tasks.push(reload);
+        } else {
+          tasks.push(reload.then(() => awaitDriversFullyLoaded()));
+        }
       } else {
         tasks.push(reloadDrivers(Boolean(options.forceDrivers || options.force)));
       }
@@ -2346,7 +2354,7 @@ const BremStorage = (function () {
     }
 
     const result = await fetchAllDriversFromServer({
-      force: true,
+      force: options.force === true,
       ...(options.view ? { view: options.view } : {})
     });
     if (driversBackgroundFetchPromise) await driversBackgroundFetchPromise;

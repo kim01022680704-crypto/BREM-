@@ -111,9 +111,6 @@ const BremDriverManagementAdmin = (function () {
       try {
         await window.BremStorage?.ensureSectionLoaded?.('driver-management', { force: false });
         await loadSettlementsAndCallsDirect(force, options.weekStart || ensureWeek());
-        if (typeof window.BremStorage?.awaitDriversFullyLoaded === 'function') {
-          await window.BremStorage.awaitDriversFullyLoaded();
-        }
         state.statsLoadTried = true;
         invalidateRegionMemberCache();
       } catch (error) {
@@ -318,6 +315,7 @@ const BremDriverManagementAdmin = (function () {
     });
     if (state.tab === 'org') {
       stopRegionRankingPoll();
+      renderOrg();
       void (async () => {
         await ensureDriverMgmtStatsLoaded({ force: false });
         await ensureOrgRegionsLoaded();
@@ -2948,9 +2946,6 @@ const BremDriverManagementAdmin = (function () {
     try {
       await ensureDriverMgmtStatsLoaded();
       await window.BremStorage?.ensureSectionLoaded?.('driver-management');
-      if (typeof window.BremStorage?.awaitDriversFullyLoaded === 'function') {
-        await window.BremStorage.awaitDriversFullyLoaded();
-      }
     } catch (error) {
       console.warn('[driver-mgmt] calls/settlements/drivers load failed:', error);
     }
@@ -4430,16 +4425,15 @@ const BremDriverManagementAdmin = (function () {
     // 진입 즉시 이번 정산주(수요일)로 맞춘다. 안 맞으면 주간콜수가 빈 것처럼 보인다.
     ensureWeek();
     renderWeekControls();
-    await ensureDriverMgmtStatsLoaded();
     setTab(state.tab, { skipRegionLoad: true });
     syncRegionPlatformControls();
     if (state.tab === 'region') {
-      await refreshRegions();
+      void refreshRegions();
       startRegionRankingPoll();
     } else {
       stopRegionRankingPoll();
     }
-    if (state.tab === 'org-list') renderOrgList();
+    if (state.tab === 'org-list') void refreshOrgList({ force: false });
     if (state.tab === 'org' || state.tab === 'org-list') {
       void ensureOrgRegionsLoaded();
     }
