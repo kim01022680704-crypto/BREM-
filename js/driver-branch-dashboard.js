@@ -38,7 +38,8 @@
     pollTimer: null,
     requestSeq: 0,
     visibilitySeq: 0,
-    authorized: { baemin: false, coupang: false }
+    authorized: { baemin: false, coupang: false },
+    cache: { baemin: null, coupang: null }
   };
 
   function escapeHtml(value) {
@@ -172,6 +173,50 @@
     }
   }
 
+  function cacheKey(platform, regionKey, weekStart) {
+    return `${platform}|${String(regionKey || '')}|${String(weekStart || '')}`;
+  }
+
+  function rememberResult(result) {
+    if (!result?.ok) return;
+    const platform = result.platform === 'coupang' ? 'coupang' : 'baemin';
+    state.cache[platform] = {
+      key: cacheKey(platform, result.selectedRegionKey || state.regionKey, result.weekStart || state.weekStart),
+      regionKey: result.selectedRegionKey || state.regionKey || '',
+      result
+    };
+  }
+
+  function cachedResult(platform, regionKey, weekStart) {
+    const hit = state.cache[platform];
+    if (!hit?.result) return null;
+    const want = cacheKey(platform, regionKey, weekStart);
+    if (hit.key === want) return hit.result;
+    if (!regionKey && hit.result.weekStart === weekStart) return hit.result;
+    return null;
+  }
+
+  function otherPlatform(platform) {
+    return platform === 'coupang' ? 'baemin' : 'coupang';
+  }
+
+  async function prefetch(platform) {
+    if (!state.authorized[platform] || !window.BremStorage?.fetchRiderBranchDashboardFromServer) return;
+    const weekStart = settlementWeekStart(state.weekStart || localDateKey());
+    const regionKey = state.cache[platform]?.regionKey || '';
+    if (cachedResult(platform, regionKey, weekStart)) return;
+    try {
+      const result = await window.BremStorage.fetchRiderBranchDashboardFromServer({
+        platform,
+        regionKey,
+        weekStart
+      });
+      if (result?.ok && !state.cache[platform]?.result) rememberResult(result);
+    } catch (_) {
+      /* 미리받기는 실패해도 탭 전환 때 다시 요청한다 */
+    }
+  }
+
   function render(result) {
     state.result = result;
     const regions = Array.isArray(result?.regions) ? result.regions : [];
@@ -206,19 +251,26 @@
   async function load({ silent = false } = {}) {
     if (!window.BremStorage?.fetchRiderBranchDashboardFromServer) return;
     const seq = ++state.requestSeq;
+    state.weekStart = settlementWeekStart(state.weekStart || localDateKey());
+    const painted = cachedResult(state.platform, state.regionKey, state.weekStart);
+    if (painted) {
+      render(painted);
+      silent = true;
+    }
     state.loading = true;
     if (!silent) panel.classList.add('is-loading');
     try {
-      state.weekStart = settlementWeekStart(state.weekStart || localDateKey());
       const result = await window.BremStorage.fetchRiderBranchDashboardFromServer({
         platform: state.platform,
         regionKey: state.regionKey,
         weekStart: state.weekStart
       });
       if (seq !== state.requestSeq) return;
+      rememberResult(result);
       render(result);
+      void prefetch(otherPlatform(state.platform));
     } catch (error) {
-      if (!silent) showToast(error.message || '지사관리 현황을 불러오지 못했습니다.');
+      if (!silent && !painted) showToast(error.message || '지사관리 현황을 불러오지 못했습니다.');
     } finally {
       if (seq === state.requestSeq) {
         state.loading = false;
@@ -336,6 +388,7 @@
     openBtn.setAttribute('aria-expanded', 'true');
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     void load();
+    void prefetch(otherPlatform(state.platform));
     clearInterval(state.pollTimer);
     state.pollTimer = setInterval(() => {
       if (state.visible && document.visibilityState !== 'hidden') void load({ silent: true });
@@ -358,6 +411,7 @@
     state.weekStart = '';
     state.result = null;
     state.authorized = { baemin: false, coupang: false };
+    state.cache = { baemin: null, coupang: null };
     close();
     setEntryVisible(false);
   }
@@ -378,10 +432,13 @@
     const platform = tab.dataset.branchPlatform;
     if (!['baemin', 'coupang'].includes(platform) || platform === state.platform) return;
     state.platform = platform;
-    state.regionKey = '';
+    state.regionKey = state.cache[platform]?.regionKey || '';
     if (riderSearchEl) riderSearchEl.value = '';
     syncPlatformTabs();
-    void load();
+    const weekStart = settlementWeekStart(state.weekStart || localDateKey());
+    const painted = cachedResult(platform, state.regionKey, weekStart);
+    if (painted) render(painted);
+    void load({ silent: Boolean(painted) });
   });
   document.getElementById('driverBranchOperatingDetailBtn')?.addEventListener('click', openOperatingDetail);
   document.getElementById('driverBranchErpDashboardBtn')?.addEventListener('click', openWeeklyDetail);
