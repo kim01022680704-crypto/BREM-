@@ -14235,7 +14235,7 @@ const BremStorage = (function () {
             password: String(password || '')
           };
           const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-          const timeoutMs = 45000;
+          const timeoutMs = 25000;
           const timer = controller
             ? setTimeout(() => controller.abort(), timeoutMs)
             : null;

@@ -598,15 +598,24 @@ const EMP_RATE = 0.008;
 const INDUSTRIAL_RATE = 0.0088;
 const WITHHOLDING_RATE = 0.033;
 
+const SETTING_READ_CACHE_MS = 45 * 1000;
+const settingReadCache = new Map();
+
 async function readSettingValue(supabase, key, fallback) {
+  const cacheKey = String(key || '');
+  const cached = settingReadCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < SETTING_READ_CACHE_MS) {
+    return cached.value;
+  }
   const { data, error } = await supabase
     .from('settings')
     .select('value')
     .eq('key', key)
     .maybeSingle();
   if (error) throw error;
-  if (data?.value !== undefined && data?.value !== null) return data.value;
-  return fallback;
+  const value = (data?.value !== undefined && data?.value !== null) ? data.value : fallback;
+  settingReadCache.set(cacheKey, { at: Date.now(), value });
+  return value;
 }
 
 async function writeSettingValue(supabase, key, value) {
@@ -616,6 +625,7 @@ async function writeSettingValue(supabase, key, value) {
     updated_at: new Date().toISOString()
   }, { onConflict: 'key' });
   if (error) throw error;
+  settingReadCache.delete(String(key || ''));
 }
 
 function normalizeFees(raw = {}) {
