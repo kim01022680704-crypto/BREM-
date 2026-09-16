@@ -11,4 +11,7 @@ _live-baemin-profile/
 _live-coupang-profile/
 _live-naver-profile/
 .naver-playwright-profile/
+.naver-playwright-profile-*/
 .coupang-playwright-profile/
+.coupang-playwright-profile-*/
+.baemin-playwright-profile/
