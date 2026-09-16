@@ -60,9 +60,18 @@ const BremDriverManagementAdmin = (function () {
     });
   }
 
+  function driversListStillSyncing() {
+    if (driversLoadComplete()) return false;
+    const loaded = window.BremStorage?.drivers?.getAll?.()?.length || 0;
+    const total = Number(window.BremStorage?.drivers?.getSupabaseTotal?.() || 0);
+    if (total > 0 && loaded + 2 >= total) return false;
+    return true;
+  }
+
   async function loadSettlementsAndCallsDirect(force = false, weekStart = ensureWeek()) {
     const start = weekStartKey(weekStart);
     const end = weekEndKey(start);
+    if (!force && state.statsLoadedWeekSince === start && !state.statsLoadError) return;
     const settlements = window.BremStorage?.settlements?.getAll?.() || [];
     const calls = window.BremStorage?.calls?.getAll?.() || [];
     // 선택 정산주만 조회 — 90일/전체 로드는 statement timeout 유발
@@ -78,7 +87,7 @@ const BremDriverManagementAdmin = (function () {
     if (needCalls && typeof window.BremStorage?.ensureCallsSinceDate === 'function') {
       try {
         await window.BremStorage.ensureCallsSinceDate(start, {
-          force: true,
+          force: false,
           untilDate: end,
           merge: true
         });
@@ -90,7 +99,7 @@ const BremDriverManagementAdmin = (function () {
     if (needSettlements && typeof window.BremStorage?.ensureSettlementsSinceDate === 'function') {
       try {
         await window.BremStorage.ensureSettlementsSinceDate(start, {
-          force: true,
+          force: false,
           untilDate: end,
           merge: true
         });
@@ -983,6 +992,10 @@ const BremDriverManagementAdmin = (function () {
     }
     if (missingOrgDriverFailed.has(id)) {
       return { kind: 'driver', name: '삭제된 기사' };
+    }
+    // 목록 동기화 중에는 기사마다 fetchById 하지 않는다. 수백 건이 동시에 나가 서버가 멈춘다.
+    if (driversListStillSyncing()) {
+      return { kind: 'driver', name: '이름 불러오는 중…' };
     }
     void hydrateMissingOrgDriverName(id);
     return { kind: 'driver', name: '이름 불러오는 중…' };
@@ -3938,8 +3951,16 @@ const BremDriverManagementAdmin = (function () {
     // 기사 목록이 백그라운드로 더 채워지면 인원 수를 맞춘다.
     // 표는 인원 변화(증가·감소)·최종 완료·표/사이드바 불일치 때 갱신.
     document.addEventListener('brem-drivers-sync-ready', event => {
-      if (state.tab !== 'region') return;
       if (!isDriverManagementSectionActive()) return;
+      if (state.tab === 'org') {
+        renderOrg();
+        return;
+      }
+      if (state.tab === 'org-list') {
+        void refreshOrgList({ force: false });
+        return;
+      }
+      if (state.tab !== 'region') return;
       updateRegionCatalogCounts();
       const region = selectedRegion();
       if (!region) return;
