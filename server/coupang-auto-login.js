@@ -409,8 +409,9 @@ async function autoLoginCoupang(page, options = {}) {
       return { ok: true, via: 'password' };
     }
 
-    // 2FA: 이메일 인증으로 전환 + 코드 전송
+    // 2FA: 이메일 인증으로 전환 + 코드 전송 (119·이글스 공통 — 네이버만 수동)
     const sentAt = Date.now();
+    console.log('[COUPANG] 2FA 화면 — 「이메일로 인증」 탭 + 인증코드 전송 시도…');
     const emailAuth = await switchToEmailAuthAndSendCode(page);
     if (!emailAuth.ok) {
       return {
@@ -419,7 +420,7 @@ async function autoLoginCoupang(page, options = {}) {
         message: emailAuth.message || '이메일 인증으로 전환하지 못했습니다.'
       };
     }
-    console.log(`[COUPANG] 이메일 인증코드 ${emailAuth.sent ? '전송' : '화면 확인'} — 네이버에서 새 메일 대기`);
+    console.log(`[COUPANG] 이메일 인증 ${emailAuth.sent ? '코드 전송 완료' : '화면 준비'} — 네이버 메일에서 OTP 대기`);
 
     const otpResult = await naverOtp.waitForCoupangOtp({
       timeoutMs: 150000,

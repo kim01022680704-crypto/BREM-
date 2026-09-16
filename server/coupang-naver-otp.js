@@ -5,6 +5,8 @@
  */
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const { spawn } = require('child_process');
 
 const NAVER_MAIL_URL = 'https://mail.naver.com';
 /** 쿠팡 인증메일은 받은메일함이 아니라 전체메일(프로모션)에 옴 */
@@ -22,7 +24,98 @@ const OTP_PATTERNS = [
 ];
 
 let sharedContext = null;
+let sharedCdpBrowser = null;
+let cdpAttached = false;
 let recovering = false;
+
+function findChromeExecutable() {
+  const candidates = [
+    String(process.env.CHROME_PATH || '').trim(),
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe')
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+  return '';
+}
+
+function getNaverDebugPort() {
+  const fromEnv = Number(process.env.NAVER_DEBUG_PORT || 0);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  const profile = getProfileDir().toLowerCase();
+  if (profile.includes('cmp119')) return 19222;
+  return 19221;
+}
+
+function fetchDebugJson(port, pathName = '/json/version') {
+  return new Promise((resolve) => {
+    const req = http.get(`http://127.0.0.1:${port}${pathName}`, { timeout: 2000 }, (res) => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
+    req.on('error', () => resolve(null));
+  });
+}
+
+async function isNaverCdpReady(port = getNaverDebugPort()) {
+  const json = await fetchDebugJson(port);
+  return Boolean(json && (json.Browser || json.webSocketDebuggerUrl));
+}
+
+function clearStaleProfileLocks(profileDir) {
+  for (const name of ['SingletonLock', 'SingletonCookie', 'lockfile']) {
+    const lockPath = path.join(profileDir, name);
+    if (!fs.existsSync(lockPath)) continue;
+    try {
+      const age = Date.now() - fs.statSync(lockPath).mtimeMs;
+      if (age > 2 * 60 * 1000) fs.unlinkSync(lockPath);
+    } catch { /* ignore */ }
+  }
+}
+
+function isProfileInUse(profileDir) {
+  const lockPath = path.join(profileDir, 'SingletonLock');
+  if (!fs.existsSync(lockPath)) return false;
+  try {
+    const age = Date.now() - fs.statSync(lockPath).mtimeMs;
+    return age < 2 * 60 * 1000;
+  } catch {
+    return true;
+  }
+}
+
+async function connectNaverCdp(playwright, port = getNaverDebugPort()) {
+  if (!(await isNaverCdpReady(port))) return null;
+  try {
+    const browser = await playwright.chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+    const context = browser.contexts()[0] || null;
+    if (!context) {
+      await browser.close().catch(() => {});
+      return null;
+    }
+    sharedCdpBrowser = browser;
+    sharedContext = context;
+    cdpAttached = true;
+    console.log(`[NAVER] 일반 Chrome CDP 연결 (port ${port})`);
+    return context;
+  } catch (error) {
+    console.warn('[NAVER] CDP 연결 실패:', error?.message || error);
+    return null;
+  }
+}
 
 function getProfileDir() {
   return String(process.env.NAVER_PLAYWRIGHT_PROFILE || DEFAULT_PROFILE).trim() || DEFAULT_PROFILE;
@@ -51,15 +144,39 @@ function extractOtpFromText(text) {
   return '';
 }
 
+async function closeNaverContext(options = {}) {
+  if (cdpAttached) {
+    if (options.closeBrowser && sharedCdpBrowser) {
+      try { await sharedCdpBrowser.close(); } catch { /* ignore */ }
+    }
+    sharedCdpBrowser = null;
+    sharedContext = null;
+    cdpAttached = false;
+    return;
+  }
+  if (!sharedContext) return;
+  try {
+    await sharedContext.close();
+  } catch { /* ignore */ }
+  sharedContext = null;
+}
+
 async function ensureNaverContext(options = {}) {
+  const manualFriendly = options.manualFriendly === true
+    || (options.manualFriendly !== false && process.env.NAVER_MANUAL_LOGIN === '1');
+
   if (sharedContext) {
     try {
       // persistent context 가 이미 닫혔는데 pages() 만 보면 [] 로 살아 있는 것처럼 보임
       const pages = sharedContext.pages();
       const browser = typeof sharedContext.browser === 'function' ? sharedContext.browser() : null;
       const connected = browser ? browser.isConnected() !== false : true;
-      if (connected && Array.isArray(pages)) return sharedContext;
-      sharedContext = null;
+      if (connected && Array.isArray(pages)) {
+        if (!options.forceRelaunch) return sharedContext;
+        await closeNaverContext();
+      } else {
+        sharedContext = null;
+      }
     } catch {
       sharedContext = null;
     }
@@ -68,6 +185,12 @@ async function ensureNaverContext(options = {}) {
   if (!playwright) {
     throw new Error('playwright 패키지가 없습니다. npm install playwright 후 다시 시도하세요.');
   }
+
+  if (manualFriendly || process.env.NAVER_MANUAL_LOGIN === '1') {
+    const cdpContext = await connectNaverCdp(playwright);
+    if (cdpContext) return cdpContext;
+  }
+
   const profileDir = getProfileDir();
   fs.mkdirSync(profileDir, { recursive: true });
   // 다른 프로세스가 같은 프로필을 잡으면 newPage 가 "browser has been closed" 로 터짐
@@ -80,25 +203,34 @@ async function ensureNaverContext(options = {}) {
     } catch { /* ignore */ }
   }
   const headless = options.headless === true;
+  // 네이버는 AutomationControlled / enable-automation 흔적에 보호조치를 건다.
+  // 수동 로그인·OTP 모두 일반 Chrome에 가깝게 띄운다.
   const launchOptions = {
     headless,
     viewport: { width: 1280, height: 900 },
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
-    chromiumSandbox: true,
+    ignoreDefaultArgs: [
+      '--enable-automation',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-blink-features=AutomationControlled'
+    ],
     args: [
-      '--disable-blink-features=AutomationControlled',
       '--hide-crash-restore-bubble',
       '--disable-session-crashed-bubble',
       '--no-first-run'
     ]
   };
+  if (manualFriendly || process.env.NAVER_MANUAL_LOGIN === '1') {
+    throw new Error('네이버 일반 Chrome 창이 열려 있지 않습니다. 통합 bat 또는 /naver/open 으로 창을 먼저 여세요.');
+  }
   try {
     sharedContext = await playwright.chromium.launchPersistentContext(profileDir, {
       ...launchOptions,
       channel: 'chrome'
     });
-    console.log('[NAVER] 브라우저: 설치된 Chrome ·', profileDir);
+    console.log(`[NAVER] 브라우저: Playwright Chrome · ${profileDir}`);
   } catch (error) {
     console.warn('[NAVER] 설치된 Chrome 실행 실패 — Chromium으로 재시도:', error?.message || error);
     try {
@@ -114,9 +246,6 @@ async function ensureNaverContext(options = {}) {
   sharedContext.on('close', () => {
     if (sharedContext) sharedContext = null;
   });
-  await sharedContext.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  }).catch(() => {});
   return sharedContext;
 }
 
@@ -370,6 +499,31 @@ async function ensureNaverLoggedIn(page, options = {}) {
     };
   }
 
+  if (options.skipAutoLogin || process.env.NAVER_MANUAL_LOGIN === '1') {
+    await page.goto(NAVER_MAIL_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    if (await pageLooksLoggedIntoNaver(page)) {
+      return { ok: true, via: 'manual', alreadyLoggedIn: true };
+    }
+    if (!/nid\.naver\.com/.test(page.url())) {
+      await page.goto(NAVER_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+    }
+    const waitMs = Math.max(60000, Number(options.manualWaitMs || 300000));
+    console.log(`[NAVER] 수동 로그인 대기 (${Math.round(waitMs / 1000)}초) — 창에서 직접 로그인해 주세요`);
+    const deadline = Date.now() + waitMs;
+    while (Date.now() < deadline) {
+      if (await pageLooksLoggedIntoNaver(page)) {
+        return { ok: true, via: 'manual' };
+      }
+      await page.waitForTimeout(2500);
+    }
+    return {
+      ok: false,
+      error: 'NAVER_MANUAL_LOGIN_REQUIRED',
+      message: '네이버 수동 로그인이 필요합니다. ERP에서 「119 네이버 열기」 후 로그인해 주세요.'
+    };
+  }
+
   // 로그인 페이지로
   if (!/nid\.naver\.com/.test(page.url())) {
     await page.goto(NAVER_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
@@ -452,7 +606,88 @@ async function ensureNaverLoggedIn(page, options = {}) {
   };
 }
 
-async function openNaverMailForLogin() {
+/** Playwright 없이 설치된 Chrome.exe 로 연다 — no-sandbox / automation 플래그 없음 */
+async function openNaverForManualLogin() {
+  await closeNaverContext();
+  const profileDir = getProfileDir();
+  fs.mkdirSync(profileDir, { recursive: true });
+  clearStaleProfileLocks(profileDir);
+  const debugPort = getNaverDebugPort();
+  const creds = getNaverCredentials();
+  const idHint = creds.id ? ` (${creds.id})` : '';
+
+  if (await isNaverCdpReady(debugPort)) {
+    console.log(`[NAVER] 일반 Chrome 이미 실행 중 (port ${debugPort})`);
+    return {
+      ok: true,
+      manual: true,
+      alreadyOpen: true,
+      message: `네이버 Chrome 창이 이미 열려 있습니다${idHint}. 직접 로그인·본인확인 후 창을 닫지 마세요.`,
+      profileDir,
+      debugPort
+    };
+  }
+
+  if (isProfileInUse(profileDir)) {
+    return {
+      ok: false,
+      error: 'NAVER_PROFILE_IN_USE',
+      message: '기존 119 네이버 Chrome 창을 모두 닫으세요. (상단에 no-sandbox / automation 경고가 보이는 창 포함) 닫은 뒤 통합 bat 다시 실행.'
+    };
+  }
+
+  const chromePath = findChromeExecutable();
+  if (!chromePath) {
+    return {
+      ok: false,
+      error: 'CHROME_NOT_FOUND',
+      message: 'Google Chrome 을 찾지 못했습니다. Chrome 설치 후 다시 시도하세요.'
+    };
+  }
+
+  const args = [
+    `--user-data-dir=${profileDir}`,
+    `--remote-debugging-port=${debugPort}`,
+    '--remote-debugging-address=127.0.0.1',
+    '--remote-allow-origins=*',
+    '--no-first-run',
+    '--no-default-browser-check',
+    NAVER_LOGIN_URL
+  ];
+  console.log(`[NAVER] 일반 Chrome 실행 (플래그 없음) · ${chromePath}`);
+  const child = spawn(chromePath, args, {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: false
+  });
+  child.unref();
+
+  let ready = false;
+  for (let i = 0; i < 40; i += 1) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    if (await isNaverCdpReady(debugPort)) {
+      ready = true;
+      break;
+    }
+  }
+
+  return {
+    ok: true,
+    manual: true,
+    cdpReady: ready,
+    message: ready
+      ? `네이버 로그인 창을 열었습니다${idHint}. 직접 로그인·본인확인 후 창을 닫지 마세요. (일반 Chrome — automation 플래그 없음)`
+      : `네이버 Chrome 을 실행했습니다${idHint}. 창이 보이면 직접 로그인해 주세요.`,
+    profileDir,
+    debugPort,
+    chromePath
+  };
+}
+
+async function openNaverMailForLogin(options = {}) {
+  if (options.manual === true || process.env.NAVER_MANUAL_LOGIN === '1') {
+    return openNaverForManualLogin();
+  }
   const context = await ensureNaverContext({ headless: false });
   const page = context.pages()[0] || await context.newPage();
   const login = await ensureNaverLoggedIn(page);
@@ -725,6 +960,10 @@ async function fillCoupangOtpOnPage(page, otp) {
 
 module.exports = {
   openNaverMailForLogin,
+  openNaverForManualLogin,
+  closeNaverContext,
+  isNaverCdpReady,
+  getNaverDebugPort,
   waitForCoupangOtp,
   fillCoupangOtpOnPage,
   extractOtpFromText,

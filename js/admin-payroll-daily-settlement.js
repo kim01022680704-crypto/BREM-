@@ -1881,31 +1881,22 @@
     if (!window.confirm(`선택한 ${ids.length}건을 출금완료 처리할까요? 기사 앱에 처리완료로 표시됩니다.`)) return;
 
     const btn = $('payrollDailyWithdrawalBulkCompleteBtn');
-    if (btn) btn.disabled = true;
-    let okCount = 0;
-    let failCount = 0;
-    const errors = [];
-
-    for (const id of ids) {
-      try {
-        const result = await BremStorage.payrollWithdrawal.completeRequest(id);
-        if (result?.ok === false) {
-          failCount += 1;
-          errors.push(result.error || result.message || id);
-        } else {
-          okCount += 1;
-        }
-      } catch (error) {
-        failCount += 1;
-        errors.push(error.message || String(id));
-      }
+    const prevLabel = btn?.textContent || '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '처리 중…';
     }
-
-    await renderWithdrawalRequests();
-    if (failCount === 0) {
-      showToast(`출금완료 ${okCount}건 처리했습니다.`);
-    } else {
-      showToast(`출금완료 ${okCount}건 성공 · ${failCount}건 실패${errors[0] ? ` · ${errors[0]}` : ''}`);
+    try {
+      const result = await BremStorage.payrollWithdrawal.completeRequestsBulk(ids);
+      await renderWithdrawalRequests();
+      showToast(result.message || `출금완료 ${result.count || ids.length}건 처리했습니다.`);
+    } catch (error) {
+      console.error('[withdrawal bulk complete]', error);
+      showToast(error.message || '선택 출금완료 처리에 실패했습니다.');
+      await renderWithdrawalRequests();
+    } finally {
+      if (btn) btn.textContent = prevLabel;
+      syncWithdrawalBulkCompleteBtn();
     }
   }
 

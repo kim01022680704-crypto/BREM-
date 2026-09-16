@@ -61,6 +61,44 @@ function markNaverRecoverOutcome(result) {
     console.log('[COUPANG] 네이버 자격 오류 — 30분간 OTP 재시도 안 함 (세션 스캔만)');
   }
 }
+
+/**
+ * 네이버 수동(CDP) + 쿠팡 자동: 로그인 → 이메일인증 → OTP
+ * 튕겨도 주기적으로 다시 시도한다.
+ */
+function startAuthRecoverWatchdog() {
+  let lastAttemptAt = 0;
+  setInterval(async () => {
+    try {
+      if (isTokenUsable(latestToken)) return;
+      if (authRecovering) return;
+      if (shouldSkipNaverRecover()) return;
+      const creds = require('../server/coupang-auto-login').getCoupangCredentials();
+      if (!creds.configured) return;
+
+      const naverManual = process.env.NAVER_MANUAL_LOGIN === '1';
+      if (naverManual) {
+        const naverOtp = require('../server/coupang-naver-otp');
+        const ready = typeof naverOtp.isNaverCdpReady === 'function'
+          ? await naverOtp.isNaverCdpReady()
+          : false;
+        if (!ready) return;
+      }
+
+      const minGapMs = naverManual ? 90 * 1000 : 3 * 60 * 1000;
+      if (Date.now() - lastAttemptAt < minGapMs) return;
+      lastAttemptAt = Date.now();
+      skipNaverRecoverUntil = 0;
+
+      await ensureBrowser().catch(() => null);
+      console.log(`[COUPANG] ${ACCOUNT.label} — 쿠팡 로그인 → 이메일인증 → 네이버OTP 자동 복구…`);
+      const recovered = await tryRecoverCoupangAuthWithNaverOtp();
+      console.log(recovered.ok
+        ? `[COUPANG] ${ACCOUNT.label} 복구 성공 (${recovered.via || 'recover'})`
+        : `[COUPANG] ${ACCOUNT.label} 복구 실패: ${recovered.message}`);
+    } catch { /* ignore */ }
+  }, 15000);
+}
 let authRequired = false;
 let authRequiredReason = '';
 const AUTO_RESUME_STATUS_LOOP = String(process.env.COUPANG_AUTO_RESUME_STATUS_LOOP || '').trim() === '1';
@@ -1312,6 +1350,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (u.pathname === '/auth/recover' && req.method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
+    if (body.force === true || body.force === '1' || body.force === 1) {
+      skipNaverRecoverUntil = 0;
+    }
     const result = await tryRecoverCoupangAuthWithNaverOtp();
     return sendJson(res, result.ok ? 200 : 400, { ...result, ...getAuthPayload(), hasToken: Boolean(latestToken) });
   }
@@ -1351,8 +1393,10 @@ const server = http.createServer(async (req, res) => {
 
   if (u.pathname === '/naver/open' && req.method === 'POST') {
     try {
+      const body = await readBody(req).catch(() => ({}));
       const naverOtp = require('../server/coupang-naver-otp');
-      const result = await naverOtp.openNaverMailForLogin();
+      const manual = body.manual === true || body.manual === '1' || body.manual === 1;
+      const result = await naverOtp.openNaverMailForLogin({ manual });
       return sendJson(res, 200, result);
     } catch (error) {
       return sendJson(res, 500, { ok: false, message: error?.message || String(error) });
@@ -1423,7 +1467,9 @@ process.on('exit', () => {
 server.listen(PORT, '127.0.0.1', async () => {
   console.log('========================================');
   console.log(`[COUPANG] 세션 서버 http://127.0.0.1:${PORT} · 계정 ${ACCOUNT.id} (${ACCOUNT.label})`);
-  console.log('[COUPANG] 기동 시 자동로그인(아이디/비번+.env) + 네이버 OTP 시도');
+  console.log(process.env.NAVER_MANUAL_LOGIN === '1'
+    ? '[COUPANG] 119 네이버 수동로그인 모드 — 기동 시 네이버 창 자동 오픈'
+    : '[COUPANG] 기동 시 자동로그인(아이디/비번+.env) + 네이버 OTP 시도');
   console.log('[COUPANG] 수집: POST /collect  · 상태: GET /health  · 복구: POST /auth/recover');
   console.log('[COUPANG] 2계정 동시수집 금지(공유락) · 회차 끝난 뒤 30초 대기');
   console.log('========================================');
@@ -1445,11 +1491,26 @@ server.listen(PORT, '127.0.0.1', async () => {
     console.log('[COUPANG] COUPANG_SKIP_STARTUP_LOGIN=1 — 기동 OTP 생략, 12시간 네이버 재시도 안 함');
   }
 
+  if (process.env.NAVER_MANUAL_LOGIN === '1') {
+    setTimeout(async () => {
+      try {
+        const naverOtp = require('../server/coupang-naver-otp');
+        const opened = await naverOtp.openNaverForManualLogin();
+        console.log('[COUPANG]', opened.message || (opened.ok ? '네이버 창 열림' : '네이버 창 열기 실패'));
+      } catch (error) {
+        console.warn('[COUPANG] 네이버 창 자동 오픈 실패:', error?.message || error);
+      }
+    }, 4000);
+  }
+
   // 기동 직후: 토큰 없으면 자동로그인
   try {
     const creds = require('../server/coupang-auto-login').getCoupangCredentials();
+    const naverManual = process.env.NAVER_MANUAL_LOGIN === '1';
     if (!isTokenUsable(latestToken)) {
-      if (creds.configured && !shouldSkipNaverRecover()) {
+      if (naverManual) {
+        console.log(`[COUPANG] 네이버 수동 (${ACCOUNT.label}) — 쿠팡은 자동(로그인→이메일인증→OTP)`);
+      } else if (creds.configured && !shouldSkipNaverRecover()) {
         console.log('[COUPANG] 토큰 없음 — 자동로그인 시작…');
         const recovered = await tryRecoverCoupangAuthWithNaverOtp();
         console.log(recovered.ok
@@ -1473,21 +1534,23 @@ server.listen(PORT, '127.0.0.1', async () => {
     console.error('[COUPANG] 자동로그인 오류:', e.message || e);
   }
 
-  // 수동 로그인 후에도(자동순회 미실행) 토큰이 잡히도록 20초마다 활성 페이지 스토리지 스캔.
+  // 토큰 스캔 + 로그인 튕김 감지 → auth recover watchdog
   setInterval(async () => {
     try {
       if (!isContextAlive(context)) return;
       if (latestToken && Date.now() - latestTokenAt < 60 * 1000) return;
       const page = context.pages()[0];
-      if (page) await scanPageForToken(page).catch(() => {});
-      if (authRecovering || shouldSkipNaverRecover()) return;
-      if (!isTokenUsable(latestToken) && require('../server/coupang-auto-login').getCoupangCredentials().configured) {
-        if (Date.now() - lastAutoLoginAttemptAt > 3 * 60 * 1000) {
-          void tryRecoverCoupangAuthWithNaverOtp().catch(() => {});
+      if (page) {
+        await scanPageForToken(page).catch(() => {});
+        const url = String(page.url() || '').toLowerCase();
+        if (!isTokenUsable(latestToken) && /xauth\.coupang|openid-connect\/auth|login/.test(url)) {
+          authRequired = true;
+          authRequiredReason = '쿠팡 로그인 화면 — 자동 복구 예정';
         }
       }
     } catch { /* ignore */ }
   }, 20 * 1000);
+  startAuthRecoverWatchdog();
 
   if (AUTO_RESUME_STATUS_LOOP) {
     console.log('[COUPANG] COUPANG_AUTO_RESUME_STATUS_LOOP=1 — 자동순회를 이어서 시작합니다.');

@@ -97,6 +97,9 @@ function applyCoupangAccountEnv(accountId = resolveRequestedAccountId()) {
   process.env.COUPANG_SESSION_LOCAL_PORT = String(account.port);
   process.env.COUPANG_PLAYWRIGHT_PROFILE = account.profileDir;
   process.env.NAVER_PLAYWRIGHT_PROFILE = account.naverProfileDir;
+  if (String(process.env.COUPANG_2_NAVER_MANUAL_LOGIN || '').trim() === '1') {
+    process.env.NAVER_MANUAL_LOGIN = '1';
+  }
   return account;
 }
 
