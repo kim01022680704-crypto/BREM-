@@ -2049,10 +2049,36 @@ const BremStorage = (function () {
     return ensureCallsSinceDate(sinceDate);
   }
 
+  const LAZY_SETTINGS_KEYS = new Set([
+    KEYS.payrollWithdrawalRequests,
+    KEYS.weeklySettlementsDirect,
+    KEYS.settlementUploadLogsDirect,
+    KEYS.settlementUnmatchedDirect,
+    KEYS.directSettlementAdjustments,
+    KEYS.directRetroAdjustments,
+    KEYS.payrollDailyExcludedSettlements
+  ]);
+
+  async function ensureLazySettingsForSection(sectionId) {
+    if (!activeStorageAdapter.reloadSettingKey) return;
+    const sectionKeys = ADMIN_SECTION_KEYS[sectionId] || [];
+    const missing = sectionKeys.filter(key => (
+      LAZY_SETTINGS_KEYS.has(key)
+      && !window.BremDataCache?.isValid?.(key)
+    ));
+    if (!missing.length) return;
+    await Promise.all(missing.map(key => (
+      activeStorageAdapter.reloadSettingKey(key).catch(error => {
+        console.warn('[BREM] lazy setting reload skipped:', key, error?.message || error);
+      })
+    )));
+  }
+
   async function ensureSectionLoaded(sectionId, options = {}) {
     const force = options.force === true || options.forceDrivers === true;
 
     if (!force && isSectionCacheReady(sectionId)) {
+      await ensureLazySettingsForSection(sectionId);
       return { ok: true, cached: true };
     }
 
