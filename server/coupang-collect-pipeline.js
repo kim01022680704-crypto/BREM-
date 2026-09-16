@@ -3,6 +3,12 @@
  * coupang_collect_items / coupang_collect_runs 사용. 서버 service role 전용.
  */
 const { getServiceClient } = require('./admin-bootstrap');
+const {
+  ACCOUNT_DEDUPE_PREFIX,
+  accountDedupePrefix,
+  currentCoupangAccountId,
+  withAccountDedupeKey
+} = require('./coupang-accounts');
 
 const CHUNK = 300;
 
@@ -20,13 +26,16 @@ function collapseByDedupeKey(rows = []) {
   return [...map.values()];
 }
 
-/** 배민과 동일: 같은 메뉴·날짜 재수집 시 기존분 삭제 후 최신으로 교체 */
-async function deleteCollectItemsForDates(sourceMenu, dates = []) {
+/** 배민과 동일: 같은 메뉴·날짜 재수집 시 기존분 삭제 후 최신으로 교체.
+ *  계정 분리 시 해당 포털 행만 지운다. 다른 사업자 데이터를 날리지 않는다. */
+async function deleteCollectItemsForDates(sourceMenu, dates = [], options = {}) {
   const supabase = getServiceClient();
   if (!supabase) return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   const menu = String(sourceMenu || '').trim();
   const uniqueDates = [...new Set((dates || []).map(d => String(d || '').slice(0, 10)).filter(Boolean))];
   if (!menu || !uniqueDates.length) return { ok: true, deleted: 0 };
+  const accountId = String(options.accountId || currentCoupangAccountId() || 'default').trim() || 'default';
+  const prefix = accountDedupePrefix(accountId);
 
   let deleted = 0;
   for (const date of uniqueDates) {
@@ -34,11 +43,17 @@ async function deleteCollectItemsForDates(sourceMenu, dates = []) {
     let guard = 0;
     while (guard < 50) {
       guard += 1;
-      const { data, error } = await supabase
+      let query = supabase
         .from('coupang_collect_items')
         .delete()
         .eq('source_menu', menu)
-        .eq('collect_date', date)
+        .eq('collect_date', date);
+      if (prefix) {
+        query = query.like('dedupe_key', `${prefix}%`);
+      } else {
+        query = query.not('dedupe_key', 'like', `${ACCOUNT_DEDUPE_PREFIX}%`);
+      }
+      const { data, error } = await query
         .select('dedupe_key')
         .limit(1000);
       if (error) {
@@ -64,7 +79,11 @@ async function upsertCollectItems(items = [], options = {}) {
   const supabase = getServiceClient();
   if (!supabase) return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   const replaceByDate = options.replaceByDate !== false;
-  const rows = collapseByDedupeKey((items || []).filter(Boolean).map(it => ({
+  const accountId = String(options.accountId || currentCoupangAccountId() || 'default').trim() || 'default';
+  const rows = collapseByDedupeKey((items || []).filter(Boolean).map(it => {
+    const parsed = it.parsed_json && typeof it.parsed_json === 'object' ? { ...it.parsed_json } : {};
+    if (accountId && accountId !== 'default') parsed.portalAccount = accountId;
+    return {
     collect_date: it.collect_date,
     collected_at: it.collected_at || new Date().toISOString(),
     source_menu: it.source_menu,
@@ -74,11 +93,12 @@ async function upsertCollectItems(items = [], options = {}) {
     rider_name: String(it.rider_name || ''),
     phone_number: String(it.phone_number || ''),
     match_key: String(it.match_key || ''),
-    dedupe_key: String(it.dedupe_key || ''),
-    parsed_json: it.parsed_json || {},
+    dedupe_key: withAccountDedupeKey(it.dedupe_key, accountId),
+    parsed_json: parsed,
     raw_json: it.raw_json || {},
     updated_at: new Date().toISOString()
-  })).filter(r => r.collect_date && r.source_menu && r.dedupe_key));
+  };
+  }).filter(r => r.collect_date && r.source_menu && r.dedupe_key));
 
   if (!rows.length) return { ok: true, saved: 0, deleted: 0 };
 
@@ -94,7 +114,7 @@ async function upsertCollectItems(items = [], options = {}) {
       byMenu.get(r.source_menu).add(r.collect_date);
     });
     for (const [menu, dateSet] of byMenu.entries()) {
-      const wiped = await deleteCollectItemsForDates(menu, [...dateSet]);
+      const wiped = await deleteCollectItemsForDates(menu, [...dateSet], { accountId });
       if (!wiped.ok) return { ...wiped, saved: 0 };
       deleted += wiped.deleted || 0;
     }

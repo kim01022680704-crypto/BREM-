@@ -1,10 +1,16 @@
 /**
  * 쿠팡이츠 세션 저장/조회 (Bearer JWT + 쿠키)
- * settings 키: brem_coupang_session. 서버 service role 전용.
+ * settings 키: brem_coupang_session (기본) / brem_coupang_session_{accountId}
+ * 서버 service role 전용.
  */
 const { getServiceClient } = require('./admin-bootstrap');
+const { sessionKeyFor } = require('./coupang-accounts');
 
 const COUPANG_SESSION_KEY = 'brem_coupang_session';
+
+function resolveSessionKey(accountId) {
+  return sessionKeyFor(accountId);
+}
 
 async function readSettingsValue(key) {
   const supabase = getServiceClient();
@@ -34,8 +40,8 @@ async function writeSettingsValue(key, value, description) {
 }
 
 /** 저장된 쿠팡 세션(토큰/쿠키) */
-async function getStoredCoupangSession() {
-  const raw = await readSettingsValue(COUPANG_SESSION_KEY);
+async function getStoredCoupangSession(accountId) {
+  const raw = await readSettingsValue(resolveSessionKey(accountId));
   if (!raw || typeof raw !== 'object') return null;
   const token = String(raw.token || '').trim();
   if (!token && !raw.cookie) return null;
@@ -75,7 +81,8 @@ async function saveStoredCoupangSession(record = {}) {
     lastValidatedAt: record.lastValidatedAt || new Date().toISOString(),
     lastError: ''
   };
-  return writeSettingsValue(value.token ? COUPANG_SESSION_KEY : COUPANG_SESSION_KEY, value, 'Coupang Eats session (server-only)');
+  const key = resolveSessionKey(record.accountId);
+  return writeSettingsValue(key, value, `Coupang Eats session (${key})`);
 }
 
 function isTokenExpired(session) {

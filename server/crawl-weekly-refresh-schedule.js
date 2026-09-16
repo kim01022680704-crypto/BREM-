@@ -18,8 +18,15 @@ const {
   isErpPublishRunning
 } = require('./crawl-schedule-coord');
 
+const { listCoupangAccountPorts } = require('./coupang-accounts');
+
 const BAEMIN_PORT = Number(process.env.BAEMIN_SESSION_LOCAL_PORT || 3939);
 const COUPANG_PORT = Number(process.env.COUPANG_SESSION_LOCAL_PORT || 3940);
+
+function coupangPorts() {
+  const ports = listCoupangAccountPorts();
+  return ports.length ? ports : [COUPANG_PORT];
+}
 const DEFAULT_PUBLISH_SLOTS = Object.freeze(['07:00', '11:30', '14:00', '22:00']);
 const DEFAULT_OFFSET_MIN = 30;
 
@@ -189,46 +196,55 @@ async function runWeeklyRefreshPipeline(options = {}) {
 
     const coupangCollectTask = (async () => {
       if (options.skipCoupang) return;
-      try {
-        const health = await new Promise((resolve) => {
-          http.get({ hostname: '127.0.0.1', port: COUPANG_PORT, path: '/health', timeout: 5000 }, res => {
-            const chunks = [];
-            res.on('data', c => chunks.push(c));
-            res.on('end', () => {
-              try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); }
-              catch { resolve({}); }
-            });
-          }).on('error', () => resolve({}));
-        });
-
-        if (!health.hasToken) {
-          const recover = await localPost(COUPANG_PORT, '/auth/recover', {}, 180000);
-          push('coupang_auth_recover', {
-            ok: Boolean(recover.json?.ok),
-            message: recover.json?.message
+      for (const port of coupangPorts()) {
+        try {
+          const health = await new Promise((resolve) => {
+            http.get({ hostname: '127.0.0.1', port, path: '/health', timeout: 5000 }, res => {
+              const chunks = [];
+              res.on('data', c => chunks.push(c));
+              res.on('end', () => {
+                try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); }
+                catch { resolve({}); }
+              });
+            }).on('error', () => resolve(null));
           });
+          if (!health) {
+            push('coupang_skip', { port, message: '세션서버 없음' });
+            continue;
+          }
+
+          if (!health.hasToken) {
+            const recover = await localPost(port, '/auth/recover', {}, 180000);
+            push('coupang_auth_recover', {
+              port,
+              accountId: health.accountId || '',
+              ok: Boolean(recover.json?.ok),
+              message: recover.json?.message
+            });
+          }
+
+          await localPost(port, '/status-loop/stop', {}).catch(() => null);
+          await sleep(800);
+
+          const collect = await localPost(port, '/collect', {
+            lookbackDays: 8,
+            includeRider: true
+          }, 25 * 60 * 1000);
+          push('coupang_week_collect', {
+            port,
+            accountId: health.accountId || '',
+            ok: Boolean(collect.json?.ok),
+            status: collect.status,
+            message: collect.json?.message || collect.json?.error,
+            summary: collect.json?.summary || null
+          });
+
+          await localPost(port, '/status-loop/start', {
+            skipFirstFullWeek: true
+          }).catch(() => null);
+        } catch (error) {
+          push('coupang_week_collect', { port, ok: false, message: error.message || String(error) });
         }
-
-        // 자동순회와 충돌 피하려고 잠시 중지 → 주단위 → 재개(1회차 fullWeek 생략)
-        await localPost(COUPANG_PORT, '/status-loop/stop', {}).catch(() => null);
-        await sleep(800);
-
-        const collect = await localPost(COUPANG_PORT, '/collect', {
-          lookbackDays: 8,
-          includeRider: true
-        }, 25 * 60 * 1000);
-        push('coupang_week_collect', {
-          ok: Boolean(collect.json?.ok),
-          status: collect.status,
-          message: collect.json?.message || collect.json?.error,
-          summary: collect.json?.summary || null
-        });
-
-        await localPost(COUPANG_PORT, '/status-loop/start', {
-          skipFirstFullWeek: true
-        }).catch(() => null);
-      } catch (error) {
-        push('coupang_week_collect', { ok: false, message: error.message || String(error) });
       }
     })();
 

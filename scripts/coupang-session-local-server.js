@@ -15,6 +15,9 @@ const path = require('path');
 require('dotenv').config({ path: path.join(process.cwd(), '.env.production') });
 require('dotenv').config({ path: path.join(process.cwd(), '.env'), override: true });
 
+const coupangAccounts = require('../server/coupang-accounts');
+const ACCOUNT = coupangAccounts.applyCoupangAccountEnv();
+
 if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
   process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(process.cwd(), '.playwright-browsers');
 }
@@ -439,7 +442,8 @@ async function persistToken(source) {
   await sessionStore.saveStoredCoupangSession({
     token: latestToken,
     cookie: latestCookie,
-    source: source || 'playwright_local'
+    source: source || 'playwright_local',
+    accountId: ACCOUNT.id
   }).catch(() => {});
 }
 
@@ -1131,6 +1135,8 @@ const server = http.createServer(async (req, res) => {
     const authPayload = getAuthPayload();
     return sendJson(res, 200, {
       ok: true, port: PORT, browserOpen: Boolean(context),
+      accountId: ACCOUNT.id,
+      accountLabel: ACCOUNT.label,
       hasToken: Boolean(latestToken), tokenAgeSec, tokenExpiresAt: tokenExp,
       vendorCount: seenVendorIds.size, collecting,
       statusLoop: getStatusLoopPayload(),
@@ -1244,7 +1250,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '127.0.0.1', async () => {
   console.log('========================================');
-  console.log(`[COUPANG] 세션 서버 http://127.0.0.1:${PORT}`);
+  console.log(`[COUPANG] 세션 서버 http://127.0.0.1:${PORT} · 계정 ${ACCOUNT.id} (${ACCOUNT.label})`);
   console.log('[COUPANG] 기동 시 자동로그인(아이디/비번+.env) + 네이버 OTP 시도');
   console.log('[COUPANG] 수집: POST /collect  · 상태: GET /health  · 복구: POST /auth/recover');
   console.log('========================================');

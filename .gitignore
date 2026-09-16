@@ -16,6 +16,9 @@ npm-debug.log*
 
 # 라이브 세션/자격증명 프로필 — 절대 커밋 금지 (쿠키·로그인 세션 유출 방지)
 .naver-playwright-profile/
+.naver-playwright-profile-*/
+.coupang-playwright-profile/
+.coupang-playwright-profile-*/
 _live-baemin-profile/
 _live-coupang-profile/
 _live-naver-profile/

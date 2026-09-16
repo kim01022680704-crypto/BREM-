@@ -1055,6 +1055,10 @@
     }
     if (local.vendorCount) parts.push(`매장 ${local.vendorCount}개 감지`);
     if (local.collecting) parts.push('수집 중…');
+    if (local.second) {
+      const second = local.second;
+      parts.push(`3941 ${second.accountLabel || second.accountId || 'cmp119'}: ${second.hasToken ? '로그인 완료' : (second.ok ? '로그인 필요' : '꺼짐')}`);
+    }
     el.textContent = parts.join('  |  ');
   }
 
@@ -1100,6 +1104,13 @@
     local.authState = h.authState || null;
     local.authStateLabel = h.authStateLabel || '';
     local.authRequiredReason = h.authRequiredReason || '';
+    try {
+      const second = await fetch('http://127.0.0.1:3941/health', { cache: 'no-store', mode: 'cors', signal: AbortSignal.timeout(2000) });
+      const payload = await second.json().catch(() => ({}));
+      local.second = { ok: second.ok, ...payload };
+    } catch {
+      local.second = { ok: false };
+    }
     renderLocalStatus();
     renderLoopStatus();
     updateLocalButtons();
