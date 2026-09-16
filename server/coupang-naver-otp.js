@@ -54,8 +54,12 @@ function extractOtpFromText(text) {
 async function ensureNaverContext(options = {}) {
   if (sharedContext) {
     try {
+      // persistent context 가 이미 닫혔는데 pages() 만 보면 [] 로 살아 있는 것처럼 보임
       const pages = sharedContext.pages();
-      if (pages) return sharedContext;
+      const browser = typeof sharedContext.browser === 'function' ? sharedContext.browser() : null;
+      const connected = browser ? browser.isConnected() !== false : true;
+      if (connected && Array.isArray(pages)) return sharedContext;
+      sharedContext = null;
     } catch {
       sharedContext = null;
     }
@@ -66,6 +70,15 @@ async function ensureNaverContext(options = {}) {
   }
   const profileDir = getProfileDir();
   fs.mkdirSync(profileDir, { recursive: true });
+  // 다른 프로세스가 같은 프로필을 잡으면 newPage 가 "browser has been closed" 로 터짐
+  for (const name of ['SingletonLock', 'SingletonCookie', 'lockfile']) {
+    const lockPath = path.join(profileDir, name);
+    if (!fs.existsSync(lockPath)) continue;
+    try {
+      const stale = Date.now() - fs.statSync(lockPath).mtimeMs > 90 * 1000;
+      if (stale) fs.unlinkSync(lockPath);
+    } catch { /* ignore */ }
+  }
   const headless = options.headless === true;
   const launchOptions = {
     headless,
@@ -85,11 +98,22 @@ async function ensureNaverContext(options = {}) {
       ...launchOptions,
       channel: 'chrome'
     });
-    console.log('[NAVER] 브라우저: 설치된 Chrome');
+    console.log('[NAVER] 브라우저: 설치된 Chrome ·', profileDir);
   } catch (error) {
     console.warn('[NAVER] 설치된 Chrome 실행 실패 — Chromium으로 재시도:', error?.message || error);
-    sharedContext = await playwright.chromium.launchPersistentContext(profileDir, launchOptions);
+    try {
+      sharedContext = await playwright.chromium.launchPersistentContext(profileDir, launchOptions);
+    } catch (launchErr) {
+      const msg = String(launchErr?.message || launchErr);
+      if (/ProcessSingleton|profile|lock|already|in use/i.test(msg)) {
+        throw new Error(`네이버 프로필이 다른 창에서 사용 중입니다. 119 네이버 창을 모두 닫고 다시 시도하세요. (${profileDir})`);
+      }
+      throw launchErr;
+    }
   }
+  sharedContext.on('close', () => {
+    if (sharedContext) sharedContext = null;
+  });
   await sharedContext.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
   }).catch(() => {});
