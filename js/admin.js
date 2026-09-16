@@ -2768,6 +2768,7 @@
       // 각 메뉴 모듈은 파싱 시점이 아니라 진입 시점에 로드된다 → 첫 화면도 여기서 한 번 깨워준다.
       runSectionModuleRefresh(initialSection);
       renderActiveSection(initialSection);
+      window.BremAdminCollabSync?.setActiveSection?.(initialSection);
       renderRiderPublishStatus();
       applySectionEditPermissions();
     }).catch(error => {
@@ -7342,7 +7343,13 @@
       refreshSelectsForSection(sectionId);
     }
     renderActiveSection(sectionId);
+    window.BremAdminCollabSync?.setActiveSection?.(sectionId);
   }
+
+  window.BremAdminCollabSync?.setRefreshHandler?.(async sectionId => {
+    runSectionModuleRefresh(sectionId);
+    renderActiveSection(sectionId);
+  });
 
   function scheduleSectionNavigationFinish(sectionId) {
     if (pendingSectionNavRaf) {

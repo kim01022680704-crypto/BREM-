@@ -2074,6 +2074,117 @@ const BremStorage = (function () {
     )));
   }
 
+  const COLLAB_TABLE_REVISION_SPECS = Object.freeze({
+    [KEYS.promotionRules]: { table: 'promotions', column: 'updated_at' },
+    [KEYS.promotionApplyResults]: { table: 'promotion_apply_results', column: 'updated_at' },
+    [KEYS.settlements]: { table: 'daily_settlements', column: 'updated_at' },
+    [KEYS.weeklySettlements]: { table: 'weekly_settlements', column: 'updated_at' },
+    [KEYS.settlementUploadLogs]: { table: 'settlement_upload_logs', column: 'uploaded_at' },
+    [KEYS.settlementUnmatched]: { table: 'settlement_unmatched', column: 'saved_at' },
+    [KEYS.rejections]: { table: 'admin_rejection_rates', column: 'updated_at' },
+    [KEYS.payrollSlipUploads]: { table: 'payroll_slip_uploads', column: 'uploaded_at' },
+    [KEYS.payrollSlipLines]: { table: 'payroll_slip_lines', column: 'updated_at' },
+    [KEYS.payrollNotices]: { table: 'payroll_notices', column: 'updated_at' }
+  });
+
+  function getCollabSectionKeys(sectionId) {
+    return ADMIN_SECTION_KEYS[sectionId] || [];
+  }
+
+  function getCollabSettingKeys(sectionId) {
+    return getCollabSectionKeys(sectionId).filter(key => (
+      key
+      && !TABLE_STORAGE_KEYS.has(key)
+      && !isPayrollStorageKey(key)
+    ));
+  }
+
+  function getCollabTableKeys(sectionId) {
+    return getCollabSectionKeys(sectionId).filter(key => (
+      key
+      && TABLE_STORAGE_KEYS.has(key)
+      && key !== KEYS.drivers
+      && key !== KEYS.calls
+    ));
+  }
+
+  async function fetchSectionCollabRevision(sectionId) {
+    const sectionKeys = getCollabSectionKeys(sectionId);
+    if (!sectionKeys.length) return '';
+
+    if (activeStorageAdapter.type !== 'supabase') {
+      return `${sectionId}:${Date.now()}`;
+    }
+
+    await ensureSupabaseClient();
+    const client = getSupabaseClient();
+    if (!client) return '';
+
+    const parts = [];
+    const settingKeys = getCollabSettingKeys(sectionId);
+    if (settingKeys.length) {
+      const { data, error } = await client
+        .from('settings')
+        .select('key,updated_at')
+        .in('key', settingKeys);
+      if (error) throw error;
+      (data || []).forEach(row => {
+        parts.push(`s:${row.key}:${row.updated_at || ''}`);
+      });
+    }
+
+    const tableKeys = getCollabTableKeys(sectionId).filter(key => COLLAB_TABLE_REVISION_SPECS[key]);
+    await Promise.all(tableKeys.map(async key => {
+      const spec = COLLAB_TABLE_REVISION_SPECS[key];
+      const { data, error } = await client
+        .from(spec.table)
+        .select(spec.column)
+        .order(spec.column, { ascending: false })
+        .limit(1);
+      if (error) {
+        console.warn('[BREM] collab revision skipped:', spec.table, error.message || error);
+        return;
+      }
+      parts.push(`t:${key}:${data?.[0]?.[spec.column] || ''}`);
+    }));
+
+    return parts.sort().join('|');
+  }
+
+  async function refreshSectionForCollab(sectionId) {
+    const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
+    if (!hydrated.ok) return hydrated;
+
+    const tableKeys = getCollabTableKeys(sectionId);
+    const settingKeys = getCollabSettingKeys(sectionId);
+    const tasks = [];
+
+    if (tableKeys.length && activeStorageAdapter.ensureKeysLoaded) {
+      tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeys, { force: true }));
+    }
+    if (settingKeys.length && activeStorageAdapter.reloadSettingKey) {
+      settingKeys.forEach(key => {
+        tasks.push(activeStorageAdapter.reloadSettingKey(key).catch(error => {
+          console.warn('[BREM] collab setting reload skipped:', key, error?.message || error);
+        }));
+      });
+    }
+
+    if (sectionId === 'payroll-daily-settlement') {
+      tasks.push(
+        payrollDailySettlement.reloadFromServer(),
+        payrollDailySettlement.reloadFinalizedWeeksFromServer?.(),
+        payrollDailySettlement.reloadWithdrawalPauseFromServer?.(),
+        payrollDailySettlement.reloadWithdrawalHoldsFromServer?.()
+      );
+    }
+
+    if (tasks.length) {
+      await Promise.all(tasks);
+    }
+    return { ok: true };
+  }
+
   async function ensureSectionLoaded(sectionId, options = {}) {
     const force = options.force === true || options.forceDrivers === true;
 
@@ -15172,6 +15283,8 @@ const BremStorage = (function () {
     writeTableKey,
     persistLeaseErpTableViaServer,
     ensureSectionLoaded,
+    fetchSectionCollabRevision,
+    refreshSectionForCollab,
     ensureCallsSinceDate,
     ensureDashboardCallsLoaded,
     ensureSettlementsSinceDate,
