@@ -825,7 +825,6 @@
         if (driverHasCoupang(readyDriver)) {
           void refreshCoupangLiveOps({ toast: false, source: 'boot' });
         }
-        void window.BremDriverWithdrawal?.prefetch?.();
         return loadResult;
       } finally {
         driverDashboardLoading = false;
@@ -2016,10 +2015,13 @@
       }
       showLoggedIn(driver);
       showToast(`${driver.name} 기사님 로그인 성공`);
-      void loadDriverAppDataThenRender(driver, { refreshProfile: false });
-      void window.BremDriverCrewLeader?.refreshEntryVisibility?.();
-      void window.BremDriverRegionDashboard?.refreshEntryVisibility?.();
-      void window.BremDriverBranchDashboard?.refreshEntryVisibility?.();
+      void loadDriverAppDataThenRender(driver, { refreshProfile: false }).finally(() => {
+        window.setTimeout(() => {
+          void window.BremDriverCrewLeader?.refreshEntryVisibility?.();
+          void window.BremDriverRegionDashboard?.refreshEntryVisibility?.();
+          void window.BremDriverBranchDashboard?.refreshEntryVisibility?.();
+        }, 1200);
+      });
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;

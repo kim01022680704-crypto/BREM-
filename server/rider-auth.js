@@ -425,14 +425,9 @@ async function ensureRiderAuthAccount(supabase, rider, plainPassword, options = 
   let userId = rider.auth_user_id || null;
   const forceRefresh = options.forceRefresh === true;
 
-  // 이미 Auth 연결된 기사: 매 로그인마다 admin.updateUserById(비밀번호 재기록) 하지 않음
-  // (이 호출이 로그인 지연의 주원인)
+  // 이미 Auth 연결된 기사: 매 로그인마다 프로필 upsert / 비밀번호 재기록을 하지 않음.
+  // Supabase가 느릴 때 이 한 번의 write가 로그인 버튼을 수 초 더 잡아둔다.
   if (userId && !forceRefresh) {
-    const profile = await upsertRiderProfile(supabase, userId, rider);
-    if (!profile.ok) {
-      // 프로필만 실패해도 세션 로그인은 시도할 수 있게 통과
-      console.warn('[BREM][rider-auth] profile upsert skipped:', profile.error);
-    }
     return { ok: true, userId, email, authPassword };
   }
 
