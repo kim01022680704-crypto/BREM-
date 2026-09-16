@@ -9,6 +9,7 @@
  * 포트: 3940 (127.0.0.1)
  */
 const http = require('http');
+const fs = require('fs');
 const path = require('path');
 // .env.production 을 먼저 읽되(부가 변수용), 실제 로컬 .env 값이 우선하도록 override.
 // (.env.production 의 SUPABASE_SERVICE_ROLE_KEY 가 비어 있어도 .env 의 실제 키가 이김)
@@ -519,6 +520,27 @@ async function runCollect(options = {}) {
       };
     }
   }
+
+  const fromStatusLoop = options.waitForSharedSlot === true || options.sharedSlotGeneration != null;
+  const slot = await acquireCollectMutexOrWait({
+    wait: true,
+    timeoutMs: fromStatusLoop ? 0 : (Number(options.sharedSlotTimeoutMs) || 10 * 60 * 1000),
+    generation: options.sharedSlotGeneration,
+    onWaiting: (holder) => {
+      if (!fromStatusLoop) return;
+      statusLoop.phase = 'waiting';
+      statusLoop.message = `다른 쿠팡(${holder?.label || holder?.accountId || '?'}) 수집 끝날 때까지 대기 · 겹침 방지`;
+      statusLoop.updatedAt = nowKstIsoOffset();
+    }
+  });
+  if (!slot.ok) {
+    return {
+      ok: false,
+      message: slot.message || '다른 쿠팡 세션이 수집 중입니다.',
+      cancelled: Boolean(slot.cancelled)
+    };
+  }
+
   collecting = true;
   const summary = { peak_realtime: 0, weekly_performance: 0, vendor_info: 0, rider_daily: 0, errors: [], diag: [] };
   const pushErr = (msg) => { if (summary.errors.length < 12) summary.errors.push(String(msg)); };
@@ -650,11 +672,14 @@ async function runCollect(options = {}) {
     };
   } finally {
     collecting = false;
+    releaseCollectMutex();
   }
 }
 
-// ── 30초 자동수집 루프(배민 status-loop 미러). PC 켜진 동안만 동작. ──
+// ── 자동수집 루프: 1회 수집 끝나면 30초 대기. 2계정은 파일 락으로 동시 수집 금지. ──
 const STATUS_LOOP_WAIT_MS = 30 * 1000;
+const COLLECT_MUTEX_PATH = path.join(process.cwd(), '.coupang-collect-mutex.json');
+const COLLECT_MUTEX_STALE_MS = 12 * 60 * 1000;
 const statusLoop = {
   active: false,
   stopping: false,
@@ -684,12 +709,133 @@ function getStatusLoopPayload() {
     updatedAt: statusLoop.updatedAt,
     waitEndsAt: statusLoop.waitEndsAt,
     waitMs: STATUS_LOOP_WAIT_MS,
-    lastSummary: statusLoop.lastSummary
+    lastSummary: statusLoop.lastSummary,
+    accountId: ACCOUNT?.id || null,
+    accountLabel: ACCOUNT?.label || null
   };
 }
 
 function sleepMs(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isProcessAlive(pid) {
+  const n = Number(pid);
+  if (!Number.isFinite(n) || n <= 0) return false;
+  try {
+    process.kill(n, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readCollectMutex() {
+  try {
+    return JSON.parse(fs.readFileSync(COLLECT_MUTEX_PATH, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function isCollectMutexHeld(cur) {
+  if (!cur || typeof cur !== 'object') return false;
+  const age = Date.now() - Number(cur.since || 0);
+  if (!Number.isFinite(age) || age < 0 || age > COLLECT_MUTEX_STALE_MS) return false;
+  if (Number(cur.pid) === process.pid) return true;
+  return isProcessAlive(cur.pid);
+}
+
+function tryAcquireCollectMutex() {
+  const accountId = String(ACCOUNT?.id || 'default');
+  const cur = readCollectMutex();
+  if (isCollectMutexHeld(cur) && Number(cur.pid) !== process.pid) {
+    return { ok: false, holder: cur };
+  }
+  if (cur && !isCollectMutexHeld(cur)) {
+    try { fs.unlinkSync(COLLECT_MUTEX_PATH); } catch { /* ignore */ }
+  }
+  const payload = {
+    accountId,
+    label: ACCOUNT?.label || accountId,
+    pid: process.pid,
+    port: PORT,
+    since: Date.now()
+  };
+  try {
+    const fd = fs.openSync(COLLECT_MUTEX_PATH, 'wx');
+    try {
+      fs.writeFileSync(fd, JSON.stringify(payload));
+    } finally {
+      fs.closeSync(fd);
+    }
+    return { ok: true, holder: payload };
+  } catch (error) {
+    if (error && error.code === 'EEXIST') {
+      const holder = readCollectMutex();
+      if (holder && Number(holder.pid) === process.pid) return { ok: true, holder };
+      if (!isCollectMutexHeld(holder)) {
+        try { fs.unlinkSync(COLLECT_MUTEX_PATH); } catch { /* ignore */ }
+        try {
+          const fd = fs.openSync(COLLECT_MUTEX_PATH, 'wx');
+          try {
+            fs.writeFileSync(fd, JSON.stringify(payload));
+          } finally {
+            fs.closeSync(fd);
+          }
+          return { ok: true, holder: payload };
+        } catch {
+          return { ok: false, holder: readCollectMutex() };
+        }
+      }
+      return { ok: false, holder };
+    }
+    try {
+      fs.writeFileSync(COLLECT_MUTEX_PATH, JSON.stringify(payload));
+      return { ok: true, holder: payload };
+    } catch (writeErr) {
+      return { ok: false, holder: null, error: writeErr.message };
+    }
+  }
+}
+
+function releaseCollectMutex() {
+  const cur = readCollectMutex();
+  if (!cur) return;
+  if (Number(cur.pid) !== process.pid) return;
+  try { fs.unlinkSync(COLLECT_MUTEX_PATH); } catch { /* ignore */ }
+}
+
+/** 3940/3941 이 DB 쓰기를 동시에 하지 않도록 공유 슬롯 확보 */
+async function acquireCollectMutexOrWait(options = {}) {
+  const wait = options.wait !== false;
+  const timeoutMs = Math.max(0, Number(options.timeoutMs) || 0);
+  const generation = options.generation;
+  const started = Date.now();
+  while (true) {
+    if (
+      generation != null
+      && (statusLoop.generation !== generation || !statusLoop.active || statusLoop.stopping)
+    ) {
+      return { ok: false, cancelled: true, message: '수집 슬롯 대기 중 중지됨' };
+    }
+    const got = tryAcquireCollectMutex();
+    if (got.ok) return got;
+    if (!wait) {
+      const h = got.holder;
+      return {
+        ok: false,
+        message: `다른 쿠팡 세션이 수집 중입니다 (${h?.label || h?.accountId || '?'}:${h?.port || '?'})`
+      };
+    }
+    if (timeoutMs > 0 && Date.now() - started > timeoutMs) {
+      return { ok: false, message: '다른 쿠팡 세션 수집 대기 시간이 초과되었습니다.' };
+    }
+    if (typeof options.onWaiting === 'function') {
+      options.onWaiting(got.holder || null);
+    }
+    await sleepMs(1500);
+  }
 }
 
 function getCurrentUrlSafe() {
@@ -936,14 +1082,26 @@ async function runStatusAutoLoopInner(generation) {
     statusLoop.updatedAt = nowKstIsoOffset();
     try {
       // 1회차: 오늘 포함 8일 / 2회차+: 주간 생략·오늘은 라이더까지 계속
+      // 2계정 동시 쓰기 방지: 다른 세션이 끝날 때까지 기다린 뒤 수집
       const result = doFullWeek
-        ? await runCollect({ lookbackDays: 8, includeRider: true })
-        : await runCollect({ skipWeekly: true, includeRider: true });
+        ? await runCollect({
+          lookbackDays: 8,
+          includeRider: true,
+          waitForSharedSlot: true,
+          sharedSlotGeneration: generation
+        })
+        : await runCollect({
+          skipWeekly: true,
+          includeRider: true,
+          waitForSharedSlot: true,
+          sharedSlotGeneration: generation
+        });
       if (statusLoop.generation !== generation) break;
+      if (result?.cancelled) break;
       if (!result?.ok) {
         statusLoop.lastError = result?.message || '쿠팡 수집 실패';
         // 외부 /collect 와 충돌 시 같은 회차 재시도
-        if (/이미 수집/i.test(statusLoop.lastError)) {
+        if (/이미 수집|다른 쿠팡 세션/i.test(statusLoop.lastError)) {
           statusLoop.round = Math.max(0, statusLoop.round - 1);
           statusLoop.message = '다른 수집과 충돌 — 5초 후 재시도';
           statusLoop.updatedAt = nowKstIsoOffset();
@@ -1018,6 +1176,10 @@ async function runStatusAutoLoopInner(generation) {
         statusLoop.message = '자동 로그인 복구 완료';
       }
     }
+    // 이번 회차 수집이 끝난 뒤에만 30초 쉼 (다른 세션과 겹치지 않게 한 뒤)
+    statusLoop.phase = 'waiting';
+    statusLoop.message = `수집 완료 · ${Math.ceil(STATUS_LOOP_WAIT_MS / 1000)}초 후 다음 회차 (${statusLoop.round}회차)`;
+    statusLoop.updatedAt = nowKstIsoOffset();
     await keepAliveDuringWait(STATUS_LOOP_WAIT_MS, generation);
   }
   if (statusLoop.generation === generation) {
@@ -1248,11 +1410,22 @@ const server = http.createServer(async (req, res) => {
   return sendJson(res, 404, { ok: false, error: 'not found' });
 });
 
+process.on('exit', () => {
+  try { releaseCollectMutex(); } catch { /* ignore */ }
+});
+['SIGINT', 'SIGTERM', 'SIGHUP'].forEach(sig => {
+  process.on(sig, () => {
+    try { releaseCollectMutex(); } catch { /* ignore */ }
+    process.exit(0);
+  });
+});
+
 server.listen(PORT, '127.0.0.1', async () => {
   console.log('========================================');
   console.log(`[COUPANG] 세션 서버 http://127.0.0.1:${PORT} · 계정 ${ACCOUNT.id} (${ACCOUNT.label})`);
   console.log('[COUPANG] 기동 시 자동로그인(아이디/비번+.env) + 네이버 OTP 시도');
   console.log('[COUPANG] 수집: POST /collect  · 상태: GET /health  · 복구: POST /auth/recover');
+  console.log('[COUPANG] 2계정 동시수집 금지(공유락) · 회차 끝난 뒤 30초 대기');
   console.log('========================================');
   try { await ensureBrowser(); } catch (e) { console.error('[COUPANG] 브라우저 실행 실패:', e.message); }
 

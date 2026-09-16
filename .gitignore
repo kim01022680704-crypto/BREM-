@@ -19,6 +19,7 @@ npm-debug.log*
 .naver-playwright-profile-*/
 .coupang-playwright-profile/
 .coupang-playwright-profile-*/
+.coupang-collect-mutex.json
 _live-baemin-profile/
 _live-coupang-profile/
 _live-naver-profile/
