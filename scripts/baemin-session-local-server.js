@@ -160,8 +160,12 @@ let autoCollectRuntime = {
   schedule: baeminAutoCollect.DEFAULT_SCHEDULE
 };
 
-/** 배민현황 자동수집 루프 (브라우저 닫아도 세션 서버에서 계속) */
-const STATUS_LOOP_WAIT_MS = 15 * 1000;
+/** 배민현황 자동수집 루프 (브라우저 닫아도 세션 서버에서 계속)
+ *  예전 15초 간격 + 매회 수락율 전체 재계산이 Supabase 를 막아 기사로그인/ERP 가 먹통이 됐음.
+ *  회차 사이 90초, 수락율 스냅샷은 4회차마다만 돌린다.
+ */
+const STATUS_LOOP_WAIT_MS = 90 * 1000;
+const LIVE_ACCEPT_RATE_EVERY_N_ROUNDS = 4;
 let statusLoop = {
   active: false,
   stopping: false,
@@ -1414,12 +1418,18 @@ async function runStatusAutoLoopInner() {
         setStatusLoopPhase('waiting', `${round}회차 저장 실패 — ${statusLoop.lastError}`);
         console.warn(`[BREM] [현황자동수집] ${round}회차 저장 실패:`, statusLoop.lastError);
       } else {
-        setStatusLoopPhase('rider_sync', `${round}회차 · 기사앱 수락율 반영 중`);
-        const rates = await rebuildLiveAcceptRatesAfterApply('status_auto_loop_bootstrap');
-        if (!statusLoop.active || statusLoop.stopping) break;
-        const rateNote = rates.ok
-          ? ` · 수락율 ${Number(rates.upserted || rates.riderCount || 0)}명`
-          : ` · 수락율 실패(${rates.message || '오류'})`;
+        // 매회 전기사 수락율 재계산하면 DB 가 잠김 → 부트스트랩은 항상, 이후 N회마다만
+        let rateNote = '';
+        if (round === 1 || (round % LIVE_ACCEPT_RATE_EVERY_N_ROUNDS) === 0) {
+          setStatusLoopPhase('rider_sync', `${round}회차 · 기사앱 수락율 반영 중`);
+          const rates = await rebuildLiveAcceptRatesAfterApply('status_auto_loop_bootstrap');
+          if (!statusLoop.active || statusLoop.stopping) break;
+          rateNote = rates.ok
+            ? ` · 수락율 ${Number(rates.upserted || rates.riderCount || 0)}명`
+            : ` · 수락율 실패(${rates.message || '오류'})`;
+        } else {
+          rateNote = ' · 수락율 생략(부하완화)';
+        }
         let erpNote = '';
         try {
           const { syncBaeminCallsAndRejections } = require('../server/baemin-erp-sync');
@@ -1463,12 +1473,17 @@ async function runStatusAutoLoopInner() {
           setStatusLoopPhase('waiting', `${round}회차 저장 실패 — ${statusLoop.lastError}`);
           console.warn(`[BREM] [현황자동수집] ${round}회차 저장 실패:`, statusLoop.lastError);
         } else {
-          setStatusLoopPhase('rider_sync', `${round}회차 · 기사앱 수락율 반영 중`);
-          const rates = await rebuildLiveAcceptRatesAfterApply('status_auto_loop');
-          if (!statusLoop.active || statusLoop.stopping) break;
-          const rateNote = rates.ok
-            ? ` · 수락율 ${Number(rates.upserted || rates.riderCount || 0)}명`
-            : ` · 수락율 실패(${rates.message || '오류'})`;
+          let rateNote = '';
+          if ((round % LIVE_ACCEPT_RATE_EVERY_N_ROUNDS) === 0) {
+            setStatusLoopPhase('rider_sync', `${round}회차 · 기사앱 수락율 반영 중`);
+            const rates = await rebuildLiveAcceptRatesAfterApply('status_auto_loop');
+            if (!statusLoop.active || statusLoop.stopping) break;
+            rateNote = rates.ok
+              ? ` · 수락율 ${Number(rates.upserted || rates.riderCount || 0)}명`
+              : ` · 수락율 실패(${rates.message || '오류'})`;
+          } else {
+            rateNote = ' · 수락율 생략(부하완화)';
+          }
           setStatusLoopPhase(
             'waiting',
             `${round}회차 완료 · 수집 ${Number(collect.savedCount || 0)}건 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건${rateNote}`
