@@ -804,6 +804,69 @@ async function getRiderNotices(accessToken) {
   };
 }
 
+function settleWithTimeout(promise, ms, fallback) {
+  const budget = Math.max(0, Number(ms) || 0);
+  return new Promise(resolve => {
+    let done = false;
+    const finish = value => {
+      if (done) return;
+      done = true;
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(fallback), budget);
+    Promise.resolve(promise).then(
+      value => {
+        clearTimeout(timer);
+        finish(value);
+      },
+      () => {
+        clearTimeout(timer);
+        finish(fallback);
+      }
+    );
+  });
+}
+
+function deferredBaeminOps(rider = {}) {
+  return {
+    available: false,
+    riderId: String(rider.id || '').trim(),
+    baeminId: normalizeBaeminUserId(rider.baemin_id || rider.baeminId) || '',
+    complete: 0,
+    foodReject: 0,
+    foodCancel: 0,
+    foodRiderFault: 0,
+    acceptRate: null,
+    acceptRateSource: null,
+    collectDate: null,
+    collectedAt: null,
+    updatedAt: null,
+    reason: 'DEFERRED'
+  };
+}
+
+function deferredCoupangOps(rider = {}) {
+  return {
+    available: false,
+    riderId: String(rider.id || '').trim(),
+    matchKey: makeRiderLoginId(rider) || '',
+    complete: 0,
+    reject: 0,
+    cancel: 0,
+    rejectionRate: null,
+    pastRejectionRate: null,
+    todayRejectionRate: null,
+    rejectionRateSource: null,
+    weekStart: null,
+    collectDate: null,
+    collectedAt: null,
+    updatedAt: null,
+    reason: 'DEFERRED'
+  };
+}
+
+const RIDER_BUNDLE_OPS_BUDGET_MS = 2500;
+
 async function getRiderAppBundle(accessToken) {
   const me = await getRiderMe(accessToken);
   if (!me.ok) return me;
@@ -847,8 +910,16 @@ async function getRiderAppBundle(accessToken) {
       .order('created_at', { ascending: false })
       .limit(100),
     missionQuery,
-    loadRiderBaeminOps(supabase, me.rider),
-    loadRiderCoupangOps(supabase, me.rider)
+    settleWithTimeout(
+      loadRiderBaeminOps(supabase, me.rider),
+      RIDER_BUNDLE_OPS_BUDGET_MS,
+      deferredBaeminOps(me.rider)
+    ),
+    settleWithTimeout(
+      loadRiderCoupangOps(supabase, me.rider),
+      RIDER_BUNDLE_OPS_BUDGET_MS,
+      deferredCoupangOps(me.rider)
+    )
   ]);
 
   if (missionsResult.error) {

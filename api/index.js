@@ -1,1 +1,3 @@
-module.exports = require('../server/index.js');
+const app = require('../server/index.js');
+module.exports = app;
+module.exports.maxDuration = 60;

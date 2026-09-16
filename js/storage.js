@@ -2152,7 +2152,7 @@ const BremStorage = (function () {
 
       bootstrapComplete = true;
       document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
-      void preloadHeavyAdminTables();
+      setTimeout(() => { void preloadHeavyAdminTables(); }, 2500);
       return { ok: true };
     };
 
@@ -3252,7 +3252,7 @@ const BremStorage = (function () {
     document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
   }
 
-  const DRIVER_FETCH_TIMEOUT_MS = 12000;
+  const DRIVER_FETCH_TIMEOUT_MS = 25000;
   const REGION_DASHBOARD_TIMEOUT_MS = 20000;
   let driverAppBundlePromise = null;
   let lastDriverAppPublishedAt = null;
@@ -3954,7 +3954,7 @@ const BremStorage = (function () {
       }
 
       console.info('[BREM:data] driver snapshot: cache miss');
-      const bundle = await riderApiFetch('/api/rider/app-bundle', 'app-bundle');
+      const bundle = await riderApiFetch('/api/rider/app-bundle', 'app-bundle', { timeoutMs: 28000 });
 
       if (bundle.ok) {
         if (riderId && bundle.snapshot) cache?.write?.(riderId, 'snapshot', bundle.snapshot);
@@ -3986,6 +3986,21 @@ const BremStorage = (function () {
           snapshot: { ok: true },
           live: { ok: true },
           notices: { ok: true, count: (bundle.notices || []).length }
+        };
+      }
+
+      // 번들이 시간초과면 snapshot/live/notices 를 동시에 다시 치면
+      // 느린 Supabase 를 더 막아 기사앱·ERP 가 같이 먹통이 된다.
+      if (/시간[이]? 초과|timeout|AbortError/i.test(String(bundle.message || ''))) {
+        console.warn('[BREM:data] driver app-bundle timeout — skip fallback stampede');
+        return {
+          ok: false,
+          allFailed: true,
+          publishedAt: getDriverAppPublishedAt(),
+          rider: null,
+          snapshot: bundle,
+          live: bundle,
+          notices: bundle
         };
       }
 

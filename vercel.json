@@ -5,7 +5,7 @@
     { "path": "/api/public-config", "schedule": "*/5 * * * *" }
   ],
   "builds": [
-    { "src": "api/index.js", "use": "@vercel/node" },
+    { "src": "api/index.js", "use": "@vercel/node", "config": { "maxDuration": 60 } },
     { "src": "api/admin/login.js", "use": "@vercel/node" },
     { "src": "api/admin/data-health.js", "use": "@vercel/node" },
     { "src": "*.html", "use": "@vercel/static" },
