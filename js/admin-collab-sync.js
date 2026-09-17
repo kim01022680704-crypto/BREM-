@@ -23,10 +23,23 @@
   let lastRevision = '';
   let syncInFlight = false;
   let pendingAfterEdit = false;
+  let holdCount = 0;
   let onRefresh = null;
 
   function showToast(message) {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
+  }
+
+  function isHeld() {
+    return holdCount > 0;
+  }
+
+  function hold() {
+    holdCount += 1;
+  }
+
+  function release() {
+    holdCount = Math.max(0, holdCount - 1);
   }
 
   function isUserEditing() {
@@ -35,6 +48,21 @@
     const tag = String(el.tagName || '').toUpperCase();
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
     return Boolean(el.isContentEditable);
+  }
+
+  function isBlockingDialogOpen() {
+    const dialog = document.getElementById('callFeeSetupDialog');
+    return Boolean(dialog && !dialog.hidden);
+  }
+
+  async function captureBaseline(sectionId) {
+    if (!sectionId) return;
+    try {
+      lastRevision = await window.BremStorage?.fetchSectionCollabRevision?.(sectionId) || '';
+    } catch (error) {
+      console.warn('[BREM collab-sync] baseline failed:', error);
+      lastRevision = '';
+    }
   }
 
   function setIndicator(active) {
@@ -83,7 +111,8 @@
 
   async function tick(options = {}) {
     const sectionId = activeSection;
-    if (!sectionId || syncInFlight) return;
+    if (!sectionId || syncInFlight || isHeld()) return;
+    if (isBlockingDialogOpen()) return;
     if (document.hidden && !options.forceVisible) return;
 
     if (!options.immediate && isUserEditing()) {
@@ -147,7 +176,7 @@
     pendingAfterEdit = false;
     if (!activeSection) return;
 
-    void tick({ immediate: true, silent: true });
+    void captureBaseline(activeSection);
     pollTimer = window.setInterval(() => {
       void tick({ silent: true });
     }, POLL_MS);
@@ -170,6 +199,8 @@
   window.BremAdminCollabSync = {
     setActiveSection,
     stop,
+    hold,
+    release,
     setRefreshHandler(fn) {
       onRefresh = typeof fn === 'function' ? fn : null;
     },

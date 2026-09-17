@@ -6304,6 +6304,14 @@
     return date;
   }
 
+  function pauseCollabSync() {
+    window.BremAdminCollabSync?.hold?.();
+  }
+
+  function resumeCollabSync() {
+    window.BremAdminCollabSync?.release?.();
+  }
+
   async function uploadSettlement(event, platform) {
     event.preventDefault();
 
@@ -6323,6 +6331,7 @@
 
     uploadBtn.disabled = true;
     uploadBtn.textContent = '기사 목록 불러오는 중...';
+    pauseCollabSync();
 
     try {
       await BremStorage.ensureSectionLoaded?.('settlements');
@@ -6467,6 +6476,7 @@
     } catch (error) {
       showToast(error.message || '정산표를 처리하지 못했습니다.');
     } finally {
+      resumeCollabSync();
       uploadBtn.disabled = false;
       uploadBtn.textContent = '업로드 및 미리보기';
     }
@@ -6599,6 +6609,8 @@
       return { ok: false };
     }
 
+    pauseCollabSync();
+    try {
     const appliedRecords = serializeSettlementLogRecords(matched);
     const contentHash = BremStorage.settlementUploadLogs.buildContentHash(p, period, appliedRecords);
 
@@ -6654,7 +6666,6 @@
       }
     }
 
-    try {
       await BremStorage.ensureSectionLoaded?.('settlements');
 
       await window.BremPerf?.runSave?.(`settlements.apply.${p}`, {
@@ -6749,6 +6760,8 @@
       console.error('[BREM] settlement apply failed:', error);
       showToast(error.message || '일정산 반영 저장에 실패했습니다. 다시 시도하세요.');
       return { ok: false, error };
+    } finally {
+      resumeCollabSync();
     }
   }
 
@@ -6981,7 +6994,6 @@
       applyBtn.disabled = true;
       applyBtn.textContent = '반영 중…';
     }
-
     try {
       const payrollDailyEligible = preview.payrollDailyEligible === true
         || readSettlementPayrollDailyEligibleCheckbox(p);
