@@ -61,7 +61,7 @@ const BremSettlementParser = (function () {
     return isValidBaeminRequiredField(value);
   }
 
-  /** AH열 0·빈값·0으로 시작 = 배달 미수행 */
+  /** AI열 0·빈값·0으로 시작 = 배달 미수행 */
   function isValidBaeminDeliveryAmount(value) {
     const raw = cellText(value).trim();
     if (!raw) return false;
@@ -71,7 +71,7 @@ const BremSettlementParser = (function () {
     return numeric > 0;
   }
 
-  /** U·V·AH 중 하나라도 무효면 해당 행 전체 제외 */
+  /** U·V·AI 중 하나라도 무효면 해당 행 전체 제외 */
   function classifyBaeminDeliveryRow(storeArrivalCell, columnVCell, amountCell) {
     const uValid = isValidBaeminStoreArrival(storeArrivalCell);
     const vValid = isValidBaeminColumnV(columnVCell);
@@ -276,7 +276,7 @@ const BremSettlementParser = (function () {
 
     const parsedRows = Array.from(groups.values());
     if (!parsedRows.length) {
-      throw new Error('K열(User ID)·U열(가게도착)·V열·AH열에서 배민 배달 데이터를 읽지 못했습니다.');
+      throw new Error('K열(User ID)·U열(가게도착)·V열·AI열에서 배민 배달 데이터를 읽지 못했습니다.');
     }
 
     return {

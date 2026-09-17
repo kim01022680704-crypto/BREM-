@@ -36,7 +36,8 @@ const SettlementFormats = (function () {
         storeArrival: 'U',
         columnV: 'V',
         weatherSurcharge: 'AC',
-        deliveryAmount: 'AH'
+        // 2026-09 배민 양식 변경: 배달처리비 금액은 AI열만 사용한다.
+        deliveryAmount: 'AI'
       },
       cleanName(rawName) {
         return String(rawName || '').trim().replace(/\s+/g, '');

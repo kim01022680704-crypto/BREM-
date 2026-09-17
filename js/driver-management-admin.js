@@ -507,7 +507,7 @@ const BremDriverManagementAdmin = (function () {
    * 기사지역관리·조직도 수치 출처
    * - 콜수: 콜수 입력(admin_calls) 우선. 없으면 일정산 orderCount 로 주간 콜수 표시
    * - 배달료: 일정산 업로드(daily_settlements / settlements)의 deliveryAmount
-   *   (쿠팡 기본정산 AL, 배민 건별 AH — 업로드·매칭된 금액만 합산)
+   *   (쿠팡 기본정산 AL, 배민 건별 AI — 업로드·매칭된 금액만 합산)
    */
   function invalidateWeekStatsIndex() {
     state.weekStatsIndex = null;

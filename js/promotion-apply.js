@@ -627,7 +627,7 @@ const BremPromotionApply = (function () {
         failureReasons: [!deliveryFeeIndex
           ? '단가보장은 배민 배달처리비 정산서 업로드가 필요합니다'
           : (feeData
-            ? '배달처리비 유효 건 없음 (U·V열 빈칸·AH열 0·배달 미수행)'
+            ? '배달처리비 유효 건 없음 (U·V열 빈칸·AI열 0·배달 미수행)'
             : '배달처리비 정산서에서 User ID를 찾지 못했습니다 (K열·기사 배민 ID 확인)')]
       };
     }
@@ -1255,7 +1255,7 @@ const BremPromotionApply = (function () {
           reasons.push(!deliveryFeeIndex
             ? '단가보장은 배민 배달처리비 정산서 업로드가 필요합니다'
             : (baeminFeeData
-              ? '배민 배달처리비 유효 건 없음 (U·V열 빈칸·AH열 0)'
+              ? '배민 배달처리비 유효 건 없음 (U·V열 빈칸·AI열 0)'
               : '배민 배달처리비에서 User ID(K열) 매칭 실패'));
         }
         if (!reasons.length) {
