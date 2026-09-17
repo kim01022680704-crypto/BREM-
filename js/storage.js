@@ -3555,6 +3555,16 @@ const BremStorage = (function () {
     });
   }
 
+  async function completeAdminWithdrawalRequestsBulk(requestIds) {
+    const ids = (Array.isArray(requestIds) ? requestIds : [])
+      .map(item => String(item || '').trim())
+      .filter(Boolean);
+    return adminRidersApi('/api/admin/payroll/withdrawal-requests/bulk-complete', {
+      method: 'POST',
+      body: JSON.stringify({ ids })
+    });
+  }
+
   async function updateAdminWithdrawalRequestPlatform(requestId, platform) {
     const id = encodeURIComponent(String(requestId || '').trim());
     return adminRidersApi(`/api/admin/payroll/withdrawal-requests/${id}/platform`, {
@@ -8937,6 +8947,14 @@ const BremStorage = (function () {
       const result = await completeAdminWithdrawalRequest(requestId);
       if (!result?.ok) {
         throw new Error(result?.error || result?.message || '출금완료 처리에 실패했습니다.');
+      }
+      return result;
+    },
+
+    async completeRequestsBulk(requestIds) {
+      const result = await completeAdminWithdrawalRequestsBulk(requestIds);
+      if (!result?.ok) {
+        throw new Error(result?.error || result?.message || '선택 출금완료 처리에 실패했습니다.');
       }
       return result;
     },

@@ -10,6 +10,11 @@ const { fetchAllPages } = require('./supabase-paginate');
 const ROSTER_KEY = 'brem_payroll_daily_settlement_roster_v1';
 const FEES_KEY = 'brem_payroll_daily_settlement_fees_v1';
 const REQUESTS_KEY = 'brem_payroll_withdrawal_requests_v1';
+// 완료/취소된 오래된 출금건은 여기로 옮겨 살아있는 목록(REQUESTS_KEY)을 가볍게 유지한다.
+// 출금가능금액 계산은 "조회 주차"의 신청만 쓰므로, 최근 주는 그대로 두고 오래된 것만 옮긴다.
+const REQUESTS_ARCHIVE_KEY = 'brem_payroll_withdrawal_requests_archive_v1';
+// 최근 N주(수~화)의 완료/취소건은 살아있는 목록에 남긴다. 그보다 오래된 것만 아카이브.
+const ARCHIVE_KEEP_WEEKS = 8;
 const EXCLUDED_SETTLEMENTS_KEY = 'brem_payroll_daily_excluded_settlements_v1';
 const FINALIZED_WEEKS_KEY = 'brem_payroll_week_finalized_v1';
 const WITHDRAWAL_PAUSE_KEY = 'brem_payroll_withdrawal_paused_v1';
@@ -158,6 +163,24 @@ function normalizeDeductionPlatform(value) {
  * 기사 중복 등록 등으로 정산행의 driver_id 가 로그인 기사 id 와 다른 경우에도
  * (이름+전화가 같은) 같은 사람의 정산을 놓치지 않도록 한다.
  */
+// 후보 조회용 기사 미니목록(id,name,phone) 60초 캐시.
+// 출금조회마다 riders 전체를 다시 읽는 부하를 줄이고, limit(5000) 조용한 잘림도 막는다.
+let riderCandidateListCache = { at: 0, rows: null };
+async function loadRiderCandidateList(supabase) {
+  const now = Date.now();
+  if (riderCandidateListCache.rows && now - riderCandidateListCache.at < 60 * 1000) {
+    return riderCandidateListCache.rows;
+  }
+  const rows = await fetchAllPages((offset, pageSize) => (
+    supabase
+      .from('riders')
+      .select('id,name,phone')
+      .range(offset, offset + pageSize - 1)
+  ), { pageSize: 1000 });
+  riderCandidateListCache = { at: now, rows };
+  return rows;
+}
+
 async function resolveDriverIdCandidates(supabase, rider) {
   const ids = new Set();
   const primary = String(rider.id || '').trim();
@@ -168,10 +191,7 @@ async function resolveDriverIdCandidates(supabase, rider) {
   if (!phone && !name) return [...ids];
 
   try {
-    const { data } = await supabase
-      .from('riders')
-      .select('id,name,phone')
-      .limit(5000);
+    const data = await loadRiderCandidateList(supabase);
     (data || []).forEach(row => {
       const rowPhone = leaseNormalizePhone(row.phone);
       const rowName = leaseNormalizeName(row.name);
@@ -840,6 +860,135 @@ async function commitRequestsSnapshot(supabase, list, expectedUpdatedAt) {
     .select('key');
   if (error) throw error;
   return Array.isArray(data) && data.length > 0;
+}
+
+/**
+ * 출금신청 목록 공용 변경기 — 낙관적 잠금(CAS) + 충돌 시 재시도.
+ * 서버리스 다중 인스턴스에서 동시에 눌러도 서로 덮어써 유실되는 것을 막는다.
+ * mutator(list) 는 list 를 직접 수정하고 { shortCircuit, result } 를 돌려준다.
+ * shortCircuit=true 면 저장 없이 즉시 반환(변경 없음/검증 실패).
+ */
+async function mutateRequestsList(supabase, mutator) {
+  let lastError = '';
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const snapshot = await readRequestsSnapshot(supabase);
+    const list = snapshot.list.map(item => ({ ...item }));
+    const outcome = mutator(list) || {};
+    if (outcome.shortCircuit) return outcome.result;
+    const saved = await commitRequestsSnapshot(supabase, list, snapshot.updatedAt);
+    if (saved) return outcome.result;
+    lastError = '출금신청이 동시에 처리 중입니다. 다시 시도하세요.';
+    await new Promise(resolve => setTimeout(resolve, 40 * (attempt + 1)));
+  }
+  return { ok: false, status: 409, error: lastError || '출금신청을 저장하지 못했습니다. 다시 시도하세요.' };
+}
+
+/** 한 건을 출금완료로 표시(순수 변경). 저장은 호출부(mutateRequestsList)가 한다. */
+function markWithdrawalCompleted(list, id) {
+  const index = list.findIndex(item => item.id === id);
+  if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.', id };
+  const current = list[index];
+  if (current.status === 'completed') {
+    return { ok: true, request: current, alreadyCompleted: true, id };
+  }
+  if (current.status === 'cancelled') {
+    return { ok: false, status: 400, error: '취소된 신청은 출금완료 처리할 수 없습니다.', id };
+  }
+  const updated = {
+    ...current,
+    status: 'completed',
+    completedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  list[index] = updated;
+  return {
+    ok: true,
+    request: updated,
+    message: `출금완료 처리 · ${updated.driverName || ''} ${updated.amount.toLocaleString('ko-KR')}원`,
+    id
+  };
+}
+
+function buildBulkCompleteResult(completed, failed) {
+  const totalAmount = completed.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  if (!completed.length && failed.length) {
+    return { ok: false, status: 400, error: failed[0]?.error || '출금완료 처리에 실패했습니다.', failed };
+  }
+  return {
+    ok: true,
+    completed,
+    failed,
+    count: completed.length,
+    failCount: failed.length,
+    totalAmount,
+    message: failed.length
+      ? `출금완료 ${completed.length}건 · ${totalAmount.toLocaleString('ko-KR')}원 (${failed.length}건 실패)`
+      : `출금완료 ${completed.length}건 · ${totalAmount.toLocaleString('ko-KR')}원`
+  };
+}
+
+/** Date → 'YYYY-MM-DD' (normalizeSettlementWeekStart 는 문자열만 받는다). */
+function toLocalDateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** 아카이브 기준 주차 시작(이보다 오래된 완료/취소건은 아카이브 대상). */
+function archiveCutoffWeekStart(now = new Date()) {
+  const currentWeek = normalizeSettlementWeekStart(toLocalDateKey(now));
+  const base = new Date(`${currentWeek}T00:00:00`);
+  base.setDate(base.getDate() - ARCHIVE_KEEP_WEEKS * 7);
+  return normalizeSettlementWeekStart(toLocalDateKey(base));
+}
+
+function isArchivableRequest(item, cutoffWeekStart) {
+  if (!item) return false;
+  if (item.status !== 'completed' && item.status !== 'cancelled') return false;
+  const week = String(item.weekStart || '');
+  return Boolean(week) && week < cutoffWeekStart;
+}
+
+async function readRequestsArchive(supabase) {
+  const raw = await readSettingValue(supabase, REQUESTS_ARCHIVE_KEY, []);
+  return normalizeRequestList(raw);
+}
+
+// 프로세스당 과도한 아카이브 시도를 막는 쿨다운(관리자 목록 조회 시에만 기회적으로 실행).
+let lastArchiveRunAt = 0;
+async function maybeArchiveOldRequests(supabase) {
+  const now = Date.now();
+  if (now - lastArchiveRunAt < 5 * 60 * 1000) return;
+  lastArchiveRunAt = now;
+  const cutoff = archiveCutoffWeekStart();
+  try {
+    let moved = [];
+    const outcome = await withRequestsLock(() => mutateRequestsList(supabase, (list) => {
+      const keep = [];
+      const move = [];
+      list.forEach(item => {
+        if (isArchivableRequest(item, cutoff)) move.push(item);
+        else keep.push(item);
+      });
+      if (!move.length) return { shortCircuit: true, result: { moved: [] } };
+      list.length = 0;
+      keep.forEach(item => list.push(item));
+      moved = move;
+      return { shortCircuit: false, result: { moved: move } };
+    }));
+    const movedRows = outcome?.moved || moved;
+    if (movedRows.length) {
+      const archive = await readRequestsArchive(supabase);
+      const byId = new Map(archive.map(item => [item.id, item]));
+      movedRows.forEach(item => byId.set(item.id, item));
+      await writeSettingValue(supabase, REQUESTS_ARCHIVE_KEY, [...byId.values()]);
+    }
+  } catch (error) {
+    // 아카이브 실패는 조회를 막지 않는다(다음 기회에 재시도).
+    lastArchiveRunAt = 0;
+    console.warn('[withdrawal archive] skipped:', error?.message || error);
+  }
 }
 
 async function appendWithdrawalRequestAtomic(supabase, {
@@ -1550,13 +1699,26 @@ async function listWithdrawalRequests(accessToken, query = {}) {
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
-  const [listRaw, feesRaw, excludedRaw] = await Promise.all([
+  const viewMode = String(query.view || '').trim();
+  const [listRaw, feesRaw, excludedRaw, archiveRaw] = await Promise.all([
     readSettingValue(supabase, REQUESTS_KEY, []),
     readSettingValue(supabase, FEES_KEY, {}),
-    readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, [])
+    readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, []),
+    // 처리완료 내역 뷰만 아카이브(오래된 완료건)를 합쳐 과거 기록이 사라지지 않게 한다.
+    viewMode === 'completed' ? readSettingValue(supabase, REQUESTS_ARCHIVE_KEY, []) : Promise.resolve([])
   ]);
-  const list = normalizeRequestList(listRaw);
+  const liveList = normalizeRequestList(listRaw);
+  const list = viewMode === 'completed'
+    ? (() => {
+        const merged = new Map();
+        normalizeRequestList(archiveRaw).forEach(item => merged.set(item.id, item));
+        liveList.forEach(item => merged.set(item.id, item));
+        return [...merged.values()];
+      })()
+    : liveList;
   const feesByPlatform = normalizeFees(feesRaw);
+  // 살아있는 목록이 너무 커지지 않게 오래된 완료/취소건을 기회적으로 아카이브(비차단).
+  void maybeArchiveOldRequests(supabase);
   const excludedSettlementIds = new Set(
     (Array.isArray(excludedRaw) ? excludedRaw : [])
       .map(item => String(item || '').trim())
@@ -1643,19 +1805,18 @@ async function cancelWithdrawalRequest(accessToken, requestId) {
   if (!id) return { ok: false, status: 400, error: '신청 ID가 없습니다.' };
 
   const supabase = getServiceClient();
-  return withRequestsLock(async () => {
-    const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+  return withRequestsLock(() => mutateRequestsList(supabase, (list) => {
     const index = list.findIndex(item => item.id === id);
-    if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
-
+    if (index < 0) {
+      return { shortCircuit: true, result: { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' } };
+    }
     const current = list[index];
     if (current.status === 'cancelled') {
-      return { ok: true, request: current, alreadyCancelled: true };
+      return { shortCircuit: true, result: { ok: true, request: current, alreadyCancelled: true } };
     }
     if (current.status === 'completed') {
-      return { ok: false, status: 400, error: '처리완료된 신청은 취소할 수 없습니다.' };
+      return { shortCircuit: true, result: { ok: false, status: 400, error: '처리완료된 신청은 취소할 수 없습니다.' } };
     }
-
     const updated = {
       ...current,
       status: 'cancelled',
@@ -1663,15 +1824,16 @@ async function cancelWithdrawalRequest(accessToken, requestId) {
       updatedAt: new Date().toISOString()
     };
     list[index] = updated;
-    await writeSettingValue(supabase, REQUESTS_KEY, list);
-
     return {
-      ok: true,
-      request: updated,
-      restoredAmount: updated.amount,
-      message: `취소 완료 · ${updated.amount.toLocaleString('ko-KR')}원 출금가능금액 복구`
+      shortCircuit: false,
+      result: {
+        ok: true,
+        request: updated,
+        restoredAmount: updated.amount,
+        message: `취소 완료 · ${updated.amount.toLocaleString('ko-KR')}원 출금가능금액 복구`
+      }
     };
-  });
+  }));
 }
 
 async function completeWithdrawalRequest(accessToken, requestId) {
@@ -1682,34 +1844,46 @@ async function completeWithdrawalRequest(accessToken, requestId) {
   if (!id) return { ok: false, status: 400, error: '신청 ID가 없습니다.' };
 
   const supabase = getServiceClient();
-  return withRequestsLock(async () => {
-    const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
-    const index = list.findIndex(item => item.id === id);
-    if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
+  return withRequestsLock(() => mutateRequestsList(supabase, (list) => {
+    const result = markWithdrawalCompleted(list, id);
+    // 못 찾거나 이미 완료면 저장 불필요
+    if (!result.ok || result.alreadyCompleted) return { shortCircuit: true, result };
+    return { shortCircuit: false, result };
+  }));
+}
 
-    const current = list[index];
-    if (current.status === 'completed') {
-      return { ok: true, request: current, alreadyCompleted: true };
-    }
-    if (current.status === 'cancelled') {
-      return { ok: false, status: 400, error: '취소된 신청은 출금완료 처리할 수 없습니다.' };
-    }
+async function completeWithdrawalRequestsBulk(accessToken, requestIds) {
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
 
-    const updated = {
-      ...current,
-      status: 'completed',
-      completedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    list[index] = updated;
-    await writeSettingValue(supabase, REQUESTS_KEY, list);
+  const ids = [...new Set(
+    (Array.isArray(requestIds) ? requestIds : [])
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+  )];
+  if (!ids.length) {
+    return { ok: false, status: 400, error: '출금완료할 신청을 선택하세요.' };
+  }
 
-    return {
-      ok: true,
-      request: updated,
-      message: `출금완료 처리 · ${updated.driverName || ''} ${updated.amount.toLocaleString('ko-KR')}원`
-    };
-  });
+  const supabase = getServiceClient();
+  return withRequestsLock(() => mutateRequestsList(supabase, (list) => {
+    const completed = [];
+    const failed = [];
+    let changed = false;
+    ids.forEach(requestId => {
+      const result = markWithdrawalCompleted(list, requestId);
+      if (result.ok) {
+        completed.push(result.request);
+        if (!result.alreadyCompleted) changed = true;
+      } else {
+        failed.push({ id: requestId, error: result.error || '처리 실패' });
+      }
+    });
+    const result = buildBulkCompleteResult(completed, failed);
+    // 실제로 바뀐 게 없으면(전부 이미 완료 / 전부 실패) 저장 생략
+    if (!changed) return { shortCircuit: true, result };
+    return { shortCircuit: false, result };
+  }));
 }
 
 // 관리자용: 출금신청의 플랫폼(쿠팡/배민)만 바로잡는다.
@@ -1727,25 +1901,26 @@ async function updateWithdrawalRequestPlatform(accessToken, requestId, platformI
   }
 
   const supabase = getServiceClient();
-  return withRequestsLock(async () => {
-    const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+  return withRequestsLock(() => mutateRequestsList(supabase, (list) => {
     const index = list.findIndex(item => item.id === id);
-    if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
-
+    if (index < 0) {
+      return { shortCircuit: true, result: { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' } };
+    }
     const current = list[index];
     if (current.platform === platform) {
-      return { ok: true, request: current, unchanged: true };
+      return { shortCircuit: true, result: { ok: true, request: current, unchanged: true } };
     }
     const updated = { ...current, platform, updatedAt: new Date().toISOString() };
     list[index] = updated;
-    await writeSettingValue(supabase, REQUESTS_KEY, list);
-
     return {
-      ok: true,
-      request: updated,
-      message: `플랫폼 변경 · ${updated.driverName || ''} → ${platform === 'baemin' ? '배민' : '쿠팡'}`
+      shortCircuit: false,
+      result: {
+        ok: true,
+        request: updated,
+        message: `플랫폼 변경 · ${updated.driverName || ''} → ${platform === 'baemin' ? '배민' : '쿠팡'}`
+      }
     };
-  });
+  }));
 }
 
 /**
@@ -1777,81 +1952,87 @@ async function autoFixWithdrawalPlatforms(accessToken, weekStartInput, options =
     });
   });
 
-  return withRequestsLock(async () => {
-    const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+  if (dryRun) {
+    const snapshot = await readRequestsSnapshot(supabase);
+    const changes = computeAutoFixPlatformChanges(snapshot.list, weekStart, capByDriver);
+    return { ok: true, weekStart, dryRun: true, changes, changeCount: changes.length };
+  }
 
-    // 이번주 처리완료 출금만 대상
-    const byDriver = new Map();
+  return withRequestsLock(() => mutateRequestsList(supabase, (list) => {
+    const changes = computeAutoFixPlatformChanges(list, weekStart, capByDriver);
+    if (!changes.length) {
+      return {
+        shortCircuit: true,
+        result: {
+          ok: true, weekStart, dryRun: false, changes, changeCount: 0,
+          message: '교정할 건이 없습니다. 이미 플랫폼별로 맞습니다.'
+        }
+      };
+    }
+    const targetById = new Map(changes.map(c => [c.requestId, c.to]));
+    const now = new Date().toISOString();
     list.forEach(item => {
-      if (item.weekStart !== weekStart) return;
-      if (item.status !== 'completed') return;
-      const id = String(item.driverId || '');
-      if (!id) return;
-      if (!byDriver.has(id)) byDriver.set(id, []);
-      byDriver.get(id).push(item);
+      if (targetById.has(item.id)) {
+        item.platform = targetById.get(item.id);
+        item.updatedAt = now;
+      }
     });
-
-    const changes = [];
-    byDriver.forEach((recs, driverId) => {
-      const cap = capByDriver.get(driverId) || { coupang: 0, baemin: 0, name: '' };
-      const remaining = { coupang: cap.coupang, baemin: cap.baemin };
-      // 큰 금액부터 배치해 한 플랫폼에 몰린 것을 여유 있는 쪽으로 옮긴다.
-      const sorted = recs.slice().sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0));
-      sorted.forEach(item => {
-        const amount = Math.max(0, Math.round(Number(item.amount) || 0));
-        const cur = normalizeRequestPlatform(item.platform);
-        const fits = p => remaining[p] >= amount;
-        let target;
-        if (cur === 'coupang' || cur === 'baemin') {
-          if (fits(cur)) target = cur;
-          else {
-            const other = cur === 'coupang' ? 'baemin' : 'coupang';
-            target = fits(other) ? other : cur; // 양쪽 다 부족하면 원래대로 둔다(음수 표기)
-          }
-        } else {
-          target = remaining.coupang >= remaining.baemin ? 'coupang' : 'baemin';
-        }
-        remaining[target] = remaining[target] - amount;
-        if (target !== cur) {
-          changes.push({
-            driverId,
-            driverName: cap.name || item.driverName || '',
-            requestId: item.id,
-            amount,
-            from: cur || 'unknown',
-            to: target
-          });
-        }
-      });
-    });
-
-    if (dryRun) {
-      return { ok: true, weekStart, dryRun: true, changes, changeCount: changes.length };
-    }
-
-    if (changes.length) {
-      const targetById = new Map(changes.map(c => [c.requestId, c.to]));
-      const now = new Date().toISOString();
-      list.forEach(item => {
-        if (targetById.has(item.id)) {
-          item.platform = targetById.get(item.id);
-          item.updatedAt = now;
-        }
-      });
-      await writeSettingValue(supabase, REQUESTS_KEY, list);
-    }
-
     return {
-      ok: true,
-      weekStart,
-      dryRun: false,
-      changes,
-      changeCount: changes.length,
-      message: changes.length
-        ? `${changes.length}건 플랫폼 자동 교정 완료 (총액 변동 없음)`
-        : '교정할 건이 없습니다. 이미 플랫폼별로 맞습니다.'
+      shortCircuit: false,
+      result: {
+        ok: true, weekStart, dryRun: false, changes, changeCount: changes.length,
+        message: `${changes.length}건 플랫폼 자동 교정 완료 (총액 변동 없음)`
+      }
     };
+  }));
+}
+
+/** 자동 교정 대상 변경 목록 계산(순수 함수, 저장 없음). */
+function computeAutoFixPlatformChanges(list, weekStart, capByDriver) {
+  const byDriver = new Map();
+  (Array.isArray(list) ? list : []).forEach(item => {
+    if (item.weekStart !== weekStart) return;
+    if (item.status !== 'completed') return;
+    const id = String(item.driverId || '');
+    if (!id) return;
+    if (!byDriver.has(id)) byDriver.set(id, []);
+    byDriver.get(id).push(item);
   });
+
+  const changes = [];
+  byDriver.forEach((recs, driverId) => {
+    const cap = capByDriver.get(driverId) || { coupang: 0, baemin: 0, name: '' };
+    const remaining = { coupang: cap.coupang, baemin: cap.baemin };
+    // 큰 금액부터 배치해 한 플랫폼에 몰린 것을 여유 있는 쪽으로 옮긴다.
+    const sorted = recs.slice().sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0));
+    sorted.forEach(item => {
+      const amount = Math.max(0, Math.round(Number(item.amount) || 0));
+      const cur = normalizeRequestPlatform(item.platform);
+      const fits = p => remaining[p] >= amount;
+      let target;
+      if (cur === 'coupang' || cur === 'baemin') {
+        if (fits(cur)) target = cur;
+        else {
+          const other = cur === 'coupang' ? 'baemin' : 'coupang';
+          target = fits(other) ? other : cur; // 양쪽 다 부족하면 원래대로 둔다(음수 표기)
+        }
+      } else {
+        target = remaining.coupang >= remaining.baemin ? 'coupang' : 'baemin';
+      }
+      remaining[target] = remaining[target] - amount;
+      if (target !== cur) {
+        changes.push({
+          driverId,
+          driverName: cap.name || item.driverName || '',
+          requestId: item.id,
+          amount,
+          from: cur || 'unknown',
+          to: target
+        });
+      }
+    });
+  });
+  return changes;
 }
 
 async function deleteWithdrawalRequest(accessToken, requestId) {
@@ -1862,24 +2043,32 @@ async function deleteWithdrawalRequest(accessToken, requestId) {
   if (!id) return { ok: false, status: 400, error: '신청 ID가 없습니다.' };
 
   const supabase = getServiceClient();
-  return withRequestsLock(async () => {
-    const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
-    const target = list.find(item => item.id === id);
-    if (!target) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
-
-    const next = list.filter(item => item.id !== id);
-    await writeSettingValue(supabase, REQUESTS_KEY, next);
-
+  const liveResult = await withRequestsLock(() => mutateRequestsList(supabase, (list) => {
+    const idx = list.findIndex(item => item.id === id);
+    if (idx < 0) return { shortCircuit: true, result: { ok: false, status: 404, notFound: true } };
+    const target = list[idx];
+    list.splice(idx, 1);
     const restored = target.status === 'pending' ? target.amount : 0;
     return {
-      ok: true,
-      deleted: target,
-      restoredAmount: restored,
-      message: restored
-        ? `삭제 완료 · ${restored.toLocaleString('ko-KR')}원 출금가능금액 복구`
-        : '삭제 완료'
+      shortCircuit: false,
+      result: {
+        ok: true,
+        deleted: target,
+        restoredAmount: restored,
+        message: restored
+          ? `삭제 완료 · ${restored.toLocaleString('ko-KR')}원 출금가능금액 복구`
+          : '삭제 완료'
+      }
     };
-  });
+  }));
+  if (liveResult.ok || !liveResult.notFound) return liveResult;
+
+  // 살아있는 목록에 없으면 아카이브(오래된 완료/취소건)에서 삭제한다.
+  const archive = await readRequestsArchive(supabase);
+  const target = archive.find(item => item.id === id);
+  if (!target) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
+  await writeSettingValue(supabase, REQUESTS_ARCHIVE_KEY, archive.filter(item => item.id !== id));
+  return { ok: true, deleted: target, restoredAmount: 0, message: '삭제 완료' };
 }
 
 /**
@@ -2224,6 +2413,7 @@ module.exports = {
   adminCreateWithdrawalForDriver,
   cancelWithdrawalRequest,
   completeWithdrawalRequest,
+  completeWithdrawalRequestsBulk,
   updateWithdrawalRequestPlatform,
   autoFixWithdrawalPlatforms,
   deleteWithdrawalRequest,
@@ -2246,6 +2436,17 @@ module.exports = {
     calcPayoutFromSettlement,
     resolveWithdrawalFee,
     resolveDailySettlementFee,
-    requestConsumedAmount
+    requestConsumedAmount,
+    // 동시성/아카이브 검증용(순수 로직 + CAS). supabase 인자는 페이크로 주입 가능.
+    REQUESTS_ARCHIVE_KEY,
+    ARCHIVE_KEEP_WEEKS,
+    mutateRequestsList,
+    markWithdrawalCompleted,
+    buildBulkCompleteResult,
+    computeAutoFixPlatformChanges,
+    isArchivableRequest,
+    archiveCutoffWeekStart,
+    readRequestsSnapshot,
+    commitRequestsSnapshot
   }
 };

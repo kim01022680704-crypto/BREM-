@@ -825,7 +825,8 @@
         if (driverHasCoupang(readyDriver)) {
           void refreshCoupangLiveOps({ toast: false, source: 'boot' });
         }
-        void window.BremDriverWithdrawal?.prefetch?.();
+        // 출금 정보는 무겁다(정산·리스·기사 조회). 로그인마다 미리 받지 않고,
+        // 기사가 출금 화면을 열 때(openPanel→loadWithdrawal) 처음 로드한다.
         return loadResult;
       } finally {
         driverDashboardLoading = false;

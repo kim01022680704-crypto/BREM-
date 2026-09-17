@@ -16,6 +16,7 @@
     "smoke:frontend": "node scripts/smoke-frontend-modules.js",
     "test:settlement-match": "node scripts/test-settlement-manual-match.js",
     "test:settlement-tail": "node scripts/test-settlement-tail-guard.js",
+    "test:withdrawal-cas": "node scripts/test-withdrawal-cas.js",
     "test:baemin-weekly-merge": "node scripts/test-baemin-weekly-merge.js",
     "bootstrap:missions": "node scripts/apply-missions-bootstrap.js",
     "test:rejection-storage": "node scripts/test-rejection-supabase-storage.js",
