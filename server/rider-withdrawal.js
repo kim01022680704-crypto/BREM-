@@ -598,24 +598,15 @@ const EMP_RATE = 0.008;
 const INDUSTRIAL_RATE = 0.0088;
 const WITHHOLDING_RATE = 0.033;
 
-const SETTING_READ_CACHE_MS = 45 * 1000;
-const settingReadCache = new Map();
-
 async function readSettingValue(supabase, key, fallback) {
-  const cacheKey = String(key || '');
-  const cached = settingReadCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < SETTING_READ_CACHE_MS) {
-    return cached.value;
-  }
   const { data, error } = await supabase
     .from('settings')
     .select('value')
     .eq('key', key)
     .maybeSingle();
   if (error) throw error;
-  const value = (data?.value !== undefined && data?.value !== null) ? data.value : fallback;
-  settingReadCache.set(cacheKey, { at: Date.now(), value });
-  return value;
+  if (data?.value !== undefined && data?.value !== null) return data.value;
+  return fallback;
 }
 
 async function writeSettingValue(supabase, key, value) {
@@ -625,7 +616,6 @@ async function writeSettingValue(supabase, key, value) {
     updated_at: new Date().toISOString()
   }, { onConflict: 'key' });
   if (error) throw error;
-  settingReadCache.delete(String(key || ''));
 }
 
 function normalizeFees(raw = {}) {
@@ -850,26 +840,6 @@ async function commitRequestsSnapshot(supabase, list, expectedUpdatedAt) {
     .select('key');
   if (error) throw error;
   return Array.isArray(data) && data.length > 0;
-}
-
-/** 출금신청 JSON — 낙관적 잠금 + 충돌 시 재시도 (대량 출금완료 경합 방지) */
-async function mutateRequestsList(supabase, mutator) {
-  let lastError = '';
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    settingReadCache.delete(REQUESTS_KEY);
-    const snapshot = await readRequestsSnapshot(supabase);
-    const list = snapshot.list.map(item => ({ ...item }));
-    const outcome = mutator(list);
-    if (outcome?.shortCircuit) return outcome.result;
-    const saved = await commitRequestsSnapshot(supabase, list, snapshot.updatedAt);
-    if (saved) {
-      settingReadCache.delete(REQUESTS_KEY);
-      return outcome.result;
-    }
-    lastError = '출금신청이 동시에 처리 중입니다. 다시 시도하세요.';
-    await new Promise(resolve => setTimeout(resolve, 40 * (attempt + 1)));
-  }
-  return { ok: false, status: 409, error: lastError || '출금신청을 저장하지 못했습니다. 다시 시도하세요.' };
 }
 
 async function appendWithdrawalRequestAtomic(supabase, {
@@ -1704,33 +1674,6 @@ async function cancelWithdrawalRequest(accessToken, requestId) {
   });
 }
 
-function markWithdrawalCompleted(list, id) {
-  const index = list.findIndex(item => item.id === id);
-  if (index < 0) {
-    return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.', id };
-  }
-  const current = list[index];
-  if (current.status === 'completed') {
-    return { ok: true, request: current, alreadyCompleted: true, id };
-  }
-  if (current.status === 'cancelled') {
-    return { ok: false, status: 400, error: '취소된 신청은 출금완료 처리할 수 없습니다.', id };
-  }
-  const updated = {
-    ...current,
-    status: 'completed',
-    completedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  list[index] = updated;
-  return {
-    ok: true,
-    request: updated,
-    message: `출금완료 처리 · ${updated.driverName || ''} ${updated.amount.toLocaleString('ko-KR')}원`,
-    id
-  };
-}
-
 async function completeWithdrawalRequest(accessToken, requestId) {
   const admin = await verifyAdminCaller(accessToken);
   if (!admin.ok) return admin;
@@ -1739,68 +1682,34 @@ async function completeWithdrawalRequest(accessToken, requestId) {
   if (!id) return { ok: false, status: 400, error: '신청 ID가 없습니다.' };
 
   const supabase = getServiceClient();
-  return withRequestsLock(() => mutateRequestsList(supabase, (list) => {
-    const result = markWithdrawalCompleted(list, id);
-    return { shortCircuit: false, result };
-  }));
-}
+  return withRequestsLock(async () => {
+    const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+    const index = list.findIndex(item => item.id === id);
+    if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
 
-async function completeWithdrawalRequestsBulk(accessToken, requestIds) {
-  const admin = await verifyAdminCaller(accessToken);
-  if (!admin.ok) return admin;
-
-  const ids = [...new Set(
-    (Array.isArray(requestIds) ? requestIds : [])
-      .map(item => String(item || '').trim())
-      .filter(Boolean)
-  )];
-  if (!ids.length) {
-    return { ok: false, status: 400, error: '출금완료할 신청을 선택하세요.' };
-  }
-
-  const supabase = getServiceClient();
-  return withRequestsLock(() => mutateRequestsList(supabase, (list) => {
-    const completed = [];
-    const failed = [];
-    ids.forEach(requestId => {
-      const result = markWithdrawalCompleted(list, requestId);
-      if (result.ok) {
-        completed.push(result.request);
-      } else if (result.status !== 404) {
-        failed.push({ id: requestId, error: result.error || '처리 실패' });
-      } else {
-        failed.push({ id: requestId, error: result.error || '신청 없음' });
-      }
-    });
-
-    if (!completed.length && failed.length) {
-      return {
-        shortCircuit: true,
-        result: {
-          ok: false,
-          status: 400,
-          error: failed[0]?.error || '출금완료 처리에 실패했습니다.',
-          failed
-        }
-      };
+    const current = list[index];
+    if (current.status === 'completed') {
+      return { ok: true, request: current, alreadyCompleted: true };
+    }
+    if (current.status === 'cancelled') {
+      return { ok: false, status: 400, error: '취소된 신청은 출금완료 처리할 수 없습니다.' };
     }
 
-    const totalAmount = completed.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-    return {
-      shortCircuit: false,
-      result: {
-        ok: true,
-        completed,
-        failed,
-        count: completed.length,
-        failCount: failed.length,
-        totalAmount,
-        message: failed.length
-          ? `출금완료 ${completed.length}건 · ${totalAmount.toLocaleString('ko-KR')}원 (${failed.length}건 실패)`
-          : `출금완료 ${completed.length}건 · ${totalAmount.toLocaleString('ko-KR')}원`
-      }
+    const updated = {
+      ...current,
+      status: 'completed',
+      completedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
-  }));
+    list[index] = updated;
+    await writeSettingValue(supabase, REQUESTS_KEY, list);
+
+    return {
+      ok: true,
+      request: updated,
+      message: `출금완료 처리 · ${updated.driverName || ''} ${updated.amount.toLocaleString('ko-KR')}원`
+    };
+  });
 }
 
 // 관리자용: 출금신청의 플랫폼(쿠팡/배민)만 바로잡는다.
@@ -2315,7 +2224,6 @@ module.exports = {
   adminCreateWithdrawalForDriver,
   cancelWithdrawalRequest,
   completeWithdrawalRequest,
-  completeWithdrawalRequestsBulk,
   updateWithdrawalRequestPlatform,
   autoFixWithdrawalPlatforms,
   deleteWithdrawalRequest,

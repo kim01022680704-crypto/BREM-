@@ -425,9 +425,14 @@ async function ensureRiderAuthAccount(supabase, rider, plainPassword, options = 
   let userId = rider.auth_user_id || null;
   const forceRefresh = options.forceRefresh === true;
 
-  // 이미 Auth 연결된 기사: 매 로그인마다 프로필 upsert / 비밀번호 재기록을 하지 않음.
-  // Supabase가 느릴 때 이 한 번의 write가 로그인 버튼을 수 초 더 잡아둔다.
+  // 이미 Auth 연결된 기사: 매 로그인마다 admin.updateUserById(비밀번호 재기록) 하지 않음
+  // (이 호출이 로그인 지연의 주원인)
   if (userId && !forceRefresh) {
+    const profile = await upsertRiderProfile(supabase, userId, rider);
+    if (!profile.ok) {
+      // 프로필만 실패해도 세션 로그인은 시도할 수 있게 통과
+      console.warn('[BREM][rider-auth] profile upsert skipped:', profile.error);
+    }
     return { ok: true, userId, email, authPassword };
   }
 
@@ -804,69 +809,6 @@ async function getRiderNotices(accessToken) {
   };
 }
 
-function settleWithTimeout(promise, ms, fallback) {
-  const budget = Math.max(0, Number(ms) || 0);
-  return new Promise(resolve => {
-    let done = false;
-    const finish = value => {
-      if (done) return;
-      done = true;
-      resolve(value);
-    };
-    const timer = setTimeout(() => finish(fallback), budget);
-    Promise.resolve(promise).then(
-      value => {
-        clearTimeout(timer);
-        finish(value);
-      },
-      () => {
-        clearTimeout(timer);
-        finish(fallback);
-      }
-    );
-  });
-}
-
-function deferredBaeminOps(rider = {}) {
-  return {
-    available: false,
-    riderId: String(rider.id || '').trim(),
-    baeminId: normalizeBaeminUserId(rider.baemin_id || rider.baeminId) || '',
-    complete: 0,
-    foodReject: 0,
-    foodCancel: 0,
-    foodRiderFault: 0,
-    acceptRate: null,
-    acceptRateSource: null,
-    collectDate: null,
-    collectedAt: null,
-    updatedAt: null,
-    reason: 'DEFERRED'
-  };
-}
-
-function deferredCoupangOps(rider = {}) {
-  return {
-    available: false,
-    riderId: String(rider.id || '').trim(),
-    matchKey: makeRiderLoginId(rider) || '',
-    complete: 0,
-    reject: 0,
-    cancel: 0,
-    rejectionRate: null,
-    pastRejectionRate: null,
-    todayRejectionRate: null,
-    rejectionRateSource: null,
-    weekStart: null,
-    collectDate: null,
-    collectedAt: null,
-    updatedAt: null,
-    reason: 'DEFERRED'
-  };
-}
-
-const RIDER_BUNDLE_OPS_BUDGET_MS = 2500;
-
 async function getRiderAppBundle(accessToken) {
   const me = await getRiderMe(accessToken);
   if (!me.ok) return me;
@@ -910,16 +852,8 @@ async function getRiderAppBundle(accessToken) {
       .order('created_at', { ascending: false })
       .limit(100),
     missionQuery,
-    settleWithTimeout(
-      loadRiderBaeminOps(supabase, me.rider),
-      RIDER_BUNDLE_OPS_BUDGET_MS,
-      deferredBaeminOps(me.rider)
-    ),
-    settleWithTimeout(
-      loadRiderCoupangOps(supabase, me.rider),
-      RIDER_BUNDLE_OPS_BUDGET_MS,
-      deferredCoupangOps(me.rider)
-    )
+    loadRiderBaeminOps(supabase, me.rider),
+    loadRiderCoupangOps(supabase, me.rider)
   ]);
 
   if (missionsResult.error) {

@@ -2049,147 +2049,10 @@ const BremStorage = (function () {
     return ensureCallsSinceDate(sinceDate);
   }
 
-  const LAZY_SETTINGS_KEYS = new Set([
-    KEYS.payrollWithdrawalRequests,
-    KEYS.weeklySettlementsDirect,
-    KEYS.settlementUploadLogsDirect,
-    KEYS.settlementUnmatchedDirect,
-    KEYS.directSettlementAdjustments,
-    KEYS.directRetroAdjustments,
-    KEYS.payrollDailyExcludedSettlements
-  ]);
-
-  async function ensureLazySettingsForSection(sectionId) {
-    if (!activeStorageAdapter.reloadSettingKey) return;
-    const sectionKeys = ADMIN_SECTION_KEYS[sectionId] || [];
-    const missing = sectionKeys.filter(key => (
-      LAZY_SETTINGS_KEYS.has(key)
-      && !window.BremDataCache?.isValid?.(key)
-    ));
-    if (!missing.length) return;
-    await Promise.all(missing.map(key => (
-      activeStorageAdapter.reloadSettingKey(key).catch(error => {
-        console.warn('[BREM] lazy setting reload skipped:', key, error?.message || error);
-      })
-    )));
-  }
-
-  const COLLAB_TABLE_REVISION_SPECS = Object.freeze({
-    [KEYS.promotionRules]: { table: 'promotions', column: 'updated_at' },
-    [KEYS.promotionApplyResults]: { table: 'promotion_apply_results', column: 'updated_at' },
-    [KEYS.settlements]: { table: 'daily_settlements', column: 'updated_at' },
-    [KEYS.weeklySettlements]: { table: 'weekly_settlements', column: 'updated_at' },
-    [KEYS.settlementUploadLogs]: { table: 'settlement_upload_logs', column: 'uploaded_at' },
-    [KEYS.settlementUnmatched]: { table: 'settlement_unmatched', column: 'saved_at' },
-    [KEYS.rejections]: { table: 'admin_rejection_rates', column: 'updated_at' },
-    [KEYS.payrollSlipUploads]: { table: 'payroll_slip_uploads', column: 'uploaded_at' },
-    [KEYS.payrollSlipLines]: { table: 'payroll_slip_lines', column: 'updated_at' },
-    [KEYS.payrollNotices]: { table: 'payroll_notices', column: 'updated_at' }
-  });
-
-  function getCollabSectionKeys(sectionId) {
-    return ADMIN_SECTION_KEYS[sectionId] || [];
-  }
-
-  function getCollabSettingKeys(sectionId) {
-    return getCollabSectionKeys(sectionId).filter(key => (
-      key
-      && !TABLE_STORAGE_KEYS.has(key)
-      && !isPayrollStorageKey(key)
-    ));
-  }
-
-  function getCollabTableKeys(sectionId) {
-    return getCollabSectionKeys(sectionId).filter(key => (
-      key
-      && TABLE_STORAGE_KEYS.has(key)
-      && key !== KEYS.drivers
-      && key !== KEYS.calls
-    ));
-  }
-
-  async function fetchSectionCollabRevision(sectionId) {
-    const sectionKeys = getCollabSectionKeys(sectionId);
-    if (!sectionKeys.length) return '';
-
-    if (activeStorageAdapter.type !== 'supabase') {
-      return `${sectionId}:${Date.now()}`;
-    }
-
-    await ensureSupabaseClient();
-    const client = getSupabaseClient();
-    if (!client) return '';
-
-    const parts = [];
-    const settingKeys = getCollabSettingKeys(sectionId);
-    if (settingKeys.length) {
-      const { data, error } = await client
-        .from('settings')
-        .select('key,updated_at')
-        .in('key', settingKeys);
-      if (error) throw error;
-      (data || []).forEach(row => {
-        parts.push(`s:${row.key}:${row.updated_at || ''}`);
-      });
-    }
-
-    const tableKeys = getCollabTableKeys(sectionId).filter(key => COLLAB_TABLE_REVISION_SPECS[key]);
-    await Promise.all(tableKeys.map(async key => {
-      const spec = COLLAB_TABLE_REVISION_SPECS[key];
-      const { data, error } = await client
-        .from(spec.table)
-        .select(spec.column)
-        .order(spec.column, { ascending: false })
-        .limit(1);
-      if (error) {
-        console.warn('[BREM] collab revision skipped:', spec.table, error.message || error);
-        return;
-      }
-      parts.push(`t:${key}:${data?.[0]?.[spec.column] || ''}`);
-    }));
-
-    return parts.sort().join('|');
-  }
-
-  async function refreshSectionForCollab(sectionId) {
-    const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
-    if (!hydrated.ok) return hydrated;
-
-    const tableKeys = getCollabTableKeys(sectionId);
-    const settingKeys = getCollabSettingKeys(sectionId);
-    const tasks = [];
-
-    if (tableKeys.length && activeStorageAdapter.ensureKeysLoaded) {
-      tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeys, { force: true }));
-    }
-    if (settingKeys.length && activeStorageAdapter.reloadSettingKey) {
-      settingKeys.forEach(key => {
-        tasks.push(activeStorageAdapter.reloadSettingKey(key).catch(error => {
-          console.warn('[BREM] collab setting reload skipped:', key, error?.message || error);
-        }));
-      });
-    }
-
-    if (sectionId === 'payroll-daily-settlement') {
-      tasks.push(
-        payrollDailySettlement.reloadFromServer(),
-        payrollDailySettlement.reloadFinalizedWeeksFromServer?.(),
-        payrollDailySettlement.reloadWithdrawalPauseFromServer?.(),
-        payrollDailySettlement.reloadWithdrawalHoldsFromServer?.()
-      );
-    }
-
-    if (tasks.length) {
-      await Promise.all(tasks);
-    }
-    return { ok: true };
-  }
-
   async function ensureSectionLoaded(sectionId, options = {}) {
     const force = options.force === true || options.forceDrivers === true;
 
     if (!force && isSectionCacheReady(sectionId)) {
-      await ensureLazySettingsForSection(sectionId);
       return { ok: true, cached: true };
     }
 
@@ -2263,7 +2126,7 @@ const BremStorage = (function () {
 
       bootstrapComplete = true;
       document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
-      setTimeout(() => { void preloadHeavyAdminTables(); }, 2500);
+      void preloadHeavyAdminTables();
       return { ok: true };
     };
 
@@ -3363,7 +3226,7 @@ const BremStorage = (function () {
     document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
   }
 
-  const DRIVER_FETCH_TIMEOUT_MS = 25000;
+  const DRIVER_FETCH_TIMEOUT_MS = 12000;
   const REGION_DASHBOARD_TIMEOUT_MS = 20000;
   let driverAppBundlePromise = null;
   let lastDriverAppPublishedAt = null;
@@ -3689,16 +3552,6 @@ const BremStorage = (function () {
     return adminRidersApi(`/api/admin/payroll/withdrawal-requests/${id}/complete`, {
       method: 'POST',
       body: '{}'
-    });
-  }
-
-  async function completeAdminWithdrawalRequestsBulk(requestIds) {
-    const ids = (Array.isArray(requestIds) ? requestIds : [])
-      .map(item => String(item || '').trim())
-      .filter(Boolean);
-    return adminRidersApi('/api/admin/payroll/withdrawal-requests/bulk-complete', {
-      method: 'POST',
-      body: JSON.stringify({ ids })
     });
   }
 
@@ -4075,7 +3928,7 @@ const BremStorage = (function () {
       }
 
       console.info('[BREM:data] driver snapshot: cache miss');
-      const bundle = await riderApiFetch('/api/rider/app-bundle', 'app-bundle', { timeoutMs: 28000 });
+      const bundle = await riderApiFetch('/api/rider/app-bundle', 'app-bundle');
 
       if (bundle.ok) {
         if (riderId && bundle.snapshot) cache?.write?.(riderId, 'snapshot', bundle.snapshot);
@@ -4107,21 +3960,6 @@ const BremStorage = (function () {
           snapshot: { ok: true },
           live: { ok: true },
           notices: { ok: true, count: (bundle.notices || []).length }
-        };
-      }
-
-      // 번들이 시간초과면 snapshot/live/notices 를 동시에 다시 치면
-      // 느린 Supabase 를 더 막아 기사앱·ERP 가 같이 먹통이 된다.
-      if (/시간[이]? 초과|timeout|AbortError/i.test(String(bundle.message || ''))) {
-        console.warn('[BREM:data] driver app-bundle timeout — skip fallback stampede');
-        return {
-          ok: false,
-          allFailed: true,
-          publishedAt: getDriverAppPublishedAt(),
-          rider: null,
-          snapshot: bundle,
-          live: bundle,
-          notices: bundle
         };
       }
 
@@ -9103,14 +8941,6 @@ const BremStorage = (function () {
       return result;
     },
 
-    async completeRequestsBulk(requestIds) {
-      const result = await completeAdminWithdrawalRequestsBulk(requestIds);
-      if (!result?.ok) {
-        throw new Error(result?.error || result?.message || '선택 출금완료 처리에 실패했습니다.');
-      }
-      return result;
-    },
-
     async updateRequestPlatform(requestId, platform) {
       const result = await updateAdminWithdrawalRequestPlatform(requestId, platform);
       if (!result?.ok) {
@@ -10440,10 +10270,6 @@ const BremStorage = (function () {
           ? payrollDailySettlement.computeCallFee(orderCount, p, callFeeUnit)
           : null;
         const keepFee = !computed && existing && existing.callFee != null && existing.callFee !== '';
-        const incomingInsurance = Math.abs(Number(record.hourlyInsurance || 0));
-        const existingInsurance = Math.abs(Number(existing?.hourlyInsurance || 0));
-        const incomingDeduction = Math.abs(Number(record.deductionBase || 0));
-        const existingDeduction = Math.abs(Number(existing?.deductionBase || 0));
         return {
           id,
           driverId: record.driverId,
@@ -10451,12 +10277,9 @@ const BremStorage = (function () {
           platform: p,
           riderId: record.riderId || '',
           orderCount,
-          // 배민 일정산(배달처리비)에는 시간제보험이 없다. 먼저 올린 보험 금액을 덮어쓰지 않는다.
-          hourlyInsurance: incomingInsurance > 0
-            ? incomingInsurance
-            : (p === 'baemin' ? existingInsurance : 0),
+          hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
           // 원천세·고용·산재 기준 금액(쿠팡 AC열). 0 이면 정산금액 기준으로 계산된다.
-          deductionBase: incomingDeduction > 0 ? incomingDeduction : existingDeduction,
+          deductionBase: Math.abs(Number(record.deductionBase || 0)),
           settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
           deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
           // 콜수수료는 업로드 시 콜수×단가로 고정. 단가 변경이 과거 주를 소급하지 않게 한다.
@@ -15290,8 +15113,6 @@ const BremStorage = (function () {
     writeTableKey,
     persistLeaseErpTableViaServer,
     ensureSectionLoaded,
-    fetchSectionCollabRevision,
-    refreshSectionForCollab,
     ensureCallsSinceDate,
     ensureDashboardCallsLoaded,
     ensureSettlementsSinceDate,

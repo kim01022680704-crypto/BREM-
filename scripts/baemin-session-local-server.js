@@ -160,12 +160,8 @@ let autoCollectRuntime = {
   schedule: baeminAutoCollect.DEFAULT_SCHEDULE
 };
 
-/** 배민현황 자동수집 루프 (브라우저 닫아도 세션 서버에서 계속)
- *  수집(가벼움)과 ERP반영·수락율(무거움)을 분리 — 매 회차 apply 하면 Supabase 가 막힘.
- */
-const STATUS_LOOP_WAIT_MS = 30 * 1000;
-const STATUS_LOOP_APPLY_INTERVAL_MS = 5 * 60 * 1000;
-let statusLoopLastHeavyApplyAt = 0;
+/** 배민현황 자동수집 루프 (브라우저 닫아도 세션 서버에서 계속) */
+const STATUS_LOOP_WAIT_MS = 15 * 1000;
 let statusLoop = {
   active: false,
   stopping: false,
@@ -1159,65 +1155,6 @@ async function rebuildLiveAcceptRatesAfterApply(label = 'status_auto_loop') {
   }
 }
 
-function shouldRunStatusLoopHeavyApply(force = false) {
-  if (force) return true;
-  if (!statusLoopLastHeavyApplyAt) return true;
-  return Date.now() - statusLoopLastHeavyApplyAt >= STATUS_LOOP_APPLY_INTERVAL_MS;
-}
-
-function secondsUntilStatusLoopHeavyApply() {
-  if (!statusLoopLastHeavyApplyAt) return 0;
-  return Math.max(0, Math.ceil((STATUS_LOOP_APPLY_INTERVAL_MS - (Date.now() - statusLoopLastHeavyApplyAt)) / 1000));
-}
-
-/** 무거운 ERP 반영: 현황 저장 + 수락율 (+ 부트스트랩 시 콜/거절 동기화) */
-async function runStatusLoopHeavyApply(collectDate, round, options = {}) {
-  const date = String(collectDate || baeminAutoCollect.todayDateStringKST()).slice(0, 10);
-  setStatusLoopPhase('applying', `${round}회차 · 배민현황 저장 중`);
-  const apply = await applyStatusLoopToErp(date);
-  if (!statusLoop.active || statusLoop.stopping) {
-    return { ok: false, cancelled: true };
-  }
-  if (!apply.ok) {
-    statusLoop.lastError = apply.message || '배민현황 저장 실패';
-    return { ok: false, message: statusLoop.lastError };
-  }
-
-  setStatusLoopPhase('rider_sync', `${round}회차 · 기사앱 수락율 반영 중`);
-  const rates = await rebuildLiveAcceptRatesAfterApply(options.bootstrap ? 'status_auto_loop_bootstrap' : 'status_auto_loop');
-  if (!statusLoop.active || statusLoop.stopping) {
-    return { ok: false, cancelled: true };
-  }
-
-  let erpNote = '';
-  if (options.syncErp && options.weekRange) {
-    try {
-      const { syncBaeminCallsAndRejections } = require('../server/baemin-erp-sync');
-      const erp = await syncBaeminCallsAndRejections({
-        fromDate: options.weekRange.fromDate,
-        toDate: options.weekRange.toDate,
-        mode: 'all'
-      });
-      erpNote = erp.ok
-        ? ' · 콜/거절 동기화 OK'
-        : ` · 콜/거절 동기화 실패(${erp.message || '오류'})`;
-    } catch (erpErr) {
-      erpNote = ` · 콜/거절 동기화 오류(${erpErr?.message || erpErr})`;
-    }
-  }
-
-  statusLoopLastHeavyApplyAt = Date.now();
-  const rateNote = rates.ok
-    ? ` · 수락율 ${Number(rates.upserted || rates.riderCount || 0)}명`
-    : ` · 수락율 실패(${rates.message || '오류'})`;
-  return {
-    ok: true,
-    apply,
-    rates,
-    message: `저장 ${Number(apply.itemCount || apply.savedCount || 0)}건${rateNote}${erpNote}`
-  };
-}
-
 async function waitStatusLoop(ms) {
   const started = Date.now();
   statusLoop.waitEndsAt = started + ms;
@@ -1469,20 +1406,37 @@ async function runStatusAutoLoopInner() {
         if (!continued) break;
         continue;
       }
-      const heavy = await runStatusLoopHeavyApply(collect.collectDate || collectDate, round, {
-        bootstrap: true,
-        syncErp: true,
-        weekRange
-      });
+      setStatusLoopPhase('applying', `${round}회차 · 배민현황 저장 중`);
+      const apply = await applyStatusLoopToErp(collect.collectDate || collectDate);
       if (!statusLoop.active || statusLoop.stopping) break;
-      if (heavy.cancelled) break;
-      if (!heavy.ok) {
+      if (!apply.ok) {
+        statusLoop.lastError = apply.message || '배민현황 저장 실패';
         setStatusLoopPhase('waiting', `${round}회차 저장 실패 — ${statusLoop.lastError}`);
         console.warn(`[BREM] [현황자동수집] ${round}회차 저장 실패:`, statusLoop.lastError);
       } else {
+        setStatusLoopPhase('rider_sync', `${round}회차 · 기사앱 수락율 반영 중`);
+        const rates = await rebuildLiveAcceptRatesAfterApply('status_auto_loop_bootstrap');
+        if (!statusLoop.active || statusLoop.stopping) break;
+        const rateNote = rates.ok
+          ? ` · 수락율 ${Number(rates.upserted || rates.riderCount || 0)}명`
+          : ` · 수락율 실패(${rates.message || '오류'})`;
+        let erpNote = '';
+        try {
+          const { syncBaeminCallsAndRejections } = require('../server/baemin-erp-sync');
+          const erp = await syncBaeminCallsAndRejections({
+            fromDate: weekRange.fromDate,
+            toDate: weekRange.toDate,
+            mode: 'all'
+          });
+          erpNote = erp.ok
+            ? ` · 콜/거절 동기화 OK`
+            : ` · 콜/거절 동기화 실패(${erp.message || '오류'})`;
+        } catch (erpErr) {
+          erpNote = ` · 콜/거절 동기화 오류(${erpErr?.message || erpErr})`;
+        }
         setStatusLoopPhase(
           'waiting',
-          `${round}회차 부트스트랩 완료 · 수집 ${Number(collect.savedCount || 0)}건 · ${heavy.message}`
+          `${round}회차 부트스트랩 완료 · 수집 ${Number(collect.savedCount || 0)}건 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건${rateNote}${erpNote}`
         );
         console.log(`[BREM] [현황자동수집] ${round}회차 부트스트랩 완료`);
         isFirstRound = false;
@@ -1500,27 +1454,27 @@ async function runStatusAutoLoopInner() {
         statusLoop.lastError = collect.message || '배달현황 수집 실패';
         setStatusLoopPhase('waiting', `${round}회차 실패 — ${statusLoop.lastError}`);
         console.warn(`[BREM] [현황자동수집] ${round}회차 실패:`, statusLoop.lastError);
-      } else if (shouldRunStatusLoopHeavyApply()) {
-        const heavy = await runStatusLoopHeavyApply(collect.collectDate || collectDate, round);
+      } else {
+        setStatusLoopPhase('applying', `${round}회차 · 배민현황 저장 중`);
+        const apply = await applyStatusLoopToErp(collect.collectDate || collectDate);
         if (!statusLoop.active || statusLoop.stopping) break;
-        if (heavy.cancelled) break;
-        if (!heavy.ok) {
+        if (!apply.ok) {
+          statusLoop.lastError = apply.message || '배민현황 저장 실패';
           setStatusLoopPhase('waiting', `${round}회차 저장 실패 — ${statusLoop.lastError}`);
           console.warn(`[BREM] [현황자동수집] ${round}회차 저장 실패:`, statusLoop.lastError);
         } else {
+          setStatusLoopPhase('rider_sync', `${round}회차 · 기사앱 수락율 반영 중`);
+          const rates = await rebuildLiveAcceptRatesAfterApply('status_auto_loop');
+          if (!statusLoop.active || statusLoop.stopping) break;
+          const rateNote = rates.ok
+            ? ` · 수락율 ${Number(rates.upserted || rates.riderCount || 0)}명`
+            : ` · 수락율 실패(${rates.message || '오류'})`;
           setStatusLoopPhase(
             'waiting',
-            `${round}회차 완료 · 수집 ${Number(collect.savedCount || 0)}건 · ${heavy.message}`
+            `${round}회차 완료 · 수집 ${Number(collect.savedCount || 0)}건 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건${rateNote}`
           );
           console.log(`[BREM] [현황자동수집] ${round}회차 완료`);
         }
-      } else {
-        const left = secondsUntilStatusLoopHeavyApply();
-        setStatusLoopPhase(
-          'waiting',
-          `${round}회차 수집 ${Number(collect.savedCount || 0)}건 · ERP반영 ${left}초 후 (수집은 계속)`
-        );
-        console.log(`[BREM] [현황자동수집] ${round}회차 수집만 — ERP반영 ${left}초 후`);
       }
     }
 

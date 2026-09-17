@@ -826,21 +826,6 @@ app.post('/api/admin/payroll/withdrawal-requests/:id/cancel', async (req, res) =
   }
 });
 
-app.post('/api/admin/payroll/withdrawal-requests/bulk-complete', async (req, res) => {
-  try {
-    const result = await riderWithdrawal.completeWithdrawalRequestsBulk(
-      getBearerToken(req),
-      req.body?.ids
-    );
-    if (!result.ok) {
-      return res.status(result.status || 400).json({ error: result.error, failed: result.failed });
-    }
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message || '선택 출금완료 처리에 실패했습니다.' });
-  }
-});
-
 app.post('/api/admin/payroll/withdrawal-requests/:id/complete', async (req, res) => {
   try {
     const result = await riderWithdrawal.completeWithdrawalRequest(
