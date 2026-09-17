@@ -4169,6 +4169,24 @@
     return normalizePlatform(platform) === 'baemin';
   }
 
+  function detectBaeminUploadFileKind(filename) {
+    const base = String(filename || '').trim().toLowerCase();
+    if (!base) return 'unknown';
+    if (/배달처리비/.test(base)) return 'delivery_fee';
+    if (/시간제\s*보험|시간제보험|협력사.*시간제|보험료_v2|보험료/.test(base)) return 'hourly_insurance';
+    return 'unknown';
+  }
+
+  function countBaeminDeliveryRowsForPeriod(period) {
+    const day = String(period || '').slice(0, 10);
+    if (!day) return 0;
+    return settlements().filter(record => (
+      normalizePlatform(record.platform) === 'baemin'
+      && String(record.period || '').slice(0, 10) === day
+      && settlementAmountValue(record) > 0
+    )).length;
+  }
+
   function settlementAmountValue(record) {
     return Number(record.deliveryAmount ?? record.settlementAmount ?? 0);
   }
@@ -5870,10 +5888,15 @@
       showToast('시간제보험 엑셀 파일을 선택해주세요.');
       return;
     }
+    if (detectBaeminUploadFileKind(file.name) === 'delivery_fee') {
+      showToast('이 파일은 배달처리비(일정산)입니다. 위 「배민 일정산서 업로드」에서 올려주세요.');
+      return;
+    }
 
     applyBaeminHourlyInsuranceDateFromFilename(file.name);
     uploadBtn.disabled = true;
     uploadBtn.textContent = '처리 중...';
+    pauseCollabSync();
 
     try {
       await BremStorage.ensureSectionLoaded?.('settlements');
@@ -5936,6 +5959,7 @@
     } catch (error) {
       showToast(error.message || '시간제보험 파일을 처리하지 못했습니다.');
     } finally {
+      resumeCollabSync();
       uploadBtn.disabled = false;
       uploadBtn.textContent = '업로드 및 미리보기';
     }
@@ -6225,6 +6249,7 @@
       applyBtn.disabled = true;
       applyBtn.textContent = '반영 중…';
     }
+    pauseCollabSync();
 
     try {
       await BremStorage.ensureSectionLoaded?.('settlements');
@@ -6272,11 +6297,17 @@
       clearBaeminHourlyInsurancePreview();
       renderBaeminHourlyInsuranceUploadLogs();
       renderSettlements();
-      showToast(`배민 시간제보험 ${preview.matched.length}명 · ${formatMoney(preview.totalHourlyInsurance || 0)} 반영 완료`);
+      const deliveryCount = countBaeminDeliveryRowsForPeriod(preview.period);
+      showToast(
+        deliveryCount > 0
+          ? `배민 시간제보험 ${preview.matched.length}명 · ${formatMoney(preview.totalHourlyInsurance || 0)} 반영 완료`
+          : `배민 시간제보험 ${preview.matched.length}명 반영 · ${formatDate(preview.period)} 배달처리비(일정산) 파일도 위에서 올려주세요`
+      );
     } catch (error) {
       console.error('[BREM] baemin hourly insurance apply failed:', error);
       showToast(error.message || '시간제보험 반영에 실패했습니다.');
     } finally {
+      resumeCollabSync();
       if (applyBtn) {
         applyBtn.disabled = false;
         applyBtn.textContent = '반영하기';
@@ -6325,6 +6356,17 @@
     if (!file) {
       showToast('정산표 파일을 선택해주세요.');
       return;
+    }
+    if (isBaeminSettlementPlatform(p) && detectBaeminUploadFileKind(file.name) === 'hourly_insurance') {
+      showToast('이 파일은 시간제보험입니다. 아래 「배민 시간제보험 업로드」에서 올려주세요.');
+      return;
+    }
+    if (isBaeminSettlementPlatform(p) && detectBaeminUploadFileKind(file.name) === 'delivery_fee') {
+      const hint = $(`#settlementFileHint-${p}`);
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = '배달처리비 파일입니다. 미리보기 후 반영하기를 눌러 배달수행금액을 저장하세요.';
+      }
     }
 
     applySettlementDateFromFilename(file.name, p);

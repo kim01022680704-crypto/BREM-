@@ -10440,6 +10440,10 @@ const BremStorage = (function () {
           ? payrollDailySettlement.computeCallFee(orderCount, p, callFeeUnit)
           : null;
         const keepFee = !computed && existing && existing.callFee != null && existing.callFee !== '';
+        const incomingInsurance = Math.abs(Number(record.hourlyInsurance || 0));
+        const existingInsurance = Math.abs(Number(existing?.hourlyInsurance || 0));
+        const incomingDeduction = Math.abs(Number(record.deductionBase || 0));
+        const existingDeduction = Math.abs(Number(existing?.deductionBase || 0));
         return {
           id,
           driverId: record.driverId,
@@ -10447,9 +10451,12 @@ const BremStorage = (function () {
           platform: p,
           riderId: record.riderId || '',
           orderCount,
-          hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
+          // 배민 일정산(배달처리비)에는 시간제보험이 없다. 먼저 올린 보험 금액을 덮어쓰지 않는다.
+          hourlyInsurance: incomingInsurance > 0
+            ? incomingInsurance
+            : (p === 'baemin' ? existingInsurance : 0),
           // 원천세·고용·산재 기준 금액(쿠팡 AC열). 0 이면 정산금액 기준으로 계산된다.
-          deductionBase: Math.abs(Number(record.deductionBase || 0)),
+          deductionBase: incomingDeduction > 0 ? incomingDeduction : existingDeduction,
           settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
           deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
           // 콜수수료는 업로드 시 콜수×단가로 고정. 단가 변경이 과거 주를 소급하지 않게 한다.
