@@ -7,13 +7,14 @@
     totalDeliveryFee: 6,        // G 배달료
     baeminMission: 7,           // H 배민미션
     otherPayment: 8,            // I 기타지급
-    jColumnAmount: 9,           // J (원천세 Q 차감 기준 — BREM 지급과 별개)
-    employmentInsurance: 10,    // K 고용보험
-    industrialAccidentInsurance: 12, // M 산재보험
-    callFeeO: 14,               // O 콜수수료(1)
-    callFeeP: 15,               // P 콜수수료(2)
-    excelWithholdingTax: 16,    // Q 원천세(엑셀)
-    excelNetPay: 17             // R 실지급액
+    jColumnAmount: 9,           // J (원천세 S 차감 기준 — BREM 지급과 별개)
+    employmentInsurance: 11,    // L 고용보험
+    industrialAccidentInsurance: 13, // N 산재보험
+    hourlyInsurance: 15,        // P 시간제보험
+    callFeeO: 16,               // Q 콜수수료(1)
+    callFeeP: 17,               // R 콜수수료(2)
+    excelWithholdingTax: 18,    // S 원천세(엑셀)
+    excelNetPay: 19             // T 실지급액
   });
 
   /** 엑셀 1행=헤더, 2행부터 데이터 (0-based index 1) */
@@ -145,7 +146,7 @@
     { key: 'withholdingTax', label: '원천세', money: true },
     { key: 'callCount', label: '콜수', number: true },
     { key: 'registeredCallCount', label: '등록콜수', number: true },
-    { key: 'excelWithholdingTax', label: 'Q열(엑셀)', money: true },
+    { key: 'excelWithholdingTax', label: 'S열(엑셀)', money: true },
     { key: 'jColumnAmount', label: 'J열', money: true },
     { key: 'jWithholdingDeduction', label: 'J×3.3%', money: true },
     { key: 'matchPlatformLabel', label: '플랫폼' },
@@ -170,12 +171,12 @@
     { key: 'employmentInsurance', label: '고용보험', money: true },
     { key: 'industrialAccidentInsurance', label: '산재보험', money: true },
     { key: 'hourlyInsurance', label: '시간제보험', money: true },
-    { key: 'excelWithholdingTax', label: 'Q열(원본)', money: true, adminOnly: true },
+    { key: 'excelWithholdingTax', label: 'S열(원본)', money: true, adminOnly: true },
     { key: 'jColumnAmount', label: 'J열', money: true, adminOnly: true },
     { key: 'jWithholdingDeduction', label: 'J×3.3%차감', money: true, adminOnly: true },
     { key: 'withholdingTax', label: '원천세', money: true },
     { key: 'promotionWithholdingTax', label: '프로모션원천세(3.3%)', money: true },
-    { key: 'callFee', label: '콜수수료(O+P)', money: true },
+    { key: 'callFee', label: '콜수수료(Q+R)', money: true },
     { key: 'dailySettlementFee', label: '일정산 수수료(2%)', money: true, adminOnly: true },
     { key: 'adminAdjustedCallFee', label: '일정산 조정 콜수', money: true, adminOnly: true },
     { key: 'dailySettlementRegion', label: '일정산 지역', adminOnly: true },
@@ -419,7 +420,7 @@
       jColumnAmount: parseMoney(cellValue(row, COL.jColumnAmount)),
       bremPromotion: 0,
       bremPromotionFromBulk: false,
-      hourlyInsurance: 0,
+      hourlyInsurance: parseMoney(cellValue(row, COL.hourlyInsurance)),
       employmentInsurance: parseMoney(cellValue(row, COL.employmentInsurance)),
       industrialAccidentInsurance: parseMoney(cellValue(row, COL.industrialAccidentInsurance)),
       callFeeO: parseMoney(cellValue(row, COL.callFeeO)),
@@ -821,8 +822,8 @@
   }
 
   function templateRows() {
-    const header = ['', 'B 대리점명', 'C 기사명', '', '', 'F 콜수', 'G 배달료', 'H 배민미션', 'I 기타지급', 'J (Q차감기준)', 'K 고용보험', '', 'M 산재보험', '', 'O 콜수', 'P 콜수', 'Q 원천세', 'R 실지급액'];
-    const sample = ['', 'OO대리점', '홍길동', '', '', 120, 3500000, 50000, 30000, 20000, 15000, '', 8000, '', 50000, 7000, 120000, 3400000];
+    const header = ['', 'B 대리점명', 'C 기사명', '', '', 'F 콜수', 'G 배달료', 'H 추가지급(미션)', 'I 기타지급', 'J (S차감기준)', '', 'L 고용보험', '', 'N 산재보험', '', 'P 시간제보험', 'Q 콜수', 'R 콜수', 'S 원천세', 'T 실지급액'];
+    const sample = ['', 'OO대리점', '홍길동', '', '', 120, 3500000, 50000, 30000, 20000, '', 15000, '', 8000, '', 5000, 50000, 7000, 120000, 3400000];
     return [header, sample];
   }
 
@@ -833,10 +834,10 @@
 
   function resolveWithholdingTax(source) {
     const raw = source && typeof source === 'object' ? source : {};
-    const hasExcelQ = raw.excelWithholdingTax !== undefined
+    const hasExcelS = raw.excelWithholdingTax !== undefined
       && raw.excelWithholdingTax !== null
       && String(raw.excelWithholdingTax).trim() !== '';
-    if (hasExcelQ || parseMoney(raw.jColumnAmount)) {
+    if (hasExcelS || parseMoney(raw.jColumnAmount)) {
       return Math.max(
         0,
         parseMoney(raw.excelWithholdingTax) - calcJWithholdingDeduction(raw.jColumnAmount)
