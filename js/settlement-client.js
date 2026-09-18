@@ -962,7 +962,7 @@ const BremSettlementParser = (function () {
 
     if (decryptSucceeded || openedWithoutPassword || lastSheetMiss) {
       const error = new Error(
-        '파일은 열렸지만 시간제보험 시트(B열 ID·H열 금액)를 찾지 못했습니다. 시트명에 「협력사」「시간제」「보험」이 포함돼 있는지 확인하세요.'
+        '파일은 열렸지만 시간제보험 시트(B열 ID·I열 보험료 발생금액)를 찾지 못했습니다. 시트명에 「협력사」「시간제」「보험」이 포함돼 있는지 확인하세요.'
       );
       error.code = 'SHEET_NOT_FOUND';
       throw error;
@@ -1098,7 +1098,7 @@ const BremSettlementParser = (function () {
     }
 
     const platformIdCol = 1; // B
-    const hourlyInsuranceCol = 7; // H
+    const hourlyInsuranceCol = 8; // I (보험료 발생금액)
     const headerMarkers = ['아이디', 'id', '시간제', '협력사', '라이더', '정산'];
     const driverList = Array.isArray(drivers) ? drivers : [];
     const matchedMap = new Map();
@@ -1169,7 +1169,7 @@ const BremSettlementParser = (function () {
 
     const matched = Array.from(matchedMap.values());
     if (!matched.length && !unmatched.length) {
-      throw new Error('B열(배민 ID)·H열(시간제보험료)에서 데이터를 읽지 못했습니다.');
+      throw new Error('B열(배민 ID)·I열(보험료 발생금액)에서 데이터를 읽지 못했습니다.');
     }
 
     const totalHourlyInsurance = matched.reduce(
