@@ -610,22 +610,12 @@ async function loadBaeminDeliverySnapshot(supabase, partnerId, today) {
 
   let { data, error } = await base().eq('collect_date', today);
   if (error) return { error };
-  if (!(data || []).length) {
-    // 배달현황은 DP당 최신 스냅샷만 남는다. 자정 직후에는 collect_date 가 전날일 수 있다.
-    ({ data, error } = await base());
-    if (error) return { error };
-  }
-
+  // 오늘분이 없으면 빈 스냅샷으로 둔다.
+  // 예전처럼 최신(며칠 전)으로 넘어가면 안 뛴 기사가 실적·운행중에 남는다.
   const rows = data || [];
-  const snapshotDate = rows.reduce((latest, row) => {
-    const day = String(row.collect_date || '').slice(0, 10);
-    return day > latest ? day : latest;
-  }, '');
   return {
-    snapshotDate,
-    rows: snapshotDate
-      ? rows.filter(row => String(row.collect_date || '').slice(0, 10) === snapshotDate)
-      : rows
+    snapshotDate: rows.length ? today : '',
+    rows
   };
 }
 

@@ -1027,19 +1027,32 @@ function calcAcceptRateFromMetrics(metrics = {}) {
   return Math.round((100 - (deny / denom) * 100) * 10) / 10;
 }
 
-async function fetchLatestDeliveryStatusForBaeminId(supabase, baeminId) {
+async function fetchLatestDeliveryStatusForBaeminId(supabase, baeminId, options = {}) {
   const variants = baeminIdLookupVariants(baeminId);
   if (!variants.length) return null;
 
+  let minDate = String(options.minCollectDate || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(minDate)) {
+    try {
+      const week = require('./baemin-settlement-week');
+      minDate = week.settlementWeekStart(week.todayKST());
+    } catch {
+      minDate = '';
+    }
+  }
+
   const tables = ['baemin_delivery_applied_items', 'baemin_biz_collect_items'];
   for (const table of tables) {
-    const { data, error } = await supabase
+    let query = supabase
       .from(table)
       .select('collected_at, collect_date, rider_user_id, rider_name, phone_number, parsed_json, dedupe_key')
       .eq('source_menu', 'delivery_status')
       .in('rider_user_id', variants)
       .order('collected_at', { ascending: false })
-      .limit(8);
+      .limit(20);
+    if (minDate) query = query.gte('collect_date', minDate);
+
+    const { data, error } = await query;
 
     if (error) {
       if (/does not exist|Could not find the table/i.test(String(error.message || ''))) continue;
@@ -1158,10 +1171,41 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
 
   if (!baeminId && !driverId) return empty;
 
-  const [deliveryHit, acceptRow] = await Promise.all([
-    baeminId ? fetchLatestDeliveryStatusForBaeminId(supabase, baeminId) : Promise.resolve(null),
+  let today = '';
+  let weekStart = '';
+  try {
+    const week = require('./baemin-settlement-week');
+    today = week.todayKST();
+    weekStart = week.settlementWeekStart(today);
+  } catch {
+    today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    weekStart = today;
+  }
+
+  const [deliveryHitRaw, acceptRowRaw] = await Promise.all([
+    baeminId ? fetchLatestDeliveryStatusForBaeminId(supabase, baeminId, { minCollectDate: weekStart }) : Promise.resolve(null),
     fetchLatestLiveAcceptRate(supabase, { baeminId, driverId })
   ]);
+
+  // 정산주 밖의 배달현황·다른 주 스냅샷은 쓰지 않는다.
+  const deliveryDate = String(deliveryHitRaw?.row?.collect_date || '').slice(0, 10);
+  const deliveryInWeek = Boolean(deliveryDate && weekStart && deliveryDate >= weekStart);
+  const deliveryHit = deliveryInWeek ? deliveryHitRaw : null;
+
+  let acceptRow = acceptRowRaw;
+  if (acceptRow && weekStart && String(acceptRow.week_start || '').slice(0, 10) !== weekStart) {
+    acceptRow = null;
+  }
+  if (acceptRow) {
+    const pastSum = Number(acceptRow.past_complete || 0)
+      + Number(acceptRow.past_food_reject || 0)
+      + Number(acceptRow.past_food_cancel || 0)
+      + Number(acceptRow.past_food_rider_fault || 0);
+    // 이번 주 라이더내역도 없고 이번 주 배달현황도 없으면 live 숫자는 유령이다.
+    if (pastSum <= 0 && !deliveryInWeek) {
+      acceptRow = null;
+    }
+  }
 
   const metrics = deliveryHit?.row
     ? extractDeliveryStatusMetrics(deliveryHit.row.parsed_json || {})
@@ -1170,12 +1214,7 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
   // 정산주(수~화) 첫날(수요일)에는 라이더 과거내역이 없어, 주간 스냅샷(과거+오늘) 대신
   // 오늘 배달현황만으로 계산해야 화면의 완료/거절 수치와 일치한다.
   // 그 외 요일(라이더 내역 존재)에는 기존대로 주간 스냅샷(current_accept_rate)을 우선한다.
-  let isSettlementWeekStartDay = false;
-  try {
-    const { todayKST, settlementWeekStart } = require('./baemin-settlement-week');
-    const today = todayKST();
-    isSettlementWeekStartDay = today === settlementWeekStart(today);
-  } catch { /* 헬퍼 없으면 기존 우선순위 유지 */ }
+  const isSettlementWeekStartDay = Boolean(today && weekStart && today === weekStart);
 
   const deliveryRate = deliveryHit?.row ? calcAcceptRateFromMetrics(metrics) : null;
   const snapshotRate = (acceptRow && acceptRow.current_accept_rate != null && Number.isFinite(Number(acceptRow.current_accept_rate)))
@@ -1228,7 +1267,7 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
     weekFoodCancel: weekMetrics.foodCancel,
     weekFoodRiderFault: weekMetrics.foodRiderFault,
     weekAcceptRate: acceptRate,
-    weekStart: acceptRow?.week_start || null,
+    weekStart: acceptRow?.week_start || weekStart || null,
     collectDate: deliveryHit?.row?.collect_date || acceptRow?.source_capture_date || null,
     collectedAt: deliveryHit?.row?.collected_at || null,
     updatedAt: acceptRow?.updated_at || deliveryHit?.row?.collected_at || null,

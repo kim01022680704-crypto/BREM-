@@ -5048,10 +5048,48 @@ async function rebuildLiveAcceptRatesForAppliedWeek(options = {}) {
   };
 
   pastItems.forEach(row => upsert(row, 'past'));
-  (deliveryRows || []).forEach(row => upsert(row, 'live'));
+  // live(오늘 배달현황)는 적용 배치의 기준일(captureDate)만 쓴다.
+  // 남구e처럼 오늘 미수집인 지역의 옛 스냅샷·다른 날짜 행을 합치면
+  // 안 뛴 기사에게 완료 114 같은 유령 실적이 생긴다.
+  const liveRows = (deliveryRows || []).filter(row => {
+    const day = String(
+      row.collect_date
+      || row.parsed_json?.deliveryDate
+      || row.parsed_json?.businessDate
+      || ''
+    ).slice(0, 10);
+    if (!captureDate) return Boolean(day);
+    return day === captureDate;
+  });
+  // 같은 기사·같은 날 중복은 최신 collected_at 1건만 (합산 금지)
+  const latestLiveByKey = new Map();
+  liveRows.forEach(row => {
+    const baeminId = normalizeBaeminUserIdForOps(row.rider_user_id || row.parsed_json?.riderUserId);
+    const matchKey = baeminIdMatchKeyForOps(baeminId);
+    const name = String(row.rider_name || '').trim();
+    const key = matchKey || (name ? `name:${name}` : '');
+    if (!key || key === 'name:') return;
+    const stamp = String(row.collected_at || row.collect_date || '');
+    const prev = latestLiveByKey.get(key);
+    if (!prev || stamp > String(prev.collected_at || prev.collect_date || '')) {
+      latestLiveByKey.set(key, row);
+    }
+  });
+  latestLiveByKey.forEach(row => upsert(row, 'live'));
 
   const rows = [...byKey.values()]
     .filter(entry => entry.riderUserId)
+    // 과거·오늘 모두 0이면 스냅샷에 넣지 않는다 (유령 행 방지)
+    .filter(entry => (
+      entry.past.complete
+      + entry.past.foodReject
+      + entry.past.foodCancel
+      + entry.past.foodRiderFault
+      + entry.live.complete
+      + entry.live.foodReject
+      + entry.live.foodCancel
+      + entry.live.foodRiderFault
+    ) > 0)
     .map(entry => {
       const current = mergeAcceptRateMetricsBags(entry.past, entry.live);
       const pastRate = calcFoodAcceptRatePercent(entry.past);
@@ -5101,7 +5139,8 @@ async function rebuildLiveAcceptRatesForAppliedWeek(options = {}) {
     captureDate,
     riderCount: rows.length,
     matchedDriverCount: matched,
-    deliveryCount: (deliveryRows || []).length,
+    deliveryCount: liveRows.length,
+    deliveryRawCount: (deliveryRows || []).length,
     pastCount: pastItems.length,
     upserted: rows.length,
     skipped: Boolean(saved.skipped),
