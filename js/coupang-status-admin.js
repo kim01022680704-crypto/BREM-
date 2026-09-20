@@ -253,8 +253,23 @@
         }), true);
     }
     if (menu === 'weekly_performance') {
-      return wrapHtml(['지역', '요일', '타임존', '완료/목표', '상태', '거절율'],
-        rows.map(p => {
+      const dayKo = {
+        WEDNESDAY: '수', THURSDAY: '목', FRIDAY: '금', SATURDAY: '토',
+        SUNDAY: '일', MONDAY: '월', TUESDAY: '화',
+        수: '수', 목: '목', 금: '금', 토: '토', 일: '일', 월: '월', 화: '화'
+      };
+      const dayOrder = { WEDNESDAY: 0, THURSDAY: 1, FRIDAY: 2, SATURDAY: 3, SUNDAY: 4, MONDAY: 5, TUESDAY: 6 };
+      const sorted = rows.slice().sort((a, b) => {
+        const da = String(a.date || '').slice(0, 10);
+        const db = String(b.date || '').slice(0, 10);
+        if (da && db && da !== db) return da.localeCompare(db);
+        const oa = dayOrder[String(a.dayOfWeek || '').toUpperCase()] ?? 99;
+        const ob = dayOrder[String(b.dayOfWeek || '').toUpperCase()] ?? 99;
+        if (oa !== ob) return oa - ob;
+        return String(a.peakType || '').localeCompare(String(b.peakType || ''));
+      });
+      return wrapHtml(['지역', '요일(수~화)', '날짜', '타임존', '완료/목표', '상태', '거절율'],
+        sorted.map(p => {
           const done = p.completedCount == null ? 0 : Number(p.completedCount) || 0;
           const goal = Number(p.goalCount) || 0;
           const has = p.completedCount != null || goal > 0;
@@ -263,9 +278,13 @@
             ? `<span class="baemin-quota-tag ${achieved ? 'baemin-quota-tag--achieved' : 'baemin-quota-tag--missed'}">${achieved ? '달성' : '미달성'}</span>`
             : '-';
           const ratio = p.completedCount == null && !goal ? '-' : `${p.completedCount == null ? '-' : n(done)} / ${n(goal)}`;
+          const dowRaw = String(p.dayOfWeek || '');
+          const dow = dayKo[dowRaw.toUpperCase()] || dayKo[dowRaw] || dowRaw || '-';
+          const dateLabel = String(p.date || '').slice(0, 10) || '-';
           return [
             esc(p.vendorName || p.vendorId),
-            esc(p.dayOfWeek),
+            esc(dow),
+            esc(dateLabel),
             esc(p.peakLabel || p.peakType),
             ratio,
             tag,

@@ -174,21 +174,29 @@
 
   function coupangLiveWeekPerf(ops) {
     if (!ops?.available) return null;
-    // 이번 주 주간 거절율 = 현재거절율(오늘 최신). 어제와 합산·평균하지 않는다.
-    const todayComplete = Number(ops.complete || 0);
-    const todayReject = Number(ops.reject || 0);
-    const todayCancel = Number(ops.cancel || 0);
-    const hasToday = todayComplete + todayReject + todayCancel > 0;
-    const complete = hasToday ? todayComplete : Number(ops.pastComplete || 0);
-    const reject = hasToday ? todayReject : Number(ops.pastReject || 0);
-    const cancel = hasToday ? todayCancel : Number(ops.pastCancel || 0);
+    // 주간 실적 = 정산주(수~화) 합산. 백엔드 week* 필드 우선, 없으면 past+today.
+    const weekComplete = Number(ops.weekComplete);
+    const weekReject = Number(ops.weekReject);
+    const weekCancel = Number(ops.weekCancel);
+    const hasWeek = Number.isFinite(weekComplete) || Number.isFinite(weekReject) || Number.isFinite(weekCancel);
+    const complete = hasWeek
+      ? Math.max(0, Number(ops.weekComplete || 0))
+      : Math.max(0, Number(ops.pastComplete || 0)) + Math.max(0, Number(ops.complete || 0));
+    const reject = hasWeek
+      ? Math.max(0, Number(ops.weekReject || 0))
+      : Math.max(0, Number(ops.pastReject || 0)) + Math.max(0, Number(ops.reject || 0));
+    const cancel = hasWeek
+      ? Math.max(0, Number(ops.weekCancel || 0))
+      : Math.max(0, Number(ops.pastCancel || 0)) + Math.max(0, Number(ops.cancel || 0));
     if (complete + reject + cancel <= 0) return null;
-    const liveRate = Number(ops.rejectionRate);
+    const weekRate = Number(ops.weekRejectionRate);
+    const liveRate = Number.isFinite(weekRate) ? weekRate : calcCoupangRejectRate(complete, reject, cancel);
     return {
       complete,
       reject,
       cancel,
-      rate: Number.isFinite(liveRate) ? liveRate : calcCoupangRejectRate(complete, reject, cancel)
+      rate: liveRate,
+      weekStart: ops.weekStart || null
     };
   }
 
@@ -1710,6 +1718,15 @@
     const weeklyRejectionCoupang = liveCoupangEntry
       ? liveCoupangEntry.rate
       : weeklyRateForPlatform(driver.id, weekStart, 'coupang');
+    const coupangWeekLabel = document.getElementById('coupangWeekRangeLabel');
+    if (coupangWeekLabel) {
+      const ops = weekStart === weekStartKey() ? BremStorage.getRiderCoupangOps?.() : null;
+      const ws = String(ops?.weekStart || weekStart || '').slice(0, 10);
+      const we = String(ops?.weekEnd || weekEndKey(ws) || '').slice(0, 10);
+      coupangWeekLabel.textContent = ws && we
+        ? `수~화 ${formatDate(ws)}~${formatDate(we)}`
+        : '수~화';
+    }
     const item = eventItemFor(driver);
     const eventProgress = BremStorage.events.getProgressForDriver(driver);
     const isEventUnset = eventProgress.status === 'unset'

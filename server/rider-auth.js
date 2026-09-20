@@ -1345,6 +1345,7 @@ async function loadRiderCoupangOps(supabase, rider = {}) {
     todayRejectionRate: null,
     rejectionRateSource: null,
     weekStart: null,
+    weekEnd: null,
     collectDate: null,
     collectedAt: null,
     updatedAt: null,
@@ -1421,6 +1422,13 @@ async function loadRiderCoupangOps(supabase, rider = {}) {
     todayRejectionRate: todayRate,
     rejectionRateSource,
     weekStart,
+    weekEnd: (() => {
+      try {
+        return require('./baemin-settlement-week').settlementWeekEnd(weekStart);
+      } catch {
+        return null;
+      }
+    })(),
     collectDate: today,
     collectedAt: live.collectedAt || past.collectedAt || null,
     updatedAt: live.collectedAt || past.collectedAt || null,
