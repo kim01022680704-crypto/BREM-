@@ -365,6 +365,16 @@ window.BremInactiveDriversAdmin = (function () {
     }
   }
 
+  const STATUS_BATCH_SIZE = 300;
+
+  function chunkIds(ids, size) {
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += size) {
+      chunks.push(ids.slice(i, i + size));
+    }
+    return chunks;
+  }
+
   async function applyStatus(status) {
     const ids = [...state.selected];
     if (!ids.length || state.applying) return;
@@ -373,22 +383,45 @@ window.BremInactiveDriversAdmin = (function () {
       return;
     }
     const label = status === '휴무' ? '휴무' : '퇴사';
+    const batches = chunkIds(ids, STATUS_BATCH_SIZE);
     const confirmed = window.confirm(
-      `선택한 ${ids.length}명을 ${label} 처리합니다.\n라이더앱 접속이 바로 차단됩니다. 계속할까요?`
+      `선택한 ${ids.length}명을 ${label} 처리합니다.`
+      + (batches.length > 1 ? `\n서버 한 번에 300명이라 ${batches.length}회로 나눠 전부 저장합니다.` : '')
+      + '\n라이더앱 접속이 바로 차단됩니다. 계속할까요?'
     );
     if (!confirmed) return;
 
     state.applying = true;
     updateSummary();
+    const hint = $('#inactiveDriverLoadHint');
+    let done = 0;
     try {
-      const patches = ids.map(id => ({ id, changes: { status } }));
-      await window.BremStorage.drivers.batchPatch(patches);
-      showToast(`${ids.length}명을 ${label} 처리했습니다. 라이더앱 접속이 차단됩니다.`);
-      state.selected.clear();
+      for (let i = 0; i < batches.length; i += 1) {
+        const batch = batches[i];
+        if (hint) {
+          hint.textContent = `${label} 처리 중… ${done + 1}~${done + batch.length} / ${ids.length}명`;
+        }
+        const patches = batch.map(id => ({ id, changes: { status } }));
+        await window.BremStorage.drivers.batchPatch(patches, { maxBatch: STATUS_BATCH_SIZE });
+        done += batch.length;
+        batch.forEach(id => state.selected.delete(id));
+        updateSummary();
+      }
+      showToast(`${done}명을 ${label} 처리했습니다. 라이더앱 접속이 차단됩니다.`);
       collectRows();
       renderTable();
+      if (hint) {
+        const current = weekStartKey(todayKey());
+        hint.textContent = `이번 정산주 ${formatWeekLabel(current)} · 콜수입력 0콜 ${weekRangeLabel()}`;
+      }
     } catch (error) {
-      showToast(error.message || `${label} 처리에 실패했습니다.`);
+      showToast(
+        done
+          ? `${done}명까지 저장했고, 나머지는 실패했습니다. ${error.message || ''}`.trim()
+          : (error.message || `${label} 처리에 실패했습니다.`)
+      );
+      collectRows();
+      renderTable();
     } finally {
       state.applying = false;
       updateSummary();
