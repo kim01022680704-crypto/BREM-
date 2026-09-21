@@ -1,6 +1,8 @@
 window.BremInactiveDriversAdmin = (function () {
-  const LOOKBACK_WEEKS = 16;
-  const DEFAULT_MIN_WEEKS = 2;
+  const MIN_LOOKBACK_WEEKS = 16;
+  const MAX_LOOKBACK_WEEKS = 52;
+  const DEFAULT_MIN_WEEKS = 4;
+  const WEEK_FILTER_KEY = 'brem_inactive_driver_week_range';
 
   const state = {
     bound: false,
@@ -9,6 +11,8 @@ window.BremInactiveDriversAdmin = (function () {
     rows: [],
     selected: new Set(),
     minWeeks: DEFAULT_MIN_WEEKS,
+    maxWeeks: 0,
+    loadedLookback: 0,
     statusFilter: '근무중',
     search: ''
   };
@@ -93,13 +97,83 @@ window.BremInactiveDriversAdmin = (function () {
     return window.BremDriverUtils?.makeDriverLoginId?.(driver) || '';
   }
 
-  function lookbackWeekKeys() {
+  function neededLookbackWeeks() {
+    const upper = state.maxWeeks > 0 ? state.maxWeeks : MAX_LOOKBACK_WEEKS;
+    return Math.min(
+      MAX_LOOKBACK_WEEKS,
+      Math.max(MIN_LOOKBACK_WEEKS, state.minWeeks || 1, upper)
+    );
+  }
+
+  function lookbackWeekKeys(count = neededLookbackWeeks()) {
     const current = weekStartKey(todayKey());
     const keys = [];
-    for (let i = 0; i < LOOKBACK_WEEKS; i += 1) {
+    for (let i = 0; i < count; i += 1) {
       keys.push(shiftWeek(current, -i));
     }
     return keys;
+  }
+
+  function readWeekInput(el, fallback) {
+    if (!el) return fallback;
+    const raw = String(el.value || '').trim();
+    if (!raw) return fallback;
+    const value = Math.round(Number(raw));
+    if (!Number.isFinite(value)) return fallback;
+    return Math.min(MAX_LOOKBACK_WEEKS, Math.max(1, value));
+  }
+
+  function weekRangeLabel() {
+    if (state.maxWeeks > 0) return `${state.minWeeks}~${state.maxWeeks}주`;
+    return `${state.minWeeks}주 이상`;
+  }
+
+  function persistWeekRange() {
+    try {
+      localStorage.setItem(WEEK_FILTER_KEY, JSON.stringify({
+        minWeeks: state.minWeeks,
+        maxWeeks: state.maxWeeks
+      }));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function restoreWeekRange() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(WEEK_FILTER_KEY) || '');
+      const minWeeks = Math.round(Number(raw?.minWeeks));
+      const maxWeeks = Math.round(Number(raw?.maxWeeks));
+      if (Number.isFinite(minWeeks) && minWeeks >= 1) {
+        state.minWeeks = Math.min(MAX_LOOKBACK_WEEKS, minWeeks);
+      }
+      if (Number.isFinite(maxWeeks) && maxWeeks >= 1) {
+        state.maxWeeks = Math.min(MAX_LOOKBACK_WEEKS, maxWeeks);
+      }
+    } catch {
+      /* keep defaults */
+    }
+  }
+
+  function syncWeekInputs() {
+    const minInput = $('#inactiveDriverMinWeeks');
+    const maxInput = $('#inactiveDriverMaxWeeks');
+    if (minInput) minInput.value = String(state.minWeeks);
+    if (maxInput) maxInput.value = state.maxWeeks > 0 ? String(state.maxWeeks) : '';
+  }
+
+  function applyWeekRangeFromInputs() {
+    let minWeeks = readWeekInput($('#inactiveDriverMinWeeks'), DEFAULT_MIN_WEEKS);
+    let maxWeeks = readWeekInput($('#inactiveDriverMaxWeeks'), 0);
+    if (maxWeeks > 0 && minWeeks > maxWeeks) {
+      const swap = minWeeks;
+      minWeeks = maxWeeks;
+      maxWeeks = swap;
+    }
+    state.minWeeks = minWeeks;
+    state.maxWeeks = maxWeeks;
+    syncWeekInputs();
+    persistWeekRange();
   }
 
   function buildCallWeekIndex(weekKeys) {
@@ -146,6 +220,7 @@ window.BremInactiveDriversAdmin = (function () {
     return state.rows.filter(row => {
       if (state.statusFilter !== 'all' && row.status !== state.statusFilter) return false;
       if (row.consecutive < state.minWeeks) return false;
+      if (state.maxWeeks > 0 && row.consecutive > state.maxWeeks) return false;
       if (!query) return true;
       const hay = [
         row.driver.name,
@@ -171,7 +246,7 @@ window.BremInactiveDriversAdmin = (function () {
     const selectedCount = $('#inactiveDriverSelectedCount');
     const rows = visibleRows();
     if (summary) {
-      summary.textContent = `무실적 ${rows.length}명 · 조회 ${LOOKBACK_WEEKS}주 · 정산주(수~화) · 콜수입력 기준`;
+      summary.textContent = `무실적 ${weekRangeLabel()} ${rows.length}명 · 조회 ${neededLookbackWeeks()}주 · 정산주(수~화) · 콜수입력 기준`;
     }
     if (selectedCount) {
       selectedCount.textContent = `선택 ${state.selected.size}명`;
@@ -200,8 +275,9 @@ window.BremInactiveDriversAdmin = (function () {
       const statusClass = utils?.statusClass?.(row.status) || '';
       const phone = utils?.formatPhoneDisplay?.(row.driver.phone) || row.driver.phone || '-';
       const platforms = utils?.renderPlatformBadges?.(row.driver) || '-';
-      const weekLabel = row.consecutive >= LOOKBACK_WEEKS && !row.lastActiveWeek
-        ? `${LOOKBACK_WEEKS}주+`
+      const lookback = neededLookbackWeeks();
+      const weekLabel = row.consecutive >= lookback && !row.lastActiveWeek
+        ? `${lookback}주+`
         : `${row.consecutive}주`;
       return `
         <tr data-driver-id="${escapeHtml(row.driver.id)}">
@@ -247,24 +323,39 @@ window.BremInactiveDriversAdmin = (function () {
   }
 
   function lookbackSinceDate() {
-    const oldest = lookbackWeekKeys()[LOOKBACK_WEEKS - 1];
-    return oldest || todayKey();
+    const keys = lookbackWeekKeys();
+    return keys[keys.length - 1] || todayKey();
+  }
+
+  async function applyWeekFilter() {
+    applyWeekRangeFromInputs();
+    if (state.loading) {
+      renderTable();
+      return;
+    }
+    if (neededLookbackWeeks() > state.loadedLookback) {
+      await loadAndRender();
+      return;
+    }
+    renderTable();
   }
 
   async function loadAndRender() {
     if (state.loading) return;
     state.loading = true;
+    const lookback = neededLookbackWeeks();
     const hint = $('#inactiveDriverLoadHint');
     if (hint) hint.textContent = '콜수입력 실적을 불러오는 중…';
     try {
       await window.BremStorage?.ensureCallsSinceDate?.(lookbackSinceDate(), {
         merge: true
       });
+      state.loadedLookback = Math.max(state.loadedLookback, lookback);
       collectRows();
       renderTable();
       if (hint) {
         const current = weekStartKey(todayKey());
-        hint.textContent = `이번 정산주 ${formatWeekLabel(current)} · 콜수입력 0콜 연속 주수`;
+        hint.textContent = `이번 정산주 ${formatWeekLabel(current)} · 콜수입력 0콜 ${weekRangeLabel()}`;
       }
     } catch (error) {
       showToast(error.message || '비활성 기사 목록을 불러오지 못했습니다.');
@@ -312,9 +403,23 @@ window.BremInactiveDriversAdmin = (function () {
       state.search = String(event.target.value || '');
       renderTable();
     });
-    $('#inactiveDriverMinWeeks')?.addEventListener('change', event => {
-      state.minWeeks = Math.max(1, Number(event.target.value) || DEFAULT_MIN_WEEKS);
-      renderTable();
+    $('#inactiveDriverMinWeeks')?.addEventListener('change', () => {
+      void applyWeekFilter();
+    });
+    $('#inactiveDriverMaxWeeks')?.addEventListener('change', () => {
+      void applyWeekFilter();
+    });
+    $('#inactiveDriverMinWeeks')?.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void applyWeekFilter();
+      }
+    });
+    $('#inactiveDriverMaxWeeks')?.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void applyWeekFilter();
+      }
     });
     $('#inactiveDriverStatusFilter')?.addEventListener('change', event => {
       state.statusFilter = String(event.target.value || '근무중');
@@ -350,11 +455,11 @@ window.BremInactiveDriversAdmin = (function () {
 
   async function refresh() {
     bind();
-    const minWeeks = $('#inactiveDriverMinWeeks');
+    restoreWeekRange();
+    syncWeekInputs();
     const statusFilter = $('#inactiveDriverStatusFilter');
-    if (minWeeks && !minWeeks.value) minWeeks.value = String(DEFAULT_MIN_WEEKS);
     if (statusFilter && !statusFilter.value) statusFilter.value = '근무중';
-    state.minWeeks = Math.max(1, Number(minWeeks?.value) || DEFAULT_MIN_WEEKS);
+    applyWeekRangeFromInputs();
     state.statusFilter = String(statusFilter?.value || '근무중');
     state.search = String($('#inactiveDriverSearch')?.value || '');
     await loadAndRender();

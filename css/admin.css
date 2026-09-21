@@ -15298,7 +15298,29 @@ tr.is-week-first td {
 }
 
 .inactive-drivers-toolbar .field {
-  min-width: 160px;
+  min-width: 140px;
+}
+
+.inactive-drivers-week-range {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.inactive-drivers-week-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inactive-drivers-week-input input {
+  width: 72px;
+}
+
+.inactive-drivers-week-tilde {
+  padding-bottom: 10px;
+  color: #64748b;
+  font-weight: 800;
 }
 
 .inactive-drivers-selected {
