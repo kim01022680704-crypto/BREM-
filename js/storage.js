@@ -924,7 +924,13 @@ const BremStorage = (function () {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        return { ok: false, message: payload.error || '기사 정보를 불러오지 못했습니다.' };
+        return {
+          ok: false,
+          status: response.status,
+          code: payload.code || '',
+          blocked: payload.code === 'RIDER_APP_BLOCKED',
+          message: payload.error || '기사 정보를 불러오지 못했습니다.'
+        };
       }
       const driver = mergeRiderInCache(payload.rider);
       if (!driver) {
@@ -1512,6 +1518,7 @@ const BremStorage = (function () {
     'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts],
     'tax-management': [KEYS.drivers, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
+    'inactive-drivers': [KEYS.drivers],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
     'payroll-slip-search': [KEYS.payrollSlipLines],
@@ -1865,6 +1872,7 @@ const BremStorage = (function () {
         || sectionId === 'mission-results'
         || sectionId === 'drivers'
         || sectionId === 'driver-management'
+        || sectionId === 'inactive-drivers'
         || sectionId === 'mission-management'
         || sectionId === 'lease-management'
         || sectionId === 'coupang-rider-status'
@@ -13352,6 +13360,7 @@ const BremStorage = (function () {
     'settlement-result-direct',
     'final-deposit',
     'driver-management',
+    'inactive-drivers',
     'admin-account',
     'revenue-management',
     'payroll-slips',
@@ -13483,6 +13492,10 @@ const BremStorage = (function () {
       else normalized.push('driver-management');
     }
 
+    if (normalized.includes('driver-management') && !normalized.includes('inactive-drivers')) {
+      normalized.splice(normalized.indexOf('driver-management') + 1, 0, 'inactive-drivers');
+    }
+
     if (!normalized.includes('payroll-slips')) {
       const backupIndex = normalized.indexOf('data-backup');
       if (backupIndex >= 0) {
@@ -13578,6 +13591,9 @@ const BremStorage = (function () {
       .filter(menuId => allowed.has(menuId));
     if (next.includes('urgent-missions') && allowed.has('rider-push') && !next.includes('rider-push')) {
       next.splice(next.indexOf('urgent-missions') + 1, 0, 'rider-push');
+    }
+    if (next.includes('driver-management') && allowed.has('inactive-drivers') && !next.includes('inactive-drivers')) {
+      next.splice(next.indexOf('driver-management') + 1, 0, 'inactive-drivers');
     }
     return next;
   }

@@ -232,7 +232,7 @@ app.post('/api/rider/sign-in', async (req, res) => {
     const { login, password } = req.body || {};
     const result = await riderAuth.signInRider(login, password);
     if (!result.ok) {
-      return res.status(result.status || 400).json({ error: result.error });
+      return res.status(result.status || 400).json({ error: result.error, code: result.code });
     }
     res.json({
       ok: true,
@@ -251,7 +251,7 @@ app.get('/api/rider/me', async (req, res) => {
   try {
     const result = await riderAuth.getRiderMe(getBearerToken(req));
     if (!result.ok) {
-      return res.status(result.status || 400).json({ error: result.error });
+      return res.status(result.status || 400).json({ error: result.error, code: result.code });
     }
     res.json({
       ok: true,

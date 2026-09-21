@@ -15,7 +15,7 @@
     { key: 'ops',    title: '콜 · 현황',          icon: 'chart',  items: ['calls', 'rejections', 'targets', 'contribution', 'baemin-biz-status', 'baemin-status', 'baemin-status:calls_rejection_sync', 'coupang-rider-status', 'coupang-status'] },
     { key: 'settle', title: '정산 · 급여',        icon: 'coin',   items: ['settlements', 'weekly-settlement', 'weekly-settlement-direct', 'promotion-settlement', 'settlement-result-direct', 'final-deposit', 'payroll-slips', 'payroll-slip-search', 'payroll-daily-settlement', 'revenue-management', 'tax-management'] },
     { key: 'promo',  title: '프로모션 · 이벤트',  icon: 'target', items: ['promotions', 'promotion-apply', 'missions', 'mission-results', 'mission-management'] },
-    { key: 'rider',  title: '기사 · 자산',        icon: 'bike',   items: ['driver-management', 'lease-management'] },
+    { key: 'rider',  title: '기사 · 자산',        icon: 'bike',   items: ['driver-management', 'inactive-drivers', 'lease-management'] },
     { key: 'sys',    title: '시스템',             icon: 'gear',   items: ['admin-account', 'data-backup'] }
   ];
 

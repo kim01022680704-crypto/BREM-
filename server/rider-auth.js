@@ -87,6 +87,28 @@ function invalidateCachedRiderMe(token) {
   if (key) riderMeCache.delete(key);
 }
 
+function riderAppBlockedStatus(rider) {
+  const status = String(rider?.status || rider?.raw_data?.status || '').trim();
+  return status === '휴무' || status === '퇴사' ? status : '';
+}
+
+function riderAppBlockedMessage(status) {
+  if (status === '휴무') return '휴무 상태입니다. 라이더앱에 접속할 수 없습니다.';
+  if (status === '퇴사') return '퇴사 처리된 계정입니다. 라이더앱에 접속할 수 없습니다.';
+  return '라이더앱에 접속할 수 없습니다.';
+}
+
+function riderAppBlockedResult(rider) {
+  const status = riderAppBlockedStatus(rider);
+  if (!status) return null;
+  return {
+    ok: false,
+    status: 403,
+    code: 'RIDER_APP_BLOCKED',
+    error: riderAppBlockedMessage(status)
+  };
+}
+
 function promotionRowToMissionShape(row) {
   if (!row) return null;
   const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
@@ -328,7 +350,14 @@ async function getRiderMe(accessToken) {
   }
 
   const cached = readCachedRiderMe(token);
-  if (cached) return cached;
+  if (cached) {
+    const blockedCached = riderAppBlockedResult(cached.rider);
+    if (blockedCached) {
+      invalidateCachedRiderMe(token);
+      return blockedCached;
+    }
+    return cached;
+  }
 
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
   if (userError || !userData?.user) {
@@ -350,6 +379,8 @@ async function getRiderMe(accessToken) {
     return { ok: false, status: fetched.status || 404, error: fetched.error || '기사 정보를 찾을 수 없습니다.' };
   }
   const rider = fetched.rider;
+  const blocked = riderAppBlockedResult(rider);
+  if (blocked) return blocked;
 
   const result = {
     ok: true,
@@ -1720,6 +1751,9 @@ async function signInRider(loginInput, password) {
   if (!verified.ok) {
     return { ok: false, status: 401, error: verified.error };
   }
+
+  const blocked = riderAppBlockedResult(found.rider);
+  if (blocked) return blocked;
 
   let account = await ensureRiderAuthAccount(supabase, found.rider, verified.plainPassword);
   if (!account.ok) return account;

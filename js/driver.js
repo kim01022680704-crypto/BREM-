@@ -600,6 +600,9 @@
     if (window.BremDriverUtils?.verifyDriverLoginSecret) {
       const secretResult = BremDriverUtils.verifyDriverLoginSecret(matchedDriver, password);
       if (!secretResult.ok) return secretResult;
+      if (isRiderAppBlocked(matchedDriver)) {
+        return { ok: false, reason: riderAppBlockedMessage(matchedDriver) };
+      }
       return { ok: true, driver: matchedDriver };
     }
 
@@ -618,11 +621,30 @@
       return { ok: false, reason: '비밀번호가 일치하지 않습니다.' };
     }
 
+    if (isRiderAppBlocked(matchedDriver)) {
+      return { ok: false, reason: riderAppBlockedMessage(matchedDriver) };
+    }
+
     return { ok: true, driver: matchedDriver };
   }
 
   function findDriverById(id) {
     return BremStorage.drivers.getById(id);
+  }
+
+  function isRiderAppBlocked(driver) {
+    return Boolean(window.BremDriverUtils?.isRiderAppAccessBlocked?.(driver));
+  }
+
+  function riderAppBlockedMessage(driver) {
+    return window.BremDriverUtils?.riderAppAccessBlockedMessage?.(driver)
+      || '라이더앱에 접속할 수 없습니다.';
+  }
+
+  async function ejectBlockedRider(driver, extraMessage) {
+    const message = extraMessage || riderAppBlockedMessage(driver);
+    await logoutDriver({ message });
+    return true;
   }
 
   function consumeLogoutNotice() {
@@ -669,6 +691,8 @@
     });
     if (idle) {
       showToast(message || window.BremSessionSecurity?.IDLE_MESSAGE || '로그아웃되었습니다.');
+    } else if (message) {
+      showToast(message);
     } else {
       showToast('로그아웃되었습니다.');
     }
@@ -788,7 +812,15 @@
       return driver;
     }
     const fetched = await BremStorage.fetchCurrentRiderFromServer?.().catch(() => null);
+    if (fetched?.blocked) {
+      await ejectBlockedRider(driver, fetched.message);
+      return null;
+    }
     if (fetched?.ok && fetched.driver) {
+      if (isRiderAppBlocked(fetched.driver)) {
+        await ejectBlockedRider(fetched.driver);
+        return null;
+      }
       return fetched.driver;
     }
     return driver;
@@ -807,8 +839,10 @@
       let loadResult = null;
       try {
         let freshDriver = driver;
-        if (options.refreshProfile !== false && !isDriverProductionMode()) {
-          freshDriver = await refreshCurrentRiderFromServer(driver) || driver;
+        if (options.refreshProfile !== false) {
+          const next = await refreshCurrentRiderFromServer(driver);
+          if (!next) return loadResult;
+          freshDriver = next;
         }
 
         loadResult = await BremStorage.loadDriverAppBundle?.({
@@ -826,6 +860,10 @@
         refreshDriverDashboard(BremStorage.drivers.getById(driverId) || freshDriver);
         window.BremDriverPerfCalendar?.render?.();
         const readyDriver = BremStorage.drivers.getById(driverId) || freshDriver;
+        if (isRiderAppBlocked(readyDriver)) {
+          await ejectBlockedRider(readyDriver);
+          return loadResult;
+        }
         if (driverHasBaemin(readyDriver)) {
           // 초기 로드 직후 바로 1회 조회 + 2분 폴링 시작 (Supabase 반영분 수신)
           void refreshBaeminLiveOps({ toast: false, source: 'boot' });
@@ -2013,6 +2051,13 @@
         return;
       }
 
+      if (isRiderAppBlocked(driver)) {
+        BremStorage.auth.setDriverSessionId(null);
+        showLoggedOut();
+        showToast(riderAppBlockedMessage(driver));
+        return;
+      }
+
       BremStorage.auth.setDriverSessionId(driver.id);
       // 로그아웃을 거치지 않고 계정이 바뀌는 경우(세션 만료 후 재로그인 등)에도
       // 이전 기사 잔상이 남지 않도록 로그인 시점에 한 번 더 비운다.
@@ -2234,15 +2279,23 @@
     }
 
     if (savedDriver) {
+      if (isRiderAppBlocked(savedDriver)) {
+        await ejectBlockedRider(savedDriver);
+        return;
+      }
       showLoggedIn(savedDriver);
       startRiderPublishPolling();
       void loadDriverAppDataThenRender(savedDriver, { refreshProfile: false });
     } else if (isProduction && (driverSessionId || BremStorage.auth.isDriverLoggedIn?.())) {
       showLoggedIn({ id: driverSessionId, name: '기사', phone: '' });
       startRiderPublishPolling();
-      void loadDriverAppDataThenRender({ id: driverSessionId }, { refreshProfile: false })
+      void loadDriverAppDataThenRender({ id: driverSessionId }, { refreshProfile: true })
         .then(result => {
           const rider = result?.rider || BremStorage.drivers.getById(driverSessionId);
+          if (rider && isRiderAppBlocked(rider)) {
+            void ejectBlockedRider(rider);
+            return;
+          }
           if (rider) {
             BremStorage.auth.setDriverSessionId(rider.id);
             showLoggedIn(rider);

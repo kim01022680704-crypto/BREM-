@@ -15288,3 +15288,56 @@ tr.is-week-first td {
   justify-content: flex-end;
   gap: 8px;
 }
+
+.inactive-drivers-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: flex-end;
+  margin: 8px 0 12px;
+}
+
+.inactive-drivers-toolbar .field {
+  min-width: 160px;
+}
+
+.inactive-drivers-selected {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.inactive-drivers-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.inactive-drivers-table th,
+.inactive-drivers-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.inactive-drivers-table th {
+  background: #f8fafc;
+  font-weight: 700;
+  color: #475569;
+}
+
+.inactive-drivers-check-cell {
+  width: 64px;
+}
+
+.inactive-drivers-weeks {
+  font-weight: 800;
+  color: #b45309;
+}
+
+.inactive-drivers-empty {
+  text-align: center;
+  color: #64748b;
+  padding: 28px 12px !important;
+}

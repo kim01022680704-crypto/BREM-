@@ -223,6 +223,7 @@
     { id: 'final-deposit', label: '최종입금' },
     { id: 'tax-management', label: '세무관리' },
     { id: 'driver-management', label: '기사관리' },
+    { id: 'inactive-drivers', label: '비활성기사' },
     { id: 'admin-account', label: '관리자 계정' },
     { id: 'revenue-management', label: '수익 관리' },
     { id: 'payroll-slips', label: '급여명세서' },
@@ -7188,6 +7189,9 @@
       case 'driver-management':
         window.BremDriverManagementAdmin?.refresh?.();
         break;
+      case 'inactive-drivers':
+        void window.BremInactiveDriversAdmin?.refresh?.();
+        break;
       case 'notices':
         renderNotices();
         window.BremAdminPayrollNotices?.refresh?.();
@@ -7462,6 +7466,11 @@
       // 기사지역관리는 모듈이 sync 를 가볍게 처리한다.
       // 여기서 force refresh 하면 표·셀렉트가 계속 깜빡인다.
       if (state.currentSection === 'driver-management') {
+        updateDriverSearchStatus();
+        return;
+      }
+      if (state.currentSection === 'inactive-drivers') {
+        void window.BremInactiveDriversAdmin?.refresh?.();
         updateDriverSearchStatus();
         return;
       }

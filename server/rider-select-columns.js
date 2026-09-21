@@ -46,7 +46,7 @@ const RIDER_ME_SELECT_VARIANTS = [RIDER_ME_SELECT, RIDER_ME_SELECT_WITH_PLATFORM
 const RIDER_PATCH_RETURN_SELECT = RIDER_SELECT;
 
 const RIDER_LOGIN_LOOKUP_SELECT = [
-  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'raw_data', 'created_at'
+  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'status', 'raw_data', 'created_at'
 ].join(',');
 
 const RIDER_SELECT_VARIANTS = [RIDER_SELECT, RIDER_SELECT_WITH_PLATFORM, RIDER_SELECT_BASE];

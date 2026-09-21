@@ -841,6 +841,22 @@ window.BremDriverUtils = (function () {
     return 'left';
   }
 
+  function riderAppStatus(driver) {
+    return String(driver?.status || driver?.raw_data?.status || '').trim();
+  }
+
+  function isRiderAppAccessBlocked(driver) {
+    const status = riderAppStatus(driver);
+    return status === '휴무' || status === '퇴사';
+  }
+
+  function riderAppAccessBlockedMessage(driver) {
+    const status = riderAppStatus(driver);
+    if (status === '휴무') return '휴무 상태입니다. 라이더앱에 접속할 수 없습니다.';
+    if (status === '퇴사') return '퇴사 처리된 계정입니다. 라이더앱에 접속할 수 없습니다.';
+    return '라이더앱에 접속할 수 없습니다.';
+  }
+
   function renderPlatformBadges(driver) {
     const tags = [];
     if (driver.platformBaemin) tags.push('<span class="platform-tag platform-tag--baemin">배민</span>');
@@ -1004,6 +1020,9 @@ window.BremDriverUtils = (function () {
     findDuplicateDriver,
     isDuplicateErrorMessage,
     formatDate,
+    riderAppStatus,
+    isRiderAppAccessBlocked,
+    riderAppAccessBlockedMessage,
     formatRiderPublishDateTime,
     escapeHtml,
     statusClass,
