@@ -371,16 +371,98 @@ function riderMatchesRegion(rider, region) {
 }
 
 function mapRiderRow(row) {
+  const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
   return {
     id: row.id,
-    name: row.name || '',
-    baeminId: row.baemin_id || '',
-    phone: String(row.phone || row.raw_data?.phone || '').trim(),
-    regionBaemin: String(row.raw_data?.regionBaemin || '').trim(),
-    regionCoupang: String(row.raw_data?.regionCoupang || '').trim(),
-    raw_data: row.raw_data || {},
+    name: row.name || raw.name || '',
+    baeminId: row.baemin_id || raw.baeminId || '',
+    phone: String(row.phone || raw.phone || '').trim(),
+    regionBaemin: String(raw.regionBaemin || '').trim(),
+    regionCoupang: String(raw.regionCoupang || '').trim(),
+    raw_data: raw,
     status: row.status || ''
   };
+}
+
+function makeRiderLoginId(name, phone) {
+  const compactName = String(name || '').replace(/\s+/g, '');
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!compactName || digits.length < 4) return '';
+  return `${compactName}${digits.slice(-4)}`;
+}
+
+async function fetchAllRidersLite(supabase, selectColumns = 'id,name,phone,baemin_id,raw_data') {
+  const pageSize = 1000;
+  const all = [];
+  for (let from = 0; from < 40000; from += pageSize) {
+    const { data, error } = await supabase
+      .from('riders')
+      .select(selectColumns)
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    all.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+  return all;
+}
+
+function uniqueLookupGet(map, key) {
+  const hit = key ? map.get(key) : null;
+  return hit && hit !== 'dup' ? hit : null;
+}
+
+function buildBaeminDriverLookup(riderRows) {
+  const byBaeminId = new Map();
+  const byLoginId = new Map();
+  const byPhone = new Map();
+  const byName = new Map();
+
+  (riderRows || []).forEach(row => {
+    const rider = mapRiderRow(row);
+    if (!rider.id) return;
+    const idKey = baeminIdMatchKey(rider.baeminId);
+    if (idKey && !byBaeminId.has(idKey)) byBaeminId.set(idKey, rider);
+    const loginKey = baeminIdMatchKey(makeRiderLoginId(rider.name, rider.phone));
+    if (loginKey && !byLoginId.has(loginKey)) byLoginId.set(loginKey, rider);
+    const phone = String(rider.phone || '').replace(/\D/g, '');
+    if (phone.length >= 8) {
+      if (byPhone.has(phone)) byPhone.set(phone, 'dup');
+      else byPhone.set(phone, rider);
+    }
+    const nameKey = normalizePersonName(rider.name);
+    if (!nameKey) return;
+    if (byName.has(nameKey)) byName.set(nameKey, 'dup');
+    else byName.set(nameKey, rider);
+  });
+
+  return { byBaeminId, byLoginId, byPhone, byName };
+}
+
+function resolveBaeminCrawlDriver(lookup, baeminId, crawlName, phone) {
+  const idKey = baeminIdMatchKey(baeminId);
+  if (idKey && lookup.byBaeminId.has(idKey)) {
+    return { driver: lookup.byBaeminId.get(idKey), matchBy: 'baeminId' };
+  }
+  if (idKey && lookup.byLoginId.has(idKey)) {
+    return { driver: lookup.byLoginId.get(idKey), matchBy: 'loginId' };
+  }
+
+  const phoneDigits = String(phone || '').replace(/\D/g, '');
+  if (phoneDigits.length >= 8) {
+    const byPhone = uniqueLookupGet(lookup.byPhone, phoneDigits);
+    if (byPhone) return { driver: byPhone, matchBy: 'phone' };
+  }
+
+  const nameKey = normalizePersonName(crawlName);
+  const exact = uniqueLookupGet(lookup.byName, nameKey);
+  if (exact) return { driver: exact, matchBy: 'name' };
+
+  // 크롤 이름 끝에 한 글자가 붙는 경우(박우진일 → 박우진)
+  if (nameKey.length >= 4) {
+    const trimmed = uniqueLookupGet(lookup.byName, nameKey.slice(0, -1));
+    if (trimmed) return { driver: trimmed, matchBy: 'name' };
+  }
+  return { driver: null, matchBy: '' };
 }
 
 function escapePostgrestValue(value) {
@@ -1642,11 +1724,10 @@ async function getAdminRegionCoupangCrawlMatch(accessToken, query = {}) {
     return coupangVendorMatchesRegion(targetRegion, row.vendor_id || parsed.vendorId, row.vendor_name || parsed.vendorName);
   });
 
-  const { data: riderRows, error: riderError } = await supabase
-    .from('riders')
-    .select('id,name,phone,baemin_id,raw_data')
-    .limit(8000);
-  if (riderError) {
+  let riderRows;
+  try {
+    riderRows = await fetchAllRidersLite(supabase);
+  } catch (riderError) {
     return { ok: false, status: 500, error: riderError.message || '기사 목록을 불러오지 못했습니다.' };
   }
 
@@ -1770,29 +1851,15 @@ async function getAdminRegionCrawlMatch(accessToken, query = {}) {
     return { ok: false, status: 500, error: snapshot.error.message || '배달현황 크롤을 불러오지 못했습니다.' };
   }
 
-  // 전체 기사 — 지역 필터 없이 배민ID로만 매칭
-  const { data: riderRows, error: riderError } = await supabase
-    .from('riders')
-    .select('id,name,baemin_id,raw_data')
-    .limit(8000);
-  if (riderError) {
+  // 전체 기사 — 페이지네이션으로 전원 로드 후 배민ID·로그인ID·이름 매칭
+  let riderRows;
+  try {
+    riderRows = await fetchAllRidersLite(supabase);
+  } catch (riderError) {
     return { ok: false, status: 500, error: riderError.message || '기사 목록을 불러오지 못했습니다.' };
   }
 
-  const byBaeminId = new Map();
-  const byName = new Map();
-  (riderRows || []).forEach(row => {
-    const rider = mapRiderRow(row);
-    if (!rider.baeminId && rider.raw_data?.baeminId) {
-      rider.baeminId = String(rider.raw_data.baeminId || '').trim();
-    }
-    const idKey = baeminIdMatchKey(rider.baeminId || rider.raw_data?.baeminId);
-    if (idKey && !byBaeminId.has(idKey)) byBaeminId.set(idKey, rider);
-    const nameKey = normalizePersonName(rider.name);
-    if (!nameKey) return;
-    if (byName.has(nameKey)) byName.set(nameKey, null);
-    else byName.set(nameKey, rider);
-  });
+  const lookup = buildBaeminDriverLookup(riderRows);
 
   function regionMatchesTarget(regionValue) {
     const value = String(regionValue || '').trim();
@@ -1816,16 +1883,10 @@ async function getAdminRegionCrawlMatch(accessToken, query = {}) {
     const crawlName = String(
       parsed.riderName || parsed.rider_name || parsed.name || row.rider_name || ''
     ).trim();
-    let driver = byBaeminId.get(idKey) || null;
-    let matchBy = driver ? 'baeminId' : '';
-    if (!driver) {
-      const nameKey = normalizePersonName(crawlName);
-      const named = nameKey ? byName.get(nameKey) : null;
-      if (named) {
-        driver = named;
-        matchBy = 'name';
-      }
-    }
+    const phone = String(parsed.phone || parsed.phoneNumber || row.phone_number || '').trim();
+    const resolved = resolveBaeminCrawlDriver(lookup, baeminId, crawlName, phone);
+    const driver = resolved.driver;
+    const matchBy = resolved.matchBy;
     const currentRegion = driver
       ? String(driver.regionBaemin || driver.raw_data?.regionBaemin || '').trim()
       : '';
@@ -1901,11 +1962,10 @@ async function getAdminCoupangClusterCrawlAssign(accessToken, query = {}) {
     return { ok: false, status: 500, error: crawlError.message || '쿠팡 라이더일일 크롤을 불러오지 못했습니다.' };
   }
 
-  const { data: riderRows, error: riderError } = await supabase
-    .from('riders')
-    .select('id,name,phone,baemin_id,raw_data')
-    .limit(8000);
-  if (riderError) {
+  let riderRows;
+  try {
+    riderRows = await fetchAllRidersLite(supabase);
+  } catch (riderError) {
     return { ok: false, status: 500, error: riderError.message || '기사 목록을 불러오지 못했습니다.' };
   }
 

@@ -3501,6 +3501,69 @@ const BremDriverManagementAdmin = (function () {
     return status || '-';
   }
 
+  function rematchUnregisteredCrawlRows(rows, platform) {
+    const list = Array.isArray(rows) ? rows : [];
+    const drivers = window.BremStorage?.drivers?.getAll?.() || [];
+    if (!list.length || !drivers.length) return list;
+    const matchKey = window.BremDriverUtils?.baeminIdMatchKey
+      || (value => String(value || '').trim().toLowerCase());
+    const makeLogin = window.BremDriverUtils?.makeDriverLoginId;
+    const byBaemin = new Map();
+    const byLogin = new Map();
+    const byName = new Map();
+    drivers.forEach(driver => {
+      const idKey = matchKey(driver.baeminId || driver.raw_data?.baeminId);
+      if (idKey && !byBaemin.has(idKey)) byBaemin.set(idKey, driver);
+      const login = matchKey(makeLogin?.(driver) || '');
+      if (login && !byLogin.has(login)) byLogin.set(login, driver);
+      const nameKey = String(driver.name || '').replace(/\s+/g, '').toLowerCase();
+      if (!nameKey) return;
+      if (byName.has(nameKey)) byName.set(nameKey, null);
+      else byName.set(nameKey, driver);
+    });
+    const region = selectedRegion();
+    list.forEach(row => {
+      if (row.driverId) return;
+      const idKey = matchKey(row.baeminId || row.coupangId || row.matchKey);
+      let driver = (idKey && byBaemin.get(idKey)) || (idKey && byLogin.get(idKey)) || null;
+      let matchBy = '';
+      if (driver) matchBy = byBaemin.get(idKey) ? 'baeminId' : 'loginId';
+      if (!driver) {
+        const nameKey = String(row.crawlName || '').replace(/\s+/g, '').toLowerCase();
+        driver = (nameKey && byName.get(nameKey)) || null;
+        if (!driver && nameKey.length >= 4) driver = byName.get(nameKey.slice(0, -1)) || null;
+        if (driver) matchBy = 'name';
+      }
+      if (!driver) return;
+      const currentRegion = platform === 'coupang'
+        ? String(driver.regionCoupang || driver.raw_data?.regionCoupang || '').trim()
+        : String(driver.regionBaemin || driver.raw_data?.regionBaemin || '').trim();
+      const already = Boolean(region && (
+        currentRegion === region.label
+        || currentRegion === region.partnerId
+        || currentRegion === region.vendorId
+        || (region.partnerId && currentRegion.includes(region.partnerId))
+      ));
+      row.driverId = driver.id;
+      row.driverName = driver.name || '';
+      row.erpBaeminId = driver.baeminId || driver.raw_data?.baeminId || '';
+      row.currentRegion = currentRegion;
+      row.matchBy = matchBy;
+      row.status = already ? 'already' : 'assignable';
+    });
+    return list;
+  }
+
+  function recountCrawlMatchSummary(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    return {
+      total: list.length,
+      already: list.filter(row => row.status === 'already').length,
+      assignable: list.filter(row => row.status === 'assignable').length,
+      unregistered: list.filter(row => row.status === 'unregistered').length
+    };
+  }
+
   function closeCrawlSearchPanel() {
     state.crawlMatch.searchIndex = -1;
     const panel = $('#driverRegionCrawlSearchPanel');
@@ -3701,7 +3764,7 @@ const BremDriverManagementAdmin = (function () {
     if (help) {
       help.textContent = platform === 'coupang'
         ? '오늘 쿠팡 라이더일일(rider_daily) 크롤의 매칭키·쿠팡ID로 ERP 기사를 매칭합니다. 반영 가능 건을 선택한 뒤 「선택 반영」하세요. 미등록은 간이등록으로 추가할 수 있습니다.'
-        : '오늘 배달현황 크롤의 배민ID·이름으로 ERP 기사를 매칭합니다. 반영 가능 건을 선택한 뒤 「선택 반영」하세요. 미등록은 검색 매칭으로 기존 기사와 연결하거나 간이등록할 수 있습니다.';
+        : '오늘 배달현황 크롤의 배민ID·ERP로그인ID·이름으로 등록 기사를 매칭합니다. 크롤 이름 끝 한 글자(박우진일→박우진)도 맞춥니다. 반영 가능 건을 선택한 뒤 「선택 반영」하세요. 그래도 미등록이면 검색 매칭이나 간이등록을 쓰세요.';
     }
     if (idHeader) idHeader.textContent = platform === 'coupang' ? '쿠팡ID/키' : '배민ID';
     modal.hidden = false;
@@ -3729,9 +3792,13 @@ const BremDriverManagementAdmin = (function () {
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || '크롤링 매칭을 불러오지 못했습니다.');
+      if (typeof window.BremStorage?.awaitDriversFullyLoaded === 'function') {
+        try { await window.BremStorage.awaitDriversFullyLoaded(); } catch (_) { /* ignore */ }
+      }
+      const rows = rematchUnregisteredCrawlRows(payload.rows || [], platform);
       state.crawlMatch = {
-        rows: payload.rows || [],
-        summary: payload.summary || {},
+        rows,
+        summary: recountCrawlMatchSummary(rows),
         partnerId: payload.partnerId || region.partnerId || '',
         vendorId: payload.vendorId || region.vendorId || '',
         label: payload.label || region.label,
