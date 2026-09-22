@@ -121,21 +121,37 @@ const baeminWd = [{
   requestDate: '2026-09-18',
   createdAt: '2026-09-18T10:00:00'
 }];
+const baeminOnly = [{ platform: 'baemin', riders: [{ matchedRiderId: 'd1' }] }];
+const bothFiles = [
+  { platform: 'baemin', riders: [{ matchedRiderId: 'd1' }] },
+  { platform: 'coupang', riders: [{ matchedRiderId: 'd1' }] }
+];
 const allocCoupang = Calc.allocateWeekWithdrawals(coupangWd, week, cap, {
   dateRange: { start: '2026-09-16', end: '2026-09-20' },
-  dailySettlements: []
+  dailySettlements: [],
+  weekSettlements: baeminOnly
 });
 const allocBaemin = Calc.allocateWeekWithdrawals(baeminWd, week, cap, {
   dateRange: { start: '2026-09-16', end: '2026-09-20' },
-  dailySettlements: []
+  dailySettlements: [],
+  weekSettlements: baeminOnly
+});
+const bothCap = new Map([['id:d1', { coupang: 100000, baemin: 400000 }]]);
+const allocLoss = Calc.allocateWeekWithdrawals(coupangWd, week, bothCap, {
+  dateRange: { start: '2026-09-16', end: '2026-09-20' },
+  dailySettlements: [],
+  weekSettlements: bothFiles
 });
 const sliceC = allocCoupang.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
 const sliceB = allocBaemin.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
+const sliceL = allocLoss.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
 checks.push(
-  ['쿠팡 출금은 배민에 안 붙음', sliceC.baemin.prepaid === 0 && sliceC.baemin.fee === 0],
-  ['쿠팡 출금은 쿠팡에만', sliceC.coupang.prepaid === 500000 && sliceC.coupang.fee === 10000],
-  ['배민 출금은 배민에만', sliceB.baemin.prepaid === 200000 && sliceB.baemin.fee === 4000],
-  ['배민 출금은 쿠팡에 안 붙음', sliceB.coupang.prepaid === 0 && sliceB.coupang.fee === 0]
+  ['쿠팡파일 없으면 쿠팡출금은 배민에 안 넘김', sliceC.baemin.prepaid === 0 && sliceC.baemin.fee === 0],
+  ['쿠팡파일 없으면 쿠팡출금은 쿠팡에 남김', sliceC.coupang.prepaid === 500000 && sliceC.coupang.fee === 10000],
+  ['배민 출금은 배민에 먼저', sliceB.baemin.prepaid === 200000 && sliceB.baemin.fee === 4000],
+  ['배민 출금은 쿠팡에 안 붙음', sliceB.coupang.prepaid === 0 && sliceB.coupang.fee === 0],
+  ['양쪽 있으면 쿠팡 로스만 배민으로', sliceL.coupang.prepaid === 90000 && sliceL.coupang.fee === 10000
+    && sliceL.baemin.prepaid === 410000 && sliceL.baemin.fee === 0]
 );
 
 const failed = checks.filter(item => !item[1]);

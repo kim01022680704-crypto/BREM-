@@ -504,12 +504,27 @@ const BremDirectSettlementCalc = (function () {
     return out;
   }
 
+  function buildWeekPlatformPresence(weekSettlements) {
+    const map = new Map();
+    (Array.isArray(weekSettlements) ? weekSettlements : []).forEach(settlement => {
+      const p = settlementPlatform(settlement);
+      (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
+        const key = canonicalDriverKey(String(rider.matchedRiderId || '').trim());
+        if (!key) return;
+        const prev = map.get(key) || { coupang: false, baemin: false };
+        prev[p] = true;
+        map.set(key, prev);
+      });
+    });
+    return map;
+  }
+
   /**
-   * 선정산은 스필오버 전에 출금 플랫폼 그대로 붙인다.
-   * 배민 출금 → 배민, 쿠팡 출금 → 쿠팡. 한도·반대 플랫폼을 보지 않는다.
-   * 부분 기간이 있으면 그 날짜 일정산분만 남긴다.
+   * 1) 선정산은 출금 플랫폼에 먼저 붙인다. 배민 출금→배민, 쿠팡 출금→쿠팡.
+   * 2) 그 플랫폼 정산서가 있고 한도를 넘는 로스만 반대 플랫폼으로 스필오버한다.
+   *    정산서가 없는 플랫폼 출금은 반대쪽으로 넘기지 않는다.
    */
-  function allocateWeekWithdrawals(withdrawals, week, _capacityMap, options = {}) {
+  function allocateWeekWithdrawals(withdrawals, week, capacityMap, options = {}) {
     const weekKey = String(week || '').slice(0, 10);
     let list = withHoldPrepaid(withdrawals, weekKey);
     const range = options.dateRange && options.dateRange.start
@@ -521,7 +536,41 @@ const BremDirectSettlementCalc = (function () {
         dailySettlements: options.dailySettlements
       });
     }
-    return buildWeekPrepaidByPlatform(list, weekKey);
+    const stamped = buildWeekPrepaidByPlatform(list, weekKey);
+    const presence = buildWeekPlatformPresence(options.weekSettlements || []);
+    const cap = capacityMap instanceof Map ? capacityMap : new Map();
+    stamped.forEach((slice, key) => {
+      const has = presence.get(key) || { coupang: false, baemin: false };
+      const room = cap.get(key) || { coupang: 0, baemin: 0 };
+      const next = { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
+      ['coupang', 'baemin'].forEach(p => {
+        const other = p === 'coupang' ? 'baemin' : 'coupang';
+        const fee = Math.max(0, Math.round(Number(slice[p].fee || 0)));
+        const prepaid = Math.max(0, Math.round(Number(slice[p].prepaid || 0)));
+        if (!has[p]) {
+          next[p].fee += fee;
+          next[p].prepaid += prepaid;
+          return;
+        }
+        const fit = Math.max(0, Math.round(Number(room[p] || 0)));
+        const keepFee = Math.min(fee, fit);
+        const keepPrepaid = Math.min(prepaid, Math.max(0, fit - keepFee));
+        next[p].fee += keepFee;
+        next[p].prepaid += keepPrepaid;
+        const moveFee = fee - keepFee;
+        const movePrepaid = prepaid - keepPrepaid;
+        if ((moveFee + movePrepaid) > 0 && has[other]) {
+          next[other].fee += moveFee;
+          next[other].prepaid += movePrepaid;
+        } else {
+          next[p].fee += moveFee;
+          next[p].prepaid += movePrepaid;
+        }
+      });
+      slice.coupang = next.coupang;
+      slice.baemin = next.baemin;
+    });
+    return stamped;
   }
 
   // 이 주 처리완료 출금을 사람별·플랫폼별로 정확히 합산한다.
@@ -997,7 +1046,7 @@ const BremDirectSettlementCalc = (function () {
   }
 
   // 정산서 1건 → 라이더별 정산 행.
-  // 선정산은 출금 플랫폼 그대로(스필오버 전). 리스·대여는 남은 한도로만 스필오버.
+  // 선정산: 출금 플랫폼에 먼저 붙이고, 로스가 나면 반대 플랫폼으로 스필오버.
   function computeRows(settlement, options = {}) {
     if (!settlement) return [];
     const platform = settlementPlatform(settlement);
