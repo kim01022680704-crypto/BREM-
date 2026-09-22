@@ -39,10 +39,47 @@ function weekEndOf(weekStart) {
   return formatLocalDateKey(start);
 }
 
+const PUBLISH_META_KEY = 'brem_payroll_rider_publish';
+
+function sanitizeWaveId(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
+}
+
+async function rememberPaymentDate(supabase, weekStart, paymentDate, publishedBy) {
+  if (!paymentDate || !/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) return;
+  const { data } = await supabase
+    .from('settings')
+    .select('value')
+    .eq('key', PUBLISH_META_KEY)
+    .maybeSingle();
+  const existing = data?.value && typeof data.value === 'object' ? data.value : {};
+  const weeks = existing.weeks && typeof existing.weeks === 'object' ? { ...existing.weeks } : {};
+  const now = new Date().toISOString();
+  weeks[weekStart] = {
+    ...(weeks[weekStart] || {}),
+    paymentDate,
+    publishedAt: now,
+    publishedBy
+  };
+  await supabase.from('settings').upsert({
+    key: PUBLISH_META_KEY,
+    value: {
+      ...existing,
+      weeks,
+      paymentDate,
+      settlementWeekStart: weekStart,
+      publishedAt: now,
+      publishedBy
+    },
+    updated_at: now
+  }, { onConflict: 'key' });
+}
+
 /**
  * 정산결과(직계약) 최종결산 행들을 기사앱 주급명세서(payroll_slip_lines)로 반영한다.
  * - 행 단위(정산서×기사×플랫폼)로 저장하며, 같은 사람이 쿠팡/배민 둘 다면 두 줄이 저장된다.
- * - id = direct-{settlementId}-{driverId} 로 재반영 시 덮어쓴다(중복 방지).
+ * - id = direct-{settlementId}-{driverId}[-w-{waveId}] 로 재반영 시 덮어쓴다.
+ * - 명절 지급회차(배달료/프로모션)는 waveId 를 붙여 같은 주에 여러 번 반영해도 합쳐진다.
  * - rider_published_at 을 찍어 즉시 기사앱에 노출된다. (최종결산 「급여명세서 반영」 = 즉시 공개)
  */
 async function publishDirectSettlementPayslips(accessToken, body = {}) {
@@ -58,6 +95,8 @@ async function publishDirectSettlementPayslips(accessToken, body = {}) {
   const weekEnd = weekEndOf(weekStart);
   const rows = Array.isArray(body.rows) ? body.rows : [];
   if (!rows.length) return { ok: false, status: 400, error: '반영할 정산 행이 없습니다.' };
+  const payoutWaveId = sanitizeWaveId(body.payoutWaveId);
+  const paymentDate = String(body.paymentDate || '').trim().slice(0, 10);
 
   const now = new Date().toISOString();
   const records = [];
@@ -96,12 +135,21 @@ async function publishDirectSettlementPayslips(accessToken, body = {}) {
       baeminId,
       coupangId,
       settlementWeekStart: weekStart,
-      settlementWeekEnd: weekEnd
+      settlementWeekEnd: weekEnd,
+      paymentDate,
+      payoutWaveId
     };
 
+    const id = payoutWaveId
+      ? `direct-${settlementId}-${driverId}-w-${payoutWaveId}`
+      : `direct-${settlementId}-${driverId}`;
+    const memo = payoutWaveId
+      ? `직계약 정산결과 반영 · ${payoutWaveId}${paymentDate ? ` ${paymentDate}` : ''}`
+      : '직계약 정산결과 반영';
+
     records.push({
-      id: `direct-${settlementId}-${driverId}`,
-      upload_id: `direct-${weekStart}`,
+      id,
+      upload_id: payoutWaveId ? `direct-${weekStart}-${payoutWaveId}` : `direct-${weekStart}`,
       pay_month: weekStart.slice(0, 7),
       driver_id: driverId,
       rider_name: String(row.name || row.driverName || '').trim(),
@@ -116,13 +164,15 @@ async function publishDirectSettlementPayslips(accessToken, body = {}) {
       other_deduction: 0,
       total_deduction: deductTotal,
       net_pay: netPay,
-      memo: '직계약 정산결과 반영',
+      memo,
       raw_data: {
         source: 'direct',
         platform,
         settlementId,
         settlementWeekStart: weekStart,
         settlementWeekEnd: weekEnd,
+        paymentDate,
+        payoutWaveId,
         baeminId,
         coupangId,
         callCount: num(row.callCount),
@@ -151,12 +201,26 @@ async function publishDirectSettlementPayslips(accessToken, body = {}) {
     published += chunk.length;
   }
 
+  try {
+    await rememberPaymentDate(
+      supabase,
+      weekStart,
+      paymentDate,
+      String(admin.displayName || admin.email || 'admin')
+    );
+  } catch (_error) {
+    /* 지급일 메타는 부가 정보. 명세서 반영은 이미 성공. */
+  }
+
+  const payNote = paymentDate ? ` · 지급일 ${paymentDate}` : '';
   return {
     ok: true,
     weekStart,
     weekEnd,
+    paymentDate,
+    payoutWaveId,
     published,
-    message: `급여명세서 반영 완료 · ${published}건 (라이더앱에 즉시 공개)`
+    message: `급여명세서 반영 완료 · ${published}건${payNote} (라이더앱에 즉시 공개)`
   };
 }
 

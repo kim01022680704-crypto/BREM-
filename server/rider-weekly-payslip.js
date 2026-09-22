@@ -63,7 +63,27 @@ async function readSettingValue(supabase, key, fallback) {
   return fallback;
 }
 
-async function resolvePaymentDate(supabase, settlementWeekStart, settlementWeekEndDate) {
+function paymentDatesFromLines(weekLines) {
+  const dates = [];
+  (Array.isArray(weekLines) ? weekLines : []).forEach(line => {
+    const raw = line?.raw_data && typeof line.raw_data === 'object' ? line.raw_data : {};
+    const payslip = raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : {};
+    const date = String(raw.paymentDate || payslip.paymentDate || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) dates.push(date);
+  });
+  return [...new Set(dates)].sort();
+}
+
+function pickUpcomingDate(dates, fallback) {
+  const list = (dates || []).filter(Boolean);
+  if (!list.length) return fallback || '';
+  const today = formatLocalDateKey(new Date());
+  return list.find(date => date >= today) || list[list.length - 1];
+}
+
+async function resolvePaymentDate(supabase, settlementWeekStart, settlementWeekEndDate, weekLines) {
+  const fromLines = paymentDatesFromLines(weekLines);
+  if (fromLines.length) return pickUpcomingDate(fromLines, fromLines[0]);
   try {
     const meta = await readSettingValue(supabase, PUBLISH_META_KEY, {});
     const fromMeta = meta?.weeks?.[settlementWeekStart]?.paymentDate;
@@ -797,7 +817,6 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
     settlementWeekStart = latestWeek || normalizeSettlementWeekStart('');
   }
   const settlementWeekEndDate = settlementWeekEnd(settlementWeekStart);
-  const paymentDate = await resolvePaymentDate(supabase, settlementWeekStart, settlementWeekEndDate);
 
   // 같은 주에 쿠팡·배민 줄이 각각 있으면 모두 합친다. (예전엔 첫 줄만 써서 한쪽이 빠졌다)
   // 주차 문자열은 normalize 후 비교(화요일 off-by-one 저장분 포함).
@@ -807,6 +826,12 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
     if (!week) return false;
     return week === settlementWeekStart || normalizeSettlementWeekStart(week) === settlementWeekStart;
   });
+  const paymentDate = await resolvePaymentDate(
+    supabase,
+    settlementWeekStart,
+    settlementWeekEndDate,
+    weekLines
+  );
 
   let notices = [];
   if (!noticesResult.error) {

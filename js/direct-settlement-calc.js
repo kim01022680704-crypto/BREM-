@@ -235,7 +235,21 @@ const BremDirectSettlementCalc = (function () {
     return null;
   }
 
-  function riderRowBase(rider, settlement, platform, unitCallFee, adj) {
+  function settlementRowFlags(settlement, extra = {}) {
+    return {
+      includePromo: extra.includePromo !== undefined
+        ? extra.includePromo !== false
+        : settlement?.includePromo !== false,
+      includeOther: extra.includeOther !== undefined
+        ? extra.includeOther !== false
+        : settlement?.includeOther !== false,
+      ignoreSheetPayout: extra.ignoreSheetPayout === true
+        || settlement?.ignoreSheetPayout === true
+    };
+  }
+
+  function riderRowBase(rider, settlement, platform, unitCallFee, adj, extra = {}) {
+    const flags = settlementRowFlags(settlement, extra);
     const driverId = String(rider.matchedRiderId || '').trim();
     const amounts = rider.amounts || {};
     const manual = riderManualAdjustments(rider);
@@ -243,9 +257,9 @@ const BremDirectSettlementCalc = (function () {
       ? (rider.coupangLoginKey || '-')
       : (rider.baeminUserId || '-');
     const promoOverride = pickOverrideAmount(adj.promoMap, driverId, manual, 'promo');
-    const promo = promoOverride == null ? 0 : promoOverride;
+    const promo = flags.includePromo && promoOverride != null ? promoOverride : 0;
     const otherOverride = pickOverrideAmount(adj.otherMap, driverId, manual, 'other');
-    const other = otherOverride == null ? 0 : otherOverride;
+    const other = flags.includeOther && otherOverride != null ? otherOverride : 0;
     const deliveryFee = Number(amounts.deliveryFee || 0);
     // 추가지급: 주정산서 금액이 기본. 수동 override(missionPay 맵/정산서)가 있으면 그 값(0 포함).
     const missionPayExcel = Number(amounts.missionPay || 0);
@@ -321,7 +335,8 @@ const BremDirectSettlementCalc = (function () {
    * - 양쪽 한도를 다 넘으면 남는 금액은 찍힌(우선) 플랫폼에 남겨 총지급액이 음수로 표기
    * 반환: canonicalKey -> { coupang:{prepaid,fee}, baemin:{prepaid,fee} }
    */
-  function allocateWeekWithdrawals(withdrawals, week, capacityMap) {
+  function allocateWeekWithdrawals(withdrawals, week, capacityMap, options = {}) {
+    const allowOverflow = options.allowOverflow !== false;
     const weekKey = String(week || '').slice(0, 10);
     withdrawals = withHoldPrepaid(withdrawals, weekKey);
     const remaining = new Map();
@@ -374,7 +389,7 @@ const BremDirectSettlementCalc = (function () {
         leftFee -= takeFee;
         leftPrepaid -= takePrepaid;
       });
-      if (leftFee + leftPrepaid > 0) {
+      if (allowOverflow && leftFee + leftPrepaid > 0) {
         const p = order[0];
         alloc[p].fee += leftFee;
         alloc[p].prepaid += leftPrepaid;
@@ -862,10 +877,12 @@ const BremDirectSettlementCalc = (function () {
 
     let allocation = options._allocation || null;
     if (!allocation && Array.isArray(options.weekSettlements) && options.weekSettlements.length) {
+      const waveScoped = options.weekSettlements.some(item => item?.payoutWaveId);
       allocation = allocateWeekWithdrawals(
         withdrawals,
         week,
-        buildWeekCapacityMap(options.weekSettlements)
+        buildWeekCapacityMap(options.weekSettlements),
+        { allowOverflow: options.allowOverflow !== false && !waveScoped }
       );
     }
     const strictMap = allocation ? null : (options._prepaidMap || buildWeekPrepaidByPlatform(withdrawals, week));
@@ -935,11 +952,14 @@ const BremDirectSettlementCalc = (function () {
       const computedNet = base.grossPay - deductTotal;
       // 주정산 미리보기에서 「Z열 기준으로 지급액 맞추기」한 기사만 총지급액을 시트 Z로 둔다.
       // 배달비·공제 계산식은 그대로다. (저장 JSON 에서 true 가 1 로 올 수 있다)
+      const flags = settlementRowFlags(settlement, options);
       const payoutOverride = Math.round(Number(rider.amounts?.payoutOverride || 0));
-      const useSheetPayout = rider.amounts?.useSheetPayout === true
+      const useSheetPayout = !flags.ignoreSheetPayout && (
+        rider.amounts?.useSheetPayout === true
         || rider.amounts?.useSheetPayout === 1
         || rider.amounts?.useSheetPayout === 'true'
-        || payoutOverride > 0;
+        || payoutOverride > 0
+      );
       const sheetPayout = payoutOverride || Math.round(Number(rider.amounts?.sheetPayout || 0));
       const netPay = useSheetPayout ? sheetPayout : computedNet;
 

@@ -2573,6 +2573,7 @@ const BremWeeklySettlement = (function () {
     baeminWeekStartKey,
     mergeBaeminRiders,
     mergeBaeminRidersFromParts,
+    listBaeminSourceParts,
     canonicalBaeminTeamRegion,
     stripBaeminCompanyPrefix,
     baeminCompanyLabelFromTeam,

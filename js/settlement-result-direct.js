@@ -18,7 +18,8 @@ const BremSettlementResultDirect = (function () {
     // 반영(급여명세서 반영) 안전장치용
     publishing: false,            // 반영 진행 중(더블클릭 방지)
     publishedWeeks: new Set(),    // 이번 세션에서 반영한 주(수요일 시작 키)
-    finalStaleWeek: ''            // 반영 후 조정되어 재반영이 필요한 주
+    finalStaleWeek: '',           // 반영 후 조정되어 재반영이 필요한 주
+    payoutWaveId: ''
   };
   const detailInitial = {
     missionPay: 0,
@@ -104,6 +105,7 @@ const BremSettlementResultDirect = (function () {
   function setWeek(value) {
     state.week = value ? weekStartKey(value) : '';
     state.settlementId = '';
+    state.payoutWaveId = holiday()?.defaultPayoutWaveId?.(state.week) || '';
     void refresh(state.platform);
   }
 
@@ -1292,10 +1294,34 @@ const BremSettlementResultDirect = (function () {
     return state.week || (cur ? settlementWeek(cur) : weekStartKey());
   }
 
-  function finalWeekSettlements() {
+  function holiday() {
+    return window.BremSettlementHoliday || null;
+  }
+
+  function payoutWaves() {
+    return holiday()?.payoutWavesForWeek?.(finalWeek()) || [];
+  }
+
+  function currentPayoutWave() {
+    const waves = payoutWaves();
+    if (!waves.length) return null;
+    if (!state.payoutWaveId) {
+      state.payoutWaveId = holiday()?.defaultPayoutWaveId?.(finalWeek()) || waves[0].id;
+    }
+    return holiday()?.getPayoutWave?.(finalWeek(), state.payoutWaveId) || waves[0];
+  }
+
+  function allFinalWeekSettlements() {
     const week = finalWeek();
     return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
       .filter(record => settlementWeek(record) === week);
+  }
+
+  function finalWeekSettlements() {
+    const list = allFinalWeekSettlements();
+    const wave = currentPayoutWave();
+    if (!wave || !holiday()?.settlementsForWave) return list;
+    return holiday().settlementsForWave(list, wave, finalWeek());
   }
 
   function addDaysKey(dateKeyValue, days) {
@@ -1348,7 +1374,7 @@ const BremSettlementResultDirect = (function () {
 
   function ensureFinalSettlement(week, platform) {
     const p = platform === 'coupang' ? 'coupang' : 'baemin';
-    const existing = finalWeekSettlements().find(s => String(s.platform || '') === p);
+    const existing = allFinalWeekSettlements().find(s => String(s.platform || '') === p);
     if (existing) return existing;
     const endDate = addDaysKey(week, 6) || week;
     const record = {
@@ -1515,11 +1541,39 @@ const BremSettlementResultDirect = (function () {
     });
   }
 
+  function renderWavePicker() {
+    const host = $('#settlementFinalWavePicker');
+    const optionsEl = $('#settlementFinalWaveOptions');
+    if (!host || !optionsEl) return;
+    const waves = payoutWaves();
+    if (!waves.length) {
+      host.hidden = true;
+      optionsEl.innerHTML = '';
+      return;
+    }
+    host.hidden = false;
+    const current = currentPayoutWave();
+    optionsEl.innerHTML = waves.map(wave => {
+      const checked = current?.id === wave.id ? ' checked' : '';
+      const range = wave.startDate && wave.endDate ? `${wave.startDate}~${wave.endDate}` : '합산';
+      return `
+        <label class="payout-wave-option">
+          <input type="radio" name="settlementFinalWave" value="${escapeHtml(wave.id)}"${checked}>
+          <span>
+            <strong>${escapeHtml(wave.label)}</strong>
+            <span class="muted-inline">${escapeHtml(wave.paymentDate)} · ${escapeHtml(range)}</span>
+            <span class="payout-wave-hint">${escapeHtml(wave.hint || '')}</span>
+          </span>
+        </label>`;
+    }).join('');
+  }
+
   function renderFinal() {
     const head = $('#settlementFinalHead');
     const body = $('#settlementFinalRows');
     const summaryEl = $('#settlementFinalSummary');
     if (!body) return;
+    renderWavePicker();
 
     const searchEl = $('#settlementFinalSearch');
     if (searchEl && document.activeElement !== searchEl) {
@@ -1543,7 +1597,11 @@ const BremSettlementResultDirect = (function () {
       head.innerHTML = Calc().theadHtml(cols, lead);
     }
     if (!allRows.length) {
-      body.innerHTML = `<tr><td colspan="${cols.length + 1}" class="empty">이 주에 저장된 직계약 정산서가 없습니다.</td></tr>`;
+      const wave = currentPayoutWave();
+      const empty = wave
+        ? `${wave.label} 회차에 해당하는 주정산이 아직 없습니다. 해당 구간 주정산을 먼저 올리세요.`
+        : '이 주에 저장된 직계약 정산서가 없습니다.';
+      body.innerHTML = `<tr><td colspan="${cols.length + 1}" class="empty">${escapeHtml(empty)}</td></tr>`;
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
@@ -1575,6 +1633,10 @@ const BremSettlementResultDirect = (function () {
       const coupangCount = rows.filter(r => r.platform === 'coupang').length;
       const baeminCount = rows.filter(r => r.platform === 'baemin').length;
       const negativeCount = rows.filter(r => Math.round(Number(r.netPay || 0)) < 0).length;
+      const wave = currentPayoutWave();
+      const waveNote = wave
+        ? ` · 회차 <strong>${escapeHtml(wave.label)}</strong> ${escapeHtml(wave.paymentDate)}`
+        : '';
       const searchNote = q ? ` · 검색 “${escapeHtml(state.finalSearch)}”` : '';
       const negNote = negativeCount
         ? ` · <span class="muted-inline">총지급액 음수 <strong>${negativeCount}</strong>명 — 「마이너스 일괄 맞추기」로 한 번에 0원 처리</span>`
@@ -1582,7 +1644,7 @@ const BremSettlementResultDirect = (function () {
       const staleNote = (state.finalStaleWeek && state.finalStaleWeek === finalWeek())
         ? `<div class="final-restale-note">⚠️ 반영 후 조정됨 — 「급여명세서 반영하기」를 다시 눌러 기사앱에 최신 값을 반영하세요.</div>`
         : '';
-      summaryEl.innerHTML = staleNote + `표시 <strong>${rows.length}</strong>줄 / 전체 ${allRows.length}줄 (쿠팡 ${coupangCount} · 배민 ${baeminCount})${searchNote}`
+      summaryEl.innerHTML = staleNote + `표시 <strong>${rows.length}</strong>줄 / 전체 ${allRows.length}줄 (쿠팡 ${coupangCount} · 배민 ${baeminCount})${waveNote}${searchNote}`
         + ` · 총프로모션 <strong>${formatNumber(t.promo)}</strong>`
         + ` · 총기타지급 <strong>${formatNumber(t.other)}</strong>`
         + ` · 총선정산 <strong>${formatNumber(t.prepaid)}</strong>`
@@ -1608,7 +1670,7 @@ const BremSettlementResultDirect = (function () {
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
-    const settlements = finalWeekSettlements();
+    const settlements = allFinalWeekSettlements();
     if (!settlements.length) {
       body.innerHTML = '<tr><td colspan="14" class="empty">이 주에 저장된 직계약 정산서가 없습니다.</td></tr>';
       if (summaryEl) summaryEl.textContent = '';
@@ -1728,10 +1790,22 @@ const BremSettlementResultDirect = (function () {
       );
       if (!negOk) { showToast('반영을 취소했습니다. 「마이너스 일괄 맞추기」로 먼저 0원 처리하세요.'); return; }
     }
+    const wave = currentPayoutWave();
+    const waveLines = wave
+      ? [
+        `${wave.label} · 지급일 ${wave.paymentDate}`,
+        wave.includePromo
+          ? '이 회차는 프로모션을 합쳐서 반영합니다.'
+          : '배달료만 반영합니다. 프로모션은 주정산이 잘려 들어와도 9/29 회차에서 합칩니다.'
+      ]
+      : [
+        `${week}(수) 주 전체 ${preview.length}줄을 기사앱 주급명세서로 반영합니다.`,
+        '쿠팡·배민 각 줄이 각각 반영되고, 라이더앱에 즉시 노출됩니다.'
+      ];
     const ok = window.confirm(
       [
-        `${week}(수) 주 전체 ${preview.length}줄을 기사앱 주급명세서로 반영합니다.`,
-        '쿠팡·배민 각 줄이 각각 반영되고, 라이더앱에 즉시 노출됩니다.',
+        ...waveLines,
+        `${preview.length}줄이 라이더앱에 즉시 공개됩니다.`,
         '팝업에서 고친 추가지급·기타지급·리스·대여는 그대로 반영됩니다.',
         negatives.length ? `※ 음수 명세서 ${negatives.length}명 포함됨` : '',
         '',
@@ -1747,7 +1821,12 @@ const BremSettlementResultDirect = (function () {
       await window.BremStorage.flushStorage?.();
       const rows = finalRows().filter(r => r.driverId);
       if (!rows.length) { showToast('반영할 정산 행이 없습니다.'); return; }
-      const result = await window.BremStorage.publishDirectSettlementPayslips({ weekStart: week, rows });
+      const result = await window.BremStorage.publishDirectSettlementPayslips({
+        weekStart: week,
+        rows,
+        paymentDate: wave?.paymentDate || '',
+        payoutWaveId: wave?.id || ''
+      });
       if (!result?.ok) throw new Error(result?.error || result?.message || '반영 실패');
       // 반영 성공: 이 주를 반영완료로 기록하고 재반영 필요 표시 해제
       state.publishedWeeks.add(week);
@@ -1783,6 +1862,11 @@ const BremSettlementResultDirect = (function () {
     $('#settlementFinalPublishBtn')?.addEventListener('click', () => { void publishFinalPayslips(); });
     $('#settlementFinalWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
     $('#settlementFinalWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
+    document.getElementById('settlementFinalWaveOptions')?.addEventListener('change', event => {
+      if (event.target?.name !== 'settlementFinalWave') return;
+      state.payoutWaveId = String(event.target.value || '');
+      renderFinal();
+    });
     document.querySelectorAll('[data-admin-platform-tab="settlement-result-direct"]').forEach(btn => {
       btn.addEventListener('click', () => setSettlementView('platform'));
     });

@@ -6926,6 +6926,59 @@ textarea {
   margin-top: 4px;
 }
 
+.payout-wave-picker {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(245, 193, 90, 0.45);
+  border-radius: 10px;
+  background: #2a2110;
+  color: #ffe9b0;
+}
+
+.payout-wave-picker-label {
+  margin: 0 0 8px;
+  font-weight: 800;
+  color: #ffe27a;
+}
+
+.payout-wave-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.payout-wave-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 16rem;
+  padding: 8px 10px;
+  border: 1px solid rgba(245, 193, 90, 0.35);
+  border-radius: 8px;
+  background: #1c160c;
+  cursor: pointer;
+}
+
+.payout-wave-option input {
+  margin-top: 3px;
+}
+
+.payout-wave-option strong {
+  display: block;
+  color: #ffe27a;
+}
+
+.payout-wave-hint {
+  display: block;
+  margin-top: 2px;
+  color: #ffe9b0;
+  font-size: 12px;
+}
+
+.final-deposit-settlement-dim {
+  opacity: 0.55;
+}
+
 .payroll-range-finalize {
   display: flex;
   flex-wrap: wrap;

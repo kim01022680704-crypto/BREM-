@@ -3772,11 +3772,13 @@ const BremStorage = (function () {
     });
   }
 
-  async function publishDirectSettlementPayslips({ weekStart, rows } = {}) {
+  async function publishDirectSettlementPayslips({ weekStart, rows, paymentDate, payoutWaveId } = {}) {
     return adminRidersApi('/api/admin/payroll/direct-payslip/publish', {
       method: 'POST',
       body: JSON.stringify({
         weekStart: String(weekStart || '').slice(0, 10),
+        paymentDate: String(paymentDate || '').slice(0, 10),
+        payoutWaveId: String(payoutWaveId || '').trim(),
         rows: Array.isArray(rows) ? rows : []
       })
     });

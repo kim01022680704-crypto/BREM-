@@ -1,6 +1,8 @@
 /**
  * 명절처럼 수~화 운행주는 그대로인데 지급·마무리가 갈라지는 주.
- * 이번 추석(2026-09-16 주): 배민 16~20 / 21~22 분할, 쿠팡은 한 주, 마무리는 29일 이후.
+ * 이번 추석(2026-09-16 주):
+ *  - 배달료는 들어온 주정산 구간대로 입금 (배민 16~20 → 9/23, 21~22 → 9/29, 쿠팡 → 9/28)
+ *  - 프로모션은 주정산이 잘려 들어와도 합쳐서 배민 9/29, 쿠팡 9/28
  */
 (function () {
   function pad(value) {
@@ -52,7 +54,7 @@
           endDate: '2026-09-20',
           paymentDate: '2026-09-23',
           kind: 'ops',
-          title: '배민 운행분'
+          title: '배민 배달료'
         },
         {
           platform: 'baemin',
@@ -60,7 +62,7 @@
           endDate: '2026-09-22',
           paymentDate: '2026-09-29',
           kind: 'ops',
-          title: '배민 운행분'
+          title: '배민 잔여 배달료'
         },
         {
           platform: 'coupang',
@@ -68,19 +70,57 @@
           endDate: '2026-09-22',
           paymentDate: '2026-09-28',
           kind: 'ops',
-          title: '쿠팡 운행분'
+          title: '쿠팡 배달료'
         },
         {
           platform: 'baemin',
           paymentDate: '2026-09-29',
           kind: 'promotion',
-          title: '배민 자체 프로모션'
+          title: '배민 자체 프로모션(합산)'
         },
         {
           platform: 'coupang',
           paymentDate: '2026-09-28',
           kind: 'promotion',
-          title: '쿠팡 자체 프로모션'
+          title: '쿠팡 자체 프로모션(합산)'
+        }
+      ],
+      payoutWaves: [
+        {
+          id: 'baemin-fee-0923',
+          label: '배민 배달료',
+          hint: '내일 입금 · 급여명세서 반영. 프로모션은 빼요.',
+          paymentDate: '2026-09-23',
+          platform: 'baemin',
+          startDate: '2026-09-16',
+          endDate: '2026-09-20',
+          includePromo: false,
+          includeDelivery: true,
+          includeOther: true
+        },
+        {
+          id: 'coupang-0928',
+          label: '쿠팡 배달료+프로모션',
+          hint: '9/28 입금. 프로모션은 잘린 주정산을 합칩니다.',
+          paymentDate: '2026-09-28',
+          platform: 'coupang',
+          startDate: '2026-09-16',
+          endDate: '2026-09-22',
+          includePromo: true,
+          includeDelivery: true,
+          includeOther: true
+        },
+        {
+          id: 'baemin-promo-0929',
+          label: '배민 잔여배달료+프로모션',
+          hint: '9/29 입금. 주정산 프로모션은 잘려 들어와도 여기서 합칩니다.',
+          paymentDate: '2026-09-29',
+          platform: 'baemin',
+          startDate: '2026-09-21',
+          endDate: '2026-09-22',
+          includePromo: true,
+          includeDelivery: true,
+          includeOther: false
         }
       ]
     }
@@ -107,6 +147,33 @@
     const exception = getExceptionForWeek(weekStart);
     if (!exception) return '';
     return payoutDatesFor(exception).sort().pop() || '';
+  }
+
+  function payoutWavesForWeek(weekStart) {
+    const exception = getExceptionForWeek(weekStart);
+    return Array.isArray(exception?.payoutWaves) ? exception.payoutWaves.slice() : [];
+  }
+
+  function getPayoutWave(weekStart, waveId) {
+    const id = String(waveId || '').trim();
+    if (!id || id === 'all') return null;
+    return payoutWavesForWeek(weekStart).find(item => item.id === id) || null;
+  }
+
+  function defaultPayoutWaveId(weekStart) {
+    const waves = payoutWavesForWeek(weekStart);
+    if (!waves.length) return '';
+    const today = todayKey();
+    const upcoming = waves.find(item => String(item.paymentDate || '') >= today);
+    return (upcoming || waves[0]).id;
+  }
+
+  function upcomingPaymentDate(weekStart) {
+    const waves = payoutWavesForWeek(weekStart);
+    if (!waves.length) return '';
+    const today = todayKey();
+    const upcoming = waves.find(item => String(item.paymentDate || '') >= today);
+    return (upcoming || waves[waves.length - 1]).paymentDate || '';
   }
 
   function paymentDateForRange({ platform, startDate, endDate, weekStart } = {}) {
@@ -194,20 +261,105 @@
         '',
         pending,
         '',
-        '배민 9/16~9/20, 쿠팡 9/16~9/22, 배민 9/21~9/22를 들어온 순서대로 마무리하면 그 구간만 출금이 닫힙니다.',
+        '배달료는 들어온 주정산 구간만 마무리하면 됩니다. 프로모션은 주정산이 잘려 들어와도 합쳐서 나중에 정산하세요.',
         `전체 마무리는 ${exception.finalizeAfter} 프로모션까지 들어온 뒤에 하세요. 전체를 먼저 누르면 아직 안 온 구간까지 0원이 됩니다.`
       ].join('\n')
     };
+  }
+
+  function listSettlementParts(record) {
+    const listed = window.BremWeeklySettlement?.listBaeminSourceParts?.(record);
+    if (Array.isArray(listed) && listed.length) return listed;
+    return [{
+      fileName: String(record?.fileName || 'settlement').trim() || 'settlement',
+      startDate: String(record?.startDate || '').slice(0, 10),
+      endDate: String(record?.endDate || record?.startDate || '').slice(0, 10),
+      riders: Array.isArray(record?.riders) ? record.riders : []
+    }];
+  }
+
+  function partMatchesWave(part, wave, weekStart) {
+    if (!wave) return true;
+    const start = String(part?.startDate || '').slice(0, 10);
+    const end = String(part?.endDate || start).slice(0, 10);
+    if (!wave.startDate) return true;
+    const pay = paymentDateForRange({
+      platform: wave.platform || 'baemin',
+      startDate: start,
+      endDate: end,
+      weekStart
+    });
+    if (wave.paymentDate && pay && pay === wave.paymentDate) return true;
+    if (!start || !end) return false;
+    const overlaps = start <= wave.endDate && end >= wave.startDate;
+    if (!overlaps) return false;
+    if (pay && wave.paymentDate && pay !== wave.paymentDate) return false;
+    return true;
+  }
+
+  function sliceSettlementForWave(settlement, wave, weekStart) {
+    if (!settlement) return null;
+    if (!wave || wave.id === 'all') {
+      return {
+        ...settlement,
+        includePromo: true,
+        includeOther: true,
+        ignoreSheetPayout: false,
+        payoutWaveId: '',
+        payoutPaymentDate: ''
+      };
+    }
+    const platform = normalizePlatform(settlement.platform);
+    if (wave.platform && platform !== wave.platform) return null;
+
+    const flags = {
+      includePromo: wave.includePromo === true,
+      includeOther: wave.includeOther !== false,
+      ignoreSheetPayout: true,
+      payoutWaveId: wave.id,
+      payoutPaymentDate: wave.paymentDate || ''
+    };
+
+    if (!wave.startDate || platform === 'coupang') {
+      return { ...settlement, ...flags };
+    }
+
+    const week = String(weekStart || weekStartFromDate(settlement.startDate) || '').slice(0, 10);
+    const parts = listSettlementParts(settlement);
+    const matched = parts.filter(part => partMatchesWave(part, wave, week));
+    if (!matched.length) return null;
+
+    const merge = window.BremWeeklySettlement?.mergeBaeminRidersFromParts;
+    const riders = typeof merge === 'function'
+      ? merge(matched)
+      : matched.flatMap(part => (Array.isArray(part.riders) ? part.riders : []));
+    const startDate = matched.map(part => part.startDate).filter(Boolean).sort()[0]
+      || wave.startDate;
+    const endDate = matched.map(part => part.endDate).filter(Boolean).sort().pop()
+      || wave.endDate;
+    return {
+      ...settlement,
+      ...flags,
+      riders,
+      startDate,
+      endDate
+    };
+  }
+
+  function settlementsForWave(list, wave, weekStart) {
+    return (Array.isArray(list) ? list : [])
+      .map(record => sliceSettlementForWave(record, wave, weekStart))
+      .filter(Boolean);
   }
 
   function bannerLines(exception) {
     if (!exception) return [];
     return [
       `운행주는 그대로 ${exception.weekStart}(수) ~ ${exception.weekEnd}(화) 입니다.`,
-      '배민 9/16~9/20 → 9/23(수) 정산 · 9/21~9/22 → 9/29(화) 정산 · 자체 프로모션 9/29(화) 지급',
-      '쿠팡 9/16~9/22 → 9/28(월) 정산 · 자체 프로모션 9/28(월) 지급',
-      '일정산 정산일은 지급일이 아니라 운행일입니다. 9/23·9/28·9/29로 올리면 다음 주에 섞입니다.',
-      '일정산은 시작일~종료일을 골라 구간 마무리하세요. 예: 배민 9/16~9/20. 전체 마무리는 마지막에.'
+      '배달료는 내일(9/23) 배민 16~20 주정산으로 입금하고 급여명세서에 바로 반영하세요. 프로모션은 빼요.',
+      '프로모션은 주정산이 16~20 / 21~22로 잘려 들어와도 합쳐서 배민 9/29, 쿠팡 9/28에 정산합니다.',
+      '쿠팡 배달료+프로모션은 9/28, 배민 21~22 배달료+합친 프로모션은 9/29.',
+      '최종입금·최종결산에서 지급 회차를 고르세요. 일정산 정산일은 지급일이 아니라 운행일입니다.'
     ];
   }
 
@@ -262,6 +414,12 @@
     getExceptionForDate,
     paymentDateForRange,
     latestPaymentDate,
+    upcomingPaymentDate,
+    payoutWavesForWeek,
+    getPayoutWave,
+    defaultPayoutWaveId,
+    sliceSettlementForWave,
+    settlementsForWave,
     isHolidayPayoutDate,
     dailyPeriodWarning,
     opsBatches,
