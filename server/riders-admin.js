@@ -451,8 +451,12 @@ async function listRiders(accessToken, options = {}) {
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (status && status !== '전체') {
-      query = query.eq('status', status);
+    if (status && status !== '전체' && status !== 'all') {
+      if (status === 'active') {
+        query = query.not('status', 'in', '("휴무","퇴사")');
+      } else {
+        query = query.eq('status', status);
+      }
     }
     if (search) {
       // ERP 등록 기사: 이름·연락처·배민ID로 검색 (특수문자로 or 필터가 깨지지 않게 정리)
@@ -1583,7 +1587,11 @@ async function countRiders(accessToken, options = {}) {
     .select('id', { count: 'exact', head: true });
   const status = String(options.status || '').trim();
   if (status && status !== '전체' && status !== 'all') {
-    query = query.eq('status', status);
+    if (status === 'active') {
+      query = query.not('status', 'in', '("휴무","퇴사")');
+    } else {
+      query = query.eq('status', status);
+    }
   }
   const { count, error } = await query;
 

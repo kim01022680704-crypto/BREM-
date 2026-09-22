@@ -366,7 +366,7 @@ const BremStorage = (function () {
     if (status) return status;
     if (String(options.search || '').trim()) return '';
     if (isDriverRegistryPage()) return '';
-    return '근무중';
+    return 'active';
   }
 
   function driversCacheMatchesFetchStatus(wanted) {
@@ -1754,6 +1754,7 @@ const BremStorage = (function () {
       force: true
     });
     dashboardCallsLoadedToken = token;
+    document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
     return result;
   }
 
@@ -1928,6 +1929,14 @@ const BremStorage = (function () {
         logDataSource('riders', true, sectionId);
       } else if (!force && looksComplete && window.BremDataCache?.isValid?.(KEYS.drivers)) {
         logDataSource('riders', true, sectionId);
+      } else if (sectionId === 'dashboard' && hasDrivers) {
+        // 대시보드는 콜수 창이 먼저 떠야 한다. 기사 재조회가 끝나길 기다리면 콜수가 0으로 남는다.
+        logDataSource('riders', true, sectionId);
+        if (!looksComplete && !fetchInFlight) {
+          void reloadDrivers(false).catch(error => {
+            console.warn('[BREM] Dashboard rider refresh skipped:', error?.message || error);
+          });
+        }
       } else if (needsFullDrivers) {
         const forceMissionDrivers = sectionId === 'mission-management' && (force || options.forceDrivers);
         const reload = reloadDrivers(Boolean(forceMissionDrivers || options.forceDrivers || options.force));
@@ -1969,15 +1978,18 @@ const BremStorage = (function () {
       });
     }
 
-    if (tasks.length) {
-      await Promise.all(tasks);
-    }
-
     if (sectionId === 'dashboard') {
-      await ensureDashboardCallsLoaded({
+      tasks.push(ensureDashboardCallsLoaded({
         weekStart: options.weekStart,
         force
-      });
+      }).catch(error => {
+        console.warn('[BREM] Dashboard calls load failed:', error?.message || error);
+        return { ok: false, message: error?.message || '대시보드 콜수를 불러오지 못했습니다.' };
+      }));
+    }
+
+    if (tasks.length) {
+      await Promise.all(tasks);
     }
 
     // 장기근속 진행률은 시작일 이후 콜수가 필요. 기본 2년 윈도우보다 이른 시작일이 있으면 더 앞부터 로드.
@@ -2443,7 +2455,12 @@ const BremStorage = (function () {
     const force = options.force === true;
     const hasSearch = Boolean(String(options.search || '').trim());
     const explicitStatus = String(options.status || '').trim();
-    const hasFilter = hasSearch || (explicitStatus && explicitStatus !== '전체' && explicitStatus !== 'all');
+    const hasFilter = hasSearch || (
+      explicitStatus
+      && explicitStatus !== '전체'
+      && explicitStatus !== 'all'
+      && explicitStatus !== 'active'
+    );
     const fetchStatus = resolveDriversFetchStatus(options);
 
     if (!isProductionMode()) {

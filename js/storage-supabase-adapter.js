@@ -1835,7 +1835,11 @@ window.BremSupabaseStorageAdapter = (function () {
           .select(selectColumns, { count: 'exact' })
           .order('created_at', { ascending: false })
           .range(offset, offset + pageSize - 1);
-        if (status && status !== '전체') nextQuery = nextQuery.eq('status', status);
+        if (status && status !== '전체' && status !== 'all') {
+          nextQuery = status === 'active'
+            ? nextQuery.not('status', 'in', '("휴무","퇴사")')
+            : nextQuery.eq('status', status);
+        }
         if (search) nextQuery = nextQuery.ilike('name', `%${search}%`);
         return nextQuery;
       });
