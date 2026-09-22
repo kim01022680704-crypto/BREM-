@@ -100,6 +100,44 @@ const checks = [
   ['fallback 21일 일정산은 부분1 제외', fallbackOut.length === 0]
 ];
 
+const cap = new Map([['id:d1', { coupang: 0, baemin: 300000 }]]);
+const coupangWd = [{
+  driverId: 'd1',
+  platform: 'coupang',
+  amount: 500000,
+  feeAmount: 10000,
+  status: 'completed',
+  weekStart: week,
+  requestDate: '2026-09-18',
+  createdAt: '2026-09-18T10:00:00'
+}];
+const baeminWd = [{
+  driverId: 'd1',
+  platform: 'baemin',
+  amount: 200000,
+  feeAmount: 4000,
+  status: 'completed',
+  weekStart: week,
+  requestDate: '2026-09-18',
+  createdAt: '2026-09-18T10:00:00'
+}];
+const allocCoupang = Calc.allocateWeekWithdrawals(coupangWd, week, cap, {
+  dateRange: { start: '2026-09-16', end: '2026-09-20' },
+  dailySettlements: []
+});
+const allocBaemin = Calc.allocateWeekWithdrawals(baeminWd, week, cap, {
+  dateRange: { start: '2026-09-16', end: '2026-09-20' },
+  dailySettlements: []
+});
+const sliceC = allocCoupang.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
+const sliceB = allocBaemin.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
+checks.push(
+  ['쿠팡 출금은 배민에 안 붙음', sliceC.baemin.prepaid === 0 && sliceC.baemin.fee === 0],
+  ['쿠팡 출금은 쿠팡에만', sliceC.coupang.prepaid === 500000 && sliceC.coupang.fee === 10000],
+  ['배민 출금은 배민에만', sliceB.baemin.prepaid === 200000 && sliceB.baemin.fee === 4000],
+  ['배민 출금은 쿠팡에 안 붙음', sliceB.coupang.prepaid === 0 && sliceB.coupang.fee === 0]
+);
+
 const failed = checks.filter(item => !item[1]);
 if (failed.length) {
   console.error(failed);

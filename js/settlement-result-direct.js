@@ -1611,16 +1611,26 @@ const BremSettlementResultDirect = (function () {
     const loanConsumed = new Set();
     const week = finalWeek();
     const dateRange = Calc().partDateRange?.(settlements) || {};
+    const allocation = Calc().allocateWeekWithdrawals(
+      state.withdrawals,
+      week,
+      Calc().buildWeekCapacityMap(settlements),
+      { dateRange, weekSettlements: settlements }
+    );
+    const consumed = new Set();
     const spill = Calc().buildLeaseLoanSpilloverAllocation(settlements, {
       week,
       withdrawals: state.withdrawals,
-      dateRange
+      dateRange,
+      _allocation: allocation
     });
     settlements.forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
         weekSettlements: settlements,
-        dateRange: Calc().recordDateRange?.(settlement) || dateRange,
+        dateRange,
+        _allocation: allocation,
+        _consumed: consumed,
         _leaseLoanSpill: spill,
         _leaseConsumed: leaseConsumed,
         _loanConsumed: loanConsumed
@@ -1666,7 +1676,7 @@ const BremSettlementResultDirect = (function () {
       head.innerHTML = Calc().theadHtml(cols, lead);
     }
     if (!allRows.length) {
-      body.innerHTML = `<tr><td colspan="${cols.length + 1}" class="empty">선택한 부분이 없습니다. 부분1·2·3 또는 태그가 있는 정산서를 체크하세요.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="${cols.length + 1}" class="empty">이 보기에 직계약 정산서가 없습니다. 전체/부분1·2·3을 확인하세요.</td></tr>`;
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
