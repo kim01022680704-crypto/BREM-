@@ -863,13 +863,24 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
     baeminId: String(me.rider?.baemin_id || me.rider?.baeminId || '').trim()
   };
 
+  const partRanges = [...new Set((weekLines || []).map(line => {
+    const raw = line?.raw_data && typeof line.raw_data === 'object' ? line.raw_data : {};
+    const payslip = raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : {};
+    const start = String(raw.periodStart || payslip.periodStart || '').slice(0, 10);
+    const end = String(raw.periodEnd || payslip.periodEnd || '').slice(0, 10);
+    const tag = String(raw.partTag || payslip.partTag || '').trim();
+    if (start && end) return tag ? `${start} ~ ${end} (${tag})` : `${start} ~ ${end}`;
+    return '';
+  }).filter(Boolean))];
   const weekMeta = {
     riderName: riderMeta.name,
     coupangId: riderMeta.coupangId,
     baeminId: riderMeta.baeminId,
     settlementWeekStart,
     settlementWeekEnd: settlementWeekEndDate,
-    settlementWeekLabel: `${settlementWeekStart}(수) ~ ${settlementWeekEndDate}(화)`
+    settlementWeekLabel: partRanges.length
+      ? partRanges.join(' · ')
+      : `${settlementWeekStart}(수) ~ ${settlementWeekEndDate}(화)`
   };
   // 직계약·브로가 같은 주에 있어도 합쳐 버리지 않고,
   // 쿠팡/배민 탭에 각각 맞게 넣는다 (직계약 쿠팡 + 브로 배민 등).

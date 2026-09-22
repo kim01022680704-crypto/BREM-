@@ -136,6 +136,12 @@ async function publishDirectSettlementPayslips(accessToken, body = {}) {
       coupangId,
       settlementWeekStart: weekStart,
       settlementWeekEnd: weekEnd,
+      settlementWeekLabel: row.periodStart && row.periodEnd
+        ? `${row.periodStart} ~ ${row.periodEnd}`
+        : '',
+      periodStart: String(row.periodStart || '').slice(0, 10),
+      periodEnd: String(row.periodEnd || '').slice(0, 10),
+      partTag: String(row.partTag || '').trim(),
       paymentDate,
       payoutWaveId
     };

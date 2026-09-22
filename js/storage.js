@@ -11546,12 +11546,21 @@ const BremStorage = (function () {
         riders: Array.isArray(part?.riders) ? part.riders : []
       })).filter(part => part.fileName)
       : undefined;
+    const partSlot = (() => {
+      const n = Math.round(Number(record.partSlot || summary.partSlot || 0));
+      return n >= 1 && n <= 3 ? n : 0;
+    })();
+    const partTag = String(record.partTag || summary.partTag || '').trim().slice(0, 40);
+    if (partSlot) summary.partSlot = partSlot;
+    if (partTag) summary.partTag = partTag;
 
     return {
       id: record.id || createId(),
       platform,
       channel,
       region: String(record.region || '').trim(),
+      partSlot,
+      partTag,
       fileName: String(record.fileName || '').trim()
         || (fileNames.length ? fileNames.join(' + ') : ''),
       fileNames: fileNames.length

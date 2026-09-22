@@ -266,6 +266,91 @@ const BremWeeklySettlementAdmin = (function () {
   }
 
   /** 정산 시작일 → 적용주 수요일 (화요일 시작 off-by-one 보정) */
+  function partsApi() {
+    return window.BremWeeklySettlement || {};
+  }
+
+  function readPartSlot(channel, platform) {
+    const name = `${prefix(channel)}PartSlot-${platform}`;
+    const checked = document.querySelector(`input[name="${name}"]:checked`);
+    return partsApi().normalizePartSlot?.(checked?.value) || 0;
+  }
+
+  function readPartTag(channel, platform) {
+    return partsApi().normalizePartTag?.(q(channel, 'PartTag', platform)?.value) || '';
+  }
+
+  function formatPartCell(item) {
+    const rec = item?.linkedRecordId
+      ? (window.BremStorage?.weeklySettlements?.getById?.(item.linkedRecordId, item.channel)
+        || window.BremStorage?.weeklySettlements?.getById?.(item.linkedRecordId))
+      : null;
+    const slot = partsApi().recordPartSlot?.(rec) || partsApi().normalizePartSlot?.(item.partSlot) || 0;
+    const tag = partsApi().recordPartTag?.(rec) || partsApi().normalizePartTag?.(item.partTag) || '';
+    const slotText = slot ? `부분${slot}` : '부분 미지정';
+    const tagText = tag || '태그 없음';
+    const cls = tag ? 'weekly-part-tag' : 'weekly-part-tag weekly-part-tag--missing';
+    const tagBtn = rec?.id
+      ? `<button type="button" class="small-btn" data-weekly-tag="${escapeHtml(rec.id)}">${tag ? '태그수정' : '태그하기'}</button>`
+      : '';
+    return `<span class="${cls}">${escapeHtml(slotText)}</span> <strong>${escapeHtml(tagText)}</strong> ${tagBtn}`;
+  }
+
+  function syncPartWeekLabel(channel, platform) {
+    const form = q(channel, 'UploadForm', platform);
+    const el = form?.querySelector('[data-weekly-part-week]');
+    if (!el) return;
+    const start = q(channel, 'StartDate', platform)?.value
+      || q(channel, 'BaseDate', platform)?.value
+      || '';
+    const weekStart = start ? settlementWeekStartKey(start) : '';
+    if (!weekStart) {
+      el.textContent = '적용주: 시작일·종료일을 넣으면 수~화 주가 표시됩니다';
+      return;
+    }
+    const weekEnd = window.BremDatePicker?.weekEndKey?.(weekStart)
+      || (() => {
+        const date = new Date(`${weekStart}T00:00:00`);
+        date.setDate(date.getDate() + 6);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      })();
+    const partStart = q(channel, 'StartDate', platform)?.value || weekStart;
+    const partEnd = q(channel, 'EndDate', platform)?.value || weekEnd;
+    el.textContent = `적용주 ${weekStart}(수) ~ ${weekEnd}(화) · 이 파일 기간 ${partStart} ~ ${partEnd}`;
+  }
+
+  async function editSettlementPartTag(channel, platform, recordId) {
+    const id = String(recordId || '').trim();
+    const rec = window.BremStorage?.weeklySettlements?.getById?.(id, channel)
+      || window.BremStorage?.weeklySettlements?.getById?.(id);
+    if (!rec) {
+      showToast('정산서를 찾지 못했습니다.');
+      return;
+    }
+    const current = partsApi().recordPartTag?.(rec) || '';
+    const next = window.prompt('태그를 입력하세요. (필수)', current || '배달료');
+    if (next == null) return;
+    const tag = partsApi().normalizePartTag?.(next) || '';
+    if (!tag) {
+      showToast('태그는 필수입니다.');
+      return;
+    }
+    rec.partTag = tag;
+    rec.summary = { ...(rec.summary || {}), partTag: tag };
+    if (!partsApi().recordPartSlot?.(rec)) {
+      rec.partSlot = 1;
+      rec.summary.partSlot = 1;
+    }
+    window.BremStorage.weeklySettlements.save(rec);
+    await window.BremStorage.flushStorage?.();
+    renderSavedList(channel, platform);
+    if (typeof BremFinalDeposit !== 'undefined') void BremFinalDeposit.refresh?.();
+    if (typeof BremSettlementResultDirect !== 'undefined') {
+      void BremSettlementResultDirect.refresh?.(BremSettlementResultDirect.state?.platform);
+    }
+    showToast(`태그 · ${tag}`);
+  }
+
   function settlementWeekStartKey(startDate) {
     if (window.BremWeeklySettlement?.baeminWeekStartKey) {
       return BremWeeklySettlement.baeminWeekStartKey(startDate);
@@ -505,6 +590,8 @@ const BremWeeklySettlementAdmin = (function () {
       endDate: q(channel, 'EndDate', platform)?.value || '',
       paymentDate: q(channel, 'PaymentDate', platform)?.value || '',
       settlementWeekLabel: q(channel, 'WeekLabel', platform)?.value?.trim() || '',
+      partSlot: readPartSlot(channel, platform),
+      partTag: readPartTag(channel, platform),
       password: q(channel, 'Password', platform)?.value || '',
       file: files[0] || null,
       files,
@@ -527,6 +614,8 @@ const BremWeeklySettlementAdmin = (function () {
     if (!payload.region && !multiBaemin) return '지역을 입력하세요.';
     if (!payload.startDate || !payload.endDate) return '정산 시작일과 종료일을 입력하세요.';
     if (!payload.file && !(payload.files && payload.files.length)) return '엑셀 파일을 선택하세요.';
+    if (!payload.partSlot) return '부분1·부분2·부분3 중 하나를 선택하세요.';
+    if (!payload.partTag) return '태그를 입력하세요. (예: 배달료)';
     return '';
   }
 
@@ -841,7 +930,9 @@ const BremWeeklySettlementAdmin = (function () {
         weekStart: savedWeek,
         matchedCount: saveRecord.riders.length,
         fileName: saveRecord.fileName || record.fileName || '',
-        callFeeUnit
+        callFeeUnit,
+        partSlot: saveRecord.partSlot || 0,
+        partTag: saveRecord.partTag || ''
       });
     } else {
       BremStorage.settlementUploadLogs.add({
@@ -1549,7 +1640,7 @@ const BremWeeklySettlementAdmin = (function () {
     });
 
     if (!list.length) {
-      rowsEl.innerHTML = `<tr><td colspan="${platform === 'baemin' ? 9 : 8}" class="empty">${formatDate(weekStart)} 주에 업로드한 ${platformLabel(platform)} 주정산 기록이 없습니다.</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="10" class="empty">${formatDate(weekStart)} 주에 업로드한 ${platformLabel(platform)} 주정산 기록이 없습니다.</td></tr>`;
       return;
     }
 
@@ -1566,13 +1657,14 @@ const BremWeeklySettlementAdmin = (function () {
       const callFeeEditBtn = ch === 'direct' && item.linkedRecordId
         ? `<button type="button" class="small-btn" data-weekly-edit-call-fee="${escapeHtml(item.id)}">수수료 수정</button>`
         : '';
-      const mergeCell = platform === 'baemin' && item.linkedRecordId
+      const mergeCell = item.linkedRecordId
         ? `<td><input type="checkbox" data-weekly-merge-id="${escapeHtml(item.linkedRecordId)}"></td>`
-        : (platform === 'baemin' ? '<td></td>' : '');
+        : '<td></td>';
       return `
       <tr>
         ${mergeCell}
         <td>${formatDate(item.weekStart)} ~ ${formatDate(item.weekEnd)}</td>
+        <td>${formatPartCell(item)}</td>
         <td>${escapeHtml(item.region || '-')}</td>
         <td>${periodLabel}</td>
         <td>${escapeHtml(item.fileName || '-')} ${formatCallFeeLogBadge(resolveWeeklyLogCallFeeUnit(item))}</td>
@@ -1871,21 +1963,36 @@ const BremWeeklySettlementAdmin = (function () {
     q(ch, 'UnmatchedRetryBtn', platform)?.addEventListener('click', () => {
       retryWeeklyUnmatched(ch, platform);
     });
-    if (platform === 'baemin') {
-      q(ch, 'MergeBtn', platform)?.addEventListener('click', () => {
-        void mergeSelectedSavedSettlements(ch, platform);
+    q(ch, 'MergeBtn', platform)?.addEventListener('click', () => {
+      void mergeSelectedSavedSettlements(ch, platform);
+    });
+    q(ch, 'MergeSelectAll', platform)?.addEventListener('change', event => {
+      const rowsEl = q(ch, 'SavedRows', platform);
+      [...(rowsEl?.querySelectorAll('input[data-weekly-merge-id]') || [])]
+        .forEach(box => { box.checked = event.target.checked; });
+    });
+    q(ch, 'SavedRows', platform)?.addEventListener('change', event => {
+      if (event.target?.matches?.('input[data-weekly-merge-id]')) {
+        syncWeeklyMergeSelectAll(ch, platform);
+      }
+    });
+    q(ch, 'SavedRows', platform)?.addEventListener('click', event => {
+      const tagBtn = event.target?.closest?.('[data-weekly-tag]');
+      if (!tagBtn) return;
+      void editSettlementPartTag(ch, platform, tagBtn.dataset.weeklyTag);
+    });
+    const form = q(ch, 'UploadForm', platform);
+    form?.querySelectorAll('[data-part-tag]')?.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = q(ch, 'PartTag', platform);
+        if (input) input.value = btn.getAttribute('data-part-tag') || '';
       });
-      q(ch, 'MergeSelectAll', platform)?.addEventListener('change', event => {
-        const rowsEl = q(ch, 'SavedRows', platform);
-        [...(rowsEl?.querySelectorAll('input[data-weekly-merge-id]') || [])]
-          .forEach(box => { box.checked = event.target.checked; });
-      });
-      q(ch, 'SavedRows', platform)?.addEventListener('change', event => {
-        if (event.target?.matches?.('input[data-weekly-merge-id]')) {
-          syncWeeklyMergeSelectAll(ch, platform);
-        }
-      });
-    }
+    });
+    const syncPartWeek = () => syncPartWeekLabel(ch, platform);
+    q(ch, 'StartDate', platform)?.addEventListener('change', syncPartWeek);
+    q(ch, 'EndDate', platform)?.addEventListener('change', syncPartWeek);
+    q(ch, 'BaseDate', platform)?.addEventListener('change', syncPartWeek);
+    syncPartWeek();
     if (ch === 'direct' && platform === 'baemin') {
       q(ch, 'ApplySheetPayoutBtn', platform)?.addEventListener('click', () => {
         applySelectedSheetPayout(ch, platform);

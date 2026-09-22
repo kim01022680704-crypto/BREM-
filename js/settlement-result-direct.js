@@ -19,7 +19,8 @@ const BremSettlementResultDirect = (function () {
     publishing: false,            // 반영 진행 중(더블클릭 방지)
     publishedWeeks: new Set(),    // 이번 세션에서 반영한 주(수요일 시작 키)
     finalStaleWeek: '',           // 반영 후 조정되어 재반영이 필요한 주
-    payoutWaveId: ''
+    payoutWaveId: '',
+    excludedPartIds: new Set()
   };
   const detailInitial = {
     missionPay: 0,
@@ -105,7 +106,8 @@ const BremSettlementResultDirect = (function () {
   function setWeek(value) {
     state.week = value ? weekStartKey(value) : '';
     state.settlementId = '';
-    state.payoutWaveId = holiday()?.defaultPayoutWaveId?.(state.week) || '';
+    state.payoutWaveId = '';
+    state.excludedPartIds.clear();
     void refresh(state.platform);
   }
 
@@ -116,10 +118,16 @@ const BremSettlementResultDirect = (function () {
     setWeek(dateKey(date));
   }
 
+  function partBadge(record) {
+    return window.BremWeeklySettlement?.formatPartBadge?.(record) || '';
+  }
+
   function settlementOptionLabel(record) {
     const riders = Array.isArray(record.riders) ? record.riders.length : 0;
     const region = record.region ? ` · ${record.region}` : '';
-    return `${formatDate(record.startDate)} ~ ${formatDate(record.endDate)}${region} · ${riders}명`;
+    const part = partBadge(record);
+    const partText = part ? ` · ${part}` : '';
+    return `${formatDate(record.startDate)} ~ ${formatDate(record.endDate)}${region}${partText} · ${riders}명`;
   }
 
   function renderSettlementPicker() {
@@ -159,7 +167,9 @@ const BremSettlementResultDirect = (function () {
 
     if (info && active) {
       const file = active.fileName ? ` · 파일 ${active.fileName}` : '';
-      info.textContent = `기간 ${formatDate(active.startDate)} ~ ${formatDate(active.endDate)} · 정산주 ${formatDate(settlementWeek(active))}(수)${file}`;
+      const part = partBadge(active);
+      const partText = part ? ` · ${part}` : '';
+      info.textContent = `기간 ${formatDate(active.startDate)} ~ ${formatDate(active.endDate)} · 정산주 ${formatDate(settlementWeek(active))}(수)${partText}${file}`;
     }
   }
 
@@ -1294,34 +1304,21 @@ const BremSettlementResultDirect = (function () {
     return state.week || (cur ? settlementWeek(cur) : weekStartKey());
   }
 
-  function holiday() {
-    return window.BremSettlementHoliday || null;
-  }
-
-  function payoutWaves() {
-    return holiday()?.payoutWavesForWeek?.(finalWeek()) || [];
-  }
-
-  function currentPayoutWave() {
-    const waves = payoutWaves();
-    if (!waves.length) return null;
-    if (!state.payoutWaveId) {
-      state.payoutWaveId = holiday()?.defaultPayoutWaveId?.(finalWeek()) || waves[0].id;
-    }
-    return holiday()?.getPayoutWave?.(finalWeek(), state.payoutWaveId) || waves[0];
-  }
-
   function allFinalWeekSettlements() {
     const week = finalWeek();
     return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
       .filter(record => settlementWeek(record) === week);
   }
 
+  function isTaggedPart(record) {
+    return Boolean(window.BremWeeklySettlement?.recordPartTag?.(record));
+  }
+
   function finalWeekSettlements() {
     const list = allFinalWeekSettlements();
-    const wave = currentPayoutWave();
-    if (!wave || !holiday()?.settlementsForWave) return list;
-    return holiday().settlementsForWave(list, wave, finalWeek());
+    const tagged = list.filter(isTaggedPart);
+    const pool = tagged.length ? tagged : list;
+    return pool.filter(record => !state.excludedPartIds.has(String(record.id)));
   }
 
   function addDaysKey(dateKeyValue, days) {
@@ -1545,24 +1542,27 @@ const BremSettlementResultDirect = (function () {
     const host = $('#settlementFinalWavePicker');
     const optionsEl = $('#settlementFinalWaveOptions');
     if (!host || !optionsEl) return;
-    const waves = payoutWaves();
-    if (!waves.length) {
+    const list = allFinalWeekSettlements();
+    if (!list.length) {
       host.hidden = true;
       optionsEl.innerHTML = '';
       return;
     }
     host.hidden = false;
-    const current = currentPayoutWave();
-    optionsEl.innerHTML = waves.map(wave => {
-      const checked = current?.id === wave.id ? ' checked' : '';
-      const range = wave.startDate && wave.endDate ? `${wave.startDate}~${wave.endDate}` : '합산';
+    const labelEl = host.querySelector('.payout-wave-picker-label');
+    if (labelEl) labelEl.textContent = '부분 선택 (태그 필수)';
+    optionsEl.innerHTML = list.map(record => {
+      const tagged = isTaggedPart(record);
+      const checked = tagged && !state.excludedPartIds.has(String(record.id)) ? ' checked' : '';
+      const disabled = tagged ? '' : ' disabled';
+      const badge = partBadge(record) || (tagged ? '' : '태그 없음');
       return `
         <label class="payout-wave-option">
-          <input type="radio" name="settlementFinalWave" value="${escapeHtml(wave.id)}"${checked}>
+          <input type="checkbox" data-final-part="${escapeHtml(record.id)}"${checked}${disabled}>
           <span>
-            <strong>${escapeHtml(wave.label)}</strong>
-            <span class="muted-inline">${escapeHtml(wave.paymentDate)} · ${escapeHtml(range)}</span>
-            <span class="payout-wave-hint">${escapeHtml(wave.hint || '')}</span>
+            <strong>${escapeHtml(record.platform === 'coupang' ? '쿠팡' : '배민')} ${escapeHtml(badge)}</strong>
+            <span class="muted-inline">${escapeHtml(record.startDate || '')} ~ ${escapeHtml(record.endDate || '')}</span>
+            <span class="payout-wave-hint">${tagged ? escapeHtml(record.region || '') : '업로드 기록에서 태그하세요'}</span>
           </span>
         </label>`;
     }).join('');
@@ -1597,11 +1597,7 @@ const BremSettlementResultDirect = (function () {
       head.innerHTML = Calc().theadHtml(cols, lead);
     }
     if (!allRows.length) {
-      const wave = currentPayoutWave();
-      const empty = wave
-        ? `${wave.label} 회차에 해당하는 주정산이 아직 없습니다. 해당 구간 주정산을 먼저 올리세요.`
-        : '이 주에 저장된 직계약 정산서가 없습니다.';
-      body.innerHTML = `<tr><td colspan="${cols.length + 1}" class="empty">${escapeHtml(empty)}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="${cols.length + 1}" class="empty">선택한 부분이 없습니다. 태그가 있는 부분을 체크하거나 주정산을 올리세요.</td></tr>`;
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
@@ -1633,9 +1629,9 @@ const BremSettlementResultDirect = (function () {
       const coupangCount = rows.filter(r => r.platform === 'coupang').length;
       const baeminCount = rows.filter(r => r.platform === 'baemin').length;
       const negativeCount = rows.filter(r => Math.round(Number(r.netPay || 0)) < 0).length;
-      const wave = currentPayoutWave();
-      const waveNote = wave
-        ? ` · 회차 <strong>${escapeHtml(wave.label)}</strong> ${escapeHtml(wave.paymentDate)}`
+      const selected = finalWeekSettlements();
+      const partNote = selected.length
+        ? ` · 부분 ${selected.map(item => escapeHtml(partBadge(item) || `${item.startDate}~${item.endDate}`)).join(', ')}`
         : '';
       const searchNote = q ? ` · 검색 “${escapeHtml(state.finalSearch)}”` : '';
       const negNote = negativeCount
@@ -1644,7 +1640,7 @@ const BremSettlementResultDirect = (function () {
       const staleNote = (state.finalStaleWeek && state.finalStaleWeek === finalWeek())
         ? `<div class="final-restale-note">⚠️ 반영 후 조정됨 — 「급여명세서 반영하기」를 다시 눌러 기사앱에 최신 값을 반영하세요.</div>`
         : '';
-      summaryEl.innerHTML = staleNote + `표시 <strong>${rows.length}</strong>줄 / 전체 ${allRows.length}줄 (쿠팡 ${coupangCount} · 배민 ${baeminCount})${waveNote}${searchNote}`
+      summaryEl.innerHTML = staleNote + `표시 <strong>${rows.length}</strong>줄 / 전체 ${allRows.length}줄 (쿠팡 ${coupangCount} · 배민 ${baeminCount})${partNote}${searchNote}`
         + ` · 총프로모션 <strong>${formatNumber(t.promo)}</strong>`
         + ` · 총기타지급 <strong>${formatNumber(t.other)}</strong>`
         + ` · 총선정산 <strong>${formatNumber(t.prepaid)}</strong>`
@@ -1790,18 +1786,32 @@ const BremSettlementResultDirect = (function () {
       );
       if (!negOk) { showToast('반영을 취소했습니다. 「마이너스 일괄 맞추기」로 먼저 0원 처리하세요.'); return; }
     }
-    const wave = currentPayoutWave();
-    const waveLines = wave
-      ? [
-        `${wave.label} · 지급일 ${wave.paymentDate}`,
-        wave.includePromo
-          ? '이 회차는 프로모션을 합쳐서 반영합니다.'
-          : '배달료만 반영합니다. 프로모션은 주정산이 잘려 들어와도 9/29 회차에서 합칩니다.'
-      ]
-      : [
-        `${week}(수) 주 전체 ${preview.length}줄을 기사앱 주급명세서로 반영합니다.`,
-        '쿠팡·배민 각 줄이 각각 반영되고, 라이더앱에 즉시 노출됩니다.'
-      ];
+    const selected = finalWeekSettlements();
+    const partStarts = selected.map(item => String(item.startDate || '').slice(0, 10)).filter(Boolean).sort();
+    const partEnds = selected.map(item => String(item.endDate || '').slice(0, 10)).filter(Boolean).sort();
+    const periodStart = partStarts[0] || week;
+    const periodEnd = partEnds[partEnds.length - 1] || '';
+    const paymentDate = selected
+      .map(item => String(item.paymentDate || '').slice(0, 10))
+      .filter(Boolean)
+      .sort()[0]
+      || window.BremSettlementHoliday?.paymentDateForRange?.({
+        platform: selected[0]?.platform,
+        startDate: periodStart,
+        endDate: periodEnd,
+        weekStart: week
+      })
+      || '';
+    const partLabels = selected.map(item => partBadge(item) || `${item.startDate}~${item.endDate}`).join(', ');
+    const payoutWaveId = selected.length === 1
+      ? `p${window.BremWeeklySettlement?.recordPartSlot?.(selected[0]) || 1}`
+      : `parts-${selected.length}`;
+    const waveLines = [
+      `${week}(수) 주 · ${partLabels || '선택 부분'}`,
+      periodStart && periodEnd ? `부분 기간 ${periodStart} ~ ${periodEnd}` : '',
+      paymentDate ? `지급일 ${paymentDate}` : '',
+      '체크한 부분만 기존 정산 로직으로 반영합니다.'
+    ].filter(Boolean);
     const ok = window.confirm(
       [
         ...waveLines,
@@ -1823,9 +1833,14 @@ const BremSettlementResultDirect = (function () {
       if (!rows.length) { showToast('반영할 정산 행이 없습니다.'); return; }
       const result = await window.BremStorage.publishDirectSettlementPayslips({
         weekStart: week,
-        rows,
-        paymentDate: wave?.paymentDate || '',
-        payoutWaveId: wave?.id || ''
+        rows: rows.map(row => ({
+          ...row,
+          periodStart,
+          periodEnd,
+          partTag: partBadge(selected.find(item => item.id === row.settlementId) || selected[0] || {})
+        })),
+        paymentDate,
+        payoutWaveId
       });
       if (!result?.ok) throw new Error(result?.error || result?.message || '반영 실패');
       // 반영 성공: 이 주를 반영완료로 기록하고 재반영 필요 표시 해제
@@ -1863,8 +1878,12 @@ const BremSettlementResultDirect = (function () {
     $('#settlementFinalWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
     $('#settlementFinalWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     document.getElementById('settlementFinalWaveOptions')?.addEventListener('change', event => {
-      if (event.target?.name !== 'settlementFinalWave') return;
-      state.payoutWaveId = String(event.target.value || '');
+      const box = event.target?.closest?.('[data-final-part]');
+      if (!box) return;
+      const id = String(box.dataset.finalPart || '');
+      if (!id) return;
+      if (box.checked) state.excludedPartIds.delete(id);
+      else state.excludedPartIds.add(id);
       renderFinal();
     });
     document.querySelectorAll('[data-admin-platform-tab="settlement-result-direct"]').forEach(btn => {

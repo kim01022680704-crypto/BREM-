@@ -337,6 +337,8 @@ window.BremSupabaseMapper = (function () {
       paymentDate: row.payment_date || '',
       settlementWeekLabel: row.settlement_week_label || '',
       matchedNamesLabel: row.matched_names_label || '',
+      partSlot: Number(summary.partSlot || 0) || 0,
+      partTag: String(summary.partTag || '').trim(),
       summary,
       riders: Array.isArray(row.riders) ? row.riders : [],
       uploadedAt: row.uploaded_at

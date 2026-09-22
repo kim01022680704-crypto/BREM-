@@ -49,21 +49,17 @@ const BremFinalDeposit = (function () {
       ));
   }
 
-  function holiday() {
-    return window.BremSettlementHoliday || null;
+  function partMeta(record) {
+    const api = window.BremWeeklySettlement || {};
+    return {
+      slot: api.recordPartSlot?.(record) || 0,
+      tag: api.recordPartTag?.(record) || '',
+      badge: api.formatPartBadge?.(record) || ''
+    };
   }
 
-  function payoutWaves() {
-    return holiday()?.payoutWavesForWeek?.(ensureWeek()) || [];
-  }
-
-  function currentPayoutWave() {
-    const waves = payoutWaves();
-    if (!waves.length) return null;
-    if (!state.payoutWaveId) {
-      state.payoutWaveId = holiday()?.defaultPayoutWaveId?.(ensureWeek()) || waves[0].id;
-    }
-    return holiday()?.getPayoutWave?.(ensureWeek(), state.payoutWaveId) || waves[0];
+  function isTagged(record) {
+    return Boolean(partMeta(record).tag);
   }
 
   // 최종입금은 「그 주」 단위로 입금하므로 주 필터를 항상 건다.
@@ -72,16 +68,10 @@ const BremFinalDeposit = (function () {
     return allSettlements().filter(record => Calc().settlementWeek(record) === week);
   }
 
-  function waveSettlements(list) {
-    const wave = currentPayoutWave();
-    const holidayApi = holiday();
-    if (!wave || !holidayApi?.settlementsForWave) return list;
-    return holidayApi.settlementsForWave(list, wave, ensureWeek());
-  }
-
   function checkedSettlements() {
-    return waveSettlements(weekSettlements())
-      .filter(record => !state.excludedSettlementIds.has(String(record.id)));
+    return weekSettlements().filter(record => (
+      isTagged(record) && !state.excludedSettlementIds.has(String(record.id))
+    ));
   }
 
   function ensureWeek() {
@@ -98,7 +88,7 @@ const BremFinalDeposit = (function () {
     // 주가 바뀌면 다른 주의 체크 상태를 물려받지 않게 초기화한다.
     state.excludedSettlementIds.clear();
     state.excludedDriverKeys.clear();
-    state.payoutWaveId = holiday()?.defaultPayoutWaveId?.(next) || '';
+    state.payoutWaveId = '';
     void refresh();
   }
 
@@ -120,27 +110,19 @@ const BremFinalDeposit = (function () {
     const host = $('#finalDepositWavePicker');
     const optionsEl = $('#finalDepositWaveOptions');
     if (!host || !optionsEl) return;
-    const waves = payoutWaves();
-    if (!waves.length) {
+    const list = weekSettlements();
+    if (!list.length) {
       host.hidden = true;
       optionsEl.innerHTML = '';
       return;
     }
     host.hidden = false;
-    const current = currentPayoutWave();
-    optionsEl.innerHTML = waves.map(wave => {
-      const checked = current?.id === wave.id ? ' checked' : '';
-      const range = wave.startDate && wave.endDate ? `${wave.startDate}~${wave.endDate}` : '합산';
-      return `
-        <label class="payout-wave-option">
-          <input type="radio" name="finalDepositWave" value="${escapeHtml(wave.id)}"${checked}>
-          <span>
-            <strong>${escapeHtml(wave.label)}</strong>
-            <span class="muted-inline">${escapeHtml(wave.paymentDate)} · ${escapeHtml(range)}</span>
-            <span class="payout-wave-hint">${escapeHtml(wave.hint || '')}</span>
-          </span>
-        </label>`;
-    }).join('');
+    const tagged = list.filter(isTagged).length;
+    optionsEl.innerHTML = `
+      <p class="payout-wave-hint">
+        적용주 ${escapeHtml(ensureWeek())}(수) · 올린 부분 ${list.length}건 · 태그 ${tagged}건.
+        태그가 있는 부분만 선택할 수 있습니다. 합치기는 주정산 업로드 기록에서 하세요.
+      </p>`;
   }
 
   function renderSettlementPicker() {
@@ -150,15 +132,10 @@ const BremFinalDeposit = (function () {
 
     renderWavePicker();
     const list = weekSettlements();
-    const wave = currentPayoutWave();
-    const waveIds = new Set(waveSettlements(list).map(record => String(record.id)));
     if (rangeEl) {
       const total = allSettlements().length;
-      const waveNote = wave
-        ? ` · 지급회차 ${wave.label} ${wave.paymentDate} (프로모션 ${wave.includePromo ? '포함' : '제외'})`
-        : '';
       rangeEl.textContent = list.length
-        ? `정산주 ${formatDate(ensureWeek())}(수) · 정산서 ${list.length}건 (체크한 정산서만 최종입금에 합산됩니다)${waveNote}`
+        ? `정산주 ${formatDate(ensureWeek())}(수) · 부분 ${list.length}건 (태그 있는 부분만 체크해 최종입금에 합산합니다)`
         : `${formatDate(ensureWeek())}(수) 주에 저장된 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요. (전체 ${total}건)`;
     }
 
@@ -171,22 +148,21 @@ const BremFinalDeposit = (function () {
 
     const cardHtml = record => {
       const id = String(record.id);
-      const checked = !state.excludedSettlementIds.has(id);
+      const meta = partMeta(record);
+      const tagged = Boolean(meta.tag);
+      const checked = tagged && !state.excludedSettlementIds.has(id);
       const riders = Array.isArray(record.riders) ? record.riders.length : 0;
       const region = record.region ? ` · ${escapeHtml(record.region)}` : '';
       const file = record.fileName ? `<span class="muted-inline">${escapeHtml(record.fileName)}</span>` : '';
-      const inWave = !wave || waveIds.has(id);
-      const waveMark = wave
-        ? `<span class="muted-inline">${inWave ? '이번 회차' : '다른 회차'}</span>`
-        : '';
+      const badge = meta.badge || (meta.slot ? `부분${meta.slot}` : '부분 미지정');
       return `
-        <label class="final-deposit-settlement${inWave ? '' : ' final-deposit-settlement-dim'}">
-          <input type="checkbox" data-fd-settlement="${escapeHtml(id)}"${checked && inWave ? ' checked' : ''}${inWave ? '' : ' disabled'}>
+        <label class="final-deposit-settlement${tagged ? '' : ' final-deposit-settlement-dim'}">
+          <input type="checkbox" data-fd-settlement="${escapeHtml(id)}"${checked ? ' checked' : ''}${tagged ? '' : ' disabled'}>
           <span class="final-deposit-settlement-body">
             <strong>${escapeHtml(platformLabel(record.platform))}</strong>${region}
+            <span class="weekly-part-tag">${escapeHtml(badge)}</span>
             <span class="muted-inline">${formatDate(record.startDate)} ~ ${formatDate(record.endDate)} · ${formatNumber(riders)}명</span>
             ${file}
-            ${waveMark}
           </span>
         </label>`;
     };
@@ -204,7 +180,8 @@ const BremFinalDeposit = (function () {
     listEl.innerHTML = groupHtml('coupang', '쿠팡') + groupHtml('baemin', '배민');
 
     const allChk = $('#finalDepositSettlementAll');
-    if (allChk) allChk.checked = list.every(record => !state.excludedSettlementIds.has(String(record.id)));
+    const tagged = list.filter(isTagged);
+    if (allChk) allChk.checked = tagged.length > 0 && tagged.every(record => !state.excludedSettlementIds.has(String(record.id)));
   }
 
   // --- 기사 단위 합산 -------------------------------------------------------
@@ -231,14 +208,13 @@ const BremFinalDeposit = (function () {
     // 스필오버 배분을 정산서들 사이에서 공유한다(사람별 플랫폼 한도 기준).
     // consumed 로 같은 사람의 같은 플랫폼 선정산이 중복 반영되지 않게 한다.
     const week = ensureWeek();
-    const weekAll = waveSettlements(weekSettlements());
-    const sourceList = allSettlements ? weekAll : checkedSettlements();
-    const wave = currentPayoutWave();
+    const weekAll = weekSettlements();
+    const sourceList = allSettlements ? weekAll.filter(isTagged) : checkedSettlements();
     const allocation = Calc().allocateWeekWithdrawals(
       state.withdrawals,
       week,
-      Calc().buildWeekCapacityMap(weekAll),
-      { allowOverflow: !wave }
+      Calc().buildWeekCapacityMap(sourceList.length ? sourceList : weekAll),
+      { allowOverflow: sourceList.length === weekAll.filter(isTagged).length }
     );
     const consumed = new Set();
     const leaseConsumed = new Set();
@@ -599,7 +575,7 @@ const BremFinalDeposit = (function () {
       return;
     }
 
-    const weekList = waveSettlements(weekSettlements());
+    const weekList = checkedSettlements();
     if (!weekList.length) {
       showToast('이 주에 저장된 직계약 정산서가 없습니다.');
       return;
@@ -752,9 +728,7 @@ const BremFinalDeposit = (function () {
     ];
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(summary), '인원요약');
 
-    const wave = currentPayoutWave();
-    const waveSuffix = wave ? `_${wave.paymentDate}_${wave.id}` : '';
-    window.XLSX.writeFile(wb, `최종입금_${ensureWeek()}${waveSuffix}.xlsx`);
+    window.XLSX.writeFile(wb, `최종입금_${ensureWeek()}.xlsx`);
     showToast(`엑셀 저장 · 입금 ${allPeople.length}건 (0원 ${zeroPay.length}건 포함 · 플랫폼별 각각)`);
   }
 

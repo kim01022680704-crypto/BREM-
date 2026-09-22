@@ -1944,16 +1944,47 @@ const BremWeeklySettlement = (function () {
     };
   }
 
-  function buildWeeklySettlementId({ platform, region, year, month, week, startDate, channel }) {
+  function normalizePartSlot(value) {
+    const n = Math.round(Number(value || 0));
+    return n >= 1 && n <= 3 ? n : 0;
+  }
+
+  function normalizePartTag(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+  }
+
+  function partSlotLabel(slot) {
+    const n = normalizePartSlot(slot);
+    return n ? `부분${n}` : '';
+  }
+
+  function recordPartSlot(record) {
+    return normalizePartSlot(record?.partSlot || record?.summary?.partSlot);
+  }
+
+  function recordPartTag(record) {
+    return normalizePartTag(record?.partTag || record?.summary?.partTag);
+  }
+
+  function formatPartBadge(record) {
+    const slot = partSlotLabel(recordPartSlot(record));
+    const tag = recordPartTag(record);
+    if (slot && tag) return `${slot} · ${tag}`;
+    return tag || slot || '';
+  }
+
+  function buildWeeklySettlementId({ platform, region, year, month, week, startDate, channel, partSlot }) {
     const p = normalizePlatform(platform);
     const regionSlug = slugify(region);
     const prefix = channel === 'direct' ? 'weekly_direct' : 'weekly';
-    if (year && month && week) return `${prefix}_${p}_${regionSlug}_${year}_${month}_${week}`;
+    const slot = normalizePartSlot(partSlot);
+    const slotSuffix = slot ? `_p${slot}` : '';
+    if (year && month && week) return `${prefix}_${p}_${regionSlug}_${year}_${month}_${week}${slotSuffix}`;
     // 배민: 월말 쪼개진 파일이 같은 수~화 주를 공유하도록 startDate 대신 수요일 weekStart 사용
     const idDate = p === 'baemin'
       ? (baeminWeekStartKey(startDate) || startDate)
       : startDate;
-    return `${prefix}_${p}_${regionSlug}_${String(idDate || '').replace(/-/g, '')}`;
+    return `${prefix}_${p}_${regionSlug}_${String(idDate || '').replace(/-/g, '')}${slotSuffix}`;
   }
 
   function buildWeeklySettlementRecord(payload) {
@@ -1987,6 +2018,8 @@ const BremWeeklySettlement = (function () {
       ? payload.fileNames.map(String).filter(Boolean)
       : (payload.fileName ? [String(payload.fileName)] : []);
     const sourceParts = Array.isArray(payload.sourceParts) ? payload.sourceParts : null;
+    const partSlot = normalizePartSlot(payload.partSlot);
+    const partTag = normalizePartTag(payload.partTag);
 
     return {
       id: payload.id || buildWeeklySettlementId({
@@ -1996,7 +2029,8 @@ const BremWeeklySettlement = (function () {
         month: parsedMeta.month,
         week: parsedMeta.week,
         startDate: dates.startDate,
-        channel
+        channel,
+        partSlot
       }),
       platform,
       channel,
@@ -2014,7 +2048,13 @@ const BremWeeklySettlement = (function () {
       uploadedAt: payload.uploadedAt || new Date().toISOString(),
       matchedNamesLabel: buildMatchedNamesLabel(matchedRiders),
       riders: matchedRiders,
-      summary: buildWeeklySummary(matchedRiders, payload.unmatchedRiders || []),
+      partSlot,
+      partTag,
+      summary: {
+        ...buildWeeklySummary(matchedRiders, payload.unmatchedRiders || []),
+        partSlot,
+        partTag
+      },
       // 금액 열 밀림 의심(비차단 경고용). 없으면 undefined.
       columnAnomaly: detectAmountColumnAnomaly(
         matchedRiders.concat(payload.unmatchedRiders || []),
@@ -2099,7 +2139,11 @@ const BremWeeklySettlement = (function () {
     let toSave = record;
     const extraIds = [];
     // 배민: 같은 권역(회사명 무시)·수~화 주 기존 건이 있으면 part upsert 후 금액·콜수 합산
-    if (normalizePlatform(record.platform) === 'baemin' && options.skipAutoMerge !== true) {
+    if (
+      normalizePlatform(record.platform) === 'baemin'
+      && options.skipAutoMerge !== true
+      && !normalizePartSlot(record.partSlot || record.summary?.partSlot)
+    ) {
       const existingList = listExistingBaeminWeeklyRecords(record, channel);
       if (existingList.length) {
         let merged = existingList[0];
@@ -2203,6 +2247,9 @@ const BremWeeklySettlement = (function () {
     ]));
     const keep = list[0];
     const extraIds = list.slice(1).map(item => String(item.id || '').trim()).filter(id => id && id !== keep.id);
+    const mergedTag = normalizePartTag(
+      uniqueJoinLabels(list.map(item => recordPartTag(item))).join(' + ') || '합침'
+    );
     const toSave = {
       ...keep,
       platform,
@@ -2211,6 +2258,8 @@ const BremWeeklySettlement = (function () {
       fileName: fileNames.join(' + '),
       fileNames,
       sourceParts: parts,
+      partSlot: 0,
+      partTag: mergedTag,
       startDate,
       endDate,
       settlementWeekLabel: startDate && endDate ? `${startDate} ~ ${endDate}` : String(keep.settlementWeekLabel || ''),
@@ -2221,7 +2270,9 @@ const BremWeeklySettlement = (function () {
           riders.filter(item => item.matched || item.matchedRiderId),
           riders.filter(item => !item.matched && !item.matchedRiderId)
         ),
-        channel
+        channel,
+        partSlot: 0,
+        partTag: mergedTag
       }
     };
     const saved = saveWeeklySettlement(toSave, { ...options, skipAutoMerge: true });
@@ -2399,6 +2450,8 @@ const BremWeeklySettlement = (function () {
           fileName: groupParts.map(p => p.fileName).join(' + '),
           fileNames: groupParts.map(p => p.fileName),
           sourceParts,
+          partSlot: options.partSlot,
+          partTag: options.partTag,
           baseSettlementDate: startDate,
           startDate,
           endDate,
@@ -2463,6 +2516,8 @@ const BremWeeklySettlement = (function () {
       sourceParts: platform === 'baemin'
         ? [{ fileName: file.name, startDate, endDate, riders: allMatched }]
         : undefined,
+      partSlot: options.partSlot,
+      partTag: options.partTag,
       baseSettlementDate: options.baseSettlementDate || startDate,
       startDate,
       endDate,
@@ -2574,6 +2629,12 @@ const BremWeeklySettlement = (function () {
     mergeBaeminRiders,
     mergeBaeminRidersFromParts,
     listBaeminSourceParts,
+    normalizePartSlot,
+    normalizePartTag,
+    partSlotLabel,
+    recordPartSlot,
+    recordPartTag,
+    formatPartBadge,
     canonicalBaeminTeamRegion,
     stripBaeminCompanyPrefix,
     baeminCompanyLabelFromTeam,
