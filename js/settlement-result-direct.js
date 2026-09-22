@@ -353,14 +353,22 @@ const BremSettlementResultDirect = (function () {
       .filter(record => recordMatchesWeek(record, week) && recordSlot(record) === slot);
   }
 
+  function weekSettlementsForAllocation(week) {
+    const key = String(week || '').slice(0, 10);
+    return allDirectSettlements().filter(record => recordMatchesWeek(record, key));
+  }
+
   function computeRows() {
     const settlement = currentSettlement();
     if (!settlement) return [];
-    // 각 플랫폼 실지급 한도까지 선정산을 잡고 초과분은 반대 플랫폼으로 넘긴다(스필오버).
-    // 한 사람의 쿠팡/배민 정산서를 함께 넘겨 사람 단위로 배분한다.
+    // 선정산은 출금 플랫폼에 먼저, 로스는 그 주 쿠팡+배민(부분 포함) 여유분으로만 넘긴다.
+    const slotList = weekAllPlatformSettlements(settlement);
+    const allWeek = weekSettlementsForAllocation(settlementWeek(settlement));
     return Calc().sortByName(Calc().computeRows(settlement, {
       withdrawals: state.withdrawals,
-      weekSettlements: weekAllPlatformSettlements(settlement)
+      weekSettlements: allWeek,
+      dateRange: Calc().partDateRange?.(slotList) || Calc().recordDateRange?.(settlement),
+      dailySettlements: window.BremStorage?.settlements?.getAll?.() || []
     }));
   }
 
@@ -1606,31 +1614,41 @@ const BremSettlementResultDirect = (function () {
   // 그 주 모든 정산서(쿠팡+배민)의 라이더 행을 합치지 않고 모은다.
   function finalRows() {
     const settlements = finalWeekSettlements();
+    const allWeek = weekDirectSettlements();
     const rows = [];
     const leaseConsumed = new Set();
     const loanConsumed = new Set();
     const week = finalWeek();
-    const dateRange = Calc().partDateRange?.(settlements) || {};
+    const dateRange = Calc().partDateRange?.(settlements) || Calc().partDateRange?.(allWeek) || {};
+    const dailySettlements = window.BremStorage?.settlements?.getAll?.() || [];
     const allocation = Calc().allocateWeekWithdrawals(
       state.withdrawals,
       week,
-      Calc().buildWeekCapacityMap(settlements),
-      { dateRange, weekSettlements: settlements }
+      Calc().buildWeekCapacityMap(allWeek),
+      { dateRange, weekSettlements: allWeek, dailySettlements }
     );
-    const consumed = new Set();
-    const spill = Calc().buildLeaseLoanSpilloverAllocation(settlements, {
+    const remain = new Map();
+    const spill = Calc().buildLeaseLoanSpilloverAllocation(allWeek, {
       week,
       withdrawals: state.withdrawals,
       dateRange,
+      dailySettlements,
       _allocation: allocation
     });
-    settlements.forEach(settlement => {
+    const ordered = [...settlements].sort((a, b) => {
+      const as = String(a.startDate || a.id || '');
+      const bs = String(b.startDate || b.id || '');
+      if (as !== bs) return as.localeCompare(bs);
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
+    ordered.forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
-        weekSettlements: settlements,
+        weekSettlements: allWeek,
         dateRange,
+        dailySettlements,
         _allocation: allocation,
-        _consumed: consumed,
+        _prepaidRemain: remain,
         _leaseLoanSpill: spill,
         _leaseConsumed: leaseConsumed,
         _loanConsumed: loanConsumed

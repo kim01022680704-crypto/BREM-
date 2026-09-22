@@ -142,16 +142,93 @@ const allocLoss = Calc.allocateWeekWithdrawals(coupangWd, week, bothCap, {
   dailySettlements: [],
   weekSettlements: bothFiles
 });
+const bothOverCap = new Map([['id:d1', { coupang: 100000, baemin: 100000 }]]);
+const bothOverWd = coupangWd.concat(baeminWd);
+const allocBothOver = Calc.allocateWeekWithdrawals(bothOverWd, week, bothOverCap, {
+  dateRange: { start: '2026-09-16', end: '2026-09-20' },
+  dailySettlements: [],
+  weekSettlements: bothFiles
+});
 const sliceC = allocCoupang.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
 const sliceB = allocBaemin.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
 const sliceL = allocLoss.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
+const sliceO = allocBothOver.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
 checks.push(
   ['쿠팡파일 없으면 쿠팡출금은 배민에 안 넘김', sliceC.baemin.prepaid === 0 && sliceC.baemin.fee === 0],
   ['쿠팡파일 없으면 쿠팡출금은 쿠팡에 남김', sliceC.coupang.prepaid === 500000 && sliceC.coupang.fee === 10000],
   ['배민 출금은 배민에 먼저', sliceB.baemin.prepaid === 200000 && sliceB.baemin.fee === 4000],
   ['배민 출금은 쿠팡에 안 붙음', sliceB.coupang.prepaid === 0 && sliceB.coupang.fee === 0],
-  ['양쪽 있으면 쿠팡 로스만 배민으로', sliceL.coupang.prepaid === 90000 && sliceL.coupang.fee === 10000
-    && sliceL.baemin.prepaid === 410000 && sliceL.baemin.fee === 0]
+  ['한쪽만 로스면 여유 있는 쪽으로만', sliceL.coupang.prepaid + sliceL.coupang.fee === 110000
+    && sliceL.baemin.prepaid === 400000 && sliceL.baemin.fee === 0],
+  ['공동 양쪽 로스면 서로 안 바꿈', sliceO.coupang.prepaid === 500000 && sliceO.coupang.fee === 10000
+    && sliceO.baemin.prepaid === 200000 && sliceO.baemin.fee === 4000]
+);
+
+const baeminPart = {
+  id: 'weekly_direct_baemin_p1',
+  platform: 'baemin',
+  startDate: '2026-09-16',
+  endDate: '2026-09-20',
+  riders: [{ matchedRiderId: 'd1', amounts: { deliveryFee: 200000 }, weeklyOrderCount: 0 }]
+};
+const coupangFull = {
+  id: 'weekly_direct_coupang_full',
+  platform: 'coupang',
+  startDate: '2026-09-16',
+  endDate: '2026-09-22',
+  riders: [{ matchedRiderId: 'd1', amounts: { deliveryFee: 500000 }, weeklyOrderCount: 0 }]
+};
+const jointWd = [{
+  driverId: 'd1',
+  platform: 'baemin',
+  amount: 300000,
+  feeAmount: 6000,
+  status: 'completed',
+  weekStart: week,
+  requestDate: '2026-09-18',
+  createdAt: '2026-09-18T10:00:00'
+}];
+const rowsB = Calc.computeRows(baeminPart, {
+  withdrawals: jointWd,
+  weekSettlements: [baeminPart, coupangFull],
+  dateRange: { start: '2026-09-16', end: '2026-09-20' },
+  dailySettlements: []
+});
+const rowsC = Calc.computeRows(coupangFull, {
+  withdrawals: jointWd,
+  weekSettlements: [baeminPart, coupangFull],
+  dateRange: { start: '2026-09-16', end: '2026-09-20' },
+  dailySettlements: []
+});
+const overB = {
+  ...baeminPart,
+  id: 'weekly_direct_baemin_over',
+  riders: [{ matchedRiderId: 'd1', amounts: { deliveryFee: 100000 }, weeklyOrderCount: 0 }]
+};
+const overC = {
+  ...coupangFull,
+  id: 'weekly_direct_coupang_over',
+  riders: [{ matchedRiderId: 'd1', amounts: { deliveryFee: 100000 }, weeklyOrderCount: 0 }]
+};
+const rowsOverB = Calc.computeRows(overB, {
+  withdrawals: bothOverWd,
+  weekSettlements: [overB, overC],
+  dateRange: { start: '2026-09-16', end: '2026-09-20' },
+  dailySettlements: []
+});
+const rowsOverC = Calc.computeRows(overC, {
+  withdrawals: bothOverWd,
+  weekSettlements: [overB, overC],
+  dateRange: { start: '2026-09-16', end: '2026-09-20' },
+  dailySettlements: []
+});
+checks.push(
+  ['공동 배민 로스는 쿠팡 여유로', Number(rowsB[0]?.prepaid || 0) + Number(rowsB[0]?.dailySettlementFee || 0) === 200000
+    && Number(rowsC[0]?.prepaid || 0) + Number(rowsC[0]?.dailySettlementFee || 0) === 106000],
+  ['최종결산 양쪽 로스면 출금 그대로', Number(rowsOverC[0]?.prepaid || 0) === 500000
+    && Number(rowsOverC[0]?.dailySettlementFee || 0) === 10000
+    && Number(rowsOverB[0]?.prepaid || 0) === 200000
+    && Number(rowsOverB[0]?.dailySettlementFee || 0) === 4000]
 );
 
 const failed = checks.filter(item => !item[1]);

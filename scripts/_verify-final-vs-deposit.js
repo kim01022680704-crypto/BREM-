@@ -156,7 +156,7 @@ function sum(rows, key) {
       WEEK,
       Calc.buildWeekCapacityMap(settlements)
     );
-    const consumed = new Set();
+    const remain = new Map();
     const leaseConsumed = new Set();
     const loanConsumed = new Set();
     const spill = Calc.buildLeaseLoanSpilloverAllocation(settlements, {
@@ -170,7 +170,7 @@ function sum(rows, key) {
         withdrawals: [],
         weekSettlements: settlements,
         _allocation: allocation,
-        _consumed: consumed,
+        _prepaidRemain: remain,
         _leaseLoanSpill: spill,
         _leaseConsumed: leaseConsumed,
         _loanConsumed: loanConsumed

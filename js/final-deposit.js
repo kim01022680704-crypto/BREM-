@@ -229,36 +229,37 @@ const BremFinalDeposit = (function () {
     const numericKeys = Calc().NUMERIC_KEYS;
     const byDriver = new Map();
 
-    // 스필오버 배분을 정산서들 사이에서 공유한다(사람별 플랫폼 한도 기준).
-    // consumed 로 같은 사람의 같은 플랫폼 선정산이 중복 반영되지 않게 한다.
+    // 선정산은 출금 플랫폼에 먼저, 로스는 그 주 쿠팡+배민(부분 포함) 여유분으로만 넘긴다.
     const week = ensureWeek();
-    const weekAll = weekSettlements();
+    const weekAll = weekSettlementsAll();
+    const slotList = weekSettlements();
     const sourceList = allSettlements ? weekAll : checkedSettlements();
-    const dateRange = Calc().partDateRange?.(sourceList) || {};
+    const dateRange = Calc().partDateRange?.(sourceList) || Calc().partDateRange?.(slotList) || {};
+    const dailySettlements = window.BremStorage?.settlements?.getAll?.() || [];
     const allocation = Calc().allocateWeekWithdrawals(
       state.withdrawals,
       week,
-      Calc().buildWeekCapacityMap(sourceList.length ? sourceList : weekAll),
-      {
-        allowOverflow: sourceList.length === weekAll.length,
-        dateRange,
-        weekSettlements: sourceList
-      }
+      Calc().buildWeekCapacityMap(weekAll),
+      { dateRange, weekSettlements: weekAll, dailySettlements }
     );
-    const consumed = new Set();
+    const remain = new Map();
     const leaseConsumed = new Set();
     const loanConsumed = new Set();
     const spill = Calc().buildLeaseLoanSpilloverAllocation(weekAll, {
       week,
       withdrawals: state.withdrawals,
+      dateRange,
+      dailySettlements,
       _allocation: allocation
     });
     sourceList.forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
         weekSettlements: weekAll,
+        dateRange,
+        dailySettlements,
         _allocation: allocation,
-        _consumed: consumed,
+        _prepaidRemain: remain,
         _leaseLoanSpill: spill,
         _leaseConsumed: leaseConsumed,
         _loanConsumed: loanConsumed

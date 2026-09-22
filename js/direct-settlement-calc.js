@@ -519,10 +519,26 @@ const BremDirectSettlementCalc = (function () {
     return map;
   }
 
+  function usedSlice(part) {
+    return Math.max(0, Math.round(Number(part?.prepaid || 0))) + Math.max(0, Math.round(Number(part?.fee || 0)));
+  }
+
+  function movePrepaidSlice(from, to, amount) {
+    let left = Math.max(0, Math.round(Number(amount || 0)));
+    if (left <= 0) return;
+    const prepaidMove = Math.min(Math.max(0, from.prepaid), left);
+    from.prepaid -= prepaidMove;
+    to.prepaid += prepaidMove;
+    left -= prepaidMove;
+    const feeMove = Math.min(Math.max(0, from.fee), left);
+    from.fee -= feeMove;
+    to.fee += feeMove;
+  }
+
   /**
    * 1) 선정산은 출금 플랫폼에 먼저 붙인다. 배민 출금→배민, 쿠팡 출금→쿠팡.
-   * 2) 그 플랫폼 정산서가 있고 한도를 넘는 로스만 반대 플랫폼으로 스필오버한다.
-   *    정산서가 없는 플랫폼 출금은 반대쪽으로 넘기지 않는다.
+   * 2) 그 플랫폼 정산서가 있고 한도를 넘는 로스만, 반대쪽에 여유가 있을 때 넘긴다.
+   *    공동 기사가 양쪽 다 로스면 서로 바꿔 얹지 않는다.
    */
   function allocateWeekWithdrawals(withdrawals, week, capacityMap, options = {}) {
     const weekKey = String(week || '').slice(0, 10);
@@ -541,31 +557,27 @@ const BremDirectSettlementCalc = (function () {
     const cap = capacityMap instanceof Map ? capacityMap : new Map();
     stamped.forEach((slice, key) => {
       const has = presence.get(key) || { coupang: false, baemin: false };
-      const room = cap.get(key) || { coupang: 0, baemin: 0 };
-      const next = { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
+      const room = {
+        coupang: Math.max(0, Math.round(Number((cap.get(key) || {}).coupang || 0))),
+        baemin: Math.max(0, Math.round(Number((cap.get(key) || {}).baemin || 0)))
+      };
+      const next = {
+        coupang: {
+          prepaid: Math.max(0, Math.round(Number(slice.coupang.prepaid || 0))),
+          fee: Math.max(0, Math.round(Number(slice.coupang.fee || 0)))
+        },
+        baemin: {
+          prepaid: Math.max(0, Math.round(Number(slice.baemin.prepaid || 0))),
+          fee: Math.max(0, Math.round(Number(slice.baemin.fee || 0)))
+        }
+      };
       ['coupang', 'baemin'].forEach(p => {
         const other = p === 'coupang' ? 'baemin' : 'coupang';
-        const fee = Math.max(0, Math.round(Number(slice[p].fee || 0)));
-        const prepaid = Math.max(0, Math.round(Number(slice[p].prepaid || 0)));
-        if (!has[p]) {
-          next[p].fee += fee;
-          next[p].prepaid += prepaid;
-          return;
-        }
-        const fit = Math.max(0, Math.round(Number(room[p] || 0)));
-        const keepFee = Math.min(fee, fit);
-        const keepPrepaid = Math.min(prepaid, Math.max(0, fit - keepFee));
-        next[p].fee += keepFee;
-        next[p].prepaid += keepPrepaid;
-        const moveFee = fee - keepFee;
-        const movePrepaid = prepaid - keepPrepaid;
-        if ((moveFee + movePrepaid) > 0 && has[other]) {
-          next[other].fee += moveFee;
-          next[other].prepaid += movePrepaid;
-        } else {
-          next[p].fee += moveFee;
-          next[p].prepaid += movePrepaid;
-        }
+        if (!has[p] || !has[other]) return;
+        const loss = Math.max(0, usedSlice(next[p]) - room[p]);
+        const surplus = Math.max(0, room[other] - usedSlice(next[other]));
+        if (loss <= 0 || surplus <= 0) return;
+        movePrepaidSlice(next[p], next[other], Math.min(loss, surplus));
       });
       slice.coupang = next.coupang;
       slice.baemin = next.baemin;
@@ -1045,8 +1057,87 @@ const BremDirectSettlementCalc = (function () {
     return lookupDriverFeeAmount(row, loanIndex);
   }
 
+  function rangesOverlap(a, b) {
+    const a0 = String(a?.start || '').slice(0, 10);
+    const a1 = String(a?.end || a0).slice(0, 10);
+    const b0 = String(b?.start || '').slice(0, 10);
+    const b1 = String(b?.end || b0).slice(0, 10);
+    if (!a0 || !b0) return true;
+    return a0 <= b1 && b0 <= a1;
+  }
+
+  function riderOnSettlement(settlement, key, platform) {
+    if (!key || settlementPlatform(settlement) !== platform) return false;
+    return (Array.isArray(settlement.riders) ? settlement.riders : []).some(rider => (
+      canonicalDriverKey(String(rider.matchedRiderId || '').trim()) === key
+    ));
+  }
+
+  function overlappingFilesForRider(weekSettlements, dateRange, key, platform) {
+    return (Array.isArray(weekSettlements) ? weekSettlements : [])
+      .filter(settlement => (
+        riderOnSettlement(settlement, key, platform)
+        && rangesOverlap(recordDateRange(settlement), dateRange)
+      ))
+      .sort((a, b) => {
+        const as = String(a.startDate || a.id || '');
+        const bs = String(b.startDate || b.id || '');
+        if (as !== bs) return as.localeCompare(bs);
+        return String(a.id || '').localeCompare(String(b.id || ''));
+      });
+  }
+
+  function isLastOverlappingFile(settlement, weekSettlements, dateRange, key, platform) {
+    const list = overlappingFilesForRider(weekSettlements, dateRange, key, platform);
+    if (!list.length) return true;
+    return String(list[list.length - 1].id || '') === String(settlement?.id || '');
+  }
+
+  function seedPrepaidRemain(allocation) {
+    const remain = new Map();
+    if (!(allocation instanceof Map)) return remain;
+    allocation.forEach((slice, key) => {
+      ['coupang', 'baemin'].forEach(p => {
+        remain.set(`${key}:${p}`, {
+          prepaid: Math.max(0, Math.round(Number(slice?.[p]?.prepaid || 0))),
+          fee: Math.max(0, Math.round(Number(slice?.[p]?.fee || 0)))
+        });
+      });
+    });
+    return remain;
+  }
+
+  function ensurePrepaidRemain(options, allocation) {
+    if (options._prepaidRemain instanceof Map) {
+      if (!options._prepaidRemain.size) {
+        seedPrepaidRemain(allocation).forEach((value, key) => options._prepaidRemain.set(key, value));
+      }
+      return options._prepaidRemain;
+    }
+    return seedPrepaidRemain(allocation);
+  }
+
+  function takePrepaidForRow(remain, key, platform, room, isLast) {
+    const bucketKey = `${key}:${platform}`;
+    const bucket = remain.get(bucketKey) || { prepaid: 0, fee: 0 };
+    remain.set(bucketKey, bucket);
+    if (isLast) {
+      const prepaid = Math.max(0, Math.round(Number(bucket.prepaid || 0)));
+      const fee = Math.max(0, Math.round(Number(bucket.fee || 0)));
+      bucket.prepaid = 0;
+      bucket.fee = 0;
+      return { prepaid, fee };
+    }
+    const cap = Math.max(0, Math.round(Number(room || 0)));
+    const prepaid = Math.min(Math.max(0, Math.round(Number(bucket.prepaid || 0))), cap);
+    bucket.prepaid -= prepaid;
+    const fee = Math.min(Math.max(0, Math.round(Number(bucket.fee || 0))), Math.max(0, cap - prepaid));
+    bucket.fee -= fee;
+    return { prepaid, fee };
+  }
+
   // 정산서 1건 → 라이더별 정산 행.
-  // 선정산: 출금 플랫폼에 먼저 붙이고, 로스가 나면 반대 플랫폼으로 스필오버.
+  // 선정산: 출금 플랫폼에 먼저 붙이고, 로스가 나면 반대 플랫폼 여유가 있을 때만 넘긴다.
   function computeRows(settlement, options = {}) {
     if (!settlement) return [];
     const platform = settlementPlatform(settlement);
@@ -1057,33 +1148,35 @@ const BremDirectSettlementCalc = (function () {
     const dateRange = options.dateRange && options.dateRange.start
       ? options.dateRange
       : recordDateRange(settlement);
+    const weekList = Array.isArray(options.weekSettlements) && options.weekSettlements.length
+      ? options.weekSettlements
+      : [settlement];
 
     let allocation = options._allocation || options._prepaidMap || null;
     if (!allocation) {
       allocation = allocateWeekWithdrawals(
         withdrawals,
         week,
-        null,
+        buildWeekCapacityMap(weekList),
         {
           dateRange,
-          weekSettlements: options.weekSettlements || [settlement],
+          weekSettlements: weekList,
           dailySettlements: options.dailySettlements
         }
       );
     }
     const source = allocation;
-    const consumed = options._consumed || new Set();
+    const remain = ensurePrepaidRemain(options, source);
     const leaseConsumed = options._leaseConsumed || new Set();
     const loanConsumed = options._loanConsumed || new Set();
 
     let spill = options._leaseLoanSpill || null;
     if (!spill) {
-      const weekList = Array.isArray(options.weekSettlements) && options.weekSettlements.length
-        ? options.weekSettlements
-        : [settlement];
       spill = buildLeaseLoanSpilloverAllocation(weekList, {
         week,
         withdrawals,
+        dateRange,
+        dailySettlements: options.dailySettlements,
         _allocation: allocation,
         leaseContracts: options.leaseContracts,
         ledgerItems: options.ledgerItems,
@@ -1101,13 +1194,15 @@ const BremDirectSettlementCalc = (function () {
       let prepaid = 0;
       let dailySettlementFee = 0;
       if (key) {
-        const dedupeKey = `${key}:${platform}`;
-        const slice = source.get(key)?.[platform];
-        if (slice && !consumed.has(dedupeKey)) {
-          consumed.add(dedupeKey);
-          prepaid = Math.max(0, Math.round(Number(slice.prepaid || 0)));
-          dailySettlementFee = Math.max(0, Math.round(Number(slice.fee || 0)));
-        }
+        const taken = takePrepaidForRow(
+          remain,
+          key,
+          platform,
+          base.capacity,
+          isLastOverlappingFile(settlement, weekList, dateRange, key, platform)
+        );
+        prepaid = taken.prepaid;
+        dailySettlementFee = taken.fee;
       }
 
       // 리스차감: 정산서·기사별 수동(수기)만. ERP 계약 자동 차감은 쓰지 않는다.
