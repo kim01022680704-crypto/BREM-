@@ -6897,6 +6897,30 @@ textarea {
   font-weight: 600;
 }
 
+.holiday-settlement-banner {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #d97706;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.holiday-settlement-banner h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  color: #7c2d12;
+}
+
+.holiday-settlement-banner ul {
+  margin: 0;
+  padding-left: 1.15em;
+}
+
+.holiday-settlement-banner li + li {
+  margin-top: 4px;
+}
+
 .weekly-warning-cell {
   font-size: 0.85rem;
   color: #b42318;

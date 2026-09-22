@@ -562,9 +562,20 @@
       badge.textContent = finalized ? '마무리됨' : '미마무리';
       badge.classList.toggle('is-finalized', finalized);
     }
+    const holidayGuard = window.BremSettlementHoliday?.finalizeGuard?.(weekStart);
+    const holidayBlocked = Boolean(holidayGuard?.blocked) && !finalized;
+    const forceBtn = $('payrollWeekFinalizeForceBtn');
     if (finalizeBtn) {
-      finalizeBtn.disabled = finalized || !weekStart;
-      finalizeBtn.textContent = finalized ? '이미 마무리됨' : '정산마무리';
+      finalizeBtn.disabled = finalized || !weekStart || holidayBlocked;
+      finalizeBtn.textContent = finalized
+        ? '이미 마무리됨'
+        : (holidayBlocked
+          ? `정산마무리 (${holidayGuard.finalizeAfter} 이후)`
+          : '정산마무리');
+    }
+    if (forceBtn) {
+      forceBtn.hidden = !holidayBlocked;
+      forceBtn.disabled = !holidayBlocked;
     }
     if (unfinalizeBtn) {
       unfinalizeBtn.hidden = !finalized;
@@ -578,10 +589,31 @@
           ? new Date(entry.finalizedAt).toLocaleString('ko-KR')
           : '-';
         hint.textContent = `${weekStart} ~ ${weekEnd} 주정산 마무리가 완료되었습니다. 기사앱 출금가능금액은 0원입니다. (처리시각: ${at})`;
+      } else if (holidayBlocked) {
+        hint.textContent = holidayGuard.message.replace(/\n/g, ' ');
       } else {
         hint.textContent = `${weekStart}(수) ~ ${weekEnd}(화) 주를 마무리하면 해당 주 전체 기사 출금가능금액이 0원이 되고 신규 출금신청이 차단됩니다.`;
       }
     }
+  }
+
+  function confirmHolidayForceFinalize(weekStart) {
+    const holidayGuard = window.BremSettlementHoliday?.finalizeGuard?.(weekStart);
+    if (!holidayGuard?.blocked) return true;
+    const first = window.confirm(
+      [
+        holidayGuard.message,
+        '',
+        '아직 마무리면 안 됩니다. 강제로 진행하려면 확인을 누른 뒤 다음 창에 "강제"를 입력하세요.'
+      ].join('\n')
+    );
+    if (!first) return false;
+    const typedForce = window.prompt('추석 분할정산 주를 강제 마무리합니다.\n입력: 강제', '');
+    if (String(typedForce || '').trim() !== '강제') {
+      showToast('강제 입력이 없어 마무리를 취소했습니다.');
+      return false;
+    }
+    return true;
   }
 
   function confirmFinalizeWeek(weekStart, weekEnd) {
@@ -650,7 +682,7 @@
     return true;
   }
 
-  async function finalizeSelectedWeek() {
+  async function finalizeSelectedWeek(options = {}) {
     const weekStart = ensureWeekFinalizeDefault();
     const weekEnd = weekEndKey(weekStart);
     if (!weekStart || !weekEnd) {
@@ -662,6 +694,12 @@
       syncWeekFinalizeUi();
       return;
     }
+    const holidayGuard = window.BremSettlementHoliday?.finalizeGuard?.(weekStart);
+    if (holidayGuard?.blocked && !options.force) {
+      showToast(`${holidayGuard.finalizeAfter} 전에 마무리하면 아직 안 들어온 정산·프로모션이 잠깁니다.`);
+      return;
+    }
+    if (options.force && !confirmHolidayForceFinalize(weekStart)) return;
     if (!confirmFinalizeWeek(weekStart, weekEnd)) return;
 
     const btn = $('payrollWeekFinalizeBtn');
@@ -3584,6 +3622,9 @@
     $('payrollWeekFinalizeNextBtn')?.addEventListener('click', () => shiftWeekFinalize(1));
     $('payrollWeekFinalizeBtn')?.addEventListener('click', () => {
       void finalizeSelectedWeek();
+    });
+    $('payrollWeekFinalizeForceBtn')?.addEventListener('click', () => {
+      void finalizeSelectedWeek({ force: true });
     });
     $('payrollWeekUnfinalizeBtn')?.addEventListener('click', () => {
       void unfinalizeSelectedWeek();

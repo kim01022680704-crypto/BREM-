@@ -720,8 +720,12 @@
     return addDays(normalized, 6);
   }
 
-  /** 수~화 정산주 종료(화) 기준 기본 지급일 = 금요일 (+3일) */
+  /** 수~화 정산주 종료(화) 기준 기본 지급일 = 금요일 (+3일). 명절 분할주는 마지막 지급일. */
   function defaultPaymentDateForWeek(weekStart) {
+    const holidayPay = window.BremSettlementHoliday?.latestPaymentDate?.(
+      normalizeSettlementWeekStart(weekStart)
+    );
+    if (holidayPay) return holidayPay;
     const weekEnd = settlementWeekEnd(weekStart);
     return weekEnd ? addDays(weekEnd, 3) : '';
   }

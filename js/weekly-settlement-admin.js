@@ -327,7 +327,7 @@ const BremWeeklySettlementAdmin = (function () {
         baseInput.value = normalized;
       }
     }
-    const dates = BremWeeklySettlement.calculateCoupangSettlementDates(baseInput.value);
+    const dates = BremWeeklySettlement.calculateCoupangSettlementDates(baseInput.value, { platform: 'coupang' });
     const startInput = q(channel, 'StartDate', 'coupang');
     const endInput = q(channel, 'EndDate', 'coupang');
     const paymentInput = q(channel, 'PaymentDate', 'coupang');
@@ -355,7 +355,14 @@ const BremWeeklySettlementAdmin = (function () {
     const weekStart = startDate ? settlementWeekStartKey(startDate) : '';
     const weekLabel = startDate && endDate ? `${startDate} ~ ${endDate}` : '';
     const paymentDate = startDate
-      ? BremWeeklySettlement.calculateCoupangSettlementDates(startDate).paymentDate
+      ? (window.BremSettlementHoliday?.paymentDateForRange?.({
+        platform: 'baemin',
+        startDate,
+        endDate
+      }) || BremWeeklySettlement.calculateCoupangSettlementDates(startDate, {
+        platform: 'baemin',
+        endDate
+      }).paymentDate)
       : '';
 
     const regionInput = q(ch, 'Region', 'baemin');

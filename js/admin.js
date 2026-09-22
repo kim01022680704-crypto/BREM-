@@ -4918,6 +4918,8 @@
     if (periodKey) {
       setSettlementHistoryDay(p, periodKey);
       setSettlementWeekFilters(p, periodKey);
+      const holidayWarn = window.BremSettlementHoliday?.dailyPeriodWarning?.(periodKey, p);
+      if (holidayWarn) showToast(holidayWarn);
     }
     renderSettlements();
   }
@@ -6388,6 +6390,14 @@
       const period = result.period || periodInput?.value || '';
       if (!period) {
         showToast('정산일을 찾지 못했습니다. 파일명 끝에 YYYYMMDD 형식(예: _20260610)을 사용해주세요.');
+        return;
+      }
+
+      const holidayWarn = window.BremSettlementHoliday?.dailyPeriodWarning?.(period, p);
+      if (holidayWarn && !window.confirm(
+        `${holidayWarn}\n\n이 날짜가 정말 운행일(다음 주 수요일 등)이면 확인을 누르세요.\n지급일로 올리면 다음 주 일정산에 섞입니다.`
+      )) {
+        showToast('업로드를 취소했습니다. 일정산 정산일은 운행일로 올리세요.');
         return;
       }
 

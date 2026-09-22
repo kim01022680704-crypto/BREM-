@@ -175,16 +175,24 @@ const BremWeeklySettlement = (function () {
     rider.warnings = warnings;
   }
 
-  function calculateCoupangSettlementDates(baseSettlementDate) {
+  function calculateCoupangSettlementDates(baseSettlementDate, options = {}) {
     const base = String(baseSettlementDate || '').slice(0, 10);
     if (!base) {
       return { baseSettlementDate: '', startDate: '', endDate: '', paymentDate: '' };
     }
+    const startDate = base;
+    const endDate = addDays(base, 6);
+    const holidayPay = window.BremSettlementHoliday?.paymentDateForRange?.({
+      platform: options.platform || '',
+      startDate,
+      endDate: String(options.endDate || endDate).slice(0, 10),
+      weekStart: base
+    });
     return {
       baseSettlementDate: base,
-      startDate: base,
-      endDate: addDays(base, 6),
-      paymentDate: addDays(base, 9)
+      startDate,
+      endDate,
+      paymentDate: holidayPay || addDays(base, 9)
     };
   }
 
@@ -543,6 +551,12 @@ const BremWeeklySettlement = (function () {
       || String(incoming?.region || base?.region || '').trim();
     const channel = (incoming?.channel === 'direct' || base?.channel === 'direct') ? 'direct' : 'bro';
     const weekStart = baeminWeekStartKey(startDate);
+    const holidayPay = window.BremSettlementHoliday?.paymentDateForRange?.({
+      platform: 'baemin',
+      startDate,
+      endDate,
+      weekStart
+    });
     const id = base?.id || incoming?.id || buildWeeklySettlementId({
       platform: 'baemin',
       region,
@@ -559,6 +573,7 @@ const BremWeeklySettlement = (function () {
       startDate,
       endDate,
       baseSettlementDate: startDate,
+      paymentDate: holidayPay || incoming?.paymentDate || base?.paymentDate || '',
       settlementWeekLabel: startDate && endDate ? `${startDate} ~ ${endDate}` : (incoming?.settlementWeekLabel || base?.settlementWeekLabel || ''),
       fileName: fileNames.join(' + '),
       fileNames,
@@ -1950,12 +1965,21 @@ const BremWeeklySettlement = (function () {
       : parseBaeminFileName(payload.fileName || '');
 
     const dates = platform === 'coupang'
-      ? calculateCoupangSettlementDates(payload.baseSettlementDate)
+      ? calculateCoupangSettlementDates(payload.baseSettlementDate, { platform: 'coupang' })
       : {
         baseSettlementDate: payload.baseSettlementDate || payload.startDate || parsedMeta.startDate || '',
         startDate: payload.startDate || parsedMeta.startDate || '',
         endDate: payload.endDate || parsedMeta.endDate || '',
-        paymentDate: payload.paymentDate || calculateCoupangSettlementDates(payload.startDate || parsedMeta.startDate).paymentDate
+        paymentDate: payload.paymentDate
+          || window.BremSettlementHoliday?.paymentDateForRange?.({
+            platform: 'baemin',
+            startDate: payload.startDate || parsedMeta.startDate || '',
+            endDate: payload.endDate || parsedMeta.endDate || ''
+          })
+          || calculateCoupangSettlementDates(payload.startDate || parsedMeta.startDate, {
+            platform: 'baemin',
+            endDate: payload.endDate || parsedMeta.endDate || ''
+          }).paymentDate
       };
 
     const region = String(payload.region || parsedMeta.region || parsedMeta.teamName || '').trim();
@@ -2379,7 +2403,12 @@ const BremWeeklySettlement = (function () {
           startDate,
           endDate,
           paymentDate: options.paymentDate
-            || calculateCoupangSettlementDates(startDate).paymentDate,
+            || window.BremSettlementHoliday?.paymentDateForRange?.({
+              platform: 'baemin',
+              startDate,
+              endDate
+            })
+            || calculateCoupangSettlementDates(startDate, { platform: 'baemin', endDate }).paymentDate,
           // 합친 전체 기간을 우선 (폼에 한쪽 파일 기간만 남아 주차가 어긋나지 않게)
           settlementWeekLabel: (startDate && endDate ? `${startDate} ~ ${endDate}` : '')
             || options.settlementWeekLabel
