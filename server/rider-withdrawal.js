@@ -1832,6 +1832,7 @@ async function listWithdrawalRequests(accessToken, query = {}) {
     if (view === 'completed') {
       if (item.status !== 'completed') return false;
       if (completedDate && requestDateKey(item) !== completedDate) return false;
+      if (weekStart && item.weekStart !== weekStart) return false;
       return true;
     }
     if (date && String(item.requestDate || item.createdAt || '').slice(0, 10) !== date) return false;

@@ -1072,13 +1072,35 @@
     }).join('');
   }
 
-  function ensureCompletedDateDefault() {
-    const input = $('payrollDailyCompletedDate');
-    if (!input) return '';
-    if (!input.value && !state.completedShowAll) {
-      input.value = new Date().toISOString().slice(0, 10);
-    }
-    return String(input.value || '').slice(0, 10);
+  function localDateKey(value) {
+    const raw = String(value || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const now = new Date();
+    return [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0')
+    ].join('-');
+  }
+
+  function filterCompletedLocal(completedDate, weekStart) {
+    return (BremStorage?.payrollWithdrawal?.getAll?.() || []).filter(item => {
+      if (item.status !== 'completed') return false;
+      if (completedDate && String(item.requestDate || item.createdAt || '').slice(0, 10) !== completedDate) return false;
+      if (weekStart && String(item.weekStart || '').slice(0, 10) !== weekStart) return false;
+      return true;
+    });
+  }
+
+  function completedListQuery() {
+    const dateInput = $('payrollDailyCompletedDate');
+    const completedDate = state.completedShowAll
+      ? ''
+      : String(dateInput?.value || '').slice(0, 10);
+    const weekStart = (!state.completedShowAll && !completedDate)
+      ? weekStartKey(localDateKey())
+      : '';
+    return { completedDate, weekStart };
   }
 
   async function renderCompletedWithdrawals() {
@@ -1086,23 +1108,23 @@
     const summary = $('payrollDailyCompletedSummary');
     if (!container) return;
 
-    const completedDate = state.completedShowAll ? '' : ensureCompletedDateDefault();
+    const { completedDate, weekStart } = completedListQuery();
 
     let rows = [];
     try {
       if (BremStorage?.payrollWithdrawal?.fetchFromAdminApi) {
-        rows = await BremStorage.payrollWithdrawal.fetchFromAdminApi({ view: 'completed', completedDate });
-      } else {
-        rows = (BremStorage?.payrollWithdrawal?.getAll?.() || []).filter(item => {
-          if (item.status !== 'completed') return false;
-          if (completedDate && String(item.requestDate || item.createdAt || '').slice(0, 10) !== completedDate) return false;
-          return true;
+        rows = await BremStorage.payrollWithdrawal.fetchFromAdminApi({
+          view: 'completed',
+          completedDate,
+          weekStart
         });
+      } else {
+        rows = filterCompletedLocal(completedDate, weekStart);
       }
     } catch (error) {
       console.warn('[completed withdrawal list]', error);
+      rows = filterCompletedLocal(completedDate, weekStart);
       showToast(error.message || '처리완료 내역을 불러오지 못했습니다.');
-      rows = [];
     }
 
     const driverMap = new Map(getDrivers().map(driver => [String(driver.id || ''), driver]));
@@ -1127,13 +1149,21 @@
 
     const totalAmount = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
     if (summary) {
+      const weekEnd = weekStart ? weekEndKey(weekStart) : '';
       summary.textContent = completedDate
         ? `신청일 ${completedDate} · ${rows.length}건 · 합계 ${formatWon(totalAmount)}`
-        : `전체 처리완료 ${rows.length}건 · ${sortedKeys.length}일 · 합계 ${formatWon(totalAmount)}`;
+        : weekStart
+          ? `정산주 ${weekStart}(수) ~ ${weekEnd}(화) · ${rows.length}건 · ${sortedKeys.length}일 · 합계 ${formatWon(totalAmount)}`
+          : `전체 처리완료 ${rows.length}건 · ${sortedKeys.length}일 · 합계 ${formatWon(totalAmount)}`;
     }
 
     if (!rows.length) {
-      container.innerHTML = '<p class="empty" style="padding:1rem;">처리완료 내역이 없습니다.</p>';
+      const empty = completedDate
+        ? `신청일 ${completedDate}에 처리완료 내역이 없습니다. 「이번 주」또는 「전체 보기」를 누르세요.`
+        : weekStart
+          ? `${weekStart}(수) 주에 처리완료 내역이 없습니다. 「전체 보기」로 다른 주를 확인하세요.`
+          : '처리완료 내역이 없습니다.';
+      container.innerHTML = `<p class="empty" style="padding:1rem;">${escapeHtml(empty)}</p>`;
       return;
     }
 
@@ -1975,9 +2005,10 @@
       return;
     }
     try {
+      const query = completedListQuery();
       const date = state.completedShowAll
         ? 'ALL'
-        : (ensureCompletedDateDefault() || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+        : (query.completedDate || query.weekStart || localDateKey()).replace(/-/g, '');
       const filename = `BREM_처리완료내역_${date}.xlsx`;
       roster.exportWithdrawalRowsToExcel(rows, filename, '처리완료내역');
       showToast(`엑셀 저장: ${filename}`);
@@ -3670,6 +3701,12 @@
     });
     $('payrollDailyCompletedDate')?.addEventListener('change', () => {
       state.completedShowAll = false;
+      void renderCompletedWithdrawals();
+    });
+    $('payrollDailyCompletedWeekBtn')?.addEventListener('click', () => {
+      state.completedShowAll = false;
+      const input = $('payrollDailyCompletedDate');
+      if (input) input.value = '';
       void renderCompletedWithdrawals();
     });
     $('payrollDailyCompletedAllBtn')?.addEventListener('click', () => {
