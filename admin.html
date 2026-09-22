@@ -8063,19 +8063,23 @@
             <div class="card-header">
               <div>
                 <h2>처리완료 내역</h2>
-                <p class="form-help" id="payrollDailyCompletedSummary">기본은 이번 정산주(수~화) 처리완료입니다. 신청일을 고르면 그날만, 「전체 보기」는 모든 주입니다.</p>
+                <p class="form-help" id="payrollDailyCompletedSummary">신청일 시작~종료를 고르고 엑셀을 받으세요. 기본은 이번 정산주(수~화)입니다.</p>
               </div>
               <div class="payroll-action-group">
-                <button type="button" class="small-btn" id="payrollDailyCompletedExcelBtn">엑셀 일괄다운로드</button>
+                <button type="button" class="small-btn" id="payrollDailyCompletedExcelBtn">선택한 날짜 엑셀</button>
                 <button type="button" class="small-btn" id="payrollDailyCompletedRefreshBtn">새로고침</button>
               </div>
             </div>
             <div class="payroll-toolbar">
               <label class="payroll-field">
-                <span>신청일</span>
-                <input type="date" id="payrollDailyCompletedDate">
+                <span>신청일 시작</span>
+                <input type="date" id="payrollDailyCompletedFrom">
               </label>
-              <button type="button" class="small-btn" id="payrollDailyCompletedWeekBtn" title="이번 정산주(수~화) 처리완료">이번 주</button>
+              <label class="payroll-field">
+                <span>신청일 종료</span>
+                <input type="date" id="payrollDailyCompletedTo">
+              </label>
+              <button type="button" class="small-btn" id="payrollDailyCompletedWeekBtn" title="이번 정산주(수~화)를 날짜에 넣습니다">이번 주</button>
               <button type="button" class="small-btn" id="payrollDailyCompletedAllBtn" title="전체 신청일 보기">전체 보기</button>
             </div>
             <div id="payrollDailyCompletedGroups" class="payroll-completed-groups"></div>
@@ -9227,7 +9231,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260923fast1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20260922active2"></script>
-  <script src="js/storage.js?v=20260923fast1"></script>
+  <script src="js/storage.js?v=20260923comp2"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
@@ -9283,7 +9287,7 @@
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
   <script src="js/admin-urgent-missions.js?v=20260816push6"></script>
   <script src="js/admin-rider-push.js?v=20260816push7"></script>
-  <script src="js/admin-payroll-daily-settlement.js?v=20260922comp1"></script>
+  <script src="js/admin-payroll-daily-settlement.js?v=20260923comp2"></script>
   <script src="js/mission-promotion-catalog.js?v=20260827mission10"></script>
   <script src="js/admin-missions.js?v=20260827mission10"></script>
   <script src="js/table-sort.js"></script>

@@ -3727,13 +3727,15 @@ const BremStorage = (function () {
     });
   }
 
-  async function fetchAdminWithdrawalRequestsFromServer({ weekStart, date, status, view, completedDate } = {}) {
+  async function fetchAdminWithdrawalRequestsFromServer({ weekStart, date, status, view, completedDate, completedFrom, completedTo } = {}) {
     const params = new URLSearchParams();
     if (date) params.set('date', String(date).slice(0, 10));
     if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
     if (status) params.set('status', String(status));
     if (view) params.set('view', String(view));
     if (completedDate) params.set('completedDate', String(completedDate).slice(0, 10));
+    if (completedFrom) params.set('completedFrom', String(completedFrom).slice(0, 10));
+    if (completedTo) params.set('completedTo', String(completedTo).slice(0, 10));
     const qs = params.toString() ? `?${params.toString()}` : '';
     return adminRidersApi(`/api/admin/payroll/withdrawal-requests${qs}`);
   }

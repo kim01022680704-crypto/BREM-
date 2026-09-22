@@ -1826,12 +1826,24 @@ async function listWithdrawalRequests(accessToken, query = {}) {
   const status = String(query.status || '').trim();
   const view = String(query.view || '').trim();
   const completedDate = String(query.completedDate || '').slice(0, 10);
+  const completedFrom = String(query.completedFrom || '').slice(0, 10);
+  const completedTo = String(query.completedTo || '').slice(0, 10);
 
   const filtered = list.filter(item => {
     // 처리완료 내역 뷰: 신청일 기준으로 모은다. 출금완료를 나중에 눌러도 신청한 날에 들어간다.
     if (view === 'completed') {
       if (item.status !== 'completed') return false;
-      if (completedDate && requestDateKey(item) !== completedDate) return false;
+      const req = requestDateKey(item);
+      if (completedFrom || completedTo) {
+        const lo = completedFrom || completedTo;
+        const hi = completedTo || completedFrom;
+        const start = lo <= hi ? lo : hi;
+        const end = lo <= hi ? hi : lo;
+        if (req && (req < start || req > end)) return false;
+        if (!req) return false;
+      } else if (completedDate && req !== completedDate) {
+        return false;
+      }
       if (weekStart && item.weekStart !== weekStart) return false;
       return true;
     }
