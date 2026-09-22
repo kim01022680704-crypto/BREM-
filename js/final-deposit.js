@@ -12,7 +12,8 @@ const BremFinalDeposit = (function () {
     // 체크 목록이 아니라 제외 목록을 들고 있는다.
     excludedSettlementIds: new Set(),
     excludedDriverKeys: new Set(),
-    payoutWaveId: ''
+    payoutWaveId: '',
+    partSlot: null
   };
 
   function escapeHtml(value) {
@@ -58,18 +59,11 @@ const BremFinalDeposit = (function () {
     };
   }
 
-  function isSelectable(record) {
-    const api = window.BremWeeklySettlement || {};
-    if (typeof api.isSelectablePart === 'function') return api.isSelectablePart(record);
-    return Boolean(partMeta(record).tag || partMeta(record).slot);
+  function recordSlot(record) {
+    return partMeta(record).slot || 0;
   }
 
-  function weekHasIdentifiedParts(list = weekSettlements()) {
-    return list.some(isSelectable);
-  }
-
-  // 최종입금은 「그 주」 단위로 입금하므로 주 필터를 항상 건다.
-  function weekSettlements() {
+  function weekSettlementsAll() {
     const week = ensureWeek();
     const match = Calc().recordMatchesWeek
       ? record => Calc().recordMatchesWeek(record, week)
@@ -77,13 +71,44 @@ const BremFinalDeposit = (function () {
     return allSettlements().filter(match);
   }
 
+  function ensurePartSlot(list) {
+    const slots = [...new Set((list || []).map(recordSlot))].sort((a, b) => a - b);
+    if (state.partSlot != null && slots.includes(Number(state.partSlot))) return Number(state.partSlot);
+    state.partSlot = slots.includes(0) ? 0 : (slots[0] ?? 0);
+    return state.partSlot;
+  }
+
+  function renderPartTabs() {
+    const host = $('#finalDepositPartTabs');
+    if (!host) return;
+    const list = weekSettlementsAll();
+    const current = ensurePartSlot(list);
+    host.innerHTML = [0, 1, 2, 3].map(slot => {
+      const label = slot ? `부분${slot}` : '전체';
+      const count = list.filter(item => recordSlot(item) === slot).length;
+      const active = Number(current) === slot ? ' active' : '';
+      const disabled = count ? '' : ' disabled';
+      return `<button type="button" data-part-slot="${slot}" class="${active.trim()}"${disabled}>${label}${count ? ` ${count}` : ''}</button>`;
+    }).join('');
+  }
+
+  function setPartSlot(slot) {
+    state.partSlot = Number(slot) || 0;
+    state.excludedSettlementIds.clear();
+    state.excludedDriverKeys.clear();
+    void refresh();
+  }
+
+  // 최종입금은 「그 주」 단위로 입금하므로 주 필터를 항상 건다.
+  // 부분1·2·3은 같은 부분끼리만 합친다.
+  function weekSettlements() {
+    const list = weekSettlementsAll();
+    const slot = ensurePartSlot(list);
+    return list.filter(record => recordSlot(record) === slot);
+  }
+
   function checkedSettlements() {
-    const list = weekSettlements();
-    const requireIdentified = weekHasIdentifiedParts(list);
-    return list.filter(record => {
-      if (state.excludedSettlementIds.has(String(record.id))) return false;
-      return requireIdentified ? isSelectable(record) : true;
-    });
+    return weekSettlements().filter(record => !state.excludedSettlementIds.has(String(record.id)));
   }
 
   function ensureWeek() {
@@ -101,6 +126,7 @@ const BremFinalDeposit = (function () {
     state.excludedSettlementIds.clear();
     state.excludedDriverKeys.clear();
     state.payoutWaveId = '';
+    state.partSlot = null;
     void refresh();
   }
 
@@ -119,22 +145,7 @@ const BremFinalDeposit = (function () {
   }
 
   function renderWavePicker() {
-    const host = $('#finalDepositWavePicker');
-    const optionsEl = $('#finalDepositWaveOptions');
-    if (!host || !optionsEl) return;
-    const list = weekSettlements();
-    if (!list.length) {
-      host.hidden = true;
-      optionsEl.innerHTML = '';
-      return;
-    }
-    host.hidden = false;
-    const identified = list.filter(isSelectable).length;
-    optionsEl.innerHTML = `
-      <p class="payout-wave-hint">
-        적용주 ${escapeHtml(ensureWeek())}(수) · 올린 부분 ${list.length}건 · 부분/태그 ${identified}건.
-        부분1·2·3 또는 태그가 있는 정산서만 체크합니다. 합치기는 주정산 업로드 기록에서 하세요.
-      </p>`;
+    renderPartTabs();
   }
 
   function renderSettlementPicker() {
@@ -147,12 +158,15 @@ const BremFinalDeposit = (function () {
     if (rangeEl) {
       const total = allSettlements().length;
       rangeEl.textContent = list.length
-        ? `정산주 ${formatDate(ensureWeek())}(수) · 부분 ${list.length}건 (부분1·2·3 또는 태그 있는 정산서만 합산)`
+        ? `정산주 ${formatDate(ensureWeek())}(수) · ${Number(state.partSlot) ? `부분${state.partSlot}` : '전체'} ${list.length}건`
         : `${formatDate(ensureWeek())}(수) 주에 저장된 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요. (전체 ${total}건)`;
     }
 
     if (!list.length) {
-      listEl.innerHTML = '<p class="empty">이 주에 저장된 직계약 정산서가 없습니다.</p>';
+      const hasParts = weekSettlementsAll().some(item => recordSlot(item) > 0);
+      listEl.innerHTML = hasParts
+        ? '<p class="empty">이 보기(전체)에 주정산서가 없습니다. 부분1·부분2·부분3을 누르세요.</p>'
+        : '<p class="empty">이 주에 저장된 직계약 정산서가 없습니다.</p>';
       const allChk = $('#finalDepositSettlementAll');
       if (allChk) allChk.checked = false;
       return;
@@ -161,16 +175,14 @@ const BremFinalDeposit = (function () {
     const cardHtml = record => {
       const id = String(record.id);
       const meta = partMeta(record);
-      const requireIdentified = weekHasIdentifiedParts(list);
-      const selectable = !requireIdentified || isSelectable(record);
-      const checked = selectable && !state.excludedSettlementIds.has(id);
+      const checked = !state.excludedSettlementIds.has(id);
       const riders = Array.isArray(record.riders) ? record.riders.length : 0;
       const region = record.region ? ` · ${escapeHtml(record.region)}` : '';
       const file = record.fileName ? `<span class="muted-inline">${escapeHtml(record.fileName)}</span>` : '';
-      const badge = meta.badge || (meta.slot ? `부분${meta.slot}` : '부분 미지정');
+      const badge = meta.badge || (meta.slot ? `부분${meta.slot}` : '전체');
       return `
-        <label class="final-deposit-settlement${selectable ? '' : ' final-deposit-settlement-dim'}">
-          <input type="checkbox" data-fd-settlement="${escapeHtml(id)}"${checked ? ' checked' : ''}${selectable ? '' : ' disabled'}>
+        <label class="final-deposit-settlement">
+          <input type="checkbox" data-fd-settlement="${escapeHtml(id)}"${checked ? ' checked' : ''}>
           <span class="final-deposit-settlement-body">
             <strong>${escapeHtml(platformLabel(record.platform))}</strong>${region}
             <span class="weekly-part-tag">${escapeHtml(badge)}</span>
@@ -193,8 +205,7 @@ const BremFinalDeposit = (function () {
     listEl.innerHTML = groupHtml('coupang', '쿠팡') + groupHtml('baemin', '배민');
 
     const allChk = $('#finalDepositSettlementAll');
-    const selectableList = weekHasIdentifiedParts(list) ? list.filter(isSelectable) : list;
-    if (allChk) allChk.checked = selectableList.length > 0 && selectableList.every(record => !state.excludedSettlementIds.has(String(record.id)));
+    if (allChk) allChk.checked = list.length > 0 && list.every(record => !state.excludedSettlementIds.has(String(record.id)));
   }
 
   // --- 기사 단위 합산 -------------------------------------------------------
@@ -222,17 +233,14 @@ const BremFinalDeposit = (function () {
     // consumed 로 같은 사람의 같은 플랫폼 선정산이 중복 반영되지 않게 한다.
     const week = ensureWeek();
     const weekAll = weekSettlements();
-    const identified = weekAll.filter(isSelectable);
-    const sourceList = allSettlements
-      ? (identified.length ? identified : weekAll)
-      : checkedSettlements();
+    const sourceList = allSettlements ? weekAll : checkedSettlements();
     const dateRange = Calc().partDateRange?.(sourceList) || {};
     const allocation = Calc().allocateWeekWithdrawals(
       state.withdrawals,
       week,
       Calc().buildWeekCapacityMap(sourceList.length ? sourceList : weekAll),
       {
-        allowOverflow: sourceList.length === (identified.length ? identified : weekAll).length,
+        allowOverflow: sourceList.length === weekAll.length,
         dateRange,
         weekSettlements: sourceList
       }
@@ -802,6 +810,11 @@ const BremFinalDeposit = (function () {
     $('#finalDepositWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     $('#finalDepositReloadBtn')?.addEventListener('click', () => { void reload(); });
     $('#finalDepositExportBtn')?.addEventListener('click', exportExcel);
+    $('#finalDepositPartTabs')?.addEventListener('click', event => {
+      const btn = event.target?.closest?.('[data-part-slot]');
+      if (!btn || btn.disabled) return;
+      setPartSlot(btn.getAttribute('data-part-slot'));
+    });
 
     const section = $('#final-deposit');
     if (!section) return;

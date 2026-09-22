@@ -21,7 +21,8 @@ const BremSettlementResultDirect = (function () {
     publishedWeeks: new Set(),    // 이번 세션에서 반영한 주(수요일 시작 키)
     finalStaleWeek: '',           // 반영 후 조정되어 재반영이 필요한 주
     payoutWaveId: '',
-    excludedPartIds: new Set()
+    excludedPartIds: new Set(),
+    partSlot: null
   };
   const detailInitial = {
     missionPay: 0,
@@ -75,11 +76,49 @@ const BremSettlementResultDirect = (function () {
     return settlementWeek(record) === week;
   }
 
-  // 정산주를 고르면 그 주의 정산서만 남긴다. 주를 안 골랐으면 전체를 보여준다.
-  function settlementList() {
+  function recordSlot(record) {
+    return window.BremWeeklySettlement?.recordPartSlot?.(record) || 0;
+  }
+
+  function weekPlatformSettlements() {
     const all = platformSettlements();
     if (state.weekAll || !state.week) return all;
     return all.filter(record => recordMatchesWeek(record, state.week));
+  }
+
+  function ensurePartSlot(list) {
+    const slots = [...new Set((list || []).map(recordSlot))].sort((a, b) => a - b);
+    if (state.partSlot != null && slots.includes(Number(state.partSlot))) return Number(state.partSlot);
+    state.partSlot = slots.includes(0) ? 0 : (slots[0] ?? 0);
+    return state.partSlot;
+  }
+
+  function renderPartTabs(hostId, list) {
+    const host = $(hostId);
+    if (!host) return;
+    const present = new Set((list || []).map(recordSlot));
+    const current = ensurePartSlot(list);
+    host.innerHTML = [0, 1, 2, 3].map(slot => {
+      const label = slot ? `부분${slot}` : '전체';
+      const count = (list || []).filter(item => recordSlot(item) === slot).length;
+      const active = Number(current) === slot ? ' active' : '';
+      const disabled = count ? '' : ' disabled';
+      return `<button type="button" data-part-slot="${slot}" class="${active.trim()}"${disabled}>${label}${count ? ` ${count}` : ''}</button>`;
+    }).join('');
+  }
+
+  function setPartSlot(slot) {
+    state.partSlot = Number(slot) || 0;
+    state.settlementId = '';
+    state.excludedPartIds.clear();
+    void refresh(state.platform);
+  }
+
+  // 정산주를 고르면 그 주의 정산서만 남긴다. 부분1·2·3은 같은 부분끼리만 본다.
+  function settlementList() {
+    const weekList = weekPlatformSettlements();
+    const slot = ensurePartSlot(weekList);
+    return weekList.filter(record => recordSlot(record) === slot);
   }
 
   function currentSettlement() {
@@ -120,6 +159,7 @@ const BremSettlementResultDirect = (function () {
     }
     state.settlementId = '';
     state.payoutWaveId = '';
+    state.partSlot = null;
     state.excludedPartIds.clear();
     void refresh(state.platform);
   }
@@ -151,6 +191,7 @@ const BremSettlementResultDirect = (function () {
     if (!select) return;
 
     renderWeekButton();
+    renderPartTabs('#settlementResultPartTabs', weekPlatformSettlements());
 
     const list = settlementList();
     const active = currentSettlement();
@@ -162,9 +203,13 @@ const BremSettlementResultDirect = (function () {
       setDeleteButtonsEnabled(false);
       if (info) {
         const total = platformSettlements().length;
-        info.textContent = !state.weekAll && state.week && total
-          ? `${formatDate(state.week)}(수) 주에 저장된 정산서가 없습니다. 다른 주를 고르거나 「전체 주」를 누르세요. (전체 ${total}건)`
-          : '「주정산서 업로드 (직계약)」에서 정산서를 먼저 저장하세요.';
+        const weekParts = weekPlatformSettlements();
+        const hasOtherSlot = weekParts.some(item => recordSlot(item) !== Number(state.partSlot || 0));
+        info.textContent = hasOtherSlot
+          ? `${formatDate(state.week)}(수) 주 · ${Number(state.partSlot) ? `부분${state.partSlot}` : '전체'} 정산서가 없습니다. 다른 부분을 누르세요.`
+          : (!state.weekAll && state.week && total
+            ? `${formatDate(state.week)}(수) 주에 저장된 정산서가 없습니다. 다른 주를 고르거나 「전체 주」를 누르세요. (전체 ${total}건)`
+            : '「주정산서 업로드 (직계약)」에서 정산서를 먼저 저장하세요.');
       }
       return;
     }
@@ -276,8 +321,9 @@ const BremSettlementResultDirect = (function () {
   // 이 주의 쿠팡+배민 직계약 정산서 전체 (스필오버 한도 계산용)
   function weekAllPlatformSettlements(settlement) {
     const week = settlementWeek(settlement);
+    const slot = recordSlot(settlement);
     return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
-      .filter(record => recordMatchesWeek(record, week));
+      .filter(record => recordMatchesWeek(record, week) && recordSlot(record) === slot);
   }
 
   function computeRows() {
@@ -1321,23 +1367,20 @@ const BremSettlementResultDirect = (function () {
     return state.week || (cur ? settlementWeek(cur) : weekStartKey());
   }
 
-  function allFinalWeekSettlements() {
+  function weekDirectSettlements() {
     const week = finalWeek();
     return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
       .filter(record => recordMatchesWeek(record, week));
   }
 
-  function isSelectablePart(record) {
-    const api = window.BremWeeklySettlement || {};
-    if (typeof api.isSelectablePart === 'function') return api.isSelectablePart(record);
-    return Boolean(api.recordPartTag?.(record) || api.recordPartSlot?.(record));
+  function allFinalWeekSettlements() {
+    const all = weekDirectSettlements();
+    const slot = ensurePartSlot(all);
+    return all.filter(record => recordSlot(record) === slot);
   }
 
   function finalWeekSettlements() {
-    const list = allFinalWeekSettlements();
-    const identified = list.filter(isSelectablePart);
-    const pool = identified.length ? identified : list;
-    return pool.filter(record => !state.excludedPartIds.has(String(record.id)));
+    return allFinalWeekSettlements().filter(record => !state.excludedPartIds.has(String(record.id)));
   }
 
   function addDaysKey(dateKeyValue, days) {
@@ -1561,34 +1604,7 @@ const BremSettlementResultDirect = (function () {
   }
 
   function renderWavePicker() {
-    const host = $('#settlementFinalWavePicker');
-    const optionsEl = $('#settlementFinalWaveOptions');
-    if (!host || !optionsEl) return;
-    const list = allFinalWeekSettlements();
-    if (!list.length) {
-      host.hidden = true;
-      optionsEl.innerHTML = '';
-      return;
-    }
-    host.hidden = false;
-    const labelEl = host.querySelector('.payout-wave-picker-label');
-    if (labelEl) labelEl.textContent = '부분 선택 (부분1·2·3 또는 태그)';
-    const requireIdentified = list.some(isSelectablePart);
-    optionsEl.innerHTML = list.map(record => {
-      const selectable = !requireIdentified || isSelectablePart(record);
-      const checked = selectable && !state.excludedPartIds.has(String(record.id)) ? ' checked' : '';
-      const disabled = selectable ? '' : ' disabled';
-      const badge = partBadge(record) || (selectable ? '' : '부분 미지정');
-      return `
-        <label class="payout-wave-option">
-          <input type="checkbox" data-final-part="${escapeHtml(record.id)}"${checked}${disabled}>
-          <span>
-            <strong>${escapeHtml(record.platform === 'coupang' ? '쿠팡' : '배민')} ${escapeHtml(badge)}</strong>
-            <span class="muted-inline">${escapeHtml(record.startDate || '')} ~ ${escapeHtml(record.endDate || '')}</span>
-            <span class="payout-wave-hint">${selectable ? escapeHtml(record.region || '') : '업로드 기록에서 부분·태그를 지정하세요'}</span>
-          </span>
-        </label>`;
-    }).join('');
+    renderPartTabs('#settlementFinalPartTabs', weekDirectSettlements());
   }
 
   function renderFinal() {
@@ -1920,6 +1936,13 @@ const BremSettlementResultDirect = (function () {
     $('#settlementResultWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
     $('#settlementResultWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     $('#settlementResultWeekAllBtn')?.addEventListener('click', () => setWeek(''));
+    const onPartTab = event => {
+      const btn = event.target?.closest?.('[data-part-slot]');
+      if (!btn || btn.disabled) return;
+      setPartSlot(btn.getAttribute('data-part-slot'));
+    };
+    $('#settlementResultPartTabs')?.addEventListener('click', onPartTab);
+    $('#settlementFinalPartTabs')?.addEventListener('click', onPartTab);
     $('#settlementResultReloadBtn')?.addEventListener('click', () => { void reload(); });
     $('#settlementResultExportBtn')?.addEventListener('click', exportExcel);
     $('#settlementResultDeleteBtn')?.addEventListener('click', () => { void deleteCurrentSettlement(); });
@@ -2010,6 +2033,7 @@ const BremSettlementResultDirect = (function () {
       state.settlementId = '';
       state.week = '';
       state.weekAll = false;
+      state.partSlot = null;
     }
     if (!state.weekAll) ensureWeek();
     bindEvents();

@@ -1959,7 +1959,8 @@ const BremWeeklySettlement = (function () {
   }
 
   function recordPartSlot(record) {
-    return normalizePartSlot(record?.partSlot || record?.summary?.partSlot);
+    const raw = record?.partSlot ?? record?.summary?.partSlot;
+    return normalizePartSlot(raw);
   }
 
   function recordPartTag(record) {

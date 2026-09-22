@@ -18,7 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260922part1">
+  <link rel="stylesheet" href="css/admin.css?v=20260922part4">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -4348,19 +4348,19 @@
                 <input type="file" id="weeklySettlementFile-coupang" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
               </label>
             </div>
-            <div class="weekly-part-box">
-              <p class="weekly-part-week" data-weekly-part-week>적용주: 시작일·종료일을 넣으면 수~화 주가 표시됩니다</p>
-              <p class="form-help">중일 분할은 <strong>부분1·부분2·부분3</strong>으로 나눠 올리세요. <strong>태그는 필수</strong>입니다. 부분 하나만 있어도 정산결과·최종입금·급여명세서 반영이 됩니다. 합치기는 나중에 기록에서 하세요.</p>
-              <div class="weekly-part-slots">
-                <label><input type="radio" name="weeklySettlementPartSlot-coupang" value="1" checked> 부분1</label>
-                <label><input type="radio" name="weeklySettlementPartSlot-coupang" value="2"> 부분2</label>
-                <label><input type="radio" name="weeklySettlementPartSlot-coupang" value="3"> 부분3</label>
-              </div>
-              <label>태그 (필수)<input type="text" id="weeklySettlementPartTag-coupang" maxlength="40" placeholder="예: 배달료" autocomplete="off"></label>
-              <div class="weekly-part-suggest">
+            <div class="weekly-part-box weekly-part-box--compact">
+              <div class="weekly-part-row">
+                <span class="weekly-part-week" data-weekly-part-week>적용주 —</span>
+                <div class="weekly-part-slots">
+                  <label><input type="radio" name="weeklySettlementPartSlot-coupang" value="0" checked> 전체</label>
+                  <label><input type="radio" name="weeklySettlementPartSlot-coupang" value="1"> 부분1</label>
+                  <label><input type="radio" name="weeklySettlementPartSlot-coupang" value="2"> 부분2</label>
+                  <label><input type="radio" name="weeklySettlementPartSlot-coupang" value="3"> 부분3</label>
+                </div>
+                <input type="text" id="weeklySettlementPartTag-coupang" class="weekly-part-tag-input" maxlength="40" placeholder="태그(선택)" autocomplete="off">
                 <button type="button" class="small-btn" data-part-tag="배달료">배달료</button>
-                <button type="button" class="small-btn" data-part-tag="잔여배달료">잔여배달료</button>
-                <button type="button" class="small-btn" data-part-tag="프로모션">프로모션</button>
+                <button type="button" class="small-btn" data-part-tag="잔여배달료">잔여</button>
+                <button type="button" class="small-btn" data-part-tag="프로모션">프로모</button>
               </div>
             </div>
             <div class="promotion-form-section">
@@ -4517,19 +4517,19 @@
                 <span class="form-help">같은 부분으로 같이 올릴 때만 쓰세요. 중일 분할은 부분1·부분2로 나눠 올리세요.</span>
               </label>
             </div>
-            <div class="weekly-part-box">
-              <p class="weekly-part-week" data-weekly-part-week>적용주: 시작일·종료일을 넣으면 수~화 주가 표시됩니다</p>
-              <p class="form-help">중일 분할은 <strong>부분1·부분2·부분3</strong>으로 나눠 올리세요. <strong>태그는 필수</strong>입니다. 부분 하나만 있어도 정산결과·최종입금·급여명세서 반영이 됩니다. 합치기는 나중에 기록에서 하세요.</p>
-              <div class="weekly-part-slots">
-                <label><input type="radio" name="weeklySettlementPartSlot-baemin" value="1" checked> 부분1</label>
-                <label><input type="radio" name="weeklySettlementPartSlot-baemin" value="2"> 부분2</label>
-                <label><input type="radio" name="weeklySettlementPartSlot-baemin" value="3"> 부분3</label>
-              </div>
-              <label>태그 (필수)<input type="text" id="weeklySettlementPartTag-baemin" maxlength="40" placeholder="예: 배달료" autocomplete="off"></label>
-              <div class="weekly-part-suggest">
+            <div class="weekly-part-box weekly-part-box--compact">
+              <div class="weekly-part-row">
+                <span class="weekly-part-week" data-weekly-part-week>적용주 —</span>
+                <div class="weekly-part-slots">
+                  <label><input type="radio" name="weeklySettlementPartSlot-baemin" value="0" checked> 전체</label>
+                  <label><input type="radio" name="weeklySettlementPartSlot-baemin" value="1"> 부분1</label>
+                  <label><input type="radio" name="weeklySettlementPartSlot-baemin" value="2"> 부분2</label>
+                  <label><input type="radio" name="weeklySettlementPartSlot-baemin" value="3"> 부분3</label>
+                </div>
+                <input type="text" id="weeklySettlementPartTag-baemin" class="weekly-part-tag-input" maxlength="40" placeholder="태그(선택)" autocomplete="off">
                 <button type="button" class="small-btn" data-part-tag="배달료">배달료</button>
-                <button type="button" class="small-btn" data-part-tag="잔여배달료">잔여배달료</button>
-                <button type="button" class="small-btn" data-part-tag="프로모션">프로모션</button>
+                <button type="button" class="small-btn" data-part-tag="잔여배달료">잔여</button>
+                <button type="button" class="small-btn" data-part-tag="프로모션">프로모</button>
               </div>
             </div>
             <div class="promotion-form-section">
@@ -4692,19 +4692,19 @@
                 <input type="file" id="weeklySettlementDirectFile-coupang" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
               </label>
             </div>
-            <div class="weekly-part-box">
-              <p class="weekly-part-week" data-weekly-part-week>적용주: 시작일·종료일을 넣으면 수~화 주가 표시됩니다</p>
-              <p class="form-help">중일 분할은 <strong>부분1·부분2·부분3</strong>으로 나눠 올리세요. <strong>태그는 필수</strong>입니다. 부분 하나만 있어도 정산결과·최종입금·급여명세서 반영이 됩니다. 합치기는 나중에 기록에서 하세요.</p>
-              <div class="weekly-part-slots">
-                <label><input type="radio" name="weeklySettlementDirectPartSlot-coupang" value="1" checked> 부분1</label>
-                <label><input type="radio" name="weeklySettlementDirectPartSlot-coupang" value="2"> 부분2</label>
-                <label><input type="radio" name="weeklySettlementDirectPartSlot-coupang" value="3"> 부분3</label>
-              </div>
-              <label>태그 (필수)<input type="text" id="weeklySettlementDirectPartTag-coupang" maxlength="40" placeholder="예: 배달료" autocomplete="off"></label>
-              <div class="weekly-part-suggest">
+            <div class="weekly-part-box weekly-part-box--compact">
+              <div class="weekly-part-row">
+                <span class="weekly-part-week" data-weekly-part-week>적용주 —</span>
+                <div class="weekly-part-slots">
+                  <label><input type="radio" name="weeklySettlementDirectPartSlot-coupang" value="0" checked> 전체</label>
+                  <label><input type="radio" name="weeklySettlementDirectPartSlot-coupang" value="1"> 부분1</label>
+                  <label><input type="radio" name="weeklySettlementDirectPartSlot-coupang" value="2"> 부분2</label>
+                  <label><input type="radio" name="weeklySettlementDirectPartSlot-coupang" value="3"> 부분3</label>
+                </div>
+                <input type="text" id="weeklySettlementDirectPartTag-coupang" class="weekly-part-tag-input" maxlength="40" placeholder="태그(선택)" autocomplete="off">
                 <button type="button" class="small-btn" data-part-tag="배달료">배달료</button>
-                <button type="button" class="small-btn" data-part-tag="잔여배달료">잔여배달료</button>
-                <button type="button" class="small-btn" data-part-tag="프로모션">프로모션</button>
+                <button type="button" class="small-btn" data-part-tag="잔여배달료">잔여</button>
+                <button type="button" class="small-btn" data-part-tag="프로모션">프로모</button>
               </div>
             </div>
             <div class="promotion-form-section">
@@ -4893,19 +4893,19 @@
                 <span class="form-help">같은 부분으로 같이 올릴 때만 쓰세요. 중일 분할은 부분1·부분2로 나눠 올리세요.</span>
               </label>
             </div>
-            <div class="weekly-part-box">
-              <p class="weekly-part-week" data-weekly-part-week>적용주: 시작일·종료일을 넣으면 수~화 주가 표시됩니다</p>
-              <p class="form-help">중일 분할은 <strong>부분1·부분2·부분3</strong>으로 나눠 올리세요. <strong>태그는 필수</strong>입니다. 부분 하나만 있어도 정산결과·최종입금·급여명세서 반영이 됩니다. 합치기는 나중에 기록에서 하세요.</p>
-              <div class="weekly-part-slots">
-                <label><input type="radio" name="weeklySettlementDirectPartSlot-baemin" value="1" checked> 부분1</label>
-                <label><input type="radio" name="weeklySettlementDirectPartSlot-baemin" value="2"> 부분2</label>
-                <label><input type="radio" name="weeklySettlementDirectPartSlot-baemin" value="3"> 부분3</label>
-              </div>
-              <label>태그 (필수)<input type="text" id="weeklySettlementDirectPartTag-baemin" maxlength="40" placeholder="예: 배달료" autocomplete="off"></label>
-              <div class="weekly-part-suggest">
+            <div class="weekly-part-box weekly-part-box--compact">
+              <div class="weekly-part-row">
+                <span class="weekly-part-week" data-weekly-part-week>적용주 —</span>
+                <div class="weekly-part-slots">
+                  <label><input type="radio" name="weeklySettlementDirectPartSlot-baemin" value="0" checked> 전체</label>
+                  <label><input type="radio" name="weeklySettlementDirectPartSlot-baemin" value="1"> 부분1</label>
+                  <label><input type="radio" name="weeklySettlementDirectPartSlot-baemin" value="2"> 부분2</label>
+                  <label><input type="radio" name="weeklySettlementDirectPartSlot-baemin" value="3"> 부분3</label>
+                </div>
+                <input type="text" id="weeklySettlementDirectPartTag-baemin" class="weekly-part-tag-input" maxlength="40" placeholder="태그(선택)" autocomplete="off">
                 <button type="button" class="small-btn" data-part-tag="배달료">배달료</button>
-                <button type="button" class="small-btn" data-part-tag="잔여배달료">잔여배달료</button>
-                <button type="button" class="small-btn" data-part-tag="프로모션">프로모션</button>
+                <button type="button" class="small-btn" data-part-tag="잔여배달료">잔여</button>
+                <button type="button" class="small-btn" data-part-tag="프로모션">프로모</button>
               </div>
             </div>
             <div class="promotion-form-section">
@@ -5301,7 +5301,8 @@
               <input type="hidden" id="settlementResultWeek">
             </div>
           </div>
-          <p class="form-help">주정산서(직계약) · 선정산 · <strong>리스차감·대여차감</strong>(수~화, 「반영」분)으로 총지급액을 계산합니다. 표에서 <strong>행을 클릭</strong>하면 추가지급·기타지급·<strong>BREM프로모션</strong>·리스·대여를 이번 정산서만 조정할 수 있습니다. BREM프로모션·리스·대여 칸만 누르면 빠른 수정도 됩니다. 총지급이 마이너스면 「마이너스 일괄 맞추기」→「소급분 및 미납금」에서 <strong>선택해 차감관리</strong>로 보내세요.</p>
+          <p class="form-help">주정산서(직계약) · 선정산 · <strong>리스차감·대여차감</strong>(수~화, 「반영」분)으로 총지급액을 계산합니다. 표에서 <strong>행을 클릭</strong>하면 추가지급·기타지급·<strong>BREM프로모션</strong>·리스·대여를 이번 정산서만 조정할 수 있습니다. 총지급이 마이너스면 「마이너스 일괄 맞추기」→「소급분 및 미납금」에서 <strong>선택해 차감관리</strong>로 보내세요.</p>
+          <div class="weekly-part-view-tabs" id="settlementResultPartTabs"></div>
           <p class="settlement-week-range-label" id="settlementResultWeekRange"></p>
           <p class="direct-inline-stats" id="settlementResultSummary"></p>
           <div class="settlement-next-step">
@@ -5416,11 +5417,8 @@
               <button type="button" class="small-btn primary-btn" id="settlementFinalPublishBtn" title="고른 지급 회차만 라이더앱 주급명세서로 즉시 반영합니다. 명절 주는 배달료와 프로모션을 나눠 반영하세요.">급여명세서 반영</button>
             </div>
           </div>
-          <div class="payout-wave-picker" id="settlementFinalWavePicker" hidden>
-            <p class="payout-wave-picker-label">지급 회차</p>
-            <div class="payout-wave-options" id="settlementFinalWaveOptions"></div>
-          </div>
-          <p class="form-help">체크한 <strong>부분</strong>의 기사를 <strong>합치지 않고</strong> 정산서별로 나열합니다. 같은 사람이 쿠팡·배민 둘 다면 각각 한 줄씩 표시됩니다. 부분 날짜가 그대로 보이고, 태그가 있어야 선택할 수 있습니다. <strong>「급여명세서 반영」</strong>은 체크한 부분만 기존 로직으로 라이더앱에 공개합니다. 합치기는 주정산 기록에서 나중에 하세요.</p>
+          <div class="weekly-part-view-tabs" id="settlementFinalPartTabs"></div>
+          <p class="form-help">위에서 고른 <strong>전체 / 부분1 / 부분2 / 부분3</strong>만 나열합니다. 같은 사람이 쿠팡·배민이면 각각 한 줄입니다. 「급여명세서 반영」은 지금 보고 있는 부분만 반영합니다.</p>
           <p class="direct-inline-stats" id="settlementFinalSummary"></p>
           <div class="table-wrap direct-scroll direct-scroll-wide">
             <table class="weekly-settlement-saved-table settle-grouped-table" id="settlementFinalTable">
@@ -5510,11 +5508,8 @@
               <input type="hidden" id="finalDepositWeek">
             </div>
           </div>
-          <p class="form-help">고른 정산주의 <strong>직계약 정산서(쿠팡·배민)</strong>를 합칩니다. 중일 분할은 <strong>부분·태그</strong>가 있는 정산서만 체크하세요. 부분 하나만 올려도 그 기간으로 최종입금됩니다. 엑셀 <strong>「입금」·「입금_이체가능」</strong>에 <strong>0원·계좌미등록 포함 전원</strong>이 들어갑니다(같은 기사라도 쿠팡·배민은 각각). 불필요하면 엑셀에서 직접 지우세요.</p>
-          <div class="payout-wave-picker" id="finalDepositWavePicker" hidden>
-            <p class="payout-wave-picker-label">지급 회차</p>
-            <div class="payout-wave-options" id="finalDepositWaveOptions"></div>
-          </div>
+          <p class="form-help">고른 정산주의 직계약 정산서를 합칩니다. <strong>전체</strong>는 평소 주정산, <strong>부분1·2·3</strong>은 그 부분끼리만 입금합니다.</p>
+          <div class="weekly-part-view-tabs" id="finalDepositPartTabs"></div>
           <p class="settlement-week-range-label" id="finalDepositWeekRange"></p>
 
           <div class="final-deposit-picker">
@@ -9244,9 +9239,9 @@
   <script src="js/promotion-conditions.js?v=20260730b"></script>
   <script src="js/promotion-engine.js?v=20260820a"></script>
   <script src="js/promotion-admin.js?v=20260730b"></script>
-  <script src="js/settlement-holiday-calendar.js?v=20260922part2"></script>
-  <script src="js/weekly-settlement.js?v=20260922part2"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260922part1"></script>
+  <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
+  <script src="js/weekly-settlement.js?v=20260922part4"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260922part4"></script>
   <script src="js/baemin-delivery-fee.js?v=20260917ai1"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260916cp2tag"></script>
@@ -9275,8 +9270,8 @@
   <script src="js/direct-adjustment-bulk.js?v=20260905a"></script>
   <script src="js/direct-adjustment-admin.js?v=20260905a"></script>
   <script src="js/direct-settlement-calc.js?v=20260922part2"></script>
-  <script src="js/settlement-result-direct.js?v=20260922part2"></script>
-  <script src="js/final-deposit.js?v=20260922part3"></script>
+  <script src="js/settlement-result-direct.js?v=20260922part4"></script>
+  <script src="js/final-deposit.js?v=20260922part4"></script>
   <script src="js/tax-management-admin.js?v=20260830tax2"></script>
   <script src="js/driver-management-admin.js?v=20260922active1"></script>
   <script src="js/inactive-drivers-admin.js?v=20260922active1"></script>

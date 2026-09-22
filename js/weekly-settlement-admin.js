@@ -287,13 +287,11 @@ const BremWeeklySettlementAdmin = (function () {
       : null;
     const slot = partsApi().recordPartSlot?.(rec) || partsApi().normalizePartSlot?.(item.partSlot) || 0;
     const tag = partsApi().recordPartTag?.(rec) || partsApi().normalizePartTag?.(item.partTag) || '';
-    const slotText = slot ? `부분${slot}` : '부분 미지정';
-    const tagText = tag || '태그 없음';
-    const cls = tag ? 'weekly-part-tag' : 'weekly-part-tag weekly-part-tag--missing';
+    const slotText = slot ? `부분${slot}` : '전체';
     const tagBtn = rec?.id
       ? `<button type="button" class="small-btn" data-weekly-tag="${escapeHtml(rec.id)}">${tag ? '태그수정' : '태그하기'}</button>`
       : '';
-    return `<span class="${cls}">${escapeHtml(slotText)}</span> <strong>${escapeHtml(tagText)}</strong> ${tagBtn}`;
+    return `<span class="weekly-part-tag">${escapeHtml(slotText)}</span>${tag ? ` <strong>${escapeHtml(tag)}</strong>` : ''} ${tagBtn}`;
   }
 
   function syncPartWeekLabel(channel, platform) {
@@ -316,7 +314,7 @@ const BremWeeklySettlementAdmin = (function () {
       })();
     const partStart = q(channel, 'StartDate', platform)?.value || weekStart;
     const partEnd = q(channel, 'EndDate', platform)?.value || weekEnd;
-    el.textContent = `적용주 ${weekStart}(수) ~ ${weekEnd}(화) · 이 파일 기간 ${partStart} ~ ${partEnd}`;
+    el.textContent = `${weekStart.slice(5)}~${weekEnd.slice(5)} · ${partStart.slice(5)}~${partEnd.slice(5)}`;
   }
 
   async function editSettlementPartTag(channel, platform, recordId) {
@@ -328,19 +326,12 @@ const BremWeeklySettlementAdmin = (function () {
       return;
     }
     const current = partsApi().recordPartTag?.(rec) || '';
-    const next = window.prompt('태그를 입력하세요. (필수)', current || '배달료');
+    const next = window.prompt('태그를 입력하세요. (비우면 태그 없음)', current);
     if (next == null) return;
     const tag = partsApi().normalizePartTag?.(next) || '';
-    if (!tag) {
-      showToast('태그는 필수입니다.');
-      return;
-    }
     rec.partTag = tag;
     rec.summary = { ...(rec.summary || {}), partTag: tag };
-    if (!partsApi().recordPartSlot?.(rec)) {
-      rec.partSlot = 1;
-      rec.summary.partSlot = 1;
-    }
+    if (!tag) delete rec.summary.partTag;
     window.BremStorage.weeklySettlements.save(rec);
     await window.BremStorage.flushStorage?.();
     renderSavedList(channel, platform);
@@ -614,8 +605,6 @@ const BremWeeklySettlementAdmin = (function () {
     if (!payload.region && !multiBaemin) return '지역을 입력하세요.';
     if (!payload.startDate || !payload.endDate) return '정산 시작일과 종료일을 입력하세요.';
     if (!payload.file && !(payload.files && payload.files.length)) return '엑셀 파일을 선택하세요.';
-    if (!payload.partSlot) return '부분1·부분2·부분3 중 하나를 선택하세요.';
-    if (!payload.partTag) return '태그를 입력하세요. (예: 배달료)';
     return '';
   }
 

@@ -6980,40 +6980,86 @@ textarea {
 }
 
 .weekly-part-box {
-  margin: 0 0 14px;
-  padding: 12px 14px;
-  border: 1px solid rgba(245, 193, 90, 0.45);
-  border-radius: 10px;
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border: 1px solid rgba(245, 193, 90, 0.28);
+  border-radius: 6px;
   background: #2a2110;
   color: #ffe9b0;
 }
 
+.weekly-part-box--compact {
+  margin: 0 0 6px;
+  padding: 4px 8px;
+}
+
+.weekly-part-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
 .weekly-part-week {
-  margin: 0 0 8px;
-  font-weight: 800;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
   color: #ffe27a;
 }
 
 .weekly-part-slots {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
-  margin: 8px 0;
+  gap: 4px 10px;
+  margin: 0;
 }
 
 .weekly-part-slots label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   color: #ffe9b0;
   cursor: pointer;
+  font-size: 13px;
+}
+
+.weekly-part-tag-input {
+  width: 7.5rem;
+  min-height: 32px;
 }
 
 .weekly-part-suggest {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 0;
+}
+
+.weekly-part-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.weekly-part-view-tabs button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(245, 193, 90, 0.35);
+  border-radius: 999px;
+  background: #1b1b1b;
+  color: #ffe9b0;
+  cursor: pointer;
+}
+
+.weekly-part-view-tabs button.active {
+  background: #f5c15a;
+  color: #1b1b1b;
+  font-weight: 800;
+}
+
+.weekly-part-view-tabs button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .weekly-part-tag {
