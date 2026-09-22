@@ -6900,31 +6900,68 @@ textarea {
 .holiday-settlement-banner {
   margin: 0 0 14px;
   padding: 12px 14px;
-  border: 1px solid #d97706;
+  border: 1px solid #f5c15a;
   border-radius: 10px;
-  background: #fff7ed;
-  color: #9a3412;
+  background: #2a2110;
+  color: #ffe9b0;
 }
 
 .holiday-settlement-banner h3 {
   margin: 0 0 8px;
   font-size: 0.95rem;
-  color: #7c2d12;
+  color: #ffe27a;
 }
 
 .holiday-settlement-banner ul {
   margin: 0;
   padding-left: 1.15em;
+  color: #ffe9b0;
+}
+
+.holiday-settlement-banner li {
+  color: #ffe9b0;
 }
 
 .holiday-settlement-banner li + li {
   margin-top: 4px;
 }
 
+.payroll-range-finalize {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 12px;
+  margin: 0 1rem 12px;
+  padding: 12px;
+  border: 1px solid rgba(245, 193, 90, 0.45);
+  border-radius: 10px;
+  background: #2a2110;
+  color: #ffe9b0;
+}
+
+.payroll-range-finalize label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+  color: #ffe9b0;
+  font-size: 0.86rem;
+}
+
+.payroll-range-finalize input,
+.payroll-range-finalize select {
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid #8a7340;
+  border-radius: 8px;
+  background: #16130c;
+  color: #fff6d4;
+}
+
 .payroll-week-finalize-batches {
   display: grid;
   gap: 8px;
-  margin: 12px 0 4px;
+  margin: 0 1rem 8px;
 }
 
 .payroll-week-finalize-batch {
@@ -6933,22 +6970,24 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border: 1px solid #f0d0a0;
+  border: 1px solid rgba(245, 193, 90, 0.45);
   border-radius: 8px;
-  background: #fffaf0;
+  background: #2a2110;
+  color: #ffe9b0;
 }
 
 .payroll-week-finalize-batch.is-finalized {
-  border-color: #c4d4c4;
-  background: #f3f8f3;
+  border-color: rgba(34, 197, 94, 0.45);
+  background: #152016;
 }
 
 .payroll-week-finalize-batch strong {
   display: block;
+  color: #ffe27a;
 }
 
 .payroll-week-finalize-batch span {
-  color: #6b5a3e;
+  color: #ffe9b0;
   font-size: 0.86rem;
 }
 

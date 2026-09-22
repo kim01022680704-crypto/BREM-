@@ -548,38 +548,52 @@
     return platform === 'baemin' ? '배민' : platform === 'coupang' ? '쿠팡' : platform || '-';
   }
 
-  function renderHolidayFinalizeBatches(weekStart, entry) {
+  function fillRangeFinalizeDefaults(weekStart, weekEnd, force = false) {
+    const startInput = $('payrollRangeFinalizeStart');
+    const endInput = $('payrollRangeFinalizeEnd');
+    const start = String(startInput?.value || '');
+    const end = String(endInput?.value || '');
+    const outside = Boolean(weekStart && weekEnd && start && (
+      start < weekStart || start > weekEnd || end < weekStart || end > weekEnd
+    ));
+    if (startInput && (force || !start || outside)) startInput.value = weekStart || '';
+    if (endInput && (force || !end || outside)) endInput.value = weekEnd || '';
+    if (startInput && weekStart) startInput.min = weekStart;
+    if (startInput && weekEnd) startInput.max = weekEnd;
+    if (endInput && weekStart) endInput.min = weekStart;
+    if (endInput && weekEnd) endInput.max = weekEnd;
+  }
+
+  function renderRangeFinalizeBatches(weekStart, entry) {
     const host = $('payrollWeekFinalizeBatches');
     if (!host) return;
-    const batches = window.BremSettlementHoliday?.opsBatches?.(weekStart) || [];
-    if (!batches.length) {
-      host.hidden = true;
-      host.innerHTML = '';
-      return;
-    }
     const full = BremStorage?.payrollDailySettlement?.isWeekFullyFinalized?.(entry) === true
       || BremStorage?.payrollDailySettlement?.isWeekFinalized?.(weekStart);
-    host.hidden = false;
-    host.innerHTML = batches.map(batch => {
+    const saved = Array.isArray(entry?.batches) ? entry.batches : [];
+    const holiday = window.BremSettlementHoliday?.opsBatches?.(weekStart) || [];
+    const chips = holiday.map(batch => {
       const id = window.BremSettlementHoliday.batchKey(batch);
-      const done = full || BremStorage?.payrollDailySettlement?.isBatchFinalized?.(weekStart, {
-        ...batch,
-        id
-      });
-      const pay = batch.paymentDate ? ` · 지급 ${batch.paymentDate}` : '';
+      return `<button type="button" class="small-btn" data-fill-range="${id}">${finalizePlatformLabel(batch.platform)} ${batch.startDate}~${batch.endDate}</button>`;
+    }).join('');
+    const rows = saved.map(batch => {
+      const id = `${batch.platform}:${batch.startDate}:${batch.endDate}`;
       return `
-        <div class="payroll-week-finalize-batch${done ? ' is-finalized' : ''}">
+        <div class="payroll-week-finalize-batch is-finalized">
           <div>
-            <strong>${finalizePlatformLabel(batch.platform)} ${batch.title || '운행분'}</strong>
-            <span>${batch.startDate} ~ ${batch.endDate}${pay}</span>
+            <strong>${finalizePlatformLabel(batch.platform)} 구간 마무리됨</strong>
+            <span>${batch.startDate} ~ ${batch.endDate}</span>
           </div>
           <div class="payroll-week-finalize-batch-actions">
-            <button type="button" class="small-btn${done ? '' : ' primary-btn'}" data-finalize-batch="${id}" ${done || full ? 'disabled' : ''}>${done ? '마무리됨' : '구간 마무리'}</button>
-            <button type="button" class="small-btn" data-unfinalize-batch="${id}" ${done && !full ? '' : 'hidden'}>구간 취소</button>
+            <button type="button" class="small-btn" data-unfinalize-batch="${id}" ${full ? 'hidden' : ''}>구간 취소</button>
           </div>
         </div>
       `;
     }).join('');
+    const empty = !saved.length && !full
+      ? '<p class="form-help">아직 구간 마무리가 없습니다. 위 시작일~종료일을 고르고 [구간 마무리]를 누르세요.</p>'
+      : '';
+    host.hidden = false;
+    host.innerHTML = `${chips ? `<div class="payroll-week-finalize-batch-actions" style="margin-bottom:8px">${chips}</div>` : ''}${rows}${empty}`;
   }
 
   function syncWeekFinalizeUi() {
@@ -594,7 +608,6 @@
     const entry = BremStorage?.payrollDailySettlement?.getFinalizedWeekEntry?.(weekStart) || null;
     const finalized = BremStorage?.payrollDailySettlement?.isWeekFinalized?.(weekStart) === true;
     const partial = Boolean(entry) && !finalized;
-    const holidayGuard = window.BremSettlementHoliday?.finalizeGuard?.(weekStart);
 
     if (periodLabel) {
       periodLabel.textContent = formatWeekPeriodLabel(weekStart);
@@ -620,13 +633,12 @@
           ? new Date(entry.finalizedAt).toLocaleString('ko-KR')
           : '-';
         hint.textContent = `${weekStart} ~ ${weekEnd} 주정산 마무리가 완료되었습니다. 기사앱 출금가능금액은 0원입니다. (처리시각: ${at})`;
-      } else if (holidayGuard?.exception) {
-        hint.textContent = '추석 주는 들어온 구간만 따로 마무리하세요. 배민 16~20 / 쿠팡 / 배민 21~22. 전체 마무리는 마지막에.';
       } else {
-        hint.textContent = `${weekStart}(수) ~ ${weekEnd}(화) 주를 마무리하면 해당 주 전체 기사 출금가능금액이 0원이 되고 신규 출금신청이 차단됩니다.`;
+        hint.textContent = `${weekStart}(수) ~ ${weekEnd}(화) 안에서 시작일~종료일을 고르면 그 구간만 마무리됩니다. 전체 마무리는 그 주 전부를 닫습니다.`;
       }
     }
-    renderHolidayFinalizeBatches(weekStart, entry);
+    fillRangeFinalizeDefaults(weekStart, weekEnd);
+    renderRangeFinalizeBatches(weekStart, entry);
   }
 
   function parseBatchKey(id) {
@@ -779,37 +791,75 @@
     }
   }
 
-  async function finalizeSelectedBatch(batchId) {
+  function readRangeFinalizeForm() {
     const weekStart = ensureWeekFinalizeDefault();
     const weekEnd = weekEndKey(weekStart);
-    const batch = parseBatchKey(batchId);
-    if (!weekStart || !batch.platform || !batch.startDate) {
-      showToast('마무리할 구간을 확인하세요.');
+    const platform = String($('payrollRangeFinalizePlatform')?.value || 'baemin').trim();
+    const startDate = String($('payrollRangeFinalizeStart')?.value || '').slice(0, 10);
+    const endDate = String($('payrollRangeFinalizeEnd')?.value || '').slice(0, 10);
+    return { weekStart, weekEnd, platform, startDate, endDate };
+  }
+
+  async function finalizeSelectedRange() {
+    const form = readRangeFinalizeForm();
+    if (!form.weekStart || !form.weekEnd) {
+      showToast('정산주(수요일)를 선택하세요.');
       return;
     }
+    if (!form.startDate || !form.endDate) {
+      showToast('시작일과 종료일을 선택하세요.');
+      return;
+    }
+    if (form.startDate > form.endDate) {
+      showToast('시작일이 종료일보다 늦습니다.');
+      return;
+    }
+    if (form.startDate < form.weekStart || form.endDate > form.weekEnd) {
+      showToast(`선택한 정산주(${form.weekStart} ~ ${form.weekEnd}) 안에서만 구간 마무리할 수 있습니다.`);
+      return;
+    }
+    const platforms = form.platform === 'both' ? ['baemin', 'coupang'] : [form.platform];
+    const label = platforms.map(finalizePlatformLabel).join(' + ');
     if (!window.confirm(
-      `${finalizePlatformLabel(batch.platform)} ${batch.startDate} ~ ${batch.endDate} 구간만 마무리할까요?\n이 구간 출금만 닫히고, 아직 안 들어온 다른 구간은 그대로 둡니다.`
+      `${label} ${form.startDate} ~ ${form.endDate} 구간만 마무리할까요?\n이 날짜 출금만 닫히고, 나머지 일정산은 그대로 둡니다.`
     )) return;
     try {
       await BremStorage?.payrollDailySettlement?.reloadFinalizedWeeksFromServer?.();
-      const result = await BremStorage.payrollDailySettlement.finalizeWeekBatch({
-        weekStart,
-        weekEnd,
-        platform: batch.platform,
-        startDate: batch.startDate,
-        endDate: batch.endDate,
-        note: 'admin-week-batch-finalize'
-      });
+      let already = 0;
+      let done = 0;
+      for (const platform of platforms) {
+        const result = await BremStorage.payrollDailySettlement.finalizeWeekBatch({
+          weekStart: form.weekStart,
+          weekEnd: form.weekEnd,
+          platform,
+          startDate: form.startDate,
+          endDate: form.endDate,
+          note: 'admin-range-finalize'
+        });
+        if (result?.already) already += 1;
+        else done += 1;
+      }
       await BremStorage?.awaitPersist?.(BremStorage.flushStorage?.());
       syncWeekFinalizeUi();
-      showToast(result?.already
-        ? '이미 마무리된 구간입니다.'
-        : `구간 마무리 · ${finalizePlatformLabel(batch.platform)} ${batch.startDate} ~ ${batch.endDate}`);
+      showToast(done
+        ? `구간 마무리 · ${label} ${form.startDate} ~ ${form.endDate}`
+        : '이미 마무리된 구간입니다.');
     } catch (error) {
-      console.error('[week batch finalize]', error);
+      console.error('[week range finalize]', error);
       showToast(error.message || '구간 마무리에 실패했습니다.');
       syncWeekFinalizeUi();
     }
+  }
+
+  function fillRangeFromChip(batchId) {
+    const batch = parseBatchKey(batchId);
+    if (!batch.platform || !batch.startDate) return;
+    const platformInput = $('payrollRangeFinalizePlatform');
+    const startInput = $('payrollRangeFinalizeStart');
+    const endInput = $('payrollRangeFinalizeEnd');
+    if (platformInput) platformInput.value = batch.platform;
+    if (startInput) startInput.value = batch.startDate;
+    if (endInput) endInput.value = batch.endDate || batch.startDate;
   }
 
   async function unfinalizeSelectedBatch(batchId) {
@@ -3700,10 +3750,13 @@
     $('payrollWeekUnfinalizeBtn')?.addEventListener('click', () => {
       void unfinalizeSelectedWeek();
     });
+    $('payrollRangeFinalizeBtn')?.addEventListener('click', () => {
+      void finalizeSelectedRange();
+    });
     $('payrollWeekFinalizeBatches')?.addEventListener('click', event => {
-      const finalizeBtn = event.target.closest('[data-finalize-batch]');
-      if (finalizeBtn) {
-        void finalizeSelectedBatch(finalizeBtn.dataset.finalizeBatch);
+      const fillBtn = event.target.closest('[data-fill-range]');
+      if (fillBtn) {
+        fillRangeFromChip(fillBtn.dataset.fillRange);
         return;
       }
       const unfinalizeBtn = event.target.closest('[data-unfinalize-batch]');
