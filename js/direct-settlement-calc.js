@@ -505,79 +505,23 @@ const BremDirectSettlementCalc = (function () {
   }
 
   /**
-   * 사람별로 이 주 처리완료 출금을 찍힌 플랫폼에만 붙인다.
-   * 배민 출금 → 배민, 쿠팡 출금 → 쿠팡. 반대 플랫폼으로 넘기지 않는다.
-   * 그 플랫폼 한도를 넘으면 찍힌 쪽에 남겨 총지급액이 음수로 표기된다.
-   * 반환: canonicalKey -> { coupang:{prepaid,fee}, baemin:{prepaid,fee} }
+   * 선정산은 스필오버 전에 출금 플랫폼 그대로 붙인다.
+   * 배민 출금 → 배민, 쿠팡 출금 → 쿠팡. 한도·반대 플랫폼을 보지 않는다.
+   * 부분 기간이 있으면 그 날짜 일정산분만 남긴다.
    */
-  function allocateWeekWithdrawals(withdrawals, week, capacityMap, options = {}) {
-    const allowOverflow = options.allowOverflow !== false;
+  function allocateWeekWithdrawals(withdrawals, week, _capacityMap, options = {}) {
     const weekKey = String(week || '').slice(0, 10);
-    withdrawals = withHoldPrepaid(withdrawals, weekKey);
+    let list = withHoldPrepaid(withdrawals, weekKey);
     const range = options.dateRange && options.dateRange.start
       ? options.dateRange
       : partDateRange(options.weekSettlements || []);
     if (range.start) {
-      withdrawals = scopeWithdrawalsToDateRange(withdrawals, range, {
+      list = scopeWithdrawalsToDateRange(list, range, {
         week: weekKey,
         dailySettlements: options.dailySettlements
       });
     }
-    const remaining = new Map();
-    (capacityMap instanceof Map ? capacityMap : new Map()).forEach((v, k) => {
-      remaining.set(k, {
-        coupang: Math.max(0, Number(v.coupang || 0)),
-        baemin: Math.max(0, Number(v.baemin || 0))
-      });
-    });
-    const allocated = new Map();
-    const ensure = k => {
-      if (!allocated.has(k)) allocated.set(k, { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } });
-      return allocated.get(k);
-    };
-    let untaggedCount = 0;
-    let untaggedAmount = 0;
-
-    const rows = (Array.isArray(withdrawals) ? withdrawals : [])
-      .filter(r => String(r.status || '') === 'completed'
-        && String(r.weekStart || '').slice(0, 10) === weekKey
-        && String(r.driverId || '').trim())
-      .slice()
-      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
-
-    rows.forEach(row => {
-      const key = canonicalDriverKey(String(row.driverId || '').trim());
-      if (!key) return;
-      const prefer = normalizeWithdrawalPlatform(row.platform);
-      const amount = Math.max(0, Math.round(Number(row.amount || 0)));
-      const fee = withdrawalRowFee(row, prefer);
-      if (!prefer) {
-        untaggedCount += 1;
-        untaggedAmount += amount;
-        return;
-      }
-      let leftFee = fee;
-      let leftPrepaid = amount;
-      const rem = remaining.get(key) || { coupang: 0, baemin: 0 };
-      const alloc = ensure(key);
-      const room = Math.max(0, Number(rem[prefer] || 0));
-      const takeFee = Math.min(leftFee, room);
-      const takePrepaid = Math.min(leftPrepaid, Math.max(0, room - takeFee));
-      alloc[prefer].fee += takeFee;
-      alloc[prefer].prepaid += takePrepaid;
-      rem[prefer] -= (takeFee + takePrepaid);
-      leftFee -= takeFee;
-      leftPrepaid -= takePrepaid;
-      if (allowOverflow && leftFee + leftPrepaid > 0) {
-        alloc[prefer].fee += leftFee;
-        alloc[prefer].prepaid += leftPrepaid;
-      }
-      remaining.set(key, rem);
-    });
-
-    allocated.untaggedCount = untaggedCount;
-    allocated.untaggedAmount = untaggedAmount;
-    return allocated;
+    return buildWeekPrepaidByPlatform(list, weekKey);
   }
 
   // 이 주 처리완료 출금을 사람별·플랫폼별로 정확히 합산한다.
@@ -939,7 +883,7 @@ const BremDirectSettlementCalc = (function () {
 
     const metaByKey = new Map();
     list.forEach(settlement => {
-      const platform = normalizePlatform(settlement.platform);
+      const platform = settlementPlatform(settlement);
       const unitCallFee = callFeeUnit(platform);
       const adj = adjustmentMaps(settlement);
       (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
@@ -1053,7 +997,7 @@ const BremDirectSettlementCalc = (function () {
   }
 
   // 정산서 1건 → 라이더별 정산 행.
-  // 리스차감·대여차감: ERP driverId 기준 주간분 → 실지급 큰 플랫폼부터 스필오버.
+  // 선정산은 출금 플랫폼 그대로(스필오버 전). 리스·대여는 남은 한도로만 스필오버.
   function computeRows(settlement, options = {}) {
     if (!settlement) return [];
     const platform = settlementPlatform(settlement);
@@ -1065,23 +1009,20 @@ const BremDirectSettlementCalc = (function () {
       ? options.dateRange
       : recordDateRange(settlement);
 
-    let allocation = options._allocation || null;
-    if (!allocation && Array.isArray(options.weekSettlements) && options.weekSettlements.length) {
-      const waveScoped = options.weekSettlements.some(item => item?.payoutWaveId);
+    let allocation = options._allocation || options._prepaidMap || null;
+    if (!allocation) {
       allocation = allocateWeekWithdrawals(
         withdrawals,
         week,
-        buildWeekCapacityMap(options.weekSettlements),
+        null,
         {
-          allowOverflow: options.allowOverflow !== false && !waveScoped,
           dateRange,
-          weekSettlements: options.weekSettlements,
+          weekSettlements: options.weekSettlements || [settlement],
           dailySettlements: options.dailySettlements
         }
       );
     }
-    const strictMap = allocation ? null : (options._prepaidMap || buildWeekPrepaidByPlatform(withdrawals, week));
-    const source = allocation || strictMap;
+    const source = allocation;
     const consumed = options._consumed || new Set();
     const leaseConsumed = options._leaseConsumed || new Set();
     const loanConsumed = options._loanConsumed || new Set();
@@ -1235,7 +1176,7 @@ const BremDirectSettlementCalc = (function () {
   function buildGrossPayTotals(settlements) {
     const byPerson = new Map();
     (Array.isArray(settlements) ? settlements : []).forEach(settlement => {
-      const platform = normalizePlatform(settlement.platform);
+      const platform = settlementPlatform(settlement);
       const unitCallFee = callFeeUnit(platform);
       const adj = adjustmentMaps(settlement);
       (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
