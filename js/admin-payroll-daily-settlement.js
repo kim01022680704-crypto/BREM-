@@ -1096,12 +1096,12 @@
     return lo <= hi ? { from: lo, to: hi } : { from: hi, to: lo };
   }
 
-  function filterCompletedLocal(query) {
+  function filterCompletedRows(rows, query) {
     const completedDate = String(query?.completedDate || '').slice(0, 10);
     const weekStart = String(query?.weekStart || '').slice(0, 10);
     const range = normalizeDateRange(query?.completedFrom, query?.completedTo);
-    return (BremStorage?.payrollWithdrawal?.getAll?.() || []).filter(item => {
-      if (item.status !== 'completed') return false;
+    return (Array.isArray(rows) ? rows : []).filter(item => {
+      if (item.status && item.status !== 'completed') return false;
       const req = completedRequestDate(item);
       if (range.from) {
         if (!req || req < range.from || req > range.to) return false;
@@ -1113,21 +1113,26 @@
     });
   }
 
+  function filterCompletedLocal(query) {
+    return filterCompletedRows(BremStorage?.payrollWithdrawal?.getAll?.() || [], query);
+  }
+
   function completedListQuery() {
-    if (state.completedShowAll) {
-      return { completedDate: '', completedFrom: '', completedTo: '', weekStart: '' };
-    }
     const range = normalizeDateRange(
       $('payrollDailyCompletedFrom')?.value,
       $('payrollDailyCompletedTo')?.value
     );
     if (range.from) {
+      state.completedShowAll = false;
       return {
         completedDate: range.from === range.to ? range.from : '',
         completedFrom: range.from,
         completedTo: range.to,
         weekStart: ''
       };
+    }
+    if (state.completedShowAll) {
+      return { completedDate: '', completedFrom: '', completedTo: '', weekStart: '' };
     }
     return {
       completedDate: '',
@@ -1162,6 +1167,9 @@
       console.warn('[completed withdrawal list]', error);
       rows = filterCompletedLocal(query);
       showToast(error.message || '처리완료 내역을 불러오지 못했습니다.');
+    }
+    if (completedFrom || completedDate || weekStart) {
+      rows = filterCompletedRows(rows, query);
     }
 
     const driverMap = new Map(getDrivers().map(driver => [String(driver.id || ''), driver]));
@@ -2038,23 +2046,28 @@
   }
 
   function exportCompletedExcel() {
-    const rows = Array.isArray(state.completedRows) ? state.completedRows : [];
+    const query = completedListQuery();
+    if (!query.completedFrom && !query.completedDate && !query.weekStart && state.completedShowAll) {
+      showToast('신청일 시작과 종료를 먼저 고르세요. 전체 보기는 엑셀로 받지 않습니다.');
+      return;
+    }
+    const rows = filterCompletedRows(
+      Array.isArray(state.completedRows) ? state.completedRows : [],
+      query
+    );
     if (!rows.length) {
-      showToast('내보낼 처리완료 내역이 없습니다.');
+      showToast('선택한 신청일에 내보낼 처리완료 내역이 없습니다.');
       return;
     }
     try {
-      const query = completedListQuery();
-      const date = state.completedShowAll
-        ? 'ALL'
-        : (query.completedFrom && query.completedTo
-          ? (query.completedFrom === query.completedTo
-            ? query.completedFrom.replace(/-/g, '')
-            : `${query.completedFrom.replace(/-/g, '')}-${query.completedTo.replace(/-/g, '')}`)
-          : (query.completedDate || query.weekStart || localDateKey()).replace(/-/g, ''));
+      const date = query.completedFrom && query.completedTo
+        ? (query.completedFrom === query.completedTo
+          ? query.completedFrom.replace(/-/g, '')
+          : `${query.completedFrom.replace(/-/g, '')}-${query.completedTo.replace(/-/g, '')}`)
+        : (query.completedDate || query.weekStart || localDateKey()).replace(/-/g, '');
       const filename = `BREM_처리완료내역_${date}.xlsx`;
       roster.exportWithdrawalRowsToExcel(rows, filename, '처리완료내역');
-      showToast(`엑셀 저장: ${filename}`);
+      showToast(`엑셀 저장: ${filename} · ${rows.length}건 (신청일 기준)`);
     } catch (error) {
       console.error('[completed excel]', error);
       showToast(error.message || '엑셀 내보내기에 실패했습니다.');
