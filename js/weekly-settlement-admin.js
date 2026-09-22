@@ -58,8 +58,12 @@ const BremWeeklySettlementAdmin = (function () {
     return Number(value || 0).toLocaleString('ko-KR');
   }
 
-  function formatCallFeeLogBadge(unit) {
-    if (unit == null || unit === '') return '';
+  function formatCallFeeLogBadge(unit, required) {
+    if (unit == null || unit === '') {
+      return required
+        ? '<span class="weekly-part-tag weekly-part-tag--missing">수수료 미설정</span>'
+        : '';
+    }
     const n = Math.max(0, Math.round(Number(unit) || 0));
     return `<span class="settlement-call-fee-log-badge">콜수수료 ${n.toLocaleString('ko-KR')}원/콜 반영</span>`;
   }
@@ -388,9 +392,20 @@ const BremWeeklySettlementAdmin = (function () {
     const weekStart = ensureWeeklyLogWeek(channel, platform);
     const label = q(channel, 'LogWeekRange', platform);
     if (label) {
-      label.textContent = weekStart
+      const missing = normChannel(channel) === 'direct'
+        ? BremStorage.settlementUploadLogs.getFiltered({
+          kind: 'weekly',
+          platform,
+          weekStart,
+          channel: 'direct'
+        }).filter(item => item.linkedRecordId && resolveWeeklyLogCallFeeUnit(item) == null).length
+        : 0;
+      const range = weekStart
         ? `표시 범위: ${formatDate(weekStart)}(수) ~ ${formatDate(weekEndKey(weekStart))}(화)`
         : '';
+      label.textContent = missing
+        ? `${range} · 수수료 미설정 ${missing}건 · 「이 주 수수료 설정」`
+        : range;
     }
   }
 
@@ -1566,6 +1581,35 @@ const BremWeeklySettlementAdmin = (function () {
     })();
   }
 
+  function writeDirectCallFeeInputs(platform, unit) {
+    const previewEl = q('direct', 'CallFee', platform);
+    const formEl = $(`#weeklySettlementDirectCallFeeForm-${platform}`);
+    if (previewEl) previewEl.value = String(unit);
+    if (formEl) formEl.value = String(unit);
+  }
+
+  function applyWeeklyCallFeeToLog(log, unit) {
+    const record = BremStorage.weeklySettlements.getById(log.linkedRecordId, 'direct')
+      || BremStorage.weeklySettlements.getById(log.linkedRecordId);
+    if (!record?.riders?.length) return null;
+    const saved = BremStorage.weeklySettlements.save(record, { callFeeUnit: unit });
+    BremStorage.settlementUploadLogs.update(log.id, {
+      callFeeUnit: unit,
+      linkedRecordId: saved.id,
+      matchedCount: saved.riders.length,
+      status: 'saved'
+    });
+    return saved;
+  }
+
+  function refreshAfterCallFee(platform) {
+    renderSavedList('direct', platform);
+    if (typeof BremSettlementResultDirect !== 'undefined') {
+      void BremSettlementResultDirect.refresh?.(platform);
+    }
+    if (typeof BremFinalDeposit !== 'undefined') void BremFinalDeposit.refresh?.();
+  }
+
   async function editWeeklySettlementCallFee(logId) {
     const log = BremStorage.settlementUploadLogs.getById(logId);
     if (!log || log.kind !== 'weekly' || log.channel !== 'direct' || !log.linkedRecordId) {
@@ -1591,24 +1635,71 @@ const BremWeeklySettlementAdmin = (function () {
     });
     if (unit == null) return;
 
-    const saved = BremStorage.weeklySettlements.save(record, { callFeeUnit: unit });
-    BremStorage.settlementUploadLogs.update(log.id, {
-      callFeeUnit: unit,
-      linkedRecordId: saved.id,
-      matchedCount: saved.riders.length,
-      status: 'saved'
-    });
-    await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
-
-    renderSavedList('direct', platform);
-    if (state.detailId === saved.id) renderDetail(saved);
-    if (typeof BremSettlementResultDirect !== 'undefined') {
-      void BremSettlementResultDirect.refresh?.(platform);
+    const saved = applyWeeklyCallFeeToLog(log, unit);
+    if (!saved) {
+      showToast('저장된 주정산 기사 데이터가 없어 수수료를 수정할 수 없습니다.');
+      return;
     }
-    if (typeof BremFinalDeposit !== 'undefined') void BremFinalDeposit.refresh?.();
+    writeDirectCallFeeInputs(platform, unit);
+    await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+    if (state.detailId === saved.id) renderDetail(saved);
+    refreshAfterCallFee(platform);
     showToast(
       `${platformLabel(platform)} ${formatDate(record.startDate)} 주정산 콜수수료를 `
       + `${formatNumber(unit)}원/콜로 수정해 정산결과에 재반영했습니다.`
+    );
+  }
+
+  async function applyWeekCallFee(channel, platform) {
+    const ch = normChannel(channel);
+    if (ch !== 'direct') return;
+    const weekStart = ensureWeeklyLogWeek(ch, platform);
+    const list = BremStorage.settlementUploadLogs.getFiltered({
+      kind: 'weekly',
+      platform,
+      weekStart,
+      channel: ch
+    }).filter(item => item.linkedRecordId);
+    const rowsEl = q(ch, 'SavedRows', platform);
+    const selected = new Set(
+      [...(rowsEl?.querySelectorAll('input[data-weekly-merge-id]:checked') || [])]
+        .map(box => String(box.dataset.weeklyMergeId || '').trim())
+        .filter(Boolean)
+    );
+    const targets = selected.size
+      ? list.filter(item => selected.has(String(item.linkedRecordId)))
+      : list;
+    if (!targets.length) {
+      showToast('수수료를 넣을 저장된 주정산서가 없습니다.');
+      return;
+    }
+    const totalCalls = targets.reduce((sum, item) => {
+      const record = BremStorage.weeklySettlements.getById(item.linkedRecordId, 'direct')
+        || BremStorage.weeklySettlements.getById(item.linkedRecordId);
+      return sum + weeklyRecordCallCount(record);
+    }, 0);
+    const initial = targets.map(resolveWeeklyLogCallFeeUnit).find(unit => unit != null)
+      ?? readDirectCallFeeUnit(platform)
+      ?? window.BremStorage?.payrollDailySettlement?.getFees?.(platform)?.callFee
+      ?? '';
+    const unit = await window.BremCallFeeDialog?.open?.({
+      kind: 'weekly',
+      platform,
+      fileName: selected.size ? `선택한 ${targets.length}건` : `${formatDate(weekStart)}(수) 주 ${targets.length}건`,
+      period: `${weekStart} ~ ${weekEndKey(weekStart)}`,
+      totalCalls,
+      initialValue: initial
+    });
+    if (unit == null) return;
+    let savedCount = 0;
+    targets.forEach(item => {
+      if (applyWeeklyCallFeeToLog(item, unit)) savedCount += 1;
+    });
+    writeDirectCallFeeInputs(platform, unit);
+    await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+    refreshAfterCallFee(platform);
+    showToast(
+      `${platformLabel(platform)} ${formatDate(weekStart)}(수) 주 ${savedCount}건 · 콜수수료 ${formatNumber(unit)}원/콜 반영`
     );
   }
 
@@ -1656,7 +1747,7 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${formatPartCell(item)}</td>
         <td>${escapeHtml(item.region || '-')}</td>
         <td>${periodLabel}</td>
-        <td>${escapeHtml(item.fileName || '-')} ${formatCallFeeLogBadge(resolveWeeklyLogCallFeeUnit(item))}</td>
+        <td>${escapeHtml(item.fileName || '-')} ${formatCallFeeLogBadge(resolveWeeklyLogCallFeeUnit(item), ch === 'direct')}</td>
         <td>${escapeHtml(uploadLogStatusLabel(item.status))}</td>
         <td>${formatNumber(item.matchedCount)}명</td>
         <td>${formatDate(String(item.uploadedAt || '').slice(0, 10))}</td>
@@ -1951,6 +2042,9 @@ const BremWeeklySettlementAdmin = (function () {
     });
     q(ch, 'UnmatchedRetryBtn', platform)?.addEventListener('click', () => {
       retryWeeklyUnmatched(ch, platform);
+    });
+    q(ch, 'FeeBtn', platform)?.addEventListener('click', () => {
+      void applyWeekCallFee(ch, platform);
     });
     q(ch, 'MergeBtn', platform)?.addEventListener('click', () => {
       void mergeSelectedSavedSettlements(ch, platform);
