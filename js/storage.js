@@ -1902,6 +1902,14 @@ const BremStorage = (function () {
     }
 
     if (needsDrivers) {
+      const needsInactiveDrivers = sectionId === 'settlements'
+        || sectionId === 'weekly-settlement'
+        || sectionId === 'weekly-settlement-direct'
+        || sectionId === 'promotion-apply'
+        || sectionId === 'promotion-settlement'
+        || sectionId === 'payroll-slips'
+        || sectionId === 'payroll-slip-search'
+        || sectionId === 'payroll-daily-settlement';
       const needsFullDrivers = sectionId === 'missions'
         || sectionId === 'mission-results'
         || sectionId === 'drivers'
@@ -1911,23 +1919,21 @@ const BremStorage = (function () {
         || sectionId === 'lease-management'
         || sectionId === 'coupang-rider-status'
         || sectionId === 'rejections'
-        || sectionId === 'weekly-settlement'
-        || sectionId === 'weekly-settlement-direct'
-        || sectionId === 'settlements'
-        || sectionId === 'promotion-apply'
-        || sectionId === 'promotion-settlement';
+        || needsInactiveDrivers;
       const hasDrivers = drivers.getAll().length > 0 && window.BremDataCache?.isValid?.(KEYS.drivers);
       const fetchInFlight = Boolean(driversFetchAllPromise || driversBackgroundFetchPromise || driversFullFetchInProgress);
       const knownTotal = Number(driversLoadMeta.supabaseTotal || 0);
       const loadedCount = drivers.getAll().length;
       // 중복제거로 loadedCount < knownTotal 일 수 있어 complete 플래그로만 판단한다.
       const looksComplete = Boolean(driversLoadMeta.complete && loadedCount > 0);
+      const looksCompleteForSection = looksComplete
+        && (!needsInactiveDrivers || driversCacheMatchesFetchStatus(''));
 
-      if (!force && hasDrivers && looksComplete) {
+      if (!force && hasDrivers && looksCompleteForSection) {
         logDataSource('riders', true, sectionId);
-      } else if (!force && !needsFullDrivers && hasDrivers && (looksComplete || fetchInFlight)) {
+      } else if (!force && !needsFullDrivers && hasDrivers && (looksCompleteForSection || fetchInFlight)) {
         logDataSource('riders', true, sectionId);
-      } else if (!force && looksComplete && window.BremDataCache?.isValid?.(KEYS.drivers)) {
+      } else if (!force && looksCompleteForSection && window.BremDataCache?.isValid?.(KEYS.drivers)) {
         logDataSource('riders', true, sectionId);
       } else if (sectionId === 'dashboard' && hasDrivers) {
         // 대시보드는 콜수 창이 먼저 떠야 한다. 기사 재조회가 끝나길 기다리면 콜수가 0으로 남는다.
@@ -1939,13 +1945,18 @@ const BremStorage = (function () {
         }
       } else if (needsFullDrivers) {
         const forceMissionDrivers = sectionId === 'mission-management' && (force || options.forceDrivers);
-        const reload = reloadDrivers(Boolean(forceMissionDrivers || options.forceDrivers || options.force));
+        const reload = reloadDrivers(
+          Boolean(forceMissionDrivers || options.forceDrivers || options.force),
+          needsInactiveDrivers ? { includeInactive: true } : {}
+        );
         // 기사관리는 전원 로드를 기다리면 "데이터 불러오는 중"이 수 분~수시간 남는다.
         // 있는 목록으로 먼저 열고, 나머지는 백그라운드 페이지로 이어 받는다.
         if (sectionId === 'driver-management') {
           tasks.push(reload);
         } else {
-          tasks.push(reload.then(() => awaitDriversFullyLoaded()));
+          tasks.push(reload.then(() => awaitDriversFullyLoaded(
+            needsInactiveDrivers ? { includeInactive: true } : {}
+          )));
         }
       } else {
         tasks.push(reloadDrivers(Boolean(options.forceDrivers || options.force)));
@@ -2398,12 +2409,14 @@ const BremStorage = (function () {
       await driversFetchAllPromise;
     }
 
-    const countStatus = driversLoadMeta.fetchStatus !== undefined
-      ? driversLoadMeta.fetchStatus
-      : resolveDriversFetchStatus(options);
+    const wantedStatus = options.includeInactive === true
+      ? ''
+      : (driversLoadMeta.fetchStatus !== undefined
+        ? driversLoadMeta.fetchStatus
+        : resolveDriversFetchStatus(options));
     let serverTotal = Number(driversLoadMeta.supabaseTotal || 0);
     try {
-      const counted = await countRidersViaServer({ status: countStatus });
+      const counted = await countRidersViaServer({ status: wantedStatus });
       if (counted?.ok && Number(counted.count) > 0) {
         serverTotal = Number(counted.count);
         driversLoadMeta.supabaseTotal = serverTotal;
@@ -2416,7 +2429,7 @@ const BremStorage = (function () {
     if (
       driversLoadMeta.complete
       && count > 0
-      && driversCacheMatchesFetchStatus(countStatus)
+      && driversCacheMatchesFetchStatus(wantedStatus)
       && !isDriversCountShort(count, serverTotal)
     ) {
       return { ok: true, count, supabaseTotal: serverTotal || count, complete: true };
@@ -2425,7 +2438,7 @@ const BremStorage = (function () {
     const result = await fetchAllDriversFromServer({
       force: options.force === true,
       ...(options.view ? { view: options.view } : {}),
-      ...(options.includeInactive === true || countStatus === '' ? { includeInactive: true } : {})
+      ...(wantedStatus === '' ? { includeInactive: true } : {})
     });
     if (driversBackgroundFetchPromise) await driversBackgroundFetchPromise;
     const loaded = drivers.getAll().length;
@@ -4777,16 +4790,16 @@ const BremStorage = (function () {
 
   async function refreshDriversForSettlementMatch() {
     await ensureSectionLoaded('drivers');
-    // 백그라운드 부분 로드 중이면 끝까지 기다린 뒤, 부족하면 force 재로드한다.
+    // 정산·급여 매칭은 휴무·퇴사도 엑셀에 남을 수 있어 전원 로드한다.
     if (typeof awaitDriversFullyLoaded === 'function') {
-      const result = await awaitDriversFullyLoaded();
+      const result = await awaitDriversFullyLoaded({ includeInactive: true });
       if (result?.ok === false) {
         throw new Error(result.message || '기사 목록을 불러오지 못했습니다.');
       }
       return drivers.getAll();
     }
     if (typeof fetchAllDriversFromServer === 'function') {
-      const result = await fetchAllDriversFromServer({ force: true });
+      const result = await fetchAllDriversFromServer({ force: true, includeInactive: true });
       if (result?.ok === false) {
         throw new Error(result.message || '기사 목록을 불러오지 못했습니다.');
       }

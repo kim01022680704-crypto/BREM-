@@ -461,14 +461,14 @@
     // 부분 로드(첫 100명)로 매칭하면 등록 기사도 미매칭으로 뜬다 — 전체 로드를 끝까지 기다린다.
     if (typeof BremStorage.awaitDriversFullyLoaded === 'function') {
       try {
-        await BremStorage.awaitDriversFullyLoaded();
+        await BremStorage.awaitDriversFullyLoaded({ includeInactive: true });
       } catch (error) {
         console.warn('[payroll] 기사 전체 로드 대기 실패:', error);
       }
     } else {
       const status = BremStorage.getCacheStatus?.() || {};
       if (!status.driversComplete || !BremStorage.drivers.getAll().length) {
-        await BremStorage.fetchAllDriversFromServer?.({ force: false });
+        await BremStorage.fetchAllDriversFromServer?.({ force: false, includeInactive: true });
       }
     }
     state.drivers = BremStorage.drivers.getAll();

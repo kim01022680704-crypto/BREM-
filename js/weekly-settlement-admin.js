@@ -566,7 +566,7 @@ const BremWeeklySettlementAdmin = (function () {
     // 일정산·콜 전체 로드는 타임아웃 난다. 업로드 매칭은 기사 목록만 있으면 된다.
 
     const driverLoad = BremStorage.awaitDriversFullyLoaded
-      ? await BremStorage.awaitDriversFullyLoaded()
+      ? await BremStorage.awaitDriversFullyLoaded({ includeInactive: true })
       : await BremStorage.refreshDriversForSettlementMatch?.();
 
     if (driverLoad && driverLoad.ok === false) {

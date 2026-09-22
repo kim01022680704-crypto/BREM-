@@ -1137,9 +1137,12 @@
   const $ = selector => document.querySelector(selector);
   const $$ = selector => Array.from(document.querySelectorAll(selector));
 
+  function allDrivers() {
+    return BremStorage.drivers.getAll();
+  }
+
   function drivers() {
-    const list = BremStorage.drivers.getAll();
-    return list.filter(driver => !window.BremDriverUtils?.isRiderAppAccessBlocked?.(driver));
+    return allDrivers().filter(driver => !window.BremDriverUtils?.isRiderAppAccessBlocked?.(driver));
   }
 
   function normalizeSearchText(value) {
@@ -1220,7 +1223,7 @@
   let driverByIdIndexRef = null;
 
   function getDriverByIdIndex() {
-    const list = drivers();
+    const list = allDrivers();
     if (driverByIdIndex && driverByIdIndexRef === list) return driverByIdIndex;
     const map = new Map();
     list.forEach(driver => {
@@ -5292,7 +5295,7 @@
   function settlementMatchCandidateList(record) {
     const query = String($('#settlementMatchSearch')?.value || '').trim();
     const recordNameKey = normalizeSearchText(record.name || record.rawName);
-    const scored = drivers()
+    const scored = allDrivers()
       .filter(driver => !query || matchesDriverSearch(driver, query))
       .map(driver => {
         const nameKey = normalizeSearchText(driver.name);
@@ -5618,7 +5621,7 @@
   async function linkSettlementMatchToDriver() {
     if (settlementMatchState.busy) return;
     const record = settlementMatchRecord();
-    const driver = drivers().find(item => item.id === settlementMatchState.selectedDriverId);
+    const driver = allDrivers().find(item => item.id === settlementMatchState.selectedDriverId);
     if (!record || !driver) {
       showToast('연결할 기사를 선택하세요.');
       return;
@@ -5879,13 +5882,13 @@
     try {
       await BremStorage.ensureSectionLoaded?.('settlements');
       const driverLoad = BremStorage.awaitDriversFullyLoaded
-        ? await BremStorage.awaitDriversFullyLoaded()
+        ? await BremStorage.awaitDriversFullyLoaded({ includeInactive: true })
         : await BremStorage.refreshDriversForSettlementMatch?.();
       if (driverLoad && driverLoad.ok === false) {
         showToast(driverLoad?.message || '기사 목록을 불러오지 못했습니다.');
         return;
       }
-      const driverList = drivers();
+      const driverList = allDrivers();
       if (!driverList.length) {
         showToast('등록된 기사가 없습니다. 기사 목록을 확인하세요.');
         return;
@@ -6331,14 +6334,14 @@
       // 부분 로드(첫 100명)로 매칭하면 등록 기사도 미매칭으로 뜬다 — 전체 로드를 기다린다.
       // (DB 행 수 > 로컬 수는 중복제거 때문에 흔함. 그걸로 업로드를 막지 않는다.)
       const driverLoad = BremStorage.awaitDriversFullyLoaded
-        ? await BremStorage.awaitDriversFullyLoaded()
+        ? await BremStorage.awaitDriversFullyLoaded({ includeInactive: true })
         : await BremStorage.refreshDriversForSettlementMatch?.();
       if (driverLoad && driverLoad.ok === false) {
         showToast(driverLoad?.message || '기사 목록을 불러오지 못했습니다.');
         return;
       }
 
-      const driverList = drivers();
+      const driverList = allDrivers();
       if (!driverList.length) {
         showToast('등록된 기사가 없습니다. 기사 목록을 확인하세요.');
         return;
@@ -6899,7 +6902,7 @@
     try {
       // 부분 로드(첫 100명)로 재매칭하면 등록 기사도 계속 미매칭으로 남는다 — 전체 로드를 기다린다.
       if (typeof BremStorage.awaitDriversFullyLoaded === 'function') {
-        await BremStorage.awaitDriversFullyLoaded();
+        await BremStorage.awaitDriversFullyLoaded({ includeInactive: true });
       }
       await BremStorage.ensureSectionLoaded?.('settlements');
       await BremStorage.ensureSectionLoaded?.('calls');
