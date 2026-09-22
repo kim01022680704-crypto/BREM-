@@ -6921,6 +6921,43 @@ textarea {
   margin-top: 4px;
 }
 
+.payroll-week-finalize-batches {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.payroll-week-finalize-batch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #f0d0a0;
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.payroll-week-finalize-batch.is-finalized {
+  border-color: #c4d4c4;
+  background: #f3f8f3;
+}
+
+.payroll-week-finalize-batch strong {
+  display: block;
+}
+
+.payroll-week-finalize-batch span {
+  color: #6b5a3e;
+  font-size: 0.86rem;
+}
+
+.payroll-week-finalize-batch-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .weekly-warning-cell {
   font-size: 0.85rem;
   color: #b42318;

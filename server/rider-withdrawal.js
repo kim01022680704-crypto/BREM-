@@ -1092,6 +1092,37 @@ function isPlatformEnrolled(rosterItem, platform) {
   return rosterItem.platformCoupang !== false;
 }
 
+function normalizeFinalizeBatch(item) {
+  const raw = String(item?.platform || '').trim().toLowerCase();
+  const platform = raw === 'baemin' ? 'baemin' : raw === 'coupang' ? 'coupang' : '';
+  const startDate = String(item?.startDate || '').slice(0, 10);
+  const endDate = String(item?.endDate || startDate).slice(0, 10);
+  if (!platform || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    return null;
+  }
+  return {
+    id: String(item?.id || `${platform}:${startDate}:${endDate}`).trim(),
+    platform,
+    startDate,
+    endDate,
+    finalizedAt: String(item?.finalizedAt || '').trim(),
+    note: String(item?.note || '').trim()
+  };
+}
+
+function mergeFinalizeBatches(prevBatches, nextBatches) {
+  const map = new Map();
+  [...(Array.isArray(prevBatches) ? prevBatches : []), ...(Array.isArray(nextBatches) ? nextBatches : [])]
+    .forEach(item => {
+      const batch = normalizeFinalizeBatch(item);
+      if (batch) map.set(batch.id, batch);
+    });
+  return Array.from(map.values()).sort((a, b) => {
+    const dateCmp = String(a.startDate).localeCompare(String(b.startDate));
+    return dateCmp || String(a.platform).localeCompare(String(b.platform));
+  });
+}
+
 function normalizeFinalizedWeeks(list) {
   if (!Array.isArray(list)) return [];
   const byWeek = new Map();
@@ -1100,14 +1131,76 @@ function normalizeFinalizedWeeks(list) {
       ? String(item || '').slice(0, 10)
       : String(item?.weekStart || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return;
-    byWeek.set(weekStart, {
+    const prev = byWeek.get(weekStart);
+    const batches = mergeFinalizeBatches(prev?.batches, item?.batches);
+    const finalizedAt = String(item?.finalizedAt || prev?.finalizedAt || '').trim();
+    const explicitFull = item?.full === true || prev?.full === true;
+    const legacyFull = !batches.length && (explicitFull || Boolean(finalizedAt) || typeof item === 'string');
+    const next = {
       weekStart,
-      weekEnd: String(item?.weekEnd || '').slice(0, 10),
-      finalizedAt: String(item?.finalizedAt || '').trim(),
-      note: String(item?.note || '').trim()
-    });
+      weekEnd: String(item?.weekEnd || prev?.weekEnd || '').slice(0, 10),
+      finalizedAt,
+      note: String(item?.note || prev?.note || '').trim(),
+      full: explicitFull || legacyFull
+    };
+    if (batches.length) next.batches = batches;
+    byWeek.set(weekStart, next);
   });
   return Array.from(byWeek.values());
+}
+
+function isWeekFullyFinalized(entry) {
+  if (!entry) return false;
+  if (entry.full === true) return true;
+  return !Array.isArray(entry.batches) || !entry.batches.length;
+}
+
+function isSettlementPeriodLocked(entry, platform, period) {
+  if (!entry) return false;
+  if (isWeekFullyFinalized(entry)) return true;
+  const raw = String(platform || '').trim().toLowerCase();
+  const key = raw === 'baemin' ? 'baemin' : raw === 'coupang' ? 'coupang' : '';
+  const day = String(period || '').slice(0, 10);
+  if (!key || !day) return false;
+  return (entry.batches || []).some(batch => (
+    batch.platform === key && day >= batch.startDate && day <= batch.endDate
+  ));
+}
+
+function unlockedSettlementDays(days, entry) {
+  if (!entry) return days || [];
+  if (isWeekFullyFinalized(entry)) return [];
+  return (days || []).filter(row => !isSettlementPeriodLocked(entry, row.platform, row.period));
+}
+
+function netPayByPlatformFromDays(days) {
+  return (days || []).reduce((acc, row) => {
+    const key = normalizePlatform(row.platform);
+    acc[key] = (acc[key] || 0) + Math.max(0, Number(row.netPay || 0));
+    return acc;
+  }, { coupang: 0, baemin: 0 });
+}
+
+function bucketsAfterLockedNets(buckets, lockedNet) {
+  const next = {
+    coupang: { ...(buckets?.coupang || { requestedConsume: 0, withdrawnConsume: 0 }) },
+    baemin: { ...(buckets?.baemin || { requestedConsume: 0, withdrawnConsume: 0 }) },
+    unknown: buckets?.unknown
+  };
+  ['coupang', 'baemin'].forEach(platform => {
+    let credit = Math.max(0, Number(lockedNet?.[platform] || 0));
+    const withdrawn = Math.max(0, Number(next[platform].withdrawnConsume || 0));
+    const requested = Math.max(0, Number(next[platform].requestedConsume || 0));
+    const cutWithdrawn = Math.min(withdrawn, credit);
+    credit -= cutWithdrawn;
+    const cutRequested = Math.min(requested, credit);
+    next[platform] = {
+      ...next[platform],
+      withdrawnConsume: withdrawn - cutWithdrawn,
+      requestedConsume: requested - cutRequested
+    };
+  });
+  return next;
 }
 
 function findFinalizedWeekEntry(list, weekStart) {
@@ -1211,7 +1304,7 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
       .filter(Boolean)
   );
   const finalizedEntry = findFinalizedWeekEntry(finalizedRaw, weekStart);
-  const weekFinalized = Boolean(finalizedEntry);
+  const weekFinalized = isWeekFullyFinalized(finalizedEntry);
   const pauseState = normalizeWithdrawalPauseState(pauseRaw);
   const withdrawalPaused = pauseState.paused === true;
   const blockedMap = normalizeBlockedDrivers(blockedRaw);
@@ -1268,11 +1361,11 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     .filter(row => row.period);
 
   const totalNetPay = days.reduce((sum, row) => sum + Math.max(0, row.netPay), 0);
-  const netPayByPlatform = days.reduce((acc, row) => {
-    const key = normalizePlatform(row.platform);
-    acc[key] = (acc[key] || 0) + Math.max(0, row.netPay);
-    return acc;
-  }, { coupang: 0, baemin: 0 });
+  const netPayByPlatform = netPayByPlatformFromDays(days);
+  const openDays = unlockedSettlementDays(days, finalizedEntry);
+  const lockedDays = (days || []).filter(row => isSettlementPeriodLocked(finalizedEntry, row.platform, row.period));
+  const openNetByPlatform = netPayByPlatformFromDays(openDays);
+  const lockedNetByPlatform = netPayByPlatformFromDays(lockedDays);
 
   // 출금 선택 가능한 플랫폼: 정산서가 실제로 존재하는 플랫폼(명단 등록과 무관)
   const enrolledPlatforms = {
@@ -1280,18 +1373,22 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     baemin: days.some(row => normalizePlatform(row.platform) === 'baemin')
   };
 
-  const periodNets = buildPeriodNetPayList(days);
+  const periodNets = buildPeriodNetPayList(openDays.length ? openDays : days);
   const lease = await loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd, periodNets);
   const leaseDeduction = Math.max(0, Math.round(Number(lease?.leaseDeductionTotal || 0)));
   const deductionPlatform = normalizeDeductionPlatform(lease?.deductionPlatform);
   // 리스·대여·미납은 최우선 차감. 홀드액은 정산일별 실적용분(+미납장부 잔액).
-  applyDeductionHoldAcrossPlatforms(netPayByPlatform, leaseDeduction);
+  applyDeductionHoldAcrossPlatforms(openNetByPlatform, leaseDeduction);
   const holdEntry = holdForDriverWeek(normalizeWithdrawalHolds(holdsRaw), driverId, weekStart);
   const withdrawalHoldAmount = Math.max(0, Math.round(Number(holdEntry?.amount || 0)));
   if (withdrawalHoldAmount > 0) {
-    applyDeductionHoldAcrossPlatforms(netPayByPlatform, withdrawalHoldAmount);
+    applyDeductionHoldAcrossPlatforms(openNetByPlatform, withdrawalHoldAmount);
   }
-  const availableByPlatform = computeAvailableByPlatform(netPayByPlatform, requestBuckets, weekFinalized);
+  const availableByPlatform = computeAvailableByPlatform(
+    openNetByPlatform,
+    bucketsAfterLockedNets(requestBuckets, lockedNetByPlatform),
+    weekFinalized
+  );
   let availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
   if (driverWithdrawalBlocked) {
     availableByPlatform.coupang = 0;
@@ -2108,7 +2205,7 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
       .filter(Boolean)
   );
   const finalizedEntry = findFinalizedWeekEntry(finalizedRaw, weekStart);
-  const weekFinalized = Boolean(finalizedEntry);
+  const weekFinalized = isWeekFullyFinalized(finalizedEntry);
   const pauseState = normalizeWithdrawalPauseState(pauseRaw);
   const blockedMap = normalizeBlockedDrivers(blockedRaw);
   const allRequests = normalizeRequestList(requestsRaw);
@@ -2180,11 +2277,11 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
 
     const days = daysByDriver.get(driverId) || [];
     const totalNetPay = days.reduce((sum, row) => sum + Math.max(0, row.netPay), 0);
-    const netPayByPlatform = days.reduce((acc, row) => {
-      const key = normalizePlatform(row.platform);
-      acc[key] = (acc[key] || 0) + Math.max(0, row.netPay);
-      return acc;
-    }, { coupang: 0, baemin: 0 });
+    const netPayByPlatform = netPayByPlatformFromDays(days);
+    const openDays = unlockedSettlementDays(days, finalizedEntry);
+    const lockedDays = days.filter(row => isSettlementPeriodLocked(finalizedEntry, row.platform, row.period));
+    const openNetByPlatform = netPayByPlatformFromDays(openDays);
+    const lockedNetByPlatform = netPayByPlatformFromDays(lockedDays);
     const enrolledPlatforms = {
       coupang: days.some(row => normalizePlatform(row.platform) === 'coupang'),
       baemin: days.some(row => normalizePlatform(row.platform) === 'baemin')
@@ -2205,17 +2302,21 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
       0
     );
 
-    const periodNets = buildPeriodNetPayList(days);
+    const periodNets = buildPeriodNetPayList(openDays.length ? openDays : days);
     const lease = computeLeaseForRider(leaseTables, rider, weekStart, weekEnd, periodNets);
     const leaseDeduction = Math.max(0, Math.round(Number(lease.leaseDeductionTotal || 0)));
     const deductionPlatform = normalizeDeductionPlatform(lease.deductionPlatform);
-    applyDeductionHoldAcrossPlatforms(netPayByPlatform, leaseDeduction);
+    applyDeductionHoldAcrossPlatforms(openNetByPlatform, leaseDeduction);
     const holdEntry = holdForDriverWeek(weekHolds, driverId, weekStart);
     const withdrawalHoldAmount = Math.max(0, Math.round(Number(holdEntry?.amount || 0)));
     if (withdrawalHoldAmount > 0) {
-      applyDeductionHoldAcrossPlatforms(netPayByPlatform, withdrawalHoldAmount);
+      applyDeductionHoldAcrossPlatforms(openNetByPlatform, withdrawalHoldAmount);
     }
-    const availableByPlatform = computeAvailableByPlatform(netPayByPlatform, requestBuckets, weekFinalized);
+    const availableByPlatform = computeAvailableByPlatform(
+      openNetByPlatform,
+      bucketsAfterLockedNets(requestBuckets, lockedNetByPlatform),
+      weekFinalized
+    );
     let availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
     const blockEntry = getDriverWithdrawalBlock(blockedMap, driverId);
     const driverWithdrawalBlocked = Boolean(blockEntry);

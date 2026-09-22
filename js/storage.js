@@ -8450,6 +8450,51 @@ const BremStorage = (function () {
       return normalized;
     },
 
+    normalizeFinalizeBatch(item) {
+      const raw = String(item?.platform || '').trim().toLowerCase();
+      const platform = raw === 'baemin' ? 'baemin' : raw === 'coupang' ? 'coupang' : '';
+      const startDate = String(item?.startDate || '').slice(0, 10);
+      const endDate = String(item?.endDate || startDate).slice(0, 10);
+      if (!platform || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+        return null;
+      }
+      return {
+        id: String(item?.id || `${platform}:${startDate}:${endDate}`).trim(),
+        platform,
+        startDate,
+        endDate,
+        finalizedAt: String(item?.finalizedAt || '').trim(),
+        note: String(item?.note || '').trim()
+      };
+    },
+
+    mergeFinalizeBatches(prevBatches, nextBatches) {
+      const map = new Map();
+      [...(Array.isArray(prevBatches) ? prevBatches : []), ...(Array.isArray(nextBatches) ? nextBatches : [])]
+        .forEach(item => {
+          const batch = payrollDailySettlement.normalizeFinalizeBatch(item);
+          if (batch) map.set(batch.id, batch);
+        });
+      return Array.from(map.values()).sort((a, b) => {
+        const dateCmp = String(a.startDate).localeCompare(String(b.startDate));
+        return dateCmp || String(a.platform).localeCompare(String(b.platform));
+      });
+    },
+
+    isWeekFullyFinalized(entry) {
+      if (!entry) return false;
+      if (entry.full === true) return true;
+      return !Array.isArray(entry.batches) || !entry.batches.length;
+    },
+
+    isBatchFinalized(weekStart, batch) {
+      const entry = payrollDailySettlement.getFinalizedWeekEntry(weekStart);
+      if (!entry) return false;
+      if (payrollDailySettlement.isWeekFullyFinalized(entry)) return true;
+      const id = String(batch?.id || `${batch?.platform || ''}:${batch?.startDate || ''}:${batch?.endDate || ''}`);
+      return (entry.batches || []).some(item => item.id === id);
+    },
+
     /** 주정산 마무리(수~화) 목록 정규화 */
     normalizeFinalizedWeeks(list) {
       if (!Array.isArray(list)) return [];
@@ -8460,12 +8505,18 @@ const BremStorage = (function () {
           : String(item?.weekStart || '').slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return;
         const prev = byWeek.get(weekStart);
+        const batches = payrollDailySettlement.mergeFinalizeBatches(prev?.batches, item?.batches);
+        const finalizedAt = String(item?.finalizedAt || prev?.finalizedAt || '').trim();
+        const explicitFull = item?.full === true || prev?.full === true;
+        const legacyFull = !batches.length && (explicitFull || Boolean(finalizedAt) || typeof item === 'string');
         const next = {
           weekStart,
           weekEnd: String(item?.weekEnd || prev?.weekEnd || '').slice(0, 10),
-          finalizedAt: String(item?.finalizedAt || prev?.finalizedAt || '').trim(),
-          note: String(item?.note || prev?.note || '').trim()
+          finalizedAt,
+          note: String(item?.note || prev?.note || '').trim(),
+          full: explicitFull || legacyFull
         };
+        if (batches.length) next.batches = batches;
         byWeek.set(weekStart, next);
       });
       return Array.from(byWeek.values()).sort((a, b) => b.weekStart.localeCompare(a.weekStart));
@@ -8483,7 +8534,9 @@ const BremStorage = (function () {
     isWeekFinalized(weekStart) {
       const key = String(weekStart || '').slice(0, 10);
       if (!key) return false;
-      return payrollDailySettlement.getFinalizedWeekStarts().includes(key);
+      return payrollDailySettlement.isWeekFullyFinalized(
+        payrollDailySettlement.getFinalizedWeekEntry(key)
+      );
     },
 
     getFinalizedWeekEntry(weekStart) {
@@ -8525,20 +8578,91 @@ const BremStorage = (function () {
       }
       await payrollDailySettlement.reloadFinalizedWeeksFromServer();
       const list = payrollDailySettlement.getFinalizedWeeks();
-      if (list.some(item => item.weekStart === start)) {
-        return { ok: true, already: true, entry: list.find(item => item.weekStart === start), list };
+      const prev = list.find(item => item.weekStart === start);
+      if (payrollDailySettlement.isWeekFullyFinalized(prev)) {
+        return { ok: true, already: true, entry: prev, list };
       }
       const entry = {
         weekStart: start,
-        weekEnd: String(weekEnd || '').slice(0, 10),
+        weekEnd: String(weekEnd || prev?.weekEnd || '').slice(0, 10),
         finalizedAt: new Date().toISOString(),
-        note: String(note || '').trim()
+        note: String(note || prev?.note || '').trim(),
+        full: true,
+        ...(prev?.batches?.length ? { batches: prev.batches } : {})
       };
-      const next = payrollDailySettlement.persistFinalizedWeeks([entry, ...list]);
+      const next = payrollDailySettlement.persistFinalizedWeeks([
+        entry,
+        ...list.filter(item => item.weekStart !== start)
+      ]);
       if (typeof flushActiveStorage === 'function') {
         await flushActiveStorage();
       }
       return { ok: true, already: false, entry, list: next };
+    },
+
+    async finalizeWeekBatch({ weekStart, weekEnd = '', platform, startDate, endDate, note = '' } = {}) {
+      const start = String(weekStart || '').slice(0, 10);
+      const batch = payrollDailySettlement.normalizeFinalizeBatch({
+        platform,
+        startDate,
+        endDate,
+        finalizedAt: new Date().toISOString(),
+        note
+      });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !batch) {
+        throw new Error('마무리할 정산 구간을 확인하세요.');
+      }
+      await payrollDailySettlement.reloadFinalizedWeeksFromServer();
+      const list = payrollDailySettlement.getFinalizedWeeks();
+      const prev = list.find(item => item.weekStart === start);
+      if (payrollDailySettlement.isWeekFullyFinalized(prev)) {
+        return { ok: true, already: true, entry: prev, list };
+      }
+      if ((prev?.batches || []).some(item => item.id === batch.id)) {
+        return { ok: true, already: true, entry: prev, list };
+      }
+      const entry = {
+        weekStart: start,
+        weekEnd: String(weekEnd || prev?.weekEnd || '').slice(0, 10),
+        finalizedAt: batch.finalizedAt,
+        note: String(note || prev?.note || '').trim(),
+        full: false,
+        batches: payrollDailySettlement.mergeFinalizeBatches(prev?.batches, [batch])
+      };
+      const next = payrollDailySettlement.persistFinalizedWeeks([
+        entry,
+        ...list.filter(item => item.weekStart !== start)
+      ]);
+      if (typeof flushActiveStorage === 'function') {
+        await flushActiveStorage();
+      }
+      return { ok: true, already: false, entry, list: next };
+    },
+
+    async unfinalizeWeekBatch(weekStart, batch) {
+      const start = String(weekStart || '').slice(0, 10);
+      const target = payrollDailySettlement.normalizeFinalizeBatch(batch);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !target) {
+        throw new Error('취소할 정산 구간을 확인하세요.');
+      }
+      await payrollDailySettlement.reloadFinalizedWeeksFromServer();
+      const list = payrollDailySettlement.getFinalizedWeeks();
+      const prev = list.find(item => item.weekStart === start);
+      if (!prev) return { ok: true, already: true, list };
+      if (prev.full === true) {
+        throw new Error('전체 마무리된 주는 구간만 취소할 수 없습니다. 마무리 취소를 사용하세요.');
+      }
+      const batches = (prev.batches || []).filter(item => item.id !== target.id);
+      const nextList = batches.length
+        ? payrollDailySettlement.persistFinalizedWeeks([
+          { ...prev, full: false, batches },
+          ...list.filter(item => item.weekStart !== start)
+        ])
+        : payrollDailySettlement.persistFinalizedWeeks(list.filter(item => item.weekStart !== start));
+      if (typeof flushActiveStorage === 'function') {
+        await flushActiveStorage();
+      }
+      return { ok: true, already: false, list: nextList };
     },
 
     /** 정산주 마무리 취소(출금가능금액 복구) */

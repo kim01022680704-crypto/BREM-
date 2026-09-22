@@ -162,12 +162,21 @@
     ].join(' ');
   }
 
-  function finalizeGuard(weekStart, today = todayKey()) {
+  function opsBatches(weekStart) {
+    const exception = getExceptionForWeek(weekStart);
+    return (exception?.batches || []).filter(item => item.kind === 'ops' && item.startDate && item.endDate);
+  }
+
+  function batchKey(batch) {
+    const platform = normalizePlatform(batch?.platform);
+    const startDate = String(batch?.startDate || '').slice(0, 10);
+    const endDate = String(batch?.endDate || startDate).slice(0, 10);
+    return platform && startDate ? `${platform}:${startDate}:${endDate}` : '';
+  }
+
+  function finalizeGuard(weekStart) {
     const exception = getExceptionForWeek(weekStart);
     if (!exception) return { blocked: false };
-    if (String(today || '') >= exception.finalizeAfter) {
-      return { blocked: false, exception };
-    }
     const pending = exception.batches
       .map(item => {
         const pay = item.paymentDate || '';
@@ -177,16 +186,16 @@
       })
       .join('\n');
     return {
-      blocked: true,
+      blocked: false,
       exception,
       finalizeAfter: exception.finalizeAfter,
       message: [
-        `${exception.label} 주(${exception.weekStart}~${exception.weekEnd})는 ${exception.finalizeAfter} 전에 마무리하면 안 됩니다.`,
+        `${exception.label} 주는 구간별로 따로 마무리하세요.`,
         '',
         pending,
         '',
-        `정산마무리는 ${exception.finalizeAfter}에 위 지급이 모두 들어온 뒤에 하세요.`,
-        '일찍 마무리하면 아직 안 들어온 쿠팡·배민 잔여분·프로모션 출금이 0원으로 잠깁니다.'
+        '배민 9/16~9/20, 쿠팡 9/16~9/22, 배민 9/21~9/22를 들어온 순서대로 마무리하면 그 구간만 출금이 닫힙니다.',
+        `전체 마무리는 ${exception.finalizeAfter} 프로모션까지 들어온 뒤에 하세요. 전체를 먼저 누르면 아직 안 온 구간까지 0원이 됩니다.`
       ].join('\n')
     };
   }
@@ -198,7 +207,7 @@
       '배민 9/16~9/20 → 9/23(수) 정산 · 9/21~9/22 → 9/29(화) 정산 · 자체 프로모션 9/29(화) 지급',
       '쿠팡 9/16~9/22 → 9/28(월) 정산 · 자체 프로모션 9/28(월) 지급',
       '일정산 정산일은 지급일이 아니라 운행일입니다. 9/23·9/28·9/29로 올리면 다음 주에 섞입니다.',
-      `정산마무리는 ${exception.finalizeAfter} 프로모션까지 들어온 뒤에 하세요.`
+      '정산마무리는 들어온 구간만 따로 하세요. 배민 16~20 / 쿠팡 / 배민 21~22. 전체 마무리는 마지막에.'
     ];
   }
 
@@ -255,6 +264,8 @@
     latestPaymentDate,
     isHolidayPayoutDate,
     dailyPeriodWarning,
+    opsBatches,
+    batchKey,
     finalizeGuard,
     bannerHtml,
     mountBanners
