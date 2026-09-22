@@ -22,7 +22,9 @@ const BremSettlementResultDirect = (function () {
     finalStaleWeek: '',           // 반영 후 조정되어 재반영이 필요한 주
     payoutWaveId: '',
     excludedPartIds: new Set(),
-    partSlot: null
+    partSlot: null,
+    withdrawalsWeek: '',
+    _settlementsCache: null
   };
   const detailInitial = {
     missionPay: 0,
@@ -64,9 +66,31 @@ const BremSettlementResultDirect = (function () {
 
   // --- 정산서 선택 ---------------------------------------------------------
 
+  function allDirectSettlements() {
+    if (!state._settlementsCache) {
+      state._settlementsCache = window.BremStorage?.weeklySettlements?.getAll?.('direct') || [];
+    }
+    return state._settlementsCache;
+  }
+
+  function invalidateSettlementCache() {
+    state._settlementsCache = null;
+  }
+
+  function recordPlatform(record) {
+    const id = String(record?.id || '').toLowerCase();
+    if (id.includes('_baemin_') || id.includes('weekly_direct_baemin') || id.includes('weekly_baemin')) {
+      return 'baemin';
+    }
+    if (id.includes('_coupang_') || id.includes('weekly_direct_coupang') || id.includes('weekly_coupang')) {
+      return 'coupang';
+    }
+    return Calc().normalizePlatform(record?.platform);
+  }
+
   function platformSettlements() {
-    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
-      .filter(record => Calc().normalizePlatform(record.platform) === state.platform)
+    return allDirectSettlements()
+      .filter(record => recordPlatform(record) === state.platform)
       .slice()
       .sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
   }
@@ -111,7 +135,7 @@ const BremSettlementResultDirect = (function () {
     state.partSlot = Number(slot) || 0;
     state.settlementId = '';
     state.excludedPartIds.clear();
-    void refresh(state.platform);
+    void refresh(state.platform, { reuseWithdrawals: true });
   }
 
   // 정산주를 고르면 그 주의 정산서만 남긴다. 부분1·2·3은 같은 부분끼리만 본다.
@@ -180,7 +204,8 @@ const BremSettlementResultDirect = (function () {
     const region = record.region ? ` · ${record.region}` : '';
     const part = partBadge(record);
     const partText = part ? ` · ${part}` : '';
-    return `${formatDate(record.startDate)} ~ ${formatDate(record.endDate)}${region}${partText} · ${riders}명`;
+    const platformKo = recordPlatform(record) === 'coupang' ? '쿠팡' : '배민';
+    return `${platformKo} · ${formatDate(record.startDate)} ~ ${formatDate(record.endDate)}${region}${partText} · ${riders}명`;
   }
 
   function renderSettlementPicker() {
@@ -266,8 +291,9 @@ const BremSettlementResultDirect = (function () {
       return;
     }
     state.settlementId = '';
+    invalidateSettlementCache();
     notifyRelatedScreens();
-    await loadWithdrawals();
+    await loadWithdrawals({ force: true });
     render();
     showToast('정산서를 삭제했습니다. 주정산서 업로드(직계약)에서 다시 올리세요.');
   }
@@ -299,8 +325,9 @@ const BremSettlementResultDirect = (function () {
       return;
     }
     state.settlementId = '';
+    invalidateSettlementCache();
     notifyRelatedScreens();
-    await loadWithdrawals();
+    await loadWithdrawals({ force: true });
     render();
     showToast(`${platform} ${formatDate(week)}(수) 주 정산서 ${list.length}건을 삭제했습니다.`);
   }
@@ -322,7 +349,7 @@ const BremSettlementResultDirect = (function () {
   function weekAllPlatformSettlements(settlement) {
     const week = settlementWeek(settlement);
     const slot = recordSlot(settlement);
-    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
+    return allDirectSettlements()
       .filter(record => recordMatchesWeek(record, week) && recordSlot(record) === slot);
   }
 
@@ -364,12 +391,10 @@ const BremSettlementResultDirect = (function () {
     if (!settlement) {
       const total = platformSettlements().length;
       const platformKo = state.platform === 'coupang' ? '쿠팡' : '배민';
-      let emptyMsg = `이 플랫폼(${platformKo})에 저장된 직계약 정산서가 없습니다. (주정산서 업로드 · 직계약 확인)`;
-      if (!state.weekAll && state.week && total > 0) {
-        emptyMsg = `${formatDate(state.week)}(수) 주 · ${platformKo} 직계약 정산서가 없습니다. `
-          + `다른 주를 고르거나 「전체 주」를 누르세요. (${platformKo} 전체 ${total}건)`;
-      } else if ((state.weekAll || !state.week) && total <= 0) {
-        emptyMsg = `${platformKo} 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요.`;
+      let emptyMsg = `${platformKo} 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요.`;
+      if (!state.weekAll && state.week) {
+        emptyMsg = `${formatDate(state.week)}(수) 주 · ${platformKo} 업로드한 직계약 정산서가 없습니다.`;
+        if (total > 0) emptyMsg += ` ${platformKo}은 다른 주에 ${total}건 있습니다.`;
       }
       body.innerHTML = `<tr><td colspan="${colspan}" class="empty">${escapeHtml(emptyMsg)}</td></tr>`;
       if (summaryEl) summaryEl.textContent = '';
@@ -846,30 +871,36 @@ const BremSettlementResultDirect = (function () {
     window.XLSX.writeFile(wb, `정산결과_직계약_${platform}_${week}.xlsx`);
   }
 
-  async function loadWithdrawals() {
+  async function loadWithdrawals(options = {}) {
     const week = state.week || settlementWeek(currentSettlement()) || weekStartKey();
+    if (!options.force && state.withdrawalsWeek === week && Array.isArray(state.withdrawals)) {
+      return;
+    }
     try {
-      await window.BremStorage?.ensureLeaseErpKeysLoaded?.();
-      await window.BremStorage?.payrollDailySettlement?.reloadWithdrawalHoldsFromServer?.();
+      if (options.force) {
+        await window.BremStorage?.ensureLeaseErpKeysLoaded?.();
+        await window.BremStorage?.payrollDailySettlement?.reloadWithdrawalHoldsFromServer?.();
+      }
       const weekEnd = Calc().weekEndFromStart?.(week);
-      if (week && weekEnd) {
+      if (week && weekEnd && (options.force || state.withdrawalsWeek !== week)) {
         await window.BremStorage?.ensureSettlementsSinceDate?.(week, { untilDate: weekEnd });
       }
       const fetchApi = window.BremStorage?.payrollWithdrawal?.fetchFromAdminApi;
       if (typeof fetchApi === 'function') {
         state.withdrawals = await fetchApi({ weekStart: week });
+        state.withdrawalsWeek = week;
         return;
       }
     } catch (error) {
       console.warn('[BREM] settlement-result: withdrawal fetch failed, fallback to cache:', error);
     }
     state.withdrawals = window.BremStorage?.payrollWithdrawal?.getAll?.() || [];
+    state.withdrawalsWeek = week;
   }
 
   async function reload() {
-    await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
-    await loadWithdrawals();
-    render();
+    invalidateSettlementCache();
+    await refresh(state.platform, { force: true });
     showToast('정산결과를 다시 불러왔습니다.');
   }
 
@@ -1369,8 +1400,7 @@ const BremSettlementResultDirect = (function () {
 
   function weekDirectSettlements() {
     const week = finalWeek();
-    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
-      .filter(record => recordMatchesWeek(record, week));
+    return allDirectSettlements().filter(record => recordMatchesWeek(record, week));
   }
 
   function allFinalWeekSettlements() {
@@ -2025,21 +2055,43 @@ const BremSettlementResultDirect = (function () {
     });
   }
 
-  async function refresh(platform) {
+  async function refresh(platform, options = {}) {
     if (!$('#settlementResultRows')) return;
     const next = platform === 'coupang' ? 'coupang' : 'baemin';
     if (next !== state.platform) {
       state.platform = next;
       state.settlementId = '';
-      state.week = '';
-      state.weekAll = false;
       state.partSlot = null;
+      state.viewMode = 'platform';
+      const mainCard = $('#settlementResultMainCard');
+      const finalCard = $('#settlementFinalCard');
+      const retroCard = $('#settlementResultRetroCard');
+      const spillCard = $('#settlementSpilloverCard');
+      if (mainCard) mainCard.hidden = false;
+      if (finalCard) finalCard.hidden = true;
+      if (retroCard) retroCard.hidden = true;
+      if (spillCard) spillCard.hidden = true;
     }
     if (!state.weekAll) ensureWeek();
     bindEvents();
-    await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
-    await loadWithdrawals();
+    if (!options.reuseWithdrawals && state.withdrawalsWeek && state.withdrawalsWeek !== state.week) {
+      state.withdrawals = [];
+    }
+    invalidateSettlementCache();
     render();
+    if (options.force) {
+      await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
+    }
+    const needWithdrawals = options.force
+      || (!options.reuseWithdrawals && state.withdrawalsWeek !== state.week);
+    if (!needWithdrawals) return;
+    const week = state.week;
+    const platformNow = state.platform;
+    await loadWithdrawals({ force: options.force === true });
+    if (state.week === week && state.platform === platformNow) {
+      invalidateSettlementCache();
+      render();
+    }
   }
 
   function init() {

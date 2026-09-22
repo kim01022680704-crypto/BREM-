@@ -7524,6 +7524,10 @@
         const platform = platformTab.dataset.platform;
         if (state.currentSection === sectionId) {
           setUnifiedPlatform(sectionId, platform);
+          if (sectionId === 'settlement-result-direct' && typeof BremSettlementResultDirect !== 'undefined') {
+            void BremSettlementResultDirect.refresh(platform);
+            return;
+          }
           renderAll();
         }
         return;

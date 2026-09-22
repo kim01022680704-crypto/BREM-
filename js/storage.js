@@ -11359,12 +11359,18 @@ const BremStorage = (function () {
   };
 
   function resolveWeeklySettlementPlatform(record = {}) {
+    const id = String(record.id || '').toLowerCase();
+    if (id.includes('_baemin_') || id.includes('weekly_direct_baemin') || id.includes('weekly_baemin')) {
+      return 'baemin';
+    }
+    if (id.includes('_coupang_') || id.includes('weekly_direct_coupang') || id.includes('weekly_coupang')) {
+      return 'coupang';
+    }
     const explicit = String(record.platform || '').trim();
     if (explicit === 'baemin' || explicit === 'coupang') return explicit;
-    const id = String(record.id || '').toLowerCase();
     if (id.includes('baemin')) return 'baemin';
     if (id.includes('coupang')) return 'coupang';
-    const fileName = String(record.fileName || '').replace(/\.(xlsx|xls)$/i, '');
+    const fileName = String(record.fileName || record.file_name || '').replace(/\.(xlsx|xls)$/i, '');
     if (/^\d{8}_\d{8}_.+_정산서$/i.test(fileName)) return 'baemin';
     return DEFAULT_PLATFORM;
   }
@@ -11374,7 +11380,7 @@ const BremStorage = (function () {
   }
 
   function normalizeWeeklySettlement(record = {}) {
-    const platform = normalizePlatform(record.platform || inferWeeklySettlementPlatform(record));
+    const platform = resolveWeeklySettlementPlatform(record);
     const normBaemin = (typeof BremWeeklySettlement !== 'undefined'
       && typeof BremWeeklySettlement.normalizeBaeminUserId === 'function')
       ? BremWeeklySettlement.normalizeBaeminUserId

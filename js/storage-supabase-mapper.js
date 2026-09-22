@@ -330,9 +330,14 @@ window.BremSupabaseMapper = (function () {
       ? 'direct'
       : (summary.channel === 'bro' ? 'bro' : 'bro');
     if (channel) summary.channel = channel;
+    const platformFromId = id.includes('_baemin_') || id.includes('weekly_direct_baemin') || id.includes('weekly_baemin')
+      ? 'baemin'
+      : (id.includes('_coupang_') || id.includes('weekly_direct_coupang') || id.includes('weekly_coupang')
+        ? 'coupang'
+        : '');
     return {
       id: row.id,
-      platform: row.platform || 'coupang',
+      platform: platformFromId || row.platform || 'coupang',
       channel,
       region: row.region || '',
       fileName: row.file_name || '',

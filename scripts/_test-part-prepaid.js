@@ -92,6 +92,7 @@ const checks = [
   ['match 16-20 on 9/16 week', Calc.recordMatchesWeek(part1, week) === true],
   ['no match 16-20 on 9/23 week', Calc.recordMatchesWeek(part1, '2026-09-23') === false],
   ['match 21-22 on 9/16 week', Calc.recordMatchesWeek(part2, week) === true],
+  ['prev week 9/9-15 not on 9/16', Calc.recordMatchesWeek({ startDate: '2026-09-09', endDate: '2026-09-15' }, week) === false],
   ['part1 range', Calc.partDateRange([part1]).start === '2026-09-16' && Calc.partDateRange([part1]).end === '2026-09-20'],
   ['FIFO 부분1 800000', scoped1.length === 1 && scoped1[0].amount === 800000],
   ['FIFO 부분2 200000', scoped2.length === 1 && scoped2[0].amount === 200000],

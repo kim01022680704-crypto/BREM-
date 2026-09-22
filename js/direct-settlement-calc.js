@@ -140,7 +140,9 @@ const BremDirectSettlementCalc = (function () {
     }
     const range = recordDateRange(record);
     if (!range.start) return false;
-    return range.start <= weekEndFromStart(weekKey) && range.end >= weekKey;
+    const weekEnd = weekEndFromStart(weekKey);
+    // 시작일이 그 주(수~화) 안에 있을 때만. 전주 파일이 화요일에 겹친 건 빼다.
+    return range.start >= weekKey && range.start <= weekEnd;
   }
 
   function normalizePlatform(platform) {
