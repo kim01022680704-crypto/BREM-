@@ -72,6 +72,12 @@ const wd = [{
 
 const scoped1 = Calc.scopeWithdrawalsToDateRange(wd, { start: '2026-09-16', end: '2026-09-20' }, { week });
 const scoped2 = Calc.scopeWithdrawalsToDateRange(wd, { start: '2026-09-21', end: '2026-09-22' }, { week });
+const datedWds = [
+  { ...wd[0], amount: 500000, requestDate: '2026-09-17', createdAt: '2026-09-17T10:00:00' },
+  { ...wd[0], amount: 400000, requestDate: '2026-09-22', createdAt: '2026-09-22T10:00:00' }
+];
+const dated1 = Calc.scopeWithdrawalsToDateRange(datedWds, { start: '2026-09-16', end: '2026-09-20' }, { week });
+const dated2 = Calc.scopeWithdrawalsToDateRange(datedWds, { start: '2026-09-21', end: '2026-09-22' }, { week });
 
 daily.splice(0, daily.length);
 const fallbackIn = Calc.scopeWithdrawalsToDateRange([{
@@ -94,8 +100,10 @@ const checks = [
   ['match 21-22 on 9/16 week', Calc.recordMatchesWeek(part2, week) === true],
   ['prev week 9/9-15 not on 9/16', Calc.recordMatchesWeek({ startDate: '2026-09-09', endDate: '2026-09-15' }, week) === false],
   ['part1 range', Calc.partDateRange([part1]).start === '2026-09-16' && Calc.partDateRange([part1]).end === '2026-09-20'],
-  ['FIFO 부분1 800000', scoped1.length === 1 && scoped1[0].amount === 800000],
-  ['FIFO 부분2 200000', scoped2.length === 1 && scoped2[0].amount === 200000],
+  ['22일 출금은 부분1에 안 들어감', scoped1.length === 0],
+  ['22일 출금은 21일 일정산만 부분2', scoped2.length === 1 && scoped2[0].amount === 200000],
+  ['17일 신청만 부분1', dated1.length === 1 && dated1[0].amount === 500000],
+  ['22일 신청은 부분2 일정산 한도', dated2.length === 1 && dated2[0].amount === 200000],
   ['fallback request-1 in range', fallbackIn.length === 1 && fallbackIn[0].amount === 500000],
   ['fallback 21일 일정산은 부분1 제외', fallbackOut.length === 0]
 ];

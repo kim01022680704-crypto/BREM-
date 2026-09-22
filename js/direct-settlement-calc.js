@@ -417,9 +417,17 @@ const BremDirectSettlementCalc = (function () {
     return `${key}|${normalizeWithdrawalPlatform(platform) || '_'}`;
   }
 
+  function withdrawalMatchesPartPeriod(row, start, end) {
+    const period = withdrawalPeriodGuess(row);
+    if (period) return inDateRange(period, start, end);
+    const req = String(row.requestDate || row.createdAt || '').slice(0, 10);
+    return inDateRange(req, start, end);
+  }
+
   /**
-   * 부분 기간에 해당하는 일정산(처리완료) 선정산만 남긴다.
-   * 출금은 주 단위라, 일정산 period 풀에 FIFO 로 나눠 16~20 부분이면 그 날짜 금액만 차감한다.
+   * 부분 기간의 선정산은 「그 날짜 일정산」에 해당하는 출금만 쓴다.
+   * 신청일 전날 = 일정산 period. 16~20 부분이면 신청 17~21일만, 22일 출금은 부분2.
+   * 일정산 금액이 있으면 그 구간 한도를 넘기지 않는다.
    */
   function scopeWithdrawalsToDateRange(withdrawals, range, options = {}) {
     const start = String(range?.start || '').slice(0, 10);
@@ -428,28 +436,22 @@ const BremDirectSettlementCalc = (function () {
     if (!start) return list;
 
     const weekKey = String(options.week || '').slice(0, 10);
-    const weekEnd = weekKey ? weekEndFromStart(weekKey) : end;
-    const dailyStart = weekKey && weekKey < start ? weekKey : start;
-    const dailyEnd = weekEnd && weekEnd > end ? weekEnd : end;
     const daily = Array.isArray(options.dailySettlements)
       ? options.dailySettlements
-      : loadDailySettlementsInRange(dailyStart, dailyEnd);
+      : loadDailySettlementsInRange(start, end);
 
     const pools = new Map();
     daily.forEach(row => {
       const day = String(row.period || '').slice(0, 10);
       const amount = dailySettlementAmount(row);
       const driverId = String(row.driverId || '').trim();
-      if (!day || !driverId || amount <= 0) return;
+      if (!day || !driverId || amount <= 0 || !inDateRange(day, start, end)) return;
       const key = driverPlatKey(driverId, row.platform);
-      const slots = pools.get(key) || [];
-      const existing = slots.find(item => item.period === day);
-      if (existing) existing.left += amount;
-      else slots.push({ period: day, left: amount });
-      pools.set(key, slots);
+      const prev = pools.get(key) || 0;
+      pools.set(key, prev + amount);
     });
-    pools.forEach(slots => slots.sort((a, b) => a.period.localeCompare(b.period)));
 
+    const pending = [];
     const out = [];
     list.forEach(row => {
       if (String(row.status || '') !== 'completed') {
@@ -458,48 +460,43 @@ const BremDirectSettlementCalc = (function () {
       }
       const amount = Math.max(0, Math.round(Number(row.amount || 0)));
       if (amount <= 0) return;
-
       if (isHoldPrepaidRow(row)) {
         if (inDateRange(String(row.weekStart || weekKey).slice(0, 10), start, end)) out.push(row);
         return;
       }
+      if (!withdrawalMatchesPartPeriod(row, start, end)) return;
+      pending.push(row);
+    });
 
+    pending.sort((a, b) => {
+      const ad = String(a.requestDate || a.createdAt || '');
+      const bd = String(b.requestDate || b.createdAt || '');
+      if (ad !== bd) return ad.localeCompare(bd);
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
+
+    pending.forEach(row => {
+      const amount = Math.max(0, Math.round(Number(row.amount || 0)));
       const key = driverPlatKey(row.driverId, row.platform);
-      const slots = pools.get(key);
-      const hasPool = Boolean(slots && slots.length);
+      const hasPool = pools.has(key);
+      let take = amount;
       if (hasPool) {
-        let left = amount;
-        let inRange = 0;
-        slots.forEach(slot => {
-          if (left <= 0 || slot.left <= 0) return;
-          const take = Math.min(left, slot.left);
-          if (inDateRange(slot.period, start, end)) inRange += take;
-          slot.left -= take;
-          left -= take;
-        });
-        if (left > 0) {
-          const guess = withdrawalPeriodGuess(row);
-          const req = String(row.requestDate || '').slice(0, 10);
-          if (inDateRange(guess, start, end) || inDateRange(req, start, end)) inRange += left;
-        }
-        if (inRange <= 0) return;
-        if (inRange === amount) {
-          out.push(row);
-          return;
-        }
-        const prefer = normalizeWithdrawalPlatform(row.platform) || 'baemin';
-        const fee = withdrawalRowFee(row, prefer);
-        out.push({
-          ...row,
-          amount: inRange,
-          feeAmount: Math.round(fee * (inRange / amount))
-        });
+        const room = Math.max(0, Math.round(Number(pools.get(key) || 0)));
+        take = Math.min(amount, room);
+        pools.set(key, room - take);
+      }
+      if (take <= 0) return;
+      if (take === amount) {
+        out.push(row);
         return;
       }
-
-      const guess = withdrawalPeriodGuess(row);
-      const req = String(row.requestDate || '').slice(0, 10);
-      if (inDateRange(guess, start, end) || inDateRange(req, start, end)) out.push(row);
+      const prefer = normalizeWithdrawalPlatform(row.platform) || 'baemin';
+      const fee = withdrawalRowFee(row, prefer);
+      out.push({
+        ...row,
+        amount: take,
+        feeAmount: Math.round(fee * (take / amount))
+      });
     });
     return out;
   }
