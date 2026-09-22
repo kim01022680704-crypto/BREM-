@@ -344,6 +344,7 @@ const BremStorage = (function () {
   let supabaseInitPromise = null;
   let storageBootstrapPromise = null;
   let cachedAdminAccessToken = '';
+  let adminTokenRefreshPromise = null;
   let supabaseAuthListenerBound = false;
   let syncAdminAccountsPromise = null;
   let driversSyncPromise = null;
@@ -817,23 +818,59 @@ const BremStorage = (function () {
     });
   }
 
-  async function resolveAdminAccessToken() {
+  // Access token ~1h. Parallel /api/admin/* calls used to each refreshSession();
+  // refresh-token rotation then invalidates the second refresh and the toast
+  // "유효하지 않은 로그인 세션입니다." appears even though the tab is still logged in.
+  const ADMIN_TOKEN_REFRESH_MARGIN_MS = 90_000;
+
+  async function refreshAdminAccessToken(client) {
+    if (!client?.auth?.refreshSession) return null;
+    if (adminTokenRefreshPromise) return adminTokenRefreshPromise;
+
+    adminTokenRefreshPromise = (async () => {
+      try {
+        const { data, error } = await client.auth.refreshSession();
+        if (error) {
+          console.warn('[BREM] admin token refresh failed:', error.message || error);
+          return null;
+        }
+        const session = data?.session || null;
+        if (session?.access_token) rememberAdminAccessToken(session.access_token);
+        return session;
+      } catch (error) {
+        console.warn('[BREM] admin token refresh failed:', error?.message || error);
+        return null;
+      } finally {
+        adminTokenRefreshPromise = null;
+      }
+    })();
+
+    return adminTokenRefreshPromise;
+  }
+
+  async function resolveAdminAccessToken(options = {}) {
     const client = getSupabaseClient();
     if (!client) return '';
 
     bindSupabaseAuthListener(client);
 
+    if (options.forceRefresh) {
+      const session = await refreshAdminAccessToken(client);
+      const forced = session?.access_token || '';
+      if (forced) rememberAdminAccessToken(forced);
+      return forced;
+    }
+
     let { data: sessionData } = await client.auth.getSession();
     let session = sessionData?.session;
 
     if (!session) {
-      const { data: refreshed, error } = await client.auth.refreshSession();
-      if (!error) session = refreshed?.session || null;
+      session = await refreshAdminAccessToken(client);
     } else if (session.expires_at) {
       const expiresMs = session.expires_at * 1000;
-      if (expiresMs - Date.now() < 60_000) {
-        const { data: refreshed, error } = await client.auth.refreshSession();
-        if (!error && refreshed?.session) session = refreshed.session;
+      if (expiresMs - Date.now() < ADMIN_TOKEN_REFRESH_MARGIN_MS) {
+        const refreshed = await refreshAdminAccessToken(client);
+        if (refreshed) session = refreshed;
       }
     }
 
@@ -872,6 +909,7 @@ const BremStorage = (function () {
   }
 
   async function adminRidersApi(path, options = {}) {
+    const { retryAuth = true, ...fetchOptions } = options;
     const token = await resolveAdminAccessToken();
     if (!token) {
       return { ok: false, message: '로그인 세션이 만료되었습니다. 관리자 화면에서 다시 로그인하세요.' };
@@ -881,15 +919,22 @@ const BremStorage = (function () {
       window.BremPerf?.countApi?.(1);
       const response = await fetch(path, {
         credentials: 'same-origin',
-        ...options,
+        ...fetchOptions,
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
-          ...(options.headers || {})
+          ...(fetchOptions.headers || {})
         }
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 401 && retryAuth) {
+          rememberAdminAccessToken('');
+          const nextToken = await resolveAdminAccessToken({ forceRefresh: true });
+          if (nextToken && nextToken !== token) {
+            return adminRidersApi(path, { ...options, retryAuth: false });
+          }
+        }
         const serverMessage = payload.message || payload.error || `기사 API 요청에 실패했습니다. (${response.status})`;
         if (response.status === 401) {
           return {
@@ -4376,6 +4421,7 @@ const BremStorage = (function () {
   }
 
   async function adminUsersApi(path, options = {}) {
+    const { retryAuth = true, ...fetchOptions } = options;
     const token = await resolveAdminAccessToken();
     if (!token) {
       return { ok: false, message: '로그인 세션이 만료되었습니다. 다시 로그인하세요.' };
@@ -4384,20 +4430,27 @@ const BremStorage = (function () {
     try {
       const response = await fetch(path, {
         credentials: 'same-origin',
-        ...options,
+        ...fetchOptions,
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
-          ...(options.headers || {})
+          ...(fetchOptions.headers || {})
         }
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 401 && retryAuth) {
+          rememberAdminAccessToken('');
+          const nextToken = await resolveAdminAccessToken({ forceRefresh: true });
+          if (nextToken && nextToken !== token) {
+            return adminUsersApi(path, { ...options, retryAuth: false });
+          }
+        }
         const raw = payload.error || '관리자 계정 API 요청에 실패했습니다.';
         const message = /invalid format/i.test(raw)
           ? '이메일 형식이 올바르지 않습니다. 영문 이메일(예: name@example.com)을 입력하세요.'
           : raw;
-        return { ok: false, message };
+        return { ok: false, status: response.status, message };
       }
       return { ok: true, ...payload };
     } catch (error) {
@@ -5372,9 +5425,9 @@ const BremStorage = (function () {
       let { data: sessionData } = await client.auth.getSession();
       let session = sessionData?.session || null;
       const expiresMs = session?.expires_at ? session.expires_at * 1000 : 0;
-      if (!session || (expiresMs && expiresMs - Date.now() < 60_000)) {
-        const { data: refreshed, error: refreshError } = await client.auth.refreshSession();
-        if (!refreshError && refreshed?.session) session = refreshed.session;
+      if (!session || (expiresMs && expiresMs - Date.now() < ADMIN_TOKEN_REFRESH_MARGIN_MS)) {
+        const refreshed = await refreshAdminAccessToken(client);
+        if (refreshed) session = refreshed;
       }
       const user = session?.user;
       if (!user) {
