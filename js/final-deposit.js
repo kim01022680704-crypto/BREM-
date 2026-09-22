@@ -393,8 +393,9 @@ const BremFinalDeposit = (function () {
     renderReconcile();
   }
 
-  // 처리완료 출금인데 정산서에 매칭 안 돼 선정산에 반영되지 못한 건을 찾아낸다.
-  // (그 사람의 해당 플랫폼 정산서가 없거나 플랫폼 미지정인 경우)
+  // 체크한 부분 정산서에 있는 사람만 본다.
+  // 부분1만 올리면 파일에 없는 처리완료(다른 지역·21~22)가 생기는 게 정상이라
+  // 「직계약 정산서 없음」목록은 올리지 않는다.
   function renderReconcile() {
     const box = $('#finalDepositReconcile');
     if (!box) return;
@@ -402,13 +403,13 @@ const BremFinalDeposit = (function () {
     const canon = Calc().canonicalDriverKey;
     const normP = Calc().normalizeWithdrawalPlatform;
 
-    // 스필오버 반영 기준: 사람이 쿠팡/배민 중 한 곳이라도 정산서가 있으면 선정산이 반영된다.
-    // 그러므로 "정산서가 아예 없는 사람"의 처리완료 출금만 미반영으로 잡는다.
     const presentPersons = new Set();
     checkedSettlements().forEach(settlement => {
       (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
         const key = canon(String(rider.matchedRiderId || '').trim());
         if (key) presentPersons.add(key);
+        const name = String(rider.driverName || rider.riderName || rider.name || '').replace(/\s+/g, '');
+        if (name) presentPersons.add(`n:${name}`);
       });
     });
 
@@ -432,20 +433,22 @@ const BremFinalDeposit = (function () {
       const platform = normP(w.platform);
       if (platform && platformsPresent.size && !platformsPresent.has(platform)) return;
       const key = canon(String(w.driverId || '').trim());
-      const reflected = key && presentPersons.has(key);
-      if (reflected) return;
-      const reason = !key ? '기사 매칭 불가' : '직계약 정산서 없음';
+      const nameKey = String(w.driverName || '').replace(/\s+/g, '');
+      const onCheckedPart = (key && presentPersons.has(key))
+        || (nameKey && presentPersons.has(`n:${nameKey}`));
+      if (!onCheckedPart) return;
+      if (platform) return;
       unmatched.push({
         name: w.driverName || w.driverId || '-',
-        platform: platform || 'unknown',
+        platform: 'unknown',
         amount,
-        reason
+        reason: '플랫폼 미지정'
       });
       unmatchedTotal += amount;
     });
 
     if (!unmatched.length) {
-      box.innerHTML = '<p class="final-deposit-reconcile ok">✔ 처리완료 출금이 모두 정산서에 반영되었습니다.</p>';
+      box.innerHTML = '<p class="final-deposit-reconcile ok">✔ 체크한 부분 정산서 기준으로 선정산(처리완료)을 반영했습니다. 이 파일에 없는 출금은 이번 입금에서 빼지 않습니다.</p>';
       return;
     }
 
@@ -462,7 +465,7 @@ const BremFinalDeposit = (function () {
       <div class="final-deposit-reconcile warn">
         <p class="final-deposit-reconcile-head">
           ⚠ 선정산 미반영 처리완료 출금 <strong>${unmatched.length}</strong>건 · 합계 <strong>${formatNumber(unmatchedTotal)}</strong>원
-          <span class="final-deposit-reconcile-hint">— 이 금액이 「주정산 출금내역 처리완료」와 「최종입금 선정산」의 차이입니다. 해당 기사의 플랫폼을 바로잡거나(플랫폼 자동 교정), 정산서 누락을 확인하세요.</span>
+          <span class="final-deposit-reconcile-hint">— 체크한 부분 정산서에 있는 사람인데 출금 플랫폼이 비어 선정산에 못 붙인 건입니다.</span>
         </p>
         <div class="table-wrap">
           <table class="weekly-settlement-saved-table">
