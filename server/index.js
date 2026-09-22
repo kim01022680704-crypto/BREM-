@@ -1077,7 +1077,9 @@ app.post('/api/admin/riders/merge-auto', async (req, res) => {
 
 app.get('/api/admin/riders/count', async (req, res) => {
   try {
-    const result = await ridersAdmin.countRiders(getBearerToken(req));
+    const result = await ridersAdmin.countRiders(getBearerToken(req), {
+      status: req.query.status
+    });
     if (!result.ok) {
       return res.status(result.status || 400).json({ error: result.error });
     }

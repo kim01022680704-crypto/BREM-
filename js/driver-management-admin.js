@@ -3512,6 +3512,7 @@ const BremDriverManagementAdmin = (function () {
     const byLogin = new Map();
     const byName = new Map();
     drivers.forEach(driver => {
+      if (window.BremDriverUtils?.isRiderAppAccessBlocked?.(driver)) return;
       const idKey = matchKey(driver.baeminId || driver.raw_data?.baeminId);
       if (idKey && !byBaemin.has(idKey)) byBaemin.set(idKey, driver);
       const login = matchKey(makeLogin?.(driver) || '');

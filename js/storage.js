@@ -348,7 +348,31 @@ const BremStorage = (function () {
   let syncAdminAccountsPromise = null;
   let driversSyncPromise = null;
   let driversFetchAllPromise = null;
-  let driversLoadMeta = { complete: false, supabaseTotal: 0 };
+  let driversLoadMeta = { complete: false, supabaseTotal: 0, fetchStatus: undefined };
+
+  function isDriverRegistryPage() {
+    try {
+      const path = String(window.location?.pathname || '');
+      return /(?:^|\/)(drivers|rider-manage|driver-bulk|driver-duplicates|drivers-duplicates)\.html$/i.test(path);
+    } catch {
+      return false;
+    }
+  }
+
+  function resolveDriversFetchStatus(options = {}) {
+    if (options.includeInactive === true) return '';
+    const status = String(options.status || '').trim();
+    if (status === '전체' || status === 'all') return '';
+    if (status) return status;
+    if (String(options.search || '').trim()) return '';
+    if (isDriverRegistryPage()) return '';
+    return '근무중';
+  }
+
+  function driversCacheMatchesFetchStatus(wanted) {
+    if (driversLoadMeta.fetchStatus === undefined) return false;
+    return String(driversLoadMeta.fetchStatus || '') === String(wanted || '');
+  }
   // 이름+전화 중복제거로 getAll()에서 빠진 id 도 조직도 등에서 이름을 찾을 수 있게 유지
   let driversByIdIndex = new Map();
   let dataMigrationsCompleted = false;
@@ -1000,22 +1024,28 @@ const BremStorage = (function () {
     indexDriversById(incoming);
     const rows = dedupeDriversList(incoming);
     const nextTotal = Number(meta.supabaseTotal ?? driversLoadMeta.supabaseTotal ?? rows.length);
+    const nextFetchStatus = Object.prototype.hasOwnProperty.call(meta, 'fetchStatus')
+      ? meta.fetchStatus
+      : driversLoadMeta.fetchStatus;
     if (meta.complete === true) {
       driversLoadMeta = {
         complete: true,
-        supabaseTotal: Number.isFinite(nextTotal) ? nextTotal : rows.length
+        supabaseTotal: Number.isFinite(nextTotal) ? nextTotal : rows.length,
+        fetchStatus: nextFetchStatus
       };
     } else if (meta.complete === false) {
       driversLoadMeta = {
         complete: false,
-        supabaseTotal: Number.isFinite(nextTotal) ? nextTotal : rows.length
+        supabaseTotal: Number.isFinite(nextTotal) ? nextTotal : rows.length,
+        fetchStatus: nextFetchStatus
       };
     } else if (Number.isFinite(nextTotal) && nextTotal > 0) {
       // complete 미지정 호출에서는 총원 메타만 갱신.
       // 로컬은 중복제거로 DB total 보다 적을 수 있어 그 이유로 complete 를 강등하지 않는다.
       driversLoadMeta = {
         complete: driversLoadMeta.complete,
-        supabaseTotal: nextTotal
+        supabaseTotal: nextTotal,
+        fetchStatus: nextFetchStatus
       };
     }
     setDriversCache(rows);
@@ -1023,7 +1053,8 @@ const BremStorage = (function () {
       ...meta,
       source: meta.source || 'sync',
       complete: driversLoadMeta.complete,
-      supabaseTotal: driversLoadMeta.supabaseTotal
+      supabaseTotal: driversLoadMeta.supabaseTotal,
+      fetchStatus: driversLoadMeta.fetchStatus
     });
   }
 
@@ -1051,7 +1082,7 @@ const BremStorage = (function () {
     // 총원보다 적게 저장된 "완료" 캐시는 폐기하고 서버에서 다시 받는다.
     if (supabaseTotal > 0 && cached.length < supabaseTotal) {
       window.BremDataCache?.invalidate?.(KEYS.drivers);
-      driversLoadMeta = { complete: false, supabaseTotal };
+      driversLoadMeta = { complete: false, supabaseTotal, fetchStatus: cacheMeta.meta.fetchStatus };
       return false;
     }
 
@@ -1069,9 +1100,11 @@ const BremStorage = (function () {
       }
     }
     indexDriversById(cached);
+    const fetchStatus = cacheMeta.meta.fetchStatus;
     driversLoadMeta = {
-      complete: true,
-      supabaseTotal: supabaseTotal || cached.length
+      complete: cacheMeta.meta.complete === true && fetchStatus !== undefined,
+      supabaseTotal: supabaseTotal || cached.length,
+      fetchStatus
     };
     logDataSource('riders', true, 'tab session');
     document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
@@ -2156,6 +2189,7 @@ const BremStorage = (function () {
       ...(window.BremDataCache?.getStatus?.() || {}),
       bootstrapComplete,
       driversComplete: driversLoadMeta.complete,
+      driversFetchStatus: driversLoadMeta.fetchStatus,
       driversCount: drivers.getAll().length,
       driversSupabaseTotal: driversLoadMeta.supabaseTotal,
       driversLoadedAt: driversMeta?.storedAt || null,
@@ -2251,20 +2285,21 @@ const BremStorage = (function () {
     invalidateDriversNormalizeCache();
     driversByIdIndex = new Map();
     setDriversCache([]);
-    driversLoadMeta = { complete: false, supabaseTotal: 0 };
+    driversLoadMeta = { complete: false, supabaseTotal: 0, fetchStatus: undefined };
     window.BremDataCache?.invalidate?.(KEYS.drivers);
     activeStorageAdapter.invalidateKeys?.([KEYS.drivers]);
   }
 
-  function markDriversLoadComplete(count, supabaseTotal) {
+  function markDriversLoadComplete(count, supabaseTotal, fetchStatus) {
     const total = Number.isFinite(Number(supabaseTotal)) ? Number(supabaseTotal) : count;
     driversLoadMeta = {
       complete: !isDriversCountShort(count, total),
-      supabaseTotal: total
+      supabaseTotal: total,
+      fetchStatus: fetchStatus !== undefined ? fetchStatus : driversLoadMeta.fetchStatus
     };
   }
 
-  async function continueDriverPagesInBackground(startOffset, pageSize, supabaseTotal) {
+  async function continueDriverPagesInBackground(startOffset, pageSize, supabaseTotal, fetchStatus) {
     if (driversBackgroundFetchPromise) return driversBackgroundFetchPromise;
 
     driversBackgroundFetchPromise = (async () => {
@@ -2277,7 +2312,8 @@ const BremStorage = (function () {
           const result = await syncDriversFromServer({
             limit: pageSize,
             offset,
-            append: true
+            append: true,
+            status: fetchStatus !== undefined ? fetchStatus : resolveDriversFetchStatus()
           });
           if (!result.ok) {
             failed = true;
@@ -2301,7 +2337,11 @@ const BremStorage = (function () {
             detail: { complete: true, count: deduped.length, supabaseTotal: total }
           }));
         } else {
-          driversLoadMeta = { complete: false, supabaseTotal: total || deduped.length };
+          driversLoadMeta = {
+            complete: false,
+            supabaseTotal: total || deduped.length,
+            fetchStatus: fetchStatus !== undefined ? fetchStatus : driversLoadMeta.fetchStatus
+          };
           markDriversCache(deduped, { source: 'network', complete: false, supabaseTotal: total || deduped.length });
           document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
             detail: {
@@ -2321,7 +2361,8 @@ const BremStorage = (function () {
         const deduped = dedupeDriversList(drivers.getAll());
         driversLoadMeta = {
           complete: false,
-          supabaseTotal: Number(supabaseTotal ?? driversLoadMeta.supabaseTotal ?? deduped.length)
+          supabaseTotal: Number(supabaseTotal ?? driversLoadMeta.supabaseTotal ?? deduped.length),
+          fetchStatus: fetchStatus !== undefined ? fetchStatus : driversLoadMeta.fetchStatus
         };
         markDriversCache(deduped, {
           source: 'network',
@@ -2345,9 +2386,12 @@ const BremStorage = (function () {
       await driversFetchAllPromise;
     }
 
+    const countStatus = driversLoadMeta.fetchStatus !== undefined
+      ? driversLoadMeta.fetchStatus
+      : resolveDriversFetchStatus(options);
     let serverTotal = Number(driversLoadMeta.supabaseTotal || 0);
     try {
-      const counted = await countRidersViaServer();
+      const counted = await countRidersViaServer({ status: countStatus });
       if (counted?.ok && Number(counted.count) > 0) {
         serverTotal = Number(counted.count);
         driversLoadMeta.supabaseTotal = serverTotal;
@@ -2357,20 +2401,30 @@ const BremStorage = (function () {
     }
 
     const count = drivers.getAll().length;
-    if (driversLoadMeta.complete && count > 0 && !isDriversCountShort(count, serverTotal)) {
+    if (
+      driversLoadMeta.complete
+      && count > 0
+      && driversCacheMatchesFetchStatus(countStatus)
+      && !isDriversCountShort(count, serverTotal)
+    ) {
       return { ok: true, count, supabaseTotal: serverTotal || count, complete: true };
     }
 
     const result = await fetchAllDriversFromServer({
       force: options.force === true,
-      ...(options.view ? { view: options.view } : {})
+      ...(options.view ? { view: options.view } : {}),
+      ...(options.includeInactive === true || countStatus === '' ? { includeInactive: true } : {})
     });
     if (driversBackgroundFetchPromise) await driversBackgroundFetchPromise;
     const loaded = drivers.getAll().length;
     const knownTotal = Number(driversLoadMeta.supabaseTotal || serverTotal || 0);
     const short = isDriversCountShort(loaded, knownTotal);
     if (short) {
-      driversLoadMeta = { complete: false, supabaseTotal: knownTotal || loaded };
+      driversLoadMeta = {
+        complete: false,
+        supabaseTotal: knownTotal || loaded,
+        fetchStatus: driversLoadMeta.fetchStatus
+      };
     }
     const complete = Boolean(driversLoadMeta.complete) && !short;
     return {
@@ -2387,8 +2441,10 @@ const BremStorage = (function () {
 
   async function fetchAllDriversFromServer(options = {}) {
     const force = options.force === true;
-    const hasFilter = Boolean(String(options.search || '').trim())
-      || (options.status && options.status !== '전체');
+    const hasSearch = Boolean(String(options.search || '').trim());
+    const explicitStatus = String(options.status || '').trim();
+    const hasFilter = hasSearch || (explicitStatus && explicitStatus !== '전체' && explicitStatus !== 'all');
+    const fetchStatus = resolveDriversFetchStatus(options);
 
     if (!isProductionMode()) {
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.reloadRiders) {
@@ -2398,6 +2454,7 @@ const BremStorage = (function () {
         let supabaseTotal = null;
 
         if (force) clearDriversCacheHard();
+        driversLoadMeta.fetchStatus = fetchStatus;
 
         while (hasMore) {
           const result = await activeStorageAdapter.reloadRiders({
@@ -2405,7 +2462,8 @@ const BremStorage = (function () {
             offset,
             append: offset > 0,
             force: force && offset === 0,
-            ...(options.view ? { view: options.view } : {})
+            ...(options.view ? { view: options.view } : {}),
+            ...(fetchStatus ? { status: fetchStatus } : {})
           });
           const meta = activeStorageAdapter.getRidersMeta?.() || {};
           supabaseTotal = meta.total ?? supabaseTotal;
@@ -2415,8 +2473,8 @@ const BremStorage = (function () {
         }
 
         const deduped = dedupeDriversList(drivers.getAll());
-        markDriversLoadComplete(deduped.length, supabaseTotal ?? deduped.length);
-        markDriversCache(deduped, { source: 'network', complete: true });
+        markDriversLoadComplete(deduped.length, supabaseTotal ?? deduped.length, fetchStatus);
+        markDriversCache(deduped, { source: 'network', complete: true, fetchStatus });
         return {
           ok: true,
           count: deduped.length,
@@ -2425,7 +2483,7 @@ const BremStorage = (function () {
       }
 
       const list = drivers.getAll();
-      markDriversLoadComplete(list.length, list.length);
+      markDriversLoadComplete(list.length, list.length, fetchStatus);
       return { ok: true, count: list.length, supabaseTotal: list.length };
     }
 
@@ -2434,12 +2492,17 @@ const BremStorage = (function () {
         limit: options.limit || 200,
         offset: options.offset || 0,
         search: options.search || '',
-        status: options.status || '',
+        status: Object.prototype.hasOwnProperty.call(options, 'status') ? options.status || '' : fetchStatus,
         append: options.append === true
       });
     }
 
-    if (!force && driversLoadMeta.complete && drivers.getAll().length > 0) {
+    if (
+      !force
+      && driversLoadMeta.complete
+      && drivers.getAll().length > 0
+      && driversCacheMatchesFetchStatus(fetchStatus)
+    ) {
       logDataSource('riders', true);
       return {
         ok: true,
@@ -2464,6 +2527,7 @@ const BremStorage = (function () {
       let failed = false;
 
       if (force) clearDriversCacheHard();
+      driversLoadMeta.fetchStatus = fetchStatus;
 
       driversFullFetchInProgress = true;
       try {
@@ -2472,6 +2536,7 @@ const BremStorage = (function () {
             limit: pageSize,
             offset,
             append: offset > 0,
+            status: fetchStatus,
             ...(options.view ? { view: options.view } : {})
           });
           if (!result.ok) {
@@ -2516,7 +2581,7 @@ const BremStorage = (function () {
           document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
 
           if (!force && pages === 1 && hasMore) {
-            void continueDriverPagesInBackground(offset, pageSize, supabaseTotal);
+            void continueDriverPagesInBackground(offset, pageSize, supabaseTotal, fetchStatus);
             window.BremPerf?.timeEnd?.('storage.fetchAllDrivers');
             document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
               detail: {
@@ -2603,9 +2668,11 @@ const BremStorage = (function () {
     });
     if (options.view === 'list') params.set('view', 'list');
     const search = String(options.search || '').trim();
-    const status = String(options.status || '').trim();
+    const status = Object.prototype.hasOwnProperty.call(options, 'status')
+      ? String(options.status || '').trim()
+      : resolveDriversFetchStatus(options);
     if (search) params.set('search', search);
-    if (status && status !== '전체') params.set('status', status);
+    if (status && status !== '전체' && status !== 'all') params.set('status', status);
 
     const fetchRiders = () => adminRidersApi(`/api/admin/riders?${params.toString()}`);
     let result = await fetchRiders();
@@ -2653,7 +2720,11 @@ const BremStorage = (function () {
     }
     if (!options.append && !String(options.search || '').trim() && (!options.status || options.status === '전체')) {
       if (!driversFullFetchInProgress) {
-        driversLoadMeta = { complete: false, supabaseTotal: result.total ?? riderRows.length };
+        driversLoadMeta = {
+          complete: false,
+          supabaseTotal: result.total ?? riderRows.length,
+          fetchStatus: driversLoadMeta.fetchStatus
+        };
       }
     }
     window.BremPerf?.timeEnd?.('storage.syncDriversFromServer');
@@ -2688,8 +2759,12 @@ const BremStorage = (function () {
     return result;
   }
 
-  async function countRidersViaServer() {
-    const fetchCount = () => adminRidersApi('/api/admin/riders/count');
+  async function countRidersViaServer(options = {}) {
+    const params = new URLSearchParams();
+    const status = String(options.status || '').trim();
+    if (status && status !== '전체' && status !== 'all') params.set('status', status);
+    const qs = params.toString();
+    const fetchCount = () => adminRidersApi(`/api/admin/riders/count${qs ? `?${qs}` : ''}`);
     let result = await fetchCount();
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
@@ -2701,7 +2776,9 @@ const BremStorage = (function () {
     }
     if (result.ok) return result;
 
-    const listFallback = await adminRidersApi('/api/admin/riders?limit=1&offset=0');
+    const listParams = new URLSearchParams({ limit: '1', offset: '0' });
+    if (status && status !== '전체' && status !== 'all') listParams.set('status', status);
+    const listFallback = await adminRidersApi(`/api/admin/riders?${listParams}`);
     if (listFallback.ok) {
       return {
         ok: true,
@@ -2709,6 +2786,45 @@ const BremStorage = (function () {
       };
     }
     return result;
+  }
+
+  async function listRidersByStatuses(statuses, options = {}) {
+    const wanted = [...new Set((Array.isArray(statuses) ? statuses : [statuses])
+      .map(value => String(value || '').trim())
+      .filter(Boolean))];
+    if (!wanted.length) return [];
+
+    if (!isProductionMode()) {
+      return drivers.getAll().filter(driver => wanted.includes(String(driver.status || '').trim()));
+    }
+
+    const mapper = window.BremSupabaseMapper;
+    if (!mapper?.rowToRider) {
+      throw new Error('기사 데이터 변환 모듈이 없습니다.');
+    }
+
+    const all = [];
+    const pageSize = Math.min(Math.max(Number(options.limit) || 500, 20), 500);
+    for (const status of wanted) {
+      let offset = 0;
+      for (let page = 0; page < 80; page += 1) {
+        const params = new URLSearchParams({
+          limit: String(pageSize),
+          offset: String(offset),
+          status
+        });
+        if (options.view) params.set('view', options.view);
+        const result = await adminRidersApi(`/api/admin/riders?${params}`);
+        if (!result.ok) {
+          throw new Error(result.message || result.error || '휴무·퇴사 기사를 불러오지 못했습니다.');
+        }
+        const rows = (result.riders || []).map(row => mapper.rowToRider(row));
+        all.push(...rows);
+        if (!result.hasMore || !rows.length) break;
+        offset += rows.length;
+      }
+    }
+    return all;
   }
 
   function isRiderSelfUpdate(id) {
@@ -4697,11 +4813,20 @@ const BremStorage = (function () {
     const append = options.append === true;
 
     if (force && !append && !hasSearch && !hasStatusFilter) {
-      return fetchAllDriversFromServer({ force: true });
+      return fetchAllDriversFromServer({
+        force: true,
+        includeInactive: options.includeInactive === true,
+        ...(options.view ? { view: options.view } : {})
+      });
     }
 
     if (!force && !append && !hasSearch && !hasStatusFilter) {
-      if (driversLoadMeta.complete && drivers.getAll().length > 0) {
+      const fetchStatus = resolveDriversFetchStatus(options);
+      if (
+        driversLoadMeta.complete
+        && drivers.getAll().length > 0
+        && driversCacheMatchesFetchStatus(fetchStatus)
+      ) {
         logDataSource('riders', true);
         return {
           ok: true,
@@ -4710,7 +4835,11 @@ const BremStorage = (function () {
           supabaseTotal: driversLoadMeta.supabaseTotal
         };
       }
-      return fetchAllDriversFromServer({ force: false });
+      return fetchAllDriversFromServer({
+        force: false,
+        includeInactive: options.includeInactive === true,
+        ...(options.view ? { view: options.view } : {})
+      });
     }
 
     // 검색은 전체 동기화와 겹쳐도 막히지 않게 별도 경로
@@ -5943,6 +6072,10 @@ const BremStorage = (function () {
 
     getSupabaseTotal() {
       return driversLoadMeta.supabaseTotal || drivers.getAll().length;
+    },
+
+    async listByStatuses(statuses, options = {}) {
+      return listRidersByStatuses(statuses, options);
     },
 
     async deleteAll() {

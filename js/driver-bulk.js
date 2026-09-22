@@ -87,15 +87,15 @@
 
   async function ensureAllDriversLoaded() {
     const status = BremStorage.getCacheStatus?.() || {};
-    if (status.driversComplete && BremStorage.drivers.getAll().length > 0) {
+    if (status.driversComplete && status.driversFetchStatus === '' && BremStorage.drivers.getAll().length > 0) {
       return { ok: true, cached: true };
     }
-    const result = await BremStorage.fetchAllDriversFromServer?.({ force: false });
+    const result = await BremStorage.fetchAllDriversFromServer?.({ force: false, includeInactive: true });
     // 첫 페이지(100명)만 온 상태에서 중복검사를 하면 기존 기사가 '신규'로 잡혀 중복 등록된다.
     // 백그라운드 페이지까지 끝까지 기다린다.
     if (typeof BremStorage.awaitDriversFullyLoaded === 'function') {
       try {
-        await BremStorage.awaitDriversFullyLoaded();
+        await BremStorage.awaitDriversFullyLoaded({ includeInactive: true });
       } catch (error) {
         console.warn('[bulk] 기사 전체 로드 대기 실패:', error);
       }

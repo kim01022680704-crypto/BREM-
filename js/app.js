@@ -705,7 +705,7 @@
   refreshHeader();
   await fillRegionSelects();
   await loadEditFromQuery();
-  void BremStorage.reloadDrivers?.(false).then(async () => {
+  void BremStorage.reloadDrivers?.(false, { includeInactive: true }).then(async () => {
     refreshHeader();
     await fillRegionSelects();
     void loadEditFromQuery();

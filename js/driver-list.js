@@ -733,7 +733,9 @@
     await BremStorage.waitForDriversFetch?.();
 
     const cacheStatus = BremStorage.getCacheStatus?.() || {};
-    const hasCompleteCache = cacheStatus.driversComplete && BremStorage.drivers.getAll().length > 0;
+    const hasCompleteCache = cacheStatus.driversComplete
+      && cacheStatus.driversFetchStatus === ''
+      && BremStorage.drivers.getAll().length > 0;
 
     if (!force && hasCompleteCache) {
       renderedSnapshot = '';
@@ -752,8 +754,8 @@
         selectedIds.clear();
       }
 
-      const result = await BremStorage.fetchAllDriversFromServer?.({ force, view: 'list' })
-        || await BremStorage.reloadDrivers?.(force);
+      const result = await BremStorage.fetchAllDriversFromServer?.({ force, view: 'list', includeInactive: true })
+        || await BremStorage.reloadDrivers?.(force, { includeInactive: true });
 
       if (result?.ok === false && !BremStorage.drivers.getAll().length) {
         showListLoadError(result.message || 'Supabase에서 기사 목록을 불러오지 못했습니다.');
@@ -775,7 +777,11 @@
 
   function isDriverListCacheReady() {
     const cacheStatus = BremStorage.getCacheStatus?.() || {};
-    return Boolean(cacheStatus.driversComplete && BremStorage.drivers.getAll().length);
+    return Boolean(
+      cacheStatus.driversComplete
+      && cacheStatus.driversFetchStatus === ''
+      && BremStorage.drivers.getAll().length
+    );
   }
 
   function finishListLoading(options = {}) {

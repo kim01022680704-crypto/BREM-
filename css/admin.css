@@ -15289,6 +15289,10 @@ tr.is-week-first td {
   gap: 8px;
 }
 
+#inactive-drivers .inactive-drivers-tabs {
+  margin: 12px 18px 0;
+}
+
 .inactive-drivers-toolbar {
   display: flex;
   flex-wrap: wrap;

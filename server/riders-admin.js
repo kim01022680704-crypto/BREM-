@@ -1573,14 +1573,19 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
   };
 }
 
-async function countRiders(accessToken) {
+async function countRiders(accessToken, options = {}) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
 
   const supabase = getServiceClient();
-  const { count, error } = await supabase
+  let query = supabase
     .from('riders')
     .select('id', { count: 'exact', head: true });
+  const status = String(options.status || '').trim();
+  if (status && status !== '전체' && status !== 'all') {
+    query = query.eq('status', status);
+  }
+  const { count, error } = await query;
 
   if (error) {
     return { ok: false, status: 500, error: error.message || '기사 수를 확인하지 못했습니다.' };

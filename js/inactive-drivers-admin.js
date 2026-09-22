@@ -8,13 +8,18 @@ window.BremInactiveDriversAdmin = (function () {
     bound: false,
     loading: false,
     applying: false,
+    tab: 'zero',
     rows: [],
+    rosterRows: [],
+    rosterLoaded: false,
+    rosterLoading: false,
     selected: new Set(),
     minWeeks: DEFAULT_MIN_WEEKS,
     maxWeeks: 0,
     loadedLookback: 0,
-    statusFilter: '근무중',
-    search: ''
+    search: '',
+    rosterSearch: '',
+    rosterStatusFilter: 'all'
   };
 
   function $(selector) {
@@ -95,6 +100,18 @@ window.BremInactiveDriversAdmin = (function () {
 
   function loginId(driver) {
     return window.BremDriverUtils?.makeDriverLoginId?.(driver) || '';
+  }
+
+  function matchesSearch(driver, query) {
+    const keyword = String(query || '').trim().toLowerCase();
+    if (!keyword) return true;
+    const hay = [
+      driver.name,
+      driver.phone,
+      loginId(driver),
+      driver.baeminId
+    ].join(' ').toLowerCase();
+    return hay.includes(keyword);
   }
 
   function neededLookbackWeeks() {
@@ -215,25 +232,31 @@ window.BremInactiveDriversAdmin = (function () {
     return { consecutive, lastActiveWeek };
   }
 
-  function visibleRows() {
+  function visibleZeroRows() {
     const query = state.search.trim().toLowerCase();
     return state.rows.filter(row => {
-      if (state.statusFilter !== 'all' && row.status !== state.statusFilter) return false;
+      if (row.status !== '근무중') return false;
       if (row.consecutive < state.minWeeks) return false;
       if (state.maxWeeks > 0 && row.consecutive > state.maxWeeks) return false;
-      if (!query) return true;
-      const hay = [
-        row.driver.name,
-        row.driver.phone,
-        loginId(row.driver),
-        row.driver.baeminId
-      ].join(' ').toLowerCase();
-      return hay.includes(query);
+      return matchesSearch(row.driver, query);
     });
   }
 
+  function visibleRosterRows() {
+    return state.rosterRows.filter(row => {
+      if (state.rosterStatusFilter !== 'all' && row.status !== state.rosterStatusFilter) return false;
+      return matchesSearch(row.driver, state.rosterSearch);
+    });
+  }
+
+  function visibleRows() {
+    return state.tab === 'roster' ? visibleRosterRows() : visibleZeroRows();
+  }
+
   function syncSelectAll() {
-    const selectAll = $('#inactiveDriverSelectAll');
+    const selectAll = state.tab === 'roster'
+      ? $('#inactiveDriverRosterSelectAll')
+      : $('#inactiveDriverSelectAll');
     if (!selectAll) return;
     const rows = visibleRows();
     const selectedVisible = rows.filter(row => state.selected.has(row.driver.id));
@@ -242,11 +265,20 @@ window.BremInactiveDriversAdmin = (function () {
   }
 
   function updateSummary() {
-    const summary = $('#inactiveDriverSummary');
     const selectedCount = $('#inactiveDriverSelectedCount');
     const rows = visibleRows();
-    if (summary) {
-      summary.textContent = `무실적 ${weekRangeLabel()} ${rows.length}명 · 조회 ${neededLookbackWeeks()}주 · 정산주(수~화) · 콜수입력 기준`;
+    if (state.tab === 'roster') {
+      const summary = $('#inactiveDriverRosterSummary');
+      const off = state.rosterRows.filter(row => row.status === '휴무').length;
+      const left = state.rosterRows.filter(row => row.status === '퇴사').length;
+      if (summary) {
+        summary.textContent = `표시 ${rows.length}명 · 휴무 ${off}명 · 퇴사 ${left}명`;
+      }
+    } else {
+      const summary = $('#inactiveDriverSummary');
+      if (summary) {
+        summary.textContent = `무실적 ${weekRangeLabel()} ${rows.length}명 · 조회 ${neededLookbackWeeks()}주 · 정산주(수~화) · 콜수입력 기준`;
+      }
     }
     if (selectedCount) {
       selectedCount.textContent = `선택 ${state.selected.size}명`;
@@ -260,13 +292,12 @@ window.BremInactiveDriversAdmin = (function () {
     syncSelectAll();
   }
 
-  function renderTable() {
+  function renderZeroTable() {
     const body = $('#inactiveDriverRows');
     if (!body) return;
-    const rows = visibleRows();
+    const rows = visibleZeroRows();
     if (!rows.length) {
       body.innerHTML = '<tr><td colspan="9" class="inactive-drivers-empty">조건에 맞는 기사가 없습니다.</td></tr>';
-      updateSummary();
       return;
     }
 
@@ -295,6 +326,41 @@ window.BremInactiveDriversAdmin = (function () {
         </tr>
       `;
     }).join('');
+  }
+
+  function renderRosterTable() {
+    const body = $('#inactiveDriverRosterRows');
+    if (!body) return;
+    const rows = visibleRosterRows();
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="7" class="inactive-drivers-empty">휴무·퇴사 기사가 없습니다.</td></tr>';
+      return;
+    }
+
+    const utils = window.BremDriverUtils;
+    body.innerHTML = rows.map(row => {
+      const statusClass = utils?.statusClass?.(row.status) || '';
+      const phone = utils?.formatPhoneDisplay?.(row.driver.phone) || row.driver.phone || '-';
+      const platforms = utils?.renderPlatformBadges?.(row.driver) || '-';
+      return `
+        <tr data-driver-id="${escapeHtml(row.driver.id)}">
+          <td class="inactive-drivers-check-cell">
+            <input type="checkbox" data-inactive-roster-id="${escapeHtml(row.driver.id)}" ${state.selected.has(row.driver.id) ? 'checked' : ''}>
+          </td>
+          <td><strong>${escapeHtml(row.driver.name || '-')}</strong></td>
+          <td>${escapeHtml(loginId(row.driver) || '-')}</td>
+          <td>${escapeHtml(phone)}</td>
+          <td><span class="badge ${statusClass}">${escapeHtml(row.status)}</span></td>
+          <td>${escapeHtml(formatJoinDate(row.driver))}</td>
+          <td>${platforms}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function renderTable() {
+    if (state.tab === 'roster') renderRosterTable();
+    else renderZeroTable();
     updateSummary();
   }
 
@@ -312,19 +378,38 @@ window.BremInactiveDriversAdmin = (function () {
           lastActiveWeek: stats.lastActiveWeek
         };
       })
-      .filter(row => row.consecutive > 0)
+      .filter(row => row.status === '근무중' && row.consecutive > 0)
       .sort((a, b) => (
         b.consecutive - a.consecutive
         || String(a.driver.name || '').localeCompare(String(b.driver.name || ''), 'ko')
       ));
 
-    const visibleIds = new Set(visibleRows().map(row => row.driver.id));
-    state.selected = new Set([...state.selected].filter(id => visibleIds.has(id)));
+    if (state.tab === 'zero') {
+      const visibleIds = new Set(visibleZeroRows().map(row => row.driver.id));
+      state.selected = new Set([...state.selected].filter(id => visibleIds.has(id)));
+    }
   }
 
   function lookbackSinceDate() {
     const keys = lookbackWeekKeys();
     return keys[keys.length - 1] || todayKey();
+  }
+
+  function setTab(tab) {
+    state.tab = tab === 'roster' ? 'roster' : 'zero';
+    state.selected = new Set();
+    const zeroHelp = $('#inactiveDriverZeroHelp');
+    const rosterHelp = $('#inactiveDriverRosterHelp');
+    const zeroPanel = $('#inactiveDriverZeroPanel');
+    const rosterPanel = $('#inactiveDriverRosterPanel');
+    if (zeroHelp) zeroHelp.hidden = state.tab !== 'zero';
+    if (rosterHelp) rosterHelp.hidden = state.tab !== 'roster';
+    if (zeroPanel) zeroPanel.hidden = state.tab !== 'zero';
+    if (rosterPanel) rosterPanel.hidden = state.tab !== 'roster';
+    document.querySelectorAll('#inactive-drivers [data-inactive-tab]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.inactiveTab === state.tab);
+    });
+    renderTable();
   }
 
   async function applyWeekFilter() {
@@ -362,6 +447,55 @@ window.BremInactiveDriversAdmin = (function () {
       if (hint) hint.textContent = '불러오기에 실패했습니다. 다시 새로고침하세요.';
     } finally {
       state.loading = false;
+    }
+  }
+
+  async function loadRoster(force = false) {
+    if (state.rosterLoading) return;
+    if (state.rosterLoaded && !force) {
+      renderTable();
+      return;
+    }
+    state.rosterLoading = true;
+    const hint = $('#inactiveDriverLoadHint');
+    if (hint) hint.textContent = '휴무·퇴사 기사를 불러오는 중…';
+    try {
+      const list = await window.BremStorage?.drivers?.listByStatuses?.(['휴무', '퇴사']) || [];
+      state.rosterRows = list
+        .map(driver => ({ driver, status: driverStatus(driver) }))
+        .filter(row => row.status === '휴무' || row.status === '퇴사')
+        .sort((a, b) => (
+          String(a.status).localeCompare(String(b.status), 'ko')
+          || String(a.driver.name || '').localeCompare(String(b.driver.name || ''), 'ko')
+        ));
+      state.rosterLoaded = true;
+      if (state.tab === 'roster') {
+        const visibleIds = new Set(visibleRosterRows().map(row => row.driver.id));
+        state.selected = new Set([...state.selected].filter(id => visibleIds.has(id)));
+      }
+      renderTable();
+      const off = state.rosterRows.filter(row => row.status === '휴무').length;
+      const left = state.rosterRows.filter(row => row.status === '퇴사').length;
+      if (hint) hint.textContent = `휴무 ${off}명 · 퇴사 ${left}명`;
+    } catch (error) {
+      showToast(error.message || '휴무·퇴사 목록을 불러오지 못했습니다.');
+      if (hint) hint.textContent = '불러오기에 실패했습니다. 다시 새로고침하세요.';
+    } finally {
+      state.rosterLoading = false;
+    }
+  }
+
+  function dropInactiveFromWorkingCache(ids) {
+    const drop = new Set((ids || []).map(id => String(id)));
+    if (!drop.size) return;
+    const current = window.BremStorage?.drivers?.getAll?.() || [];
+    const next = current.filter(driver => {
+      if (!drop.has(String(driver.id))) return true;
+      const status = driverStatus(driver);
+      return status !== '휴무' && status !== '퇴사';
+    });
+    if (next.length !== current.length) {
+      window.BremStorage?.drivers?.saveAll?.(next);
     }
   }
 
@@ -407,12 +541,18 @@ window.BremInactiveDriversAdmin = (function () {
         batch.forEach(id => state.selected.delete(id));
         updateSummary();
       }
+      dropInactiveFromWorkingCache(ids.slice(0, done));
+      state.rosterLoaded = false;
       showToast(`${done}명을 ${label} 처리했습니다. 라이더앱 접속이 차단됩니다.`);
-      collectRows();
-      renderTable();
-      if (hint) {
-        const current = weekStartKey(todayKey());
-        hint.textContent = `이번 정산주 ${formatWeekLabel(current)} · 콜수입력 0콜 ${weekRangeLabel()}`;
+      if (state.tab === 'roster') {
+        await loadRoster(true);
+      } else {
+        collectRows();
+        renderTable();
+        if (hint) {
+          const current = weekStartKey(todayKey());
+          hint.textContent = `이번 정산주 ${formatWeekLabel(current)} · 콜수입력 0콜 ${weekRangeLabel()}`;
+        }
       }
     } catch (error) {
       showToast(
@@ -420,8 +560,12 @@ window.BremInactiveDriversAdmin = (function () {
           ? `${done}명까지 저장했고, 나머지는 실패했습니다. ${error.message || ''}`.trim()
           : (error.message || `${label} 처리에 실패했습니다.`)
       );
-      collectRows();
-      renderTable();
+      if (state.tab === 'roster') {
+        await loadRoster(true);
+      } else {
+        collectRows();
+        renderTable();
+      }
     } finally {
       state.applying = false;
       updateSummary();
@@ -432,8 +576,19 @@ window.BremInactiveDriversAdmin = (function () {
     if (state.bound) return;
     state.bound = true;
 
+    document.querySelectorAll('#inactive-drivers [data-inactive-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = String(btn.dataset.inactiveTab || 'zero');
+        setTab(tab);
+        if (tab === 'roster') void loadRoster(false);
+      });
+    });
     $('#inactiveDriverSearch')?.addEventListener('input', event => {
       state.search = String(event.target.value || '');
+      renderTable();
+    });
+    $('#inactiveDriverRosterSearch')?.addEventListener('input', event => {
+      state.rosterSearch = String(event.target.value || '');
       renderTable();
     });
     $('#inactiveDriverMinWeeks')?.addEventListener('change', () => {
@@ -454,13 +609,21 @@ window.BremInactiveDriversAdmin = (function () {
         void applyWeekFilter();
       }
     });
-    $('#inactiveDriverStatusFilter')?.addEventListener('change', event => {
-      state.statusFilter = String(event.target.value || '근무중');
+    $('#inactiveDriverRosterStatusFilter')?.addEventListener('change', event => {
+      state.rosterStatusFilter = String(event.target.value || 'all');
       renderTable();
     });
     $('#inactiveDriverSelectAll')?.addEventListener('change', event => {
       const checked = Boolean(event.target.checked);
-      visibleRows().forEach(row => {
+      visibleZeroRows().forEach(row => {
+        if (checked) state.selected.add(row.driver.id);
+        else state.selected.delete(row.driver.id);
+      });
+      renderTable();
+    });
+    $('#inactiveDriverRosterSelectAll')?.addEventListener('change', event => {
+      const checked = Boolean(event.target.checked);
+      visibleRosterRows().forEach(row => {
         if (checked) state.selected.add(row.driver.id);
         else state.selected.delete(row.driver.id);
       });
@@ -475,6 +638,15 @@ window.BremInactiveDriversAdmin = (function () {
       else state.selected.delete(id);
       updateSummary();
     });
+    $('#inactiveDriverRosterRows')?.addEventListener('change', event => {
+      const input = event.target.closest('input[data-inactive-roster-id]');
+      if (!input) return;
+      const id = String(input.dataset.inactiveRosterId || '');
+      if (!id) return;
+      if (input.checked) state.selected.add(id);
+      else state.selected.delete(id);
+      updateSummary();
+    });
     $('#inactiveDriverApplyOffBtn')?.addEventListener('click', () => {
       void applyStatus('휴무');
     });
@@ -482,7 +654,8 @@ window.BremInactiveDriversAdmin = (function () {
       void applyStatus('퇴사');
     });
     $('#inactiveDriverRefreshBtn')?.addEventListener('click', () => {
-      void loadAndRender();
+      if (state.tab === 'roster') void loadRoster(true);
+      else void loadAndRender();
     });
   }
 
@@ -490,11 +663,15 @@ window.BremInactiveDriversAdmin = (function () {
     bind();
     restoreWeekRange();
     syncWeekInputs();
-    const statusFilter = $('#inactiveDriverStatusFilter');
-    if (statusFilter && !statusFilter.value) statusFilter.value = '근무중';
     applyWeekRangeFromInputs();
-    state.statusFilter = String(statusFilter?.value || '근무중');
     state.search = String($('#inactiveDriverSearch')?.value || '');
+    state.rosterSearch = String($('#inactiveDriverRosterSearch')?.value || '');
+    state.rosterStatusFilter = String($('#inactiveDriverRosterStatusFilter')?.value || 'all');
+    setTab(state.tab);
+    if (state.tab === 'roster') {
+      await loadRoster(true);
+      return;
+    }
     await loadAndRender();
   }
 

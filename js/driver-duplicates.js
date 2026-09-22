@@ -47,7 +47,11 @@
 
   function isDriverListCacheReady() {
     const cacheStatus = BremStorage.getCacheStatus?.() || {};
-    return Boolean(cacheStatus.driversComplete && BremStorage.drivers.getAll().length > 0);
+    return Boolean(
+      cacheStatus.driversComplete
+      && cacheStatus.driversFetchStatus === ''
+      && BremStorage.drivers.getAll().length > 0
+    );
   }
 
   async function loadAllDrivers(force = false) {
@@ -56,7 +60,9 @@
     await BremStorage.waitForDriversFetch?.();
 
     const cacheStatus = BremStorage.getCacheStatus?.() || {};
-    const hasCompleteCache = cacheStatus.driversComplete && BremStorage.drivers.getAll().length > 0;
+    const hasCompleteCache = cacheStatus.driversComplete
+      && cacheStatus.driversFetchStatus === ''
+      && BremStorage.drivers.getAll().length > 0;
 
     if (!force && hasCompleteCache) {
       renderAll();
@@ -68,8 +74,8 @@
     }
 
     const runLoad = async () => {
-      const result = await BremStorage.fetchAllDriversFromServer?.({ force, view: 'list' })
-        || await BremStorage.reloadDrivers?.(force);
+      const result = await BremStorage.fetchAllDriversFromServer?.({ force, view: 'list', includeInactive: true })
+        || await BremStorage.reloadDrivers?.(force, { includeInactive: true });
 
       if (result?.ok === false && !BremStorage.drivers.getAll().length) {
         finishListLoading({

@@ -18,7 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260921off2">
+  <link rel="stylesheet" href="css/admin.css?v=20260922active1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -6480,65 +6480,103 @@
               <button type="button" class="primary-btn danger-btn" id="inactiveDriverApplyLeftBtn" disabled>선택 → 퇴사</button>
             </div>
           </div>
-          <p class="form-help">콜수입력 기준으로 정산주(수~화) 0콜 연속 주수를 보여 줍니다. 무실적 기간은 몇 주부터 몇 주까지 직접 넣으면 됩니다. 끝까지 비우면 그 주 이상입니다. 휴무·퇴사는 300명씩 나눠 선택한 인원 전부 처리합니다. 처리하면 라이더앱 접속이 막힙니다.</p>
+          <div class="revenue-sub-tabs inactive-drivers-tabs" role="tablist" aria-label="비활성기사 소메뉴">
+            <button type="button" class="revenue-sub-btn active" data-inactive-tab="zero">무실적 (근무중)</button>
+            <button type="button" class="revenue-sub-btn" data-inactive-tab="roster">휴무 · 퇴사 목록</button>
+          </div>
+          <p class="form-help" id="inactiveDriverZeroHelp">콜수입력 기준으로 정산주(수~화) 0콜 연속 주수를 보여 줍니다. 무실적 기간은 몇 주부터 몇 주까지 직접 넣으면 됩니다. 끝까지 비우면 그 주 이상입니다. 휴무·퇴사는 300명씩 나눠 선택한 인원 전부 처리합니다. 처리하면 라이더앱 접속이 막힙니다.</p>
+          <p class="form-help" id="inactiveDriverRosterHelp" hidden>이미 휴무·퇴사 처리된 기사입니다. 정산·급여·대시보드에는 나오지 않습니다. 기사등록 전체검색에서는 찾을 수 있습니다. 라이더앱 접속은 막혀 있습니다.</p>
           <p class="form-help" id="inactiveDriverLoadHint">목록을 준비하는 중…</p>
-          <div class="inactive-drivers-toolbar">
-            <label class="field">
-              <span class="field-label">검색</span>
-              <input type="search" id="inactiveDriverSearch" placeholder="이름 · 전화 · ERP ID · 배민ID" data-readonly-allow="true">
-            </label>
-            <div class="inactive-drivers-week-range" role="group" aria-label="무실적 기간">
+          <div id="inactiveDriverZeroPanel">
+            <div class="inactive-drivers-toolbar">
               <label class="field">
-                <span class="field-label">몇 주부터</span>
-                <span class="inactive-drivers-week-input">
-                  <input type="number" id="inactiveDriverMinWeeks" min="1" max="52" value="4" inputmode="numeric" data-readonly-allow-filter="true">
-                  <span>주</span>
-                </span>
+                <span class="field-label">검색</span>
+                <input type="search" id="inactiveDriverSearch" placeholder="이름 · 전화 · ERP ID · 배민ID" data-readonly-allow="true">
               </label>
-              <span class="inactive-drivers-week-tilde">~</span>
+              <div class="inactive-drivers-week-range" role="group" aria-label="무실적 기간">
+                <label class="field">
+                  <span class="field-label">몇 주부터</span>
+                  <span class="inactive-drivers-week-input">
+                    <input type="number" id="inactiveDriverMinWeeks" min="1" max="52" value="4" inputmode="numeric" data-readonly-allow-filter="true">
+                    <span>주</span>
+                  </span>
+                </label>
+                <span class="inactive-drivers-week-tilde">~</span>
+                <label class="field">
+                  <span class="field-label">몇 주까지</span>
+                  <span class="inactive-drivers-week-input">
+                    <input type="number" id="inactiveDriverMaxWeeks" min="1" max="52" placeholder="이상" inputmode="numeric" data-readonly-allow-filter="true">
+                    <span>주</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+            <p class="direct-inline-stats" id="inactiveDriverSummary">무실적 0명</p>
+            <div class="table-wrap">
+              <table class="inactive-drivers-table">
+                <thead>
+                  <tr>
+                    <th class="inactive-drivers-check-cell">
+                      <label class="select-all-label">
+                        <input type="checkbox" id="inactiveDriverSelectAll" data-readonly-allow="true">
+                        전체
+                      </label>
+                    </th>
+                    <th>이름</th>
+                    <th>ERP ID</th>
+                    <th>전화</th>
+                    <th>상태</th>
+                    <th>입사일</th>
+                    <th>마지막 콜 주</th>
+                    <th>무실적</th>
+                    <th>플랫폼</th>
+                  </tr>
+                </thead>
+                <tbody id="inactiveDriverRows">
+                  <tr><td colspan="9" class="inactive-drivers-empty">메뉴를 열면 목록을 불러옵니다.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div id="inactiveDriverRosterPanel" hidden>
+            <div class="inactive-drivers-toolbar">
               <label class="field">
-                <span class="field-label">몇 주까지</span>
-                <span class="inactive-drivers-week-input">
-                  <input type="number" id="inactiveDriverMaxWeeks" min="1" max="52" placeholder="이상" inputmode="numeric" data-readonly-allow-filter="true">
-                  <span>주</span>
-                </span>
+                <span class="field-label">검색</span>
+                <input type="search" id="inactiveDriverRosterSearch" placeholder="이름 · 전화 · ERP ID · 배민ID" data-readonly-allow="true">
+              </label>
+              <label class="field">
+                <span class="field-label">상태</span>
+                <select id="inactiveDriverRosterStatusFilter" data-readonly-allow-filter="true">
+                  <option value="all" selected>휴무 · 퇴사</option>
+                  <option value="휴무">휴무</option>
+                  <option value="퇴사">퇴사</option>
+                </select>
               </label>
             </div>
-            <label class="field">
-              <span class="field-label">상태</span>
-              <select id="inactiveDriverStatusFilter" data-readonly-allow-filter="true">
-                <option value="근무중" selected>근무중</option>
-                <option value="휴무">휴무</option>
-                <option value="퇴사">퇴사</option>
-                <option value="all">전체</option>
-              </select>
-            </label>
-          </div>
-          <p class="direct-inline-stats" id="inactiveDriverSummary">무실적 0명</p>
-          <div class="table-wrap">
-            <table class="inactive-drivers-table">
-              <thead>
-                <tr>
-                  <th class="inactive-drivers-check-cell">
-                    <label class="select-all-label">
-                      <input type="checkbox" id="inactiveDriverSelectAll" data-readonly-allow="true">
-                      전체
-                    </label>
-                  </th>
-                  <th>이름</th>
-                  <th>ERP ID</th>
-                  <th>전화</th>
-                  <th>상태</th>
-                  <th>입사일</th>
-                  <th>마지막 콜 주</th>
-                  <th>무실적</th>
-                  <th>플랫폼</th>
-                </tr>
-              </thead>
-              <tbody id="inactiveDriverRows">
-                <tr><td colspan="9" class="inactive-drivers-empty">메뉴를 열면 목록을 불러옵니다.</td></tr>
-              </tbody>
-            </table>
+            <p class="direct-inline-stats" id="inactiveDriverRosterSummary">휴무 · 퇴사 0명</p>
+            <div class="table-wrap">
+              <table class="inactive-drivers-table">
+                <thead>
+                  <tr>
+                    <th class="inactive-drivers-check-cell">
+                      <label class="select-all-label">
+                        <input type="checkbox" id="inactiveDriverRosterSelectAll" data-readonly-allow="true">
+                        전체
+                      </label>
+                    </th>
+                    <th>이름</th>
+                    <th>ERP ID</th>
+                    <th>전화</th>
+                    <th>상태</th>
+                    <th>입사일</th>
+                    <th>플랫폼</th>
+                  </tr>
+                </thead>
+                <tbody id="inactiveDriverRosterRows">
+                  <tr><td colspan="7" class="inactive-drivers-empty">메뉴를 열면 목록을 불러옵니다.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </article>
       </section>
@@ -9090,7 +9128,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260827mission9"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20260915audit3"></script>
-  <script src="js/storage.js?v=20260921off1"></script>
+  <script src="js/storage.js?v=20260922active1"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
@@ -9137,8 +9175,8 @@
   <script src="js/settlement-result-direct.js?v=20260915negguard1"></script>
   <script src="js/final-deposit.js?v=20260915audit2"></script>
   <script src="js/tax-management-admin.js?v=20260830tax2"></script>
-  <script src="js/driver-management-admin.js?v=20260922crawlmatch1"></script>
-  <script src="js/inactive-drivers-admin.js?v=20260921off3"></script>
+  <script src="js/driver-management-admin.js?v=20260922active1"></script>
+  <script src="js/inactive-drivers-admin.js?v=20260922active1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260915audit2"></script>
   <script src="js/admin-payroll-slip-search.js?v=20260817pay6"></script>
@@ -9149,7 +9187,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260827mission10"></script>
   <script src="js/admin-missions.js?v=20260827mission10"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260921off1"></script>
+    <script src="js/admin.js?v=20260922active1"></script>
   <script src="js/admin-driver-popups.js?v=20260914popup2" defer></script>
   <script src="js/admin-sidebar-groups.js?v=20260921off1" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>

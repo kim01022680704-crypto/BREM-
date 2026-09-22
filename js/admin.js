@@ -1138,7 +1138,8 @@
   const $$ = selector => Array.from(document.querySelectorAll(selector));
 
   function drivers() {
-    return BremStorage.drivers.getAll();
+    const list = BremStorage.drivers.getAll();
+    return list.filter(driver => !window.BremDriverUtils?.isRiderAppAccessBlocked?.(driver));
   }
 
   function normalizeSearchText(value) {

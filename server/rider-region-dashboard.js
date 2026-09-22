@@ -370,6 +370,11 @@ function riderMatchesRegion(rider, region) {
   return Boolean(valueShort && regionShort && valueShort === regionShort);
 }
 
+function isInactiveRiderStatus(status) {
+  const value = String(status || '').trim();
+  return value === '휴무' || value === '퇴사';
+}
+
 function mapRiderRow(row) {
   const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
   return {
@@ -391,13 +396,14 @@ function makeRiderLoginId(name, phone) {
   return `${compactName}${digits.slice(-4)}`;
 }
 
-async function fetchAllRidersLite(supabase, selectColumns = 'id,name,phone,baemin_id,raw_data') {
+async function fetchAllRidersLite(supabase, selectColumns = 'id,name,phone,baemin_id,status,raw_data') {
   const pageSize = 1000;
   const all = [];
   for (let from = 0; from < 40000; from += pageSize) {
     const { data, error } = await supabase
       .from('riders')
       .select(selectColumns)
+      .not('status', 'in', '("휴무","퇴사")')
       .range(from, from + pageSize - 1);
     if (error) throw error;
     all.push(...(data || []));
@@ -419,7 +425,7 @@ function buildBaeminDriverLookup(riderRows) {
 
   (riderRows || []).forEach(row => {
     const rider = mapRiderRow(row);
-    if (!rider.id) return;
+    if (!rider.id || isInactiveRiderStatus(rider.status)) return;
     const idKey = baeminIdMatchKey(rider.baeminId);
     if (idKey && !byBaeminId.has(idKey)) byBaeminId.set(idKey, rider);
     const loginKey = baeminIdMatchKey(makeRiderLoginId(rider.name, rider.phone));
@@ -530,7 +536,8 @@ async function loadRidersForRegion(supabase, region) {
     if (parts.length) {
       result = await fetchPages(() => supabase
         .from('riders')
-        .select('id,name,baemin_id,phone,raw_data')
+        .select('id,name,baemin_id,phone,status,raw_data')
+        .not('status', 'in', '("휴무","퇴사")')
         .or(parts.join(',')));
     } else {
       result = { data: [], error: null };
@@ -546,7 +553,8 @@ async function loadRidersForRegion(supabase, region) {
     if (parts.length) {
       result = await fetchPages(() => supabase
         .from('riders')
-        .select('id,name,baemin_id,phone,raw_data')
+        .select('id,name,baemin_id,phone,status,raw_data')
+        .not('status', 'in', '("휴무","퇴사")')
         .or(parts.join(',')));
     } else {
       result = { data: [], error: null };
@@ -558,12 +566,14 @@ async function loadRidersForRegion(supabase, region) {
     all.length = 0;
     result = await fetchPages(() => supabase
       .from('riders')
-      .select('id,name,baemin_id,phone,raw_data'));
+      .select('id,name,baemin_id,phone,status,raw_data')
+      .not('status', 'in', '("휴무","퇴사")'));
     if (result.error) throw result.error;
   }
 
   return (result.data || all)
     .map(mapRiderRow)
+    .filter(rider => !isInactiveRiderStatus(rider.status))
     .filter(rider => riderMatchesRegion(rider, region));
 }
 
