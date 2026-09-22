@@ -11632,11 +11632,14 @@ const BremStorage = (function () {
 
   const weeklySettlements = {
     getAll(channel) {
-      const key = weeklySettlementsKey(channel === 'direct' ? 'direct' : 'bro');
+      const ch = channel === 'direct' ? 'direct' : 'bro';
+      const key = weeklySettlementsKey(ch);
       const raw = storageAdapter.read(key, []);
-      const list = raw.map(normalizeWeeklySettlement);
+      const list = (Array.isArray(raw) ? raw : []).map(normalizeWeeklySettlement);
       const repaired = list.map(item => ({
         ...item,
+        channel: ch,
+        summary: { ...(item.summary || {}), channel: ch },
         platform: resolveWeeklySettlementPlatform(item)
       }));
       const changed = repaired.some((item, index) => {
@@ -11644,7 +11647,7 @@ const BremStorage = (function () {
         return rawPlatform !== item.platform;
       });
       if (changed) storageAdapter.write(key, repaired);
-      return repaired.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+      return repaired.sort((a, b) => String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')));
     },
 
     getById(id, channel) {

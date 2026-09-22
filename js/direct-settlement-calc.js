@@ -100,12 +100,47 @@ const BremDirectSettlementCalc = (function () {
   // date-picker 의 applyWeekWednesday(화→다음날 수) 로 off-by-one 을 먼저 교정한다.
   function settlementWeek(record) {
     if (!record) return weekStartKey();
-    const raw = String(record.startDate || '').slice(0, 10);
+    const raw = String(record.startDate || record.baseSettlementDate || '').slice(0, 10);
     if (!raw) return weekStartKey();
     if (window.BremDatePicker?.applyWeekWednesday) {
       return window.BremDatePicker.applyWeekWednesday(raw);
     }
     return weekStartKey(raw);
+  }
+
+  function recordDateRange(record) {
+    const start = String(record?.startDate || record?.baseSettlementDate || '').slice(0, 10);
+    let end = String(record?.endDate || '').slice(0, 10);
+    if (start && !end) end = weekEndFromStart(settlementWeek({ startDate: start }));
+    if (start && end && end < start) return { start: end, end: start };
+    return { start, end: end || start };
+  }
+
+  function partDateRange(settlements) {
+    let start = '';
+    let end = '';
+    (Array.isArray(settlements) ? settlements : []).forEach(record => {
+      const range = recordDateRange(record);
+      if (range.start && (!start || range.start < start)) start = range.start;
+      if (range.end && (!end || range.end > end)) end = range.end;
+    });
+    return { start, end };
+  }
+
+  function recordMatchesWeek(record, week) {
+    const weekKey = String(week || '').slice(0, 10);
+    if (!weekKey) return true;
+    if (settlementWeek(record) === weekKey) return true;
+    const base = String(record?.baseSettlementDate || '').slice(0, 10);
+    if (base) {
+      const snapped = window.BremDatePicker?.applyWeekWednesday
+        ? window.BremDatePicker.applyWeekWednesday(base)
+        : weekStartKey(base);
+      if (snapped === weekKey || weekStartKey(base) === weekKey) return true;
+    }
+    const range = recordDateRange(record);
+    if (!range.start) return false;
+    return range.start <= weekEndFromStart(weekKey) && range.end >= weekKey;
   }
 
   function normalizePlatform(platform) {
@@ -328,6 +363,134 @@ const BremDirectSettlementCalc = (function () {
     return map;
   }
 
+  function isHoldPrepaidRow(row) {
+    return String(row?.createdBy || '') === 'hold'
+      || String(row?.id || '').startsWith('hold-prepaid:');
+  }
+
+  function dailySettlementAmount(row) {
+    return Math.max(0, Math.round(Number(
+      row?.netPay ?? row?.settlementAmount ?? row?.deliveryAmount ?? 0
+    )));
+  }
+
+  function loadDailySettlementsInRange(start, end) {
+    const lo = String(start || '').slice(0, 10);
+    const hi = String(end || lo).slice(0, 10);
+    if (!lo) return [];
+    const list = window.BremStorage?.settlements?.getAll?.() || [];
+    return (Array.isArray(list) ? list : []).filter(row => {
+      const day = String(row.period || '').slice(0, 10);
+      return day && day >= lo && day <= hi;
+    });
+  }
+
+  // 일정산서는 다음날 등록된다. 출금신청일 전날이 일정산 period.
+  function withdrawalPeriodGuess(row) {
+    const req = String(row?.requestDate || '').slice(0, 10)
+      || String(row?.createdAt || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req)) return '';
+    return addDaysKey(req, -1);
+  }
+
+  function inDateRange(day, start, end) {
+    const d = String(day || '').slice(0, 10);
+    return Boolean(d && d >= start && d <= end);
+  }
+
+  function driverPlatKey(driverId, platform) {
+    const id = String(driverId || '').trim();
+    const key = canonicalDriverKey(id) || (id ? `id:${id}` : '');
+    return `${key}|${normalizeWithdrawalPlatform(platform) || '_'}`;
+  }
+
+  /**
+   * 부분 기간에 해당하는 일정산(처리완료) 선정산만 남긴다.
+   * 출금은 주 단위라, 일정산 period 풀에 FIFO 로 나눠 16~20 부분이면 그 날짜 금액만 차감한다.
+   */
+  function scopeWithdrawalsToDateRange(withdrawals, range, options = {}) {
+    const start = String(range?.start || '').slice(0, 10);
+    const end = String(range?.end || start).slice(0, 10);
+    const list = Array.isArray(withdrawals) ? withdrawals : [];
+    if (!start) return list;
+
+    const weekKey = String(options.week || '').slice(0, 10);
+    const weekEnd = weekKey ? weekEndFromStart(weekKey) : end;
+    const dailyStart = weekKey && weekKey < start ? weekKey : start;
+    const dailyEnd = weekEnd && weekEnd > end ? weekEnd : end;
+    const daily = Array.isArray(options.dailySettlements)
+      ? options.dailySettlements
+      : loadDailySettlementsInRange(dailyStart, dailyEnd);
+
+    const pools = new Map();
+    daily.forEach(row => {
+      const day = String(row.period || '').slice(0, 10);
+      const amount = dailySettlementAmount(row);
+      const driverId = String(row.driverId || '').trim();
+      if (!day || !driverId || amount <= 0) return;
+      const key = driverPlatKey(driverId, row.platform);
+      const slots = pools.get(key) || [];
+      const existing = slots.find(item => item.period === day);
+      if (existing) existing.left += amount;
+      else slots.push({ period: day, left: amount });
+      pools.set(key, slots);
+    });
+    pools.forEach(slots => slots.sort((a, b) => a.period.localeCompare(b.period)));
+
+    const out = [];
+    list.forEach(row => {
+      if (String(row.status || '') !== 'completed') {
+        out.push(row);
+        return;
+      }
+      const amount = Math.max(0, Math.round(Number(row.amount || 0)));
+      if (amount <= 0) return;
+
+      if (isHoldPrepaidRow(row)) {
+        if (inDateRange(String(row.weekStart || weekKey).slice(0, 10), start, end)) out.push(row);
+        return;
+      }
+
+      const key = driverPlatKey(row.driverId, row.platform);
+      const slots = pools.get(key);
+      const hasPool = Boolean(slots && slots.length);
+      if (hasPool) {
+        let left = amount;
+        let inRange = 0;
+        slots.forEach(slot => {
+          if (left <= 0 || slot.left <= 0) return;
+          const take = Math.min(left, slot.left);
+          if (inDateRange(slot.period, start, end)) inRange += take;
+          slot.left -= take;
+          left -= take;
+        });
+        if (left > 0) {
+          const guess = withdrawalPeriodGuess(row);
+          const req = String(row.requestDate || '').slice(0, 10);
+          if (inDateRange(guess, start, end) || inDateRange(req, start, end)) inRange += left;
+        }
+        if (inRange <= 0) return;
+        if (inRange === amount) {
+          out.push(row);
+          return;
+        }
+        const prefer = normalizeWithdrawalPlatform(row.platform) || 'baemin';
+        const fee = withdrawalRowFee(row, prefer);
+        out.push({
+          ...row,
+          amount: inRange,
+          feeAmount: Math.round(fee * (inRange / amount))
+        });
+        return;
+      }
+
+      const guess = withdrawalPeriodGuess(row);
+      const req = String(row.requestDate || '').slice(0, 10);
+      if (inDateRange(guess, start, end) || inDateRange(req, start, end)) out.push(row);
+    });
+    return out;
+  }
+
   /**
    * 사람별로 이 주 처리완료 출금을 플랫폼 정산에 배분한다(스필오버).
    * - 출금에 찍힌 플랫폼 정산에서 먼저 차감(금액 단위로 부분 배분)
@@ -339,6 +502,15 @@ const BremDirectSettlementCalc = (function () {
     const allowOverflow = options.allowOverflow !== false;
     const weekKey = String(week || '').slice(0, 10);
     withdrawals = withHoldPrepaid(withdrawals, weekKey);
+    const range = options.dateRange && options.dateRange.start
+      ? options.dateRange
+      : partDateRange(options.weekSettlements || []);
+    if (range.start) {
+      withdrawals = scopeWithdrawalsToDateRange(withdrawals, range, {
+        week: weekKey,
+        dailySettlements: options.dailySettlements
+      });
+    }
     const remaining = new Map();
     (capacityMap instanceof Map ? capacityMap : new Map()).forEach((v, k) => {
       remaining.set(k, {
@@ -874,6 +1046,9 @@ const BremDirectSettlementCalc = (function () {
     const unitCallFee = callFeeUnit(platform);
     const adj = adjustmentMaps(settlement);
     const withdrawals = withHoldPrepaid(options.withdrawals, week);
+    const dateRange = options.dateRange && options.dateRange.start
+      ? options.dateRange
+      : recordDateRange(settlement);
 
     let allocation = options._allocation || null;
     if (!allocation && Array.isArray(options.weekSettlements) && options.weekSettlements.length) {
@@ -882,7 +1057,12 @@ const BremDirectSettlementCalc = (function () {
         withdrawals,
         week,
         buildWeekCapacityMap(options.weekSettlements),
-        { allowOverflow: options.allowOverflow !== false && !waveScoped }
+        {
+          allowOverflow: options.allowOverflow !== false && !waveScoped,
+          dateRange,
+          weekSettlements: options.weekSettlements,
+          dailySettlements: options.dailySettlements
+        }
       );
     }
     const strictMap = allocation ? null : (options._prepaidMap || buildWeekPrepaidByPlatform(withdrawals, week));
@@ -1112,7 +1292,12 @@ const BremDirectSettlementCalc = (function () {
     promoTax,
     dateKey,
     weekStartKey,
+    weekEndFromStart,
     settlementWeek,
+    recordDateRange,
+    partDateRange,
+    recordMatchesWeek,
+    scopeWithdrawalsToDateRange,
     normalizePlatform,
     normalizeWithdrawalPlatform,
     driverName,

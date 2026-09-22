@@ -58,20 +58,32 @@ const BremFinalDeposit = (function () {
     };
   }
 
-  function isTagged(record) {
-    return Boolean(partMeta(record).tag);
+  function isSelectable(record) {
+    const api = window.BremWeeklySettlement || {};
+    if (typeof api.isSelectablePart === 'function') return api.isSelectablePart(record);
+    return Boolean(partMeta(record).tag || partMeta(record).slot);
+  }
+
+  function weekHasIdentifiedParts(list = weekSettlements()) {
+    return list.some(isSelectable);
   }
 
   // 최종입금은 「그 주」 단위로 입금하므로 주 필터를 항상 건다.
   function weekSettlements() {
     const week = ensureWeek();
-    return allSettlements().filter(record => Calc().settlementWeek(record) === week);
+    const match = Calc().recordMatchesWeek
+      ? record => Calc().recordMatchesWeek(record, week)
+      : record => Calc().settlementWeek(record) === week;
+    return allSettlements().filter(match);
   }
 
   function checkedSettlements() {
-    return weekSettlements().filter(record => (
-      isTagged(record) && !state.excludedSettlementIds.has(String(record.id))
-    ));
+    const list = weekSettlements();
+    const requireIdentified = weekHasIdentifiedParts(list);
+    return list.filter(record => {
+      if (state.excludedSettlementIds.has(String(record.id))) return false;
+      return requireIdentified ? isSelectable(record) : true;
+    });
   }
 
   function ensureWeek() {
@@ -117,11 +129,11 @@ const BremFinalDeposit = (function () {
       return;
     }
     host.hidden = false;
-    const tagged = list.filter(isTagged).length;
+    const identified = list.filter(isSelectable).length;
     optionsEl.innerHTML = `
       <p class="payout-wave-hint">
-        적용주 ${escapeHtml(ensureWeek())}(수) · 올린 부분 ${list.length}건 · 태그 ${tagged}건.
-        태그가 있는 부분만 선택할 수 있습니다. 합치기는 주정산 업로드 기록에서 하세요.
+        적용주 ${escapeHtml(ensureWeek())}(수) · 올린 부분 ${list.length}건 · 부분/태그 ${identified}건.
+        부분1·2·3 또는 태그가 있는 정산서만 체크합니다. 합치기는 주정산 업로드 기록에서 하세요.
       </p>`;
   }
 
@@ -135,7 +147,7 @@ const BremFinalDeposit = (function () {
     if (rangeEl) {
       const total = allSettlements().length;
       rangeEl.textContent = list.length
-        ? `정산주 ${formatDate(ensureWeek())}(수) · 부분 ${list.length}건 (태그 있는 부분만 체크해 최종입금에 합산합니다)`
+        ? `정산주 ${formatDate(ensureWeek())}(수) · 부분 ${list.length}건 (부분1·2·3 또는 태그 있는 정산서만 합산)`
         : `${formatDate(ensureWeek())}(수) 주에 저장된 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요. (전체 ${total}건)`;
     }
 
@@ -149,15 +161,16 @@ const BremFinalDeposit = (function () {
     const cardHtml = record => {
       const id = String(record.id);
       const meta = partMeta(record);
-      const tagged = Boolean(meta.tag);
-      const checked = tagged && !state.excludedSettlementIds.has(id);
+      const requireIdentified = weekHasIdentifiedParts(list);
+      const selectable = !requireIdentified || isSelectable(record);
+      const checked = selectable && !state.excludedSettlementIds.has(id);
       const riders = Array.isArray(record.riders) ? record.riders.length : 0;
       const region = record.region ? ` · ${escapeHtml(record.region)}` : '';
       const file = record.fileName ? `<span class="muted-inline">${escapeHtml(record.fileName)}</span>` : '';
       const badge = meta.badge || (meta.slot ? `부분${meta.slot}` : '부분 미지정');
       return `
-        <label class="final-deposit-settlement${tagged ? '' : ' final-deposit-settlement-dim'}">
-          <input type="checkbox" data-fd-settlement="${escapeHtml(id)}"${checked ? ' checked' : ''}${tagged ? '' : ' disabled'}>
+        <label class="final-deposit-settlement${selectable ? '' : ' final-deposit-settlement-dim'}">
+          <input type="checkbox" data-fd-settlement="${escapeHtml(id)}"${checked ? ' checked' : ''}${selectable ? '' : ' disabled'}>
           <span class="final-deposit-settlement-body">
             <strong>${escapeHtml(platformLabel(record.platform))}</strong>${region}
             <span class="weekly-part-tag">${escapeHtml(badge)}</span>
@@ -180,8 +193,8 @@ const BremFinalDeposit = (function () {
     listEl.innerHTML = groupHtml('coupang', '쿠팡') + groupHtml('baemin', '배민');
 
     const allChk = $('#finalDepositSettlementAll');
-    const tagged = list.filter(isTagged);
-    if (allChk) allChk.checked = tagged.length > 0 && tagged.every(record => !state.excludedSettlementIds.has(String(record.id)));
+    const selectableList = weekHasIdentifiedParts(list) ? list.filter(isSelectable) : list;
+    if (allChk) allChk.checked = selectableList.length > 0 && selectableList.every(record => !state.excludedSettlementIds.has(String(record.id)));
   }
 
   // --- 기사 단위 합산 -------------------------------------------------------
@@ -209,12 +222,20 @@ const BremFinalDeposit = (function () {
     // consumed 로 같은 사람의 같은 플랫폼 선정산이 중복 반영되지 않게 한다.
     const week = ensureWeek();
     const weekAll = weekSettlements();
-    const sourceList = allSettlements ? weekAll.filter(isTagged) : checkedSettlements();
+    const identified = weekAll.filter(isSelectable);
+    const sourceList = allSettlements
+      ? (identified.length ? identified : weekAll)
+      : checkedSettlements();
+    const dateRange = Calc().partDateRange?.(sourceList) || {};
     const allocation = Calc().allocateWeekWithdrawals(
       state.withdrawals,
       week,
       Calc().buildWeekCapacityMap(sourceList.length ? sourceList : weekAll),
-      { allowOverflow: sourceList.length === weekAll.filter(isTagged).length }
+      {
+        allowOverflow: sourceList.length === (identified.length ? identified : weekAll).length,
+        dateRange,
+        weekSettlements: sourceList
+      }
     );
     const consumed = new Set();
     const leaseConsumed = new Set();
@@ -391,9 +412,17 @@ const BremFinalDeposit = (function () {
       });
     });
 
-    const completed = (Array.isArray(state.withdrawals) ? state.withdrawals : [])
+    const sourceList = checkedSettlements();
+    const dateRange = Calc().partDateRange?.(sourceList) || {};
+    const completedRaw = (Array.isArray(state.withdrawals) ? state.withdrawals : [])
       .filter(w => String(w.status || '') === 'completed'
         && String(w.weekStart || '').slice(0, 10) === week);
+    const completed = dateRange.start && Calc().scopeWithdrawalsToDateRange
+      ? Calc().scopeWithdrawalsToDateRange(completedRaw, dateRange, { week })
+      : completedRaw;
+    const platformsPresent = new Set(
+      sourceList.map(record => Calc().normalizePlatform(record.platform))
+    );
 
     const unmatched = [];
     let unmatchedTotal = 0;
@@ -401,6 +430,7 @@ const BremFinalDeposit = (function () {
       const amount = Math.max(0, Math.round(Number(w.amount || 0)));
       if (amount <= 0) return;
       const platform = normP(w.platform);
+      if (platform && platformsPresent.size && !platformsPresent.has(platform)) return;
       const key = canon(String(w.driverId || '').trim());
       const reflected = key && presentPersons.has(key);
       if (reflected) return;
@@ -739,6 +769,10 @@ const BremFinalDeposit = (function () {
     try {
       await window.BremStorage?.ensureLeaseErpKeysLoaded?.();
       await window.BremStorage?.payrollDailySettlement?.reloadWithdrawalHoldsFromServer?.();
+      const weekEnd = Calc().weekEndFromStart?.(week);
+      if (week && weekEnd) {
+        await window.BremStorage?.ensureSettlementsSinceDate?.(week, { untilDate: weekEnd });
+      }
       const fetchApi = window.BremStorage?.payrollWithdrawal?.fetchFromAdminApi;
       if (typeof fetchApi === 'function') {
         state.withdrawals = await fetchApi({ weekStart: week });

@@ -325,10 +325,15 @@ window.BremSupabaseMapper = (function () {
 
   function rowToWeeklySettlementRecord(row) {
     const summary = row.summary && typeof row.summary === 'object' ? row.summary : {};
+    const id = String(row.id || '');
+    const channel = summary.channel === 'direct' || id.includes('weekly_direct')
+      ? 'direct'
+      : (summary.channel === 'bro' ? 'bro' : 'bro');
+    if (channel) summary.channel = channel;
     return {
       id: row.id,
       platform: row.platform || 'coupang',
-      channel: summary.channel === 'direct' ? 'direct' : 'bro',
+      channel,
       region: row.region || '',
       fileName: row.file_name || '',
       baseSettlementDate: row.base_settlement_date || '',

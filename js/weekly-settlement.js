@@ -1973,6 +1973,10 @@ const BremWeeklySettlement = (function () {
     return tag || slot || '';
   }
 
+  function isSelectablePart(record) {
+    return Boolean(recordPartTag(record) || recordPartSlot(record));
+  }
+
   function buildWeeklySettlementId({ platform, region, year, month, week, startDate, channel, partSlot }) {
     const p = normalizePlatform(platform);
     const regionSlug = slugify(region);
@@ -2635,6 +2639,7 @@ const BremWeeklySettlement = (function () {
     recordPartSlot,
     recordPartTag,
     formatPartBadge,
+    isSelectablePart,
     canonicalBaeminTeamRegion,
     stripBaeminCompanyPrefix,
     baeminCompanyLabelFromTeam,
