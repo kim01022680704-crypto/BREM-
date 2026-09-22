@@ -535,10 +535,23 @@ const BremDirectSettlementCalc = (function () {
     to.fee += feeMove;
   }
 
+  // 한도를 넘는 금액은 행에 붙이지 않는다. 수수료부터 빼고, 그래도 남으면 선정산을 줄인다.
+  function clampSliceToRoom(part, room) {
+    const cap = Math.max(0, Math.round(Number(room || 0)));
+    let extra = usedSlice(part) - cap;
+    if (extra <= 0) return 0;
+    const feeCut = Math.min(Math.max(0, part.fee), extra);
+    part.fee -= feeCut;
+    extra -= feeCut;
+    const prepaidCut = Math.min(Math.max(0, part.prepaid), extra);
+    part.prepaid -= prepaidCut;
+    return feeCut + prepaidCut;
+  }
+
   /**
    * 1) 선정산은 출금 플랫폼에 먼저 붙인다. 배민 출금→배민, 쿠팡 출금→쿠팡.
-   * 2) 그 플랫폼 정산서가 있고 한도를 넘는 로스만, 반대쪽에 여유가 있을 때 넘긴다.
-   *    공동 기사가 양쪽 다 로스면 서로 바꿔 얹지 않는다.
+   * 2) 한도를 넘는 로스만, 반대쪽에 여유가 있을 때 넘긴다.
+   * 3) 넘기지 못한 초과분은 그 플랫폼 행에도 붙이지 않는다.
    */
   function allocateWeekWithdrawals(withdrawals, week, capacityMap, options = {}) {
     const weekKey = String(week || '').slice(0, 10);
@@ -553,6 +566,7 @@ const BremDirectSettlementCalc = (function () {
       });
     }
     const stamped = buildWeekPrepaidByPlatform(list, weekKey);
+    stamped.unattachedAmount = Math.max(0, Math.round(Number(stamped.unattachedAmount || 0)));
     const presence = buildWeekPlatformPresence(options.weekSettlements || []);
     const cap = capacityMap instanceof Map ? capacityMap : new Map();
     stamped.forEach((slice, key) => {
@@ -578,6 +592,10 @@ const BremDirectSettlementCalc = (function () {
         const surplus = Math.max(0, room[other] - usedSlice(next[other]));
         if (loss <= 0 || surplus <= 0) return;
         movePrepaidSlice(next[p], next[other], Math.min(loss, surplus));
+      });
+      ['coupang', 'baemin'].forEach(p => {
+        const cut = clampSliceToRoom(next[p], room[p]);
+        if (cut > 0) stamped.unattachedAmount = Math.max(0, Number(stamped.unattachedAmount || 0)) + cut;
       });
       slice.coupang = next.coupang;
       slice.baemin = next.baemin;
@@ -1057,42 +1075,6 @@ const BremDirectSettlementCalc = (function () {
     return lookupDriverFeeAmount(row, loanIndex);
   }
 
-  function rangesOverlap(a, b) {
-    const a0 = String(a?.start || '').slice(0, 10);
-    const a1 = String(a?.end || a0).slice(0, 10);
-    const b0 = String(b?.start || '').slice(0, 10);
-    const b1 = String(b?.end || b0).slice(0, 10);
-    if (!a0 || !b0) return true;
-    return a0 <= b1 && b0 <= a1;
-  }
-
-  function riderOnSettlement(settlement, key, platform) {
-    if (!key || settlementPlatform(settlement) !== platform) return false;
-    return (Array.isArray(settlement.riders) ? settlement.riders : []).some(rider => (
-      canonicalDriverKey(String(rider.matchedRiderId || '').trim()) === key
-    ));
-  }
-
-  function overlappingFilesForRider(weekSettlements, dateRange, key, platform) {
-    return (Array.isArray(weekSettlements) ? weekSettlements : [])
-      .filter(settlement => (
-        riderOnSettlement(settlement, key, platform)
-        && rangesOverlap(recordDateRange(settlement), dateRange)
-      ))
-      .sort((a, b) => {
-        const as = String(a.startDate || a.id || '');
-        const bs = String(b.startDate || b.id || '');
-        if (as !== bs) return as.localeCompare(bs);
-        return String(a.id || '').localeCompare(String(b.id || ''));
-      });
-  }
-
-  function isLastOverlappingFile(settlement, weekSettlements, dateRange, key, platform) {
-    const list = overlappingFilesForRider(weekSettlements, dateRange, key, platform);
-    if (!list.length) return true;
-    return String(list[list.length - 1].id || '') === String(settlement?.id || '');
-  }
-
   function seedPrepaidRemain(allocation) {
     const remain = new Map();
     if (!(allocation instanceof Map)) return remain;
@@ -1117,17 +1099,10 @@ const BremDirectSettlementCalc = (function () {
     return seedPrepaidRemain(allocation);
   }
 
-  function takePrepaidForRow(remain, key, platform, room, isLast) {
+  function takePrepaidForRow(remain, key, platform, room) {
     const bucketKey = `${key}:${platform}`;
     const bucket = remain.get(bucketKey) || { prepaid: 0, fee: 0 };
     remain.set(bucketKey, bucket);
-    if (isLast) {
-      const prepaid = Math.max(0, Math.round(Number(bucket.prepaid || 0)));
-      const fee = Math.max(0, Math.round(Number(bucket.fee || 0)));
-      bucket.prepaid = 0;
-      bucket.fee = 0;
-      return { prepaid, fee };
-    }
     const cap = Math.max(0, Math.round(Number(room || 0)));
     const prepaid = Math.min(Math.max(0, Math.round(Number(bucket.prepaid || 0))), cap);
     bucket.prepaid -= prepaid;
@@ -1194,13 +1169,7 @@ const BremDirectSettlementCalc = (function () {
       let prepaid = 0;
       let dailySettlementFee = 0;
       if (key) {
-        const taken = takePrepaidForRow(
-          remain,
-          key,
-          platform,
-          base.capacity,
-          isLastOverlappingFile(settlement, weekList, dateRange, key, platform)
-        );
+        const taken = takePrepaidForRow(remain, key, platform, base.capacity);
         prepaid = taken.prepaid;
         dailySettlementFee = taken.fee;
       }

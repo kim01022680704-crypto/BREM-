@@ -149,19 +149,22 @@ const allocBothOver = Calc.allocateWeekWithdrawals(bothOverWd, week, bothOverCap
   dailySettlements: [],
   weekSettlements: bothFiles
 });
+function usedSliceLike(part) {
+  return Math.max(0, Math.round(Number(part?.prepaid || 0))) + Math.max(0, Math.round(Number(part?.fee || 0)));
+}
 const sliceC = allocCoupang.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
 const sliceB = allocBaemin.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
 const sliceL = allocLoss.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
 const sliceO = allocBothOver.get('id:d1') || { coupang: { prepaid: 0, fee: 0 }, baemin: { prepaid: 0, fee: 0 } };
 checks.push(
   ['쿠팡파일 없으면 쿠팡출금은 배민에 안 넘김', sliceC.baemin.prepaid === 0 && sliceC.baemin.fee === 0],
-  ['쿠팡파일 없으면 쿠팡출금은 쿠팡에 남김', sliceC.coupang.prepaid === 500000 && sliceC.coupang.fee === 10000],
-  ['배민 출금은 배민에 먼저', sliceB.baemin.prepaid === 200000 && sliceB.baemin.fee === 4000],
+  ['넘길 곳 없으면 한도 초과는 안 붙임', sliceC.coupang.prepaid === 0 && sliceC.coupang.fee === 0],
+  ['배민 출금은 배민 한도 안에서', sliceB.baemin.prepaid === 200000 && sliceB.baemin.fee === 4000],
   ['배민 출금은 쿠팡에 안 붙음', sliceB.coupang.prepaid === 0 && sliceB.coupang.fee === 0],
-  ['한쪽만 로스면 여유 있는 쪽으로만', sliceL.coupang.prepaid + sliceL.coupang.fee === 110000
+  ['한쪽만 로스면 여유 있는 쪽으로만', sliceL.coupang.prepaid + sliceL.coupang.fee === 100000
     && sliceL.baemin.prepaid === 400000 && sliceL.baemin.fee === 0],
-  ['공동 양쪽 로스면 서로 안 바꿈', sliceO.coupang.prepaid === 500000 && sliceO.coupang.fee === 10000
-    && sliceO.baemin.prepaid === 200000 && sliceO.baemin.fee === 4000]
+  ['공동 양쪽 로스면 한도까지만', usedSliceLike(sliceO.coupang) === 100000
+    && usedSliceLike(sliceO.baemin) === 100000]
 );
 
 const baeminPart = {
@@ -225,10 +228,10 @@ const rowsOverC = Calc.computeRows(overC, {
 checks.push(
   ['공동 배민 로스는 쿠팡 여유로', Number(rowsB[0]?.prepaid || 0) + Number(rowsB[0]?.dailySettlementFee || 0) === 200000
     && Number(rowsC[0]?.prepaid || 0) + Number(rowsC[0]?.dailySettlementFee || 0) === 106000],
-  ['최종결산 양쪽 로스면 출금 그대로', Number(rowsOverC[0]?.prepaid || 0) === 500000
-    && Number(rowsOverC[0]?.dailySettlementFee || 0) === 10000
-    && Number(rowsOverB[0]?.prepaid || 0) === 200000
-    && Number(rowsOverB[0]?.dailySettlementFee || 0) === 4000]
+  ['넘기지 못한 로스는 행에 안 붙임', Number(rowsOverC[0]?.prepaid || 0) + Number(rowsOverC[0]?.dailySettlementFee || 0) === 100000
+    && Number(rowsOverB[0]?.prepaid || 0) + Number(rowsOverB[0]?.dailySettlementFee || 0) === 100000
+    && Number(rowsOverC[0]?.netPay || 0) >= 0
+    && Number(rowsOverB[0]?.netPay || 0) >= 0]
 );
 
 const failed = checks.filter(item => !item[1]);
