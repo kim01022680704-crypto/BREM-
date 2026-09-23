@@ -6304,7 +6304,30 @@
     return 'midnight';
   }
 
+  function syncBaeminSlotLegendText(date = new Date()) {
+    const legend = $('dashboardBaeminSlotLegend');
+    if (!legend) return;
+    const weekend = date.getDay() === 0 || date.getDay() === 6;
+    const labels = {
+      morning: weekend ? '아점 06:00~13:59' : '아점 06:00~12:59',
+      afternoon: weekend ? '오후 14:00~16:59' : '오후 13:00~16:59',
+      evening: '저녁 17:00~19:59',
+      midnight: '심야 20:00~05:59'
+    };
+    legend.querySelectorAll('span[data-baemin-slot]').forEach(el => {
+      const text = labels[el.getAttribute('data-baemin-slot')];
+      if (text && el.textContent !== text) el.textContent = text;
+    });
+    const note = legend.querySelector('[data-baemin-slot-note]');
+    if (note) {
+      note.textContent = weekend
+        ? '오늘 주말 기준 · 평일 아점 06:00~12:59 · 오후 13:00~16:59'
+        : '주말(토·일) 아점 06:00~13:59 · 오후 14:00~16:59';
+    }
+  }
+
   function markCurrentBaeminSlots() {
+    syncBaeminSlotLegendText();
     const key = currentBaeminSlotKey();
     document.querySelectorAll('#dashboard [data-baemin-slot]').forEach(el => {
       const on = el.getAttribute('data-baemin-slot') === key;
