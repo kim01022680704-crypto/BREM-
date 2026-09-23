@@ -6494,14 +6494,19 @@
     }
 
     const today = todayKstDate();
+    const liveToday = state.dashboardTodayLive?.date === today
+      ? state.dashboardTodayLive.byPartner?.[pid] || null
+      : null;
+    const usesLive = Boolean(liveToday) && !byDate.has(today) && dates.includes(today);
     rowsEl.innerHTML = dates.map(date => {
-      const actual = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
+      const live = usesLive && date === today;
+      const actual = byDate.get(date) || (live ? liveToday : null) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
       const targets = computeSlotTargets(setCount, date);
-      // 배민 일별은 다음 날 들어온다. 오늘 행이 비어 있는 건 미달이 아니라 아직 안 들어온 것.
-      const notYet = date >= today && !byDate.has(date);
+      // 배민 일별은 다음 날 들어온다. 오늘은 실시간 숫자, 없으면 미달이 아니라 아직 안 들어온 것.
+      const notYet = !live && date >= today && !byDate.has(date);
       return `<tr>
         <td><strong class="dashboard-baemin-region-name" title="${escapeHtml(regionName)}">${escapeHtml(regionName)}</strong></td>
-        <td class="dashboard-baemin-date-cell" title="${escapeHtml(formatDeliveryDateWithWeekday(date))}">${escapeHtml(formatDeliveryDateShort(date))}</td>
+        <td class="dashboard-baemin-date-cell" title="${escapeHtml(formatDeliveryDateWithWeekday(date))}">${escapeHtml(formatDeliveryDateShort(date))}${live ? '<span class="dashboard-baemin-region-meta">실시간</span>' : ''}</td>
         ${BAEMIN_SLOT_ORDER.map(key => renderCompactQuotaCell(actual[key], targets[key], {
           current: currentBaeminSlotKey() === key,
           upcoming: notYet || isUpcomingBaeminSlot(key, date)
@@ -6510,7 +6515,7 @@
     }).join('');
 
     if (summaryEl) {
-      summaryEl.textContent = `${regionName} · ${weekRange.fromDate}(수) ~ ${weekRange.toDate}(화) · 데이터 ${formatNumber(filledDays)}/${formatNumber(dates.length)}일`;
+      summaryEl.textContent = `${regionName} · ${weekRange.fromDate}(수) ~ ${weekRange.toDate}(화) · 데이터 ${formatNumber(filledDays + (usesLive ? 1 : 0))}/${formatNumber(dates.length)}일${usesLive ? ' · 오늘은 실시간' : ''}`;
     }
     persistWeekDashboardCache();
   }
@@ -6798,6 +6803,17 @@
         return;
       }
 
+      // 이번주 팝업의 오늘 줄: 배민 일별은 다음 날 들어오므로 이 실시간 숫자로 채운다.
+      state.dashboardTodayLive = {
+        date: today,
+        byPartner: Object.fromEntries(regionRows.map(row => [row.partnerId, {
+          morning: row.morningTotal,
+          afternoon: row.afternoonTotal,
+          evening: row.eveningTotal,
+          midnight: row.midnightTotal
+        }]))
+      };
+
       const nextHtml = renderDashboardTodayTable(regionRows, {
         drivingSum,
         morningSum,
@@ -6823,6 +6839,11 @@
       }
       panelsEl.innerHTML = nextHtml;
       markCurrentBaeminSlots();
+      const weekPid = normalizePartnerId(state.dashboardWeekPartnerId);
+      const weekCached = weekPid ? state.dashboardWeekCache?.[weekPid] : null;
+      if (weekCached?.items && weekCached.weekRange) {
+        renderDashboardWeekRowsForPartner(weekPid, weekCached.items, weekCached.weekRange);
+      }
 
       const summaryText = `오늘 ${today} · 지역 ${formatNumber(loadedRegions)}곳 · 운행중 ${formatNumber(drivingSum)}명 · 세트수 할당 대비`;
       if (summary) {
