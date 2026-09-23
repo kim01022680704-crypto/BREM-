@@ -19,6 +19,7 @@
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
   <link rel="stylesheet" href="css/admin.css?v=20260922part4">
+  <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923dash5">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -215,38 +216,31 @@
             </div>
             <div class="dashboard-baemin-live-actions">
               <button type="button" class="primary-btn" id="dashboardBaeminLiveQueryBtn">스냅샷 조회</button>
+              <button type="button" class="small-btn dashboard-week-open-btn" data-dashboard-week-open="dashboardBaeminWeekModal">이번주 지역별 할당</button>
               <button type="button" class="small-btn" id="dashboardBaeminOpenStatusBtn">배민현황 열기</button>
             </div>
           </div>
           <p class="dashboard-baemin-applied-time" id="dashboardBaeminAppliedTime" aria-live="polite">적용시간 —</p>
-          <div class="baemin-slot-schedule">
-            <p class="form-help"><b>할당 시작 시간대</b> · 주말 = 토·일</p>
-            <div class="table-scroll">
-              <table class="admin-table baemin-slot-schedule-table">
-                <thead>
-                  <tr>
-                    <th>시간대</th>
-                    <th>평일 (월~금)</th>
-                    <th>주말 (토·일)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><th scope="row">아침점심</th><td>06:00 ~ 12:59</td><td>06:00 ~ 13:59</td></tr>
-                  <tr><th scope="row">오후</th><td>13:00 ~ 16:59</td><td>14:00 ~ 16:59</td></tr>
-                  <tr><th scope="row">저녁</th><td>17:00 ~ 19:59</td><td>17:00 ~ 19:59</td></tr>
-                  <tr><th scope="row">심야</th><td>20:00 ~ 05:59</td><td>20:00 ~ 05:59</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <p class="dashboard-slot-legend" id="dashboardBaeminSlotLegend">
+            <span data-baemin-slot="morning">아점 06–12</span>
+            <span data-baemin-slot="afternoon">오후 13–16</span>
+            <span data-baemin-slot="evening">저녁 17–19</span>
+            <span data-baemin-slot="midnight">심야 20–05</span>
+            <small>주말 아점 06–13 · 오후 14–16</small>
+          </p>
           <p class="admin-table-summary" id="dashboardBaeminLiveSummary" aria-live="polite">마지막 현황 불러오는 중…</p>
           <div id="dashboardBaeminLivePanels" class="dashboard-baemin-live-panels">
             <p class="form-help">마지막 현황 불러오는 중…</p>
           </div>
-          <div class="dashboard-baemin-week-block" id="dashboardBaeminWeekBlock">
+          <div class="dashboard-week-modal" id="dashboardBaeminWeekModal" role="dialog" aria-modal="true" aria-labelledby="dashboardBaeminWeekTitle" hidden>
+          <div class="dashboard-week-modal__backdrop" data-dashboard-week-close></div>
+          <div class="dashboard-week-modal__dialog dashboard-baemin-week-block" id="dashboardBaeminWeekBlock">
             <div class="dashboard-baemin-week-block__head">
-              <h3>이번주 지역별 할당 달성</h3>
-              <p class="form-help dashboard-baemin-live-help">전날 포함 8일 · 배민현황과 동일</p>
+              <div>
+                <h3 id="dashboardBaeminWeekTitle">배민 · 이번주 지역별 할당 달성</h3>
+                <p class="form-help dashboard-baemin-live-help">이번 정산주 수~화 · 일별은 다음 날 반영</p>
+              </div>
+              <button type="button" class="small-btn dashboard-week-modal__close" data-dashboard-week-close aria-label="닫기">닫기</button>
             </div>
             <div class="baemin-region-tabs dashboard-baemin-week-region-tabs" id="dashboardBaeminWeekRegionBar" hidden></div>
             <p class="admin-table-summary" id="dashboardBaeminWeekSummary" aria-live="polite">마지막 주간 현황 불러오는 중…</p>
@@ -256,10 +250,10 @@
                   <tr>
                     <th>지역</th>
                     <th>배달일</th>
-                    <th title="아침점심">아점</th>
-                    <th>오후</th>
-                    <th>저녁</th>
-                    <th>심야</th>
+                    <th data-baemin-slot="morning" title="아침점심">아점</th>
+                    <th data-baemin-slot="afternoon">오후</th>
+                    <th data-baemin-slot="evening">저녁</th>
+                    <th data-baemin-slot="midnight">심야</th>
                   </tr>
                 </thead>
                 <tbody id="dashboardBaeminWeekRows">
@@ -267,6 +261,7 @@
                 </tbody>
               </table>
             </div>
+          </div>
           </div>
         </article>
 
@@ -278,6 +273,7 @@
             </div>
             <div class="dashboard-baemin-live-actions">
               <button type="button" class="primary-btn" id="dashboardCoupangLiveQueryBtn">실시간 조회</button>
+              <button type="button" class="small-btn dashboard-week-open-btn" data-dashboard-week-open="dashboardCoupangWeekModal">이번주 지역별 할당</button>
               <button type="button" class="small-btn" id="dashboardCoupangOpenStatusBtn">쿠팡현황 열기</button>
             </div>
           </div>
@@ -286,10 +282,15 @@
           <div id="dashboardCoupangCard" class="dashboard-baemin-live-panels">
             <p class="form-help">조회 결과가 여기에 표시됩니다.</p>
           </div>
-          <div class="dashboard-baemin-week-block" id="dashboardCoupangWeekBlock">
+          <div class="dashboard-week-modal" id="dashboardCoupangWeekModal" role="dialog" aria-modal="true" aria-labelledby="dashboardCoupangWeekTitle" hidden>
+          <div class="dashboard-week-modal__backdrop" data-dashboard-week-close></div>
+          <div class="dashboard-week-modal__dialog dashboard-baemin-week-block" id="dashboardCoupangWeekBlock">
             <div class="dashboard-baemin-week-block__head">
-              <h3>이번주 지역별 할당 달성</h3>
-              <p class="form-help dashboard-baemin-live-help">이번주 수~오늘</p>
+              <div>
+                <h3 id="dashboardCoupangWeekTitle">쿠팡 · 이번주 지역별 할당 달성</h3>
+                <p class="form-help dashboard-baemin-live-help">이번 정산주 수~화</p>
+              </div>
+              <button type="button" class="small-btn dashboard-week-modal__close" data-dashboard-week-close aria-label="닫기">닫기</button>
             </div>
             <div class="baemin-region-tabs dashboard-baemin-week-region-tabs" id="dashboardCoupangWeekRegionBar" hidden></div>
             <p class="admin-table-summary" id="dashboardCoupangWeekSummary" aria-live="polite">오늘 조회 시 함께 불러옵니다</p>
@@ -299,11 +300,11 @@
                   <tr>
                     <th>지역</th>
                     <th>일자</th>
-                    <th title="아침">아침</th>
-                    <th title="점심피크">점피</th>
-                    <th title="점심논피크">점논</th>
-                    <th title="저녁피크">저피</th>
-                    <th title="저녁논피크">저논</th>
+                    <th data-coupang-peak="MORNING" title="아침">아침</th>
+                    <th data-coupang-peak="LUNCH" title="점심피크">점피</th>
+                    <th data-coupang-peak="POST_LUNCH" title="점심논피크">점논</th>
+                    <th data-coupang-peak="DINNER" title="저녁피크">저피</th>
+                    <th data-coupang-peak="POST_DINNER" title="저녁논피크">저논</th>
                     <th>거절</th>
                   </tr>
                 </thead>
@@ -312,6 +313,7 @@
                 </tbody>
               </table>
             </div>
+          </div>
           </div>
         </article>
                 <div class="stats-grid">
@@ -9250,8 +9252,8 @@
   <script src="js/weekly-settlement-admin.js?v=20260922part5"></script>
   <script src="js/baemin-delivery-fee.js?v=20260917ai1"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
-    <script src="js/baemin-delivery-status-admin.js?v=20260916cp2tag"></script>
-    <script src="js/coupang-status-admin.js?v=20260920cpweek1"></script>
+    <script src="js/baemin-delivery-status-admin.js?v=20260923dash5"></script>
+    <script src="js/coupang-status-admin.js?v=20260923dash5"></script>
     <script src="js/coupang-rider-status-admin.js?v=20260811a"></script>
     <script src="js/contribution-admin.js?v=20260909contribution15"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>

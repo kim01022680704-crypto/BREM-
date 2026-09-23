@@ -109,7 +109,39 @@ async function getPartnerRegionMapForAdmin() {
   }
 }
 
-async function upsertPartnerRegionEntry(partnerId, regionName, updatedBy = '') {
+async function assignRegisteredPartnerToManagers(partnerId, actorAccount = null) {
+  const pid = normalizePartnerId(partnerId);
+  if (!/^DP\d{6,}$/.test(pid)) return { ok: true, updated: 0 };
+  const { getServiceClient } = require('./admin-bootstrap');
+  const { loadAdminRegistry, writeRegistry, ADMIN_ROLES } = require('./admin-registry');
+  const supabase = getServiceClient();
+  if (!supabase) return { ok: true, updated: 0 };
+  const accounts = await loadAdminRegistry(supabase);
+  const actorId = String(actorAccount?.id || '');
+  let updated = 0;
+  const next = accounts.map(account => {
+    const role = String(account?.role || '').toLowerCase();
+    const canManage = role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.DIRECTOR;
+    const current = [...new Set((Array.isArray(account?.baeminPartnerIds) ? account.baeminPartnerIds : [])
+      .map(id => normalizePartnerId(id))
+      .filter(id => /^DP\d{6,}$/.test(id)))];
+    const isActor = actorId && String(account.id || '') === actorId;
+    if (!isActor && !(canManage && current.length)) return account;
+    if (current.includes(pid)) return account;
+    if (!isActor && !current.length) return account;
+    updated += 1;
+    return {
+      ...account,
+      baeminPartnerIds: [...current, pid],
+      updatedAt: new Date().toISOString()
+    };
+  });
+  if (!updated) return { ok: true, updated: 0 };
+  await writeRegistry(supabase, next);
+  return { ok: true, updated };
+}
+
+async function upsertPartnerRegionEntry(partnerId, regionName, updatedBy = '', actorAccount = null) {
   const pid = normalizePartnerId(partnerId);
   const region = String(regionName || '').trim();
   if (!/^DP\d{6,}$/.test(pid)) {
@@ -122,7 +154,19 @@ async function upsertPartnerRegionEntry(partnerId, regionName, updatedBy = '') {
   map[pid] = region;
   const saved = await savePartnerRegionMap(map, updatedBy);
   if (!saved.ok) return saved;
-  return { ok: true, partnerId: pid, regionName: region, map: saved.map };
+  const assigned = await assignRegisteredPartnerToManagers(pid, actorAccount);
+  const items = Object.entries(saved.map)
+    .map(([id, name]) => ({ partnerId: id, regionName: name }))
+    .sort((a, b) => String(a.regionName).localeCompare(String(b.regionName), 'ko'));
+  return {
+    ok: true,
+    partnerId: pid,
+    regionName: region,
+    map: saved.map,
+    allMap: saved.map,
+    allItems: items,
+    assignedAccounts: assigned.updated || 0
+  };
 }
 
 async function deletePartnerRegionEntry(partnerId) {
@@ -177,5 +221,6 @@ module.exports = {
   filterPartnersForCollect,
   getPartnerRegionMapForAdmin,
   upsertPartnerRegionEntry,
-  deletePartnerRegionEntry
+  deletePartnerRegionEntry,
+  assignRegisteredPartnerToManagers
 };

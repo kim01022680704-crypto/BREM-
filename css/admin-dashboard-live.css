@@ -1,0 +1,508 @@
+/* 대시보드 할당 표: 시간대 칸은 유지, 읽기만 정리 */
+#dashboard .dashboard-baemin-live-card {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+#dashboard .dashboard-baemin-live-card__header h2 {
+  letter-spacing: -0.02em;
+}
+
+#dashboard .dashboard-baemin-applied-time {
+  color: #cbd5e1;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+#dashboard .dashboard-baemin-week-block__head h3 {
+  color: #e2e8f0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+#dashboard .dashboard-slot-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0;
+  padding: 8px 18px 4px;
+}
+
+#dashboard .dashboard-slot-legend span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+#dashboard .dashboard-slot-legend span.is-current {
+  color: #f8fafc;
+  border-color: rgba(224, 178, 74, 0.45);
+  background: rgba(224, 178, 74, 0.12);
+}
+
+#dashboard .dashboard-slot-legend small {
+  color: #64748b;
+  font-size: 0.7rem;
+}
+
+#dashboard .dashboard-baemin-compact-table {
+  font-size: 0.8rem;
+}
+
+#dashboard .dashboard-baemin-compact-table th {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+#dashboard .dashboard-baemin-compact-table th.is-current,
+#dashboard .dashboard-baemin-compact-table td.is-current {
+  background: rgba(224, 178, 74, 0.07);
+}
+
+#dashboard .dashboard-baemin-compact-table th.is-current {
+  color: #f8fafc;
+}
+
+#dashboard .dashboard-baemin-compact-table th em {
+  margin-left: 4px;
+  color: #e0b24a;
+  font-style: normal;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+#dashboard .dashboard-baemin-compact-table__summary td {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+#dashboard .dashboard-baemin-region-name {
+  color: #f1f5f9;
+  font-weight: 700;
+}
+
+#dashboard .dashboard-baemin-qcell {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+#dashboard .dashboard-baemin-qcell__stack {
+  gap: 4px;
+  width: 100%;
+}
+
+#dashboard .dashboard-baemin-qcell__bar {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  overflow: hidden;
+}
+
+#dashboard .dashboard-baemin-qcell__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #f26d6d;
+}
+
+#dashboard .dashboard-baemin-qcell.is-achieved .dashboard-baemin-qcell__bar-fill {
+  background: #3ecb86;
+}
+
+#dashboard .dashboard-baemin-qcell.is-empty .dashboard-baemin-qcell__bar-fill {
+  width: 0;
+}
+
+#dashboard .dashboard-baemin-qcell__ratio {
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+#dashboard .dashboard-baemin-qcell.is-empty .dashboard-baemin-qcell__ratio {
+  color: #64748b;
+  font-weight: 500;
+}
+
+#dashboard .dashboard-baemin-qcell .baemin-quota-cell__percent {
+  color: #f26d6d;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+#dashboard .dashboard-baemin-qcell.is-achieved .baemin-quota-cell__percent {
+  color: #3ecb86;
+}
+
+#dashboard .dashboard-baemin-qcell.is-empty .baemin-quota-cell__percent {
+  color: #64748b;
+  font-weight: 500;
+}
+
+#dashboard .dashboard-baemin-qcell .baemin-quota-tag {
+  display: none;
+}
+
+#dashboard .dashboard-coupang-compact-table .dashboard-baemin-qcell__stack {
+  align-items: stretch;
+}
+
+#dashboard .dashboard-coupang-compact-table .dashboard-baemin-qcell__ratio,
+#dashboard .dashboard-coupang-compact-table .dashboard-baemin-qcell__meta {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* ── 2차: 표 틀 유지, 대비·상태만 더 또렷하게 ── */
+#dashboard .dashboard-baemin-live-card {
+  border-radius: 14px;
+  background: #1a1a1a;
+}
+
+#dashboard .dashboard-baemin-live-card__header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#dashboard .dashboard-baemin-live-card__header h2 {
+  font-size: 1.12rem;
+  font-weight: 800;
+}
+
+#dashboard .dashboard-baemin-applied-time {
+  padding-top: 10px;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+#dashboard .dashboard-baemin-live-card .admin-table-summary {
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+#dashboard .dashboard-baemin-table-wrap {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  background: #151515;
+}
+
+#dashboard .dashboard-baemin-compact-table th,
+#dashboard .dashboard-baemin-compact-table td {
+  padding: 9px 10px;
+  border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+#dashboard .dashboard-baemin-compact-table thead th {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  color: #a1a1aa;
+  background: #1c1c1c;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+#dashboard .dashboard-baemin-compact-table thead th.is-current {
+  color: #ffd400;
+  background: rgba(255, 212, 0, 0.09);
+  box-shadow: inset 0 2px 0 #ffd400;
+}
+
+#dashboard .dashboard-baemin-compact-table th em {
+  color: #ffd400;
+}
+
+#dashboard .dashboard-baemin-compact-table td.is-current {
+  background: rgba(255, 212, 0, 0.045);
+}
+
+#dashboard .dashboard-baemin-compact-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+#dashboard .dashboard-baemin-compact-table tbody tr:hover td {
+  background-color: rgba(255, 255, 255, 0.025);
+}
+
+#dashboard .dashboard-baemin-compact-table tbody tr:hover td.is-current {
+  background-color: rgba(255, 212, 0, 0.07);
+}
+
+/* 합계 행: 한 줄로 전체가 먼저 보이게 */
+#dashboard .dashboard-baemin-compact-table__summary td {
+  background: #222017;
+  border-bottom: 1px solid rgba(255, 212, 0, 0.18);
+}
+
+#dashboard .dashboard-baemin-compact-table__summary td:first-child {
+  box-shadow: inset 3px 0 0 #ffd400;
+}
+
+#dashboard .dashboard-baemin-compact-table__summary .dashboard-baemin-region-name {
+  color: #ffd400;
+}
+
+#dashboard .dashboard-baemin-compact-table__summary .dashboard-baemin-qcell__ratio {
+  font-size: 0.92rem;
+}
+
+#dashboard .dashboard-baemin-region-name {
+  font-size: 0.86rem;
+}
+
+#dashboard .dashboard-baemin-region-meta {
+  margin-top: 2px;
+  color: #71717a;
+  font-size: 0.7rem;
+}
+
+/* 칸: 막대 → 숫자 → % 순서로 읽힘 */
+#dashboard .dashboard-baemin-qcell__bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+#dashboard .dashboard-baemin-qcell__ratio {
+  color: #f4f4f5;
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+}
+
+#dashboard .dashboard-baemin-qcell .baemin-quota-cell__percent {
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+#dashboard .dashboard-baemin-qcell.is-missed .dashboard-baemin-qcell__bar-fill {
+  background: #ef5b5b;
+}
+
+#dashboard .dashboard-baemin-qcell.is-near .dashboard-baemin-qcell__bar-fill {
+  background: #f5b83d;
+}
+
+#dashboard .dashboard-baemin-qcell.is-near .baemin-quota-cell__percent {
+  color: #f5b83d;
+}
+
+#dashboard .dashboard-baemin-qcell.is-achieved .dashboard-baemin-qcell__bar-fill {
+  background: #34c77b;
+}
+
+#dashboard .dashboard-baemin-qcell.is-achieved .baemin-quota-cell__percent {
+  color: #34c77b;
+}
+
+/* 아직 시작 안 한 시간대: 빨강 대신 흐리게 */
+#dashboard .dashboard-baemin-qcell.is-upcoming .dashboard-baemin-qcell__ratio {
+  color: #52525b;
+  font-weight: 600;
+}
+
+#dashboard .dashboard-baemin-qcell__wait {
+  color: #52525b;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+#dashboard .dashboard-baemin-qcell.is-empty .dashboard-baemin-qcell__ratio {
+  color: #3f3f46;
+}
+
+/* 이번주 지역 탭 */
+#dashboard .dashboard-baemin-week-block {
+  padding-top: 14px;
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+#dashboard .dashboard-baemin-week-region-tabs .baemin-region-tab {
+  min-height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: #a1a1aa;
+  font-weight: 600;
+}
+
+#dashboard .dashboard-baemin-week-region-tabs .baemin-region-tab.is-active {
+  border-color: #ffd400;
+  background: rgba(255, 212, 0, 0.12);
+  color: #ffd400;
+}
+
+#dashboard .dashboard-slot-legend {
+  padding-top: 10px;
+}
+
+#dashboard .dashboard-slot-legend span.is-current {
+  color: #ffd400;
+  border-color: rgba(255, 212, 0, 0.45);
+  background: rgba(255, 212, 0, 0.1);
+}
+
+/* 가로 스크롤 시 지역명 고정 */
+#dashboard .dashboard-baemin-compact-table th:first-child,
+#dashboard .dashboard-baemin-compact-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background-color: #151515;
+}
+
+#dashboard .dashboard-baemin-compact-table thead th:first-child {
+  z-index: 2;
+  background-color: #1c1c1c;
+}
+
+#dashboard .dashboard-baemin-compact-table tbody tr:hover td:first-child {
+  background-color: #1a1a1a;
+}
+
+#dashboard .dashboard-baemin-compact-table__summary td:first-child,
+#dashboard .dashboard-baemin-compact-table tbody tr.dashboard-baemin-compact-table__summary:hover td:first-child {
+  background-color: #222017;
+}
+
+/* 이번주 지역별 할당: 버튼으로 여는 팝업 */
+#dashboard .dashboard-week-open-btn {
+  border-color: rgba(255, 212, 0, 0.45);
+  color: #ffd400;
+  font-weight: 700;
+}
+
+#dashboard .dashboard-week-open-btn:hover {
+  background: rgba(255, 212, 0, 0.1);
+}
+
+body.dashboard-week-modal-open {
+  overflow: hidden;
+}
+
+#dashboard .dashboard-week-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+#dashboard .dashboard-week-modal[hidden] {
+  display: none;
+}
+
+#dashboard .dashboard-week-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+}
+
+#dashboard .dashboard-week-modal__dialog {
+  position: relative;
+  z-index: 1;
+  width: min(1120px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 0 20px 20px;
+  border: 1px solid #333333;
+  border-top: 1px solid #333333;
+  border-radius: 16px;
+  background: #1a1a1a;
+}
+
+#dashboard .dashboard-week-modal__dialog .dashboard-baemin-week-block__head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  align-items: flex-start;
+  margin: 0 -20px 12px;
+  padding: 18px 20px 12px;
+  background: #1a1a1a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#dashboard .dashboard-week-modal__dialog .dashboard-baemin-week-block__head h3 {
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+#dashboard .dashboard-week-modal__close {
+  flex-shrink: 0;
+}
+
+#dashboard .dashboard-week-modal .dashboard-coupang-table-wrap {
+  overflow-x: auto;
+}
+
+@media (max-width: 720px) {
+  #dashboard .dashboard-week-modal {
+    padding: 0;
+    place-items: end stretch;
+  }
+
+  #dashboard .dashboard-week-modal__dialog {
+    width: 100%;
+    max-height: 88vh;
+    padding: 0 12px 16px;
+    border-radius: 16px 16px 0 0;
+  }
+
+  #dashboard .dashboard-week-modal__dialog .dashboard-baemin-week-block__head {
+    margin: 0 -12px 10px;
+    padding: 14px 12px 10px;
+  }
+}
+
+/* 이번주 표: 날짜·지역명이 두 줄로 꺾이지 않게 */
+#dashboard .dashboard-baemin-date-cell {
+  color: #d4d4d8;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+#dashboard .dashboard-baemin-week-block .dashboard-baemin-region-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#dashboard .dashboard-baemin-week-block .dashboard-baemin-compact-table th:nth-child(1),
+#dashboard .dashboard-baemin-week-block .dashboard-baemin-compact-table td:nth-child(1) {
+  width: 12%;
+}
+
+#dashboard .dashboard-baemin-week-block .dashboard-baemin-compact-table th:nth-child(2),
+#dashboard .dashboard-baemin-week-block .dashboard-baemin-compact-table td:nth-child(2) {
+  width: 11%;
+}
+
+#dashboard .dashboard-baemin-compact-table .dashboard-baemin-qcell__ratio,
+#dashboard .dashboard-baemin-compact-table .dashboard-baemin-qcell__meta {
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  #dashboard .dashboard-baemin-compact-table th,
+  #dashboard .dashboard-baemin-compact-table td {
+    padding: 7px 6px;
+  }
+
+  #dashboard .dashboard-baemin-qcell__ratio {
+    font-size: 0.76rem;
+  }
+}

@@ -930,7 +930,8 @@ async function savePartnerRegionEntry(accessToken, options = {}) {
   return upsertPartnerRegionEntry(
     options.partnerId,
     options.regionName,
-    actor.caller.email || actor.caller.userId || ''
+    actor.caller.email || actor.caller.userId || '',
+    actor.account
   );
 }
 

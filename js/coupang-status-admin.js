@@ -152,18 +152,66 @@
     });
   }
 
-  function renderQuotaTagCell(actual, target) {
+  function currentCoupangPeakKey(date = new Date()) {
+    const hour = date.getHours();
+    if (hour >= 7 && hour < 11) return 'MORNING';
+    if (hour >= 11 && hour < 14) return 'LUNCH';
+    if (hour >= 14 && hour < 17) return 'POST_LUNCH';
+    if (hour >= 17 && hour < 21) return 'DINNER';
+    return 'POST_DINNER';
+  }
+
+  function isUpcomingCoupangPeak(pt, date = '') {
+    const afterCurrent = PEAK_ORDER.indexOf(pt) > PEAK_ORDER.indexOf(currentCoupangPeakKey());
+    if (!date) return afterCurrent;
+    const today = todayBusinessKey();
+    const day = String(date).slice(0, 10);
+    if (day > today) return true;
+    if (day < today) return false;
+    return afterCurrent;
+  }
+
+  function markCurrentCoupangPeaks() {
+    const key = currentCoupangPeakKey();
+    document.querySelectorAll('#dashboard [data-coupang-peak]').forEach(el => {
+      el.classList.toggle('is-current', el.getAttribute('data-coupang-peak') === key);
+    });
+  }
+
+  function renderQuotaTagCell(actual, target, options = {}) {
     const a = Number(actual) || 0;
     const t = Number(target) || 0;
-    if (!t && !a) {
-      return '<td class="dashboard-baemin-qcell"><span class="form-help">-</span></td>';
-    }
+    const empty = !t && !a;
     const achieved = t > 0 ? a >= t : a > 0;
+    const percent = t > 0 ? Math.round((a / t) * 1000) / 10 : (a > 0 ? 100 : 0);
+    const width = empty ? 0 : Math.max(0, Math.min(100, percent));
+    const near = !achieved && t > 0 && percent >= 70;
     const statusClass = achieved ? 'baemin-quota-tag--achieved' : 'baemin-quota-tag--missed';
-    return `<td class="dashboard-baemin-qcell">
+    const stateClass = empty ? ' is-empty' : (achieved ? ' is-achieved' : (near ? ' is-missed is-near' : ' is-missed'));
+    const currentClass = options.current ? ' is-current' : '';
+    if (!empty && options.upcoming && a <= 0) {
+      return `<td class="dashboard-baemin-qcell is-upcoming${currentClass}">
+        <div class="dashboard-baemin-qcell__stack">
+          <div class="dashboard-baemin-qcell__bar" aria-hidden="true"><span class="dashboard-baemin-qcell__bar-fill" style="width:0%"></span></div>
+          <span class="dashboard-baemin-qcell__ratio">0/${esc(n(t))}</span>
+          <span class="dashboard-baemin-qcell__meta"><span class="dashboard-baemin-qcell__wait">대기</span></span>
+        </div>
+      </td>`;
+    }
+    if (empty) {
+      return `<td class="dashboard-baemin-qcell is-empty${currentClass}">
+        <div class="dashboard-baemin-qcell__stack">
+          <div class="dashboard-baemin-qcell__bar" aria-hidden="true"><span class="dashboard-baemin-qcell__bar-fill" style="width:0%"></span></div>
+          <span class="dashboard-baemin-qcell__ratio">-</span>
+        </div>
+      </td>`;
+    }
+    return `<td class="dashboard-baemin-qcell${stateClass}${currentClass}">
       <div class="dashboard-baemin-qcell__stack">
+        <div class="dashboard-baemin-qcell__bar" aria-hidden="true"><span class="dashboard-baemin-qcell__bar-fill" style="width:${width}%"></span></div>
         <span class="dashboard-baemin-qcell__ratio">${esc(n(a))}/${esc(n(t))}</span>
         <span class="dashboard-baemin-qcell__meta">
+          <span class="baemin-quota-cell__percent">${esc(String(percent))}%</span>
           <span class="baemin-quota-tag ${statusClass}">${achieved ? '달성' : '미달'}</span>
         </span>
       </div>
@@ -486,11 +534,16 @@
   }
 
   function renderTodayTable(regionRows, totals) {
-    const peakHeads = PEAK_ORDER.map(pt =>
-      `<th title="${esc(PEAK_LABEL[pt])}">${esc(PEAK_LABEL_SHORT[pt])}</th>`
-    ).join('');
+    const nowPeak = currentCoupangPeakKey();
+    const peakHeads = PEAK_ORDER.map(pt => {
+      const current = pt === nowPeak;
+      return `<th data-coupang-peak="${pt}" class="${current ? 'is-current' : ''}" title="${esc(PEAK_LABEL[pt])}">${esc(PEAK_LABEL_SHORT[pt])}${current ? ' <em>지금</em>' : ''}</th>`;
+    }).join('');
     const summaryPeakCells = PEAK_ORDER.map(pt =>
-      renderQuotaTagCell(totals.peaks[pt].completed, totals.peaks[pt].goal)
+      renderQuotaTagCell(totals.peaks[pt].completed, totals.peaks[pt].goal, {
+        current: pt === nowPeak,
+        upcoming: isUpcomingCoupangPeak(pt)
+      })
     ).join('');
     const summaryRow = `<tr class="dashboard-baemin-compact-table__summary">
       <td><strong class="dashboard-baemin-region-name">합계</strong></td>
@@ -501,7 +554,10 @@
     const bodyRows = regionRows.map(region => {
       const peakCells = PEAK_ORDER.map(pt => {
         const peak = region.peaks[pt] || { goal: 0, completed: 0 };
-        return renderQuotaTagCell(peak.completed, peak.goal);
+        return renderQuotaTagCell(peak.completed, peak.goal, {
+          current: pt === nowPeak,
+          upcoming: isUpcomingCoupangPeak(pt)
+        });
       }).join('');
       return `<tr>
         <td>${regionNameCell(region.vendorName)}</td>
@@ -573,29 +629,34 @@
       const day = byDate[date];
       if (day) filled += 1;
       const peaks = day?.peaks || emptyPeaks();
+      const nowPeak = currentCoupangPeakKey();
       const peakCells = PEAK_ORDER.map(pt =>
-        renderQuotaTagCell(peaks[pt]?.completed || 0, peaks[pt]?.goal || 0)
+        renderQuotaTagCell(peaks[pt]?.completed || 0, peaks[pt]?.goal || 0, {
+          current: pt === nowPeak,
+          upcoming: isUpcomingCoupangPeak(pt, date)
+        })
       ).join('');
       const rej = day?.rejectionRate;
       return `<tr>
         <td>${regionNameCell(regionName)}</td>
-        <td>${esc(formatDeliveryDateWithWeekday(date))}</td>
+        <td class="dashboard-baemin-date-cell" title="${esc(date)}">${esc(formatDeliveryDateWithWeekday(date))}</td>
         ${peakCells}
         <td>${rej == null ? '-' : `${esc(n(rej))}%`}</td>
       </tr>`;
     }).join('');
     if (summaryEl) {
-      summaryEl.textContent = `${shortRegionLabel(regionName)} · ${dash.weekRange.fromDate} ~ ${dash.weekRange.toDate} · ${filled}/${dates.length}일`;
+      summaryEl.textContent = `${shortRegionLabel(regionName)} · ${dash.weekRange.fromDate}(수) ~ ${dash.weekRange.toDate}(화) · ${filled}/${dates.length}일`;
     }
     persistWeekCache();
   }
 
   async function loadWeekQuota(vendorsHint = []) {
     const weekRange = thisWeekWedToToday();
-    dash.weekRange = weekRange;
     const weekEnd = dp()?.weekEndKey
       ? dp().weekEndKey(weekRange.weekStart)
       : addDaysKey(weekRange.weekStart, 6);
+    // 조회는 수~오늘, 표는 수~화 7일(안 온 날은 '대기')
+    dash.weekRange = { ...weekRange, toDate: weekEnd };
     const summaryEl = $('dashboardCoupangWeekSummary');
     const rowsEl = $('dashboardCoupangWeekRows');
     if (summaryEl) summaryEl.textContent = `${weekRange.fromDate} ~ ${weekRange.toDate} · 불러오는 중…`;
@@ -819,6 +880,7 @@
         appliedEl.innerHTML = `기준일 ${esc(today)}<span class="dashboard-baemin-queried-at"> · 자동조회 ${esc(formatDateTimeLabel(queriedAt))}</span>`;
       }
       mount.innerHTML = renderTodayTable(regionRows, totals);
+      markCurrentCoupangPeaks();
       const summaryText = `오늘 ${today} · 지역 ${regionRows.length}곳 · 운행중 ${n(totals.drivingSum)}명 · 피크 할당 대비 · 2분마다 자동 조회`;
       if (summary) summary.textContent = summaryText;
       dash.lastActivity = nextActivity;
@@ -981,6 +1043,7 @@
         weekSummary.textContent = `${cache.weekSummaryText} · 최신 갱신 중…`;
       }
     }
+    markCurrentCoupangPeaks();
     return true;
   }
 
