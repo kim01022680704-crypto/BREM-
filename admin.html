@@ -3822,19 +3822,18 @@
           <div class="card-header settlement-upload-log-header">
             <div>
               <h2>쿠팡 일정산 업로드 기록</h2>
-              <p class="form-help">수요일 기준 적용주별로 업로드한 정산표 파일명과 적용 내역을 기록합니다. 상세에서 기사별 콜수·정산금액을 확인할 수 있습니다.</p>
+              <p class="form-help">정산일 하루만 골라 올린 파일을 봅니다. 상세에서 기사별 콜수·정산금액을 확인할 수 있습니다.</p>
             </div>
             <div class="settlement-week-filter-actions">
               <div class="settlement-week-filter">
-                <span>적용주(수요일)</span>
-                <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="settlement-log-coupang" id="settlementLogWeekBtn-coupang">수요일 선택</button>
-                <input type="hidden" id="settlementLogWeek-coupang">
+                <span>정산일</span>
+                <input type="date" id="settlementLogDay-coupang" class="admin-period-input">
               </div>
-              <button type="button" class="small-btn primary-btn" id="settlementUploadLogReapplyWeek-coupang" disabled>해당주 전체 재반영</button>
-              <button type="button" class="small-btn danger-btn" id="settlementUploadLogClearWeek-coupang" disabled>해당주 전체 삭제</button>
+              <button type="button" class="small-btn primary-btn" id="settlementUploadLogReapplyWeek-coupang" disabled>해당일 전체 재반영</button>
+              <button type="button" class="small-btn danger-btn" id="settlementUploadLogClearWeek-coupang" disabled>해당일 전체 삭제</button>
             </div>
           </div>
-          <p class="settlement-week-range-label" id="settlementLogWeekRange-coupang"></p>
+          <p class="settlement-week-range-label" id="settlementLogDayRange-coupang"></p>
           <p class="admin-table-summary" id="settlementUploadLogSummary-coupang"></p>
           <div class="table-wrap admin-scroll-table-wrap admin-scroll-table-wrap--upload-log">
             <table class="settlement-upload-log-table">
@@ -4130,19 +4129,18 @@
           <div class="card-header settlement-upload-log-header">
             <div>
               <h2>배민 일정산 업로드 기록</h2>
-              <p class="form-help">수요일 기준 적용주별로 업로드한 정산표 파일명과 적용 내역을 기록합니다. 상세에서 기사별 콜수·정산금액을 확인할 수 있습니다.</p>
+              <p class="form-help">정산일 하루만 골라 올린 파일을 봅니다. 상세에서 기사별 콜수·정산금액을 확인할 수 있습니다.</p>
             </div>
             <div class="settlement-week-filter-actions">
               <div class="settlement-week-filter">
-                <span>적용주(수요일)</span>
-                <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="settlement-log-baemin" id="settlementLogWeekBtn-baemin">수요일 선택</button>
-                <input type="hidden" id="settlementLogWeek-baemin">
+                <span>정산일</span>
+                <input type="date" id="settlementLogDay-baemin" class="admin-period-input">
               </div>
-              <button type="button" class="small-btn primary-btn" id="settlementUploadLogReapplyWeek-baemin" disabled>해당주 전체 재반영</button>
-              <button type="button" class="small-btn danger-btn" id="settlementUploadLogClearWeek-baemin" disabled>해당주 전체 삭제</button>
+              <button type="button" class="small-btn primary-btn" id="settlementUploadLogReapplyWeek-baemin" disabled>해당일 전체 재반영</button>
+              <button type="button" class="small-btn danger-btn" id="settlementUploadLogClearWeek-baemin" disabled>해당일 전체 삭제</button>
             </div>
           </div>
-          <p class="settlement-week-range-label" id="settlementLogWeekRange-baemin"></p>
+          <p class="settlement-week-range-label" id="settlementLogDayRange-baemin"></p>
           <p class="admin-table-summary" id="settlementUploadLogSummary-baemin"></p>
           <div class="table-wrap admin-scroll-table-wrap admin-scroll-table-wrap--upload-log">
             <table class="settlement-upload-log-table">
@@ -9233,7 +9231,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260923fast1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20260922active2"></script>
-  <script src="js/storage.js?v=20260923comp2"></script>
+  <script src="js/storage.js?v=20260923day1"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
@@ -9253,9 +9251,9 @@
   <script src="js/baemin-delivery-fee.js?v=20260917ai1"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260923fit1"></script>
-    <script src="js/coupang-status-admin.js?v=20260923dash5"></script>
+    <script src="js/coupang-status-admin.js?v=20260923peak14"></script>
     <script src="js/coupang-rider-status-admin.js?v=20260811a"></script>
-    <script src="js/contribution-admin.js?v=20260909contribution15"></script>
+    <script src="js/contribution-admin.js?v=20260923peak14"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
   <script src="js/promotion-apply.js?v=20260917ai1"></script>
@@ -9293,7 +9291,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260827mission10"></script>
   <script src="js/admin-missions.js?v=20260827mission10"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260923fast1"></script>
+    <script src="js/admin.js?v=20260923day1"></script>
   <script src="js/admin-driver-popups.js?v=20260914popup2" defer></script>
   <script src="js/admin-sidebar-groups.js?v=20260921off1" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>

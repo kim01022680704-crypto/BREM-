@@ -54,8 +54,8 @@ function currentCoupangPeakKey(now = new Date()) {
   const hour = kstHour(now);
   if (hour < 6) return 'POST_DINNER';
   if (hour >= 7 && hour < 11) return 'MORNING';
-  if (hour >= 11 && hour < 14) return 'LUNCH';
-  if (hour >= 14 && hour < 17) return 'POST_LUNCH';
+  if (hour >= 11 && hour < 13) return 'LUNCH';
+  if (hour >= 13 && hour < 17) return 'POST_LUNCH';
   if (hour >= 17 && hour < 21) return 'DINNER';
   return 'POST_DINNER';
 }

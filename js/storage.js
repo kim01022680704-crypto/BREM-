@@ -4849,7 +4849,7 @@ const BremStorage = (function () {
     await ensureSectionLoaded('drivers');
     // 정산·급여 매칭은 휴무·퇴사도 엑셀에 남을 수 있어 전원 로드한다.
     if (typeof awaitDriversFullyLoaded === 'function') {
-      const result = await awaitDriversFullyLoaded({ includeInactive: true });
+      const result = await awaitDriversFullyLoaded({ includeInactive: true, force: true });
       if (result?.ok === false) {
         throw new Error(result.message || '기사 목록을 불러오지 못했습니다.');
       }
@@ -11838,6 +11838,7 @@ const BremStorage = (function () {
       const kind = options.kind ? String(options.kind) : '';
       const platform = options.platform ? normalizePlatform(options.platform) : '';
       const weekStart = String(options.weekStart || '').slice(0, 10);
+      const period = String(options.period || '').slice(0, 10);
       // 직계약은 별도 저장 키에 완전 분리되어 있어 채널별로 해당 키만 읽으면 됨(추가 필터/맵 불필요).
       const channel = options.channel === 'direct' ? 'direct' : 'bro';
       return settlementUploadLogs.getAll(channel).filter(item => {
@@ -11851,6 +11852,7 @@ const BremStorage = (function () {
             ).slice(0, 10);
           if (itemWeekStart !== weekStart) return false;
         }
+        if (period && String(item.period || '').slice(0, 10) !== period) return false;
         return true;
       });
     },
@@ -11929,10 +11931,12 @@ const BremStorage = (function () {
       const weekKey = String(weekStart || '').slice(0, 10);
       if (!weekKey) return { removed: 0, appliedCount: 0, rolledBackCalls: 0 };
 
+      const periodKey = String(options.period || '').slice(0, 10);
       const targets = settlementUploadLogs.getFiltered({
         kind: 'daily',
         platform: p,
-        weekStart: weekKey
+        weekStart: weekKey,
+        ...(periodKey ? { period: periodKey } : {})
       });
       if (!targets.length) return { removed: 0, appliedCount: 0, rolledBackCalls: 0 };
 

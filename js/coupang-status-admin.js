@@ -155,8 +155,8 @@
   function currentCoupangPeakKey(date = new Date()) {
     const hour = date.getHours();
     if (hour >= 7 && hour < 11) return 'MORNING';
-    if (hour >= 11 && hour < 14) return 'LUNCH';
-    if (hour >= 14 && hour < 17) return 'POST_LUNCH';
+    if (hour >= 11 && hour < 13) return 'LUNCH';
+    if (hour >= 13 && hour < 17) return 'POST_LUNCH';
     if (hour >= 17 && hour < 21) return 'DINNER';
     return 'POST_DINNER';
   }
@@ -174,7 +174,12 @@
   function markCurrentCoupangPeaks() {
     const key = currentCoupangPeakKey();
     document.querySelectorAll('#dashboard [data-coupang-peak]').forEach(el => {
-      el.classList.toggle('is-current', el.getAttribute('data-coupang-peak') === key);
+      const on = el.getAttribute('data-coupang-peak') === key;
+      el.classList.toggle('is-current', on);
+      if (el.tagName !== 'TH') return;
+      const em = el.querySelector('em');
+      if (on && !em) el.insertAdjacentHTML('beforeend', ' <em>지금</em>');
+      if (!on && em) em.remove();
     });
   }
 
@@ -189,8 +194,9 @@
     const statusClass = achieved ? 'baemin-quota-tag--achieved' : 'baemin-quota-tag--missed';
     const stateClass = empty ? ' is-empty' : (achieved ? ' is-achieved' : (near ? ' is-missed is-near' : ' is-missed'));
     const currentClass = options.current ? ' is-current' : '';
+    const peakAttr = options.peak ? ` data-coupang-peak="${esc(options.peak)}"` : '';
     if (!empty && options.upcoming && a <= 0) {
-      return `<td class="dashboard-baemin-qcell is-upcoming${currentClass}">
+      return `<td class="dashboard-baemin-qcell is-upcoming${currentClass}"${peakAttr}>
         <div class="dashboard-baemin-qcell__stack">
           <div class="dashboard-baemin-qcell__bar" aria-hidden="true"><span class="dashboard-baemin-qcell__bar-fill" style="width:0%"></span></div>
           <span class="dashboard-baemin-qcell__ratio">0/${esc(n(t))}</span>
@@ -199,14 +205,14 @@
       </td>`;
     }
     if (empty) {
-      return `<td class="dashboard-baemin-qcell is-empty${currentClass}">
+      return `<td class="dashboard-baemin-qcell is-empty${currentClass}"${peakAttr}>
         <div class="dashboard-baemin-qcell__stack">
           <div class="dashboard-baemin-qcell__bar" aria-hidden="true"><span class="dashboard-baemin-qcell__bar-fill" style="width:0%"></span></div>
           <span class="dashboard-baemin-qcell__ratio">-</span>
         </div>
       </td>`;
     }
-    return `<td class="dashboard-baemin-qcell${stateClass}${currentClass}">
+    return `<td class="dashboard-baemin-qcell${stateClass}${currentClass}"${peakAttr}>
       <div class="dashboard-baemin-qcell__stack">
         <div class="dashboard-baemin-qcell__bar" aria-hidden="true"><span class="dashboard-baemin-qcell__bar-fill" style="width:${width}%"></span></div>
         <span class="dashboard-baemin-qcell__ratio">${esc(n(a))}/${esc(n(t))}</span>
@@ -541,6 +547,7 @@
     }).join('');
     const summaryPeakCells = PEAK_ORDER.map(pt =>
       renderQuotaTagCell(totals.peaks[pt].completed, totals.peaks[pt].goal, {
+        peak: pt,
         current: pt === nowPeak,
         upcoming: isUpcomingCoupangPeak(pt)
       })
@@ -555,6 +562,7 @@
       const peakCells = PEAK_ORDER.map(pt => {
         const peak = region.peaks[pt] || { goal: 0, completed: 0 };
         return renderQuotaTagCell(peak.completed, peak.goal, {
+          peak: pt,
           current: pt === nowPeak,
           upcoming: isUpcomingCoupangPeak(pt)
         });
@@ -632,6 +640,7 @@
       const nowPeak = currentCoupangPeakKey();
       const peakCells = PEAK_ORDER.map(pt =>
         renderQuotaTagCell(peaks[pt]?.completed || 0, peaks[pt]?.goal || 0, {
+          peak: pt,
           current: pt === nowPeak,
           upcoming: isUpcomingCoupangPeak(pt, date)
         })
@@ -909,6 +918,10 @@
       clearInterval(dash.pollTimer);
       dash.pollTimer = null;
     }
+    if (dash.peakMarkTimer) {
+      clearInterval(dash.peakMarkTimer);
+      dash.peakMarkTimer = null;
+    }
   }
 
   function startDashboardCoupangLivePoll() {
@@ -918,8 +931,14 @@
       if (document.visibilityState === 'hidden') return;
       const dashboard = $('dashboard');
       if (!dashboard || !dashboard.classList.contains('active')) return;
+      markCurrentCoupangPeaks();
       void queryDashboardCoupangLive({ silent: true });
     }, POLL_MS);
+    if (dash.peakMarkTimer) clearInterval(dash.peakMarkTimer);
+    dash.peakMarkTimer = setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      markCurrentCoupangPeaks();
+    }, 30 * 1000);
   }
 
   const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v8';

@@ -25,7 +25,7 @@
     settlementPreviewByPlatform: { coupang: null, baemin: null },
     baeminHourlyInsurancePreview: null,
     baeminHourlyInsuranceLogWeek: '',
-    settlementLogWeekByPlatform: { coupang: null, baemin: null },
+    settlementLogDayByPlatform: { coupang: '', baemin: '' },
     settlementUnmatchedWeekByPlatform: { coupang: null, baemin: null },
     settlementHistoryDayByPlatform: { coupang: null, baemin: null },
     settlementUploadLogDetailId: '',
@@ -2101,19 +2101,15 @@
           };
         }
 
-        // 일정산 적용주(업로드 기록 / 미반영 기사) — 수요일만 고를 수 있어야 한다.
-        const settlementWeekMatch = triggerId?.match(/^settlement-(log|unmatched)-(coupang|baemin)$/);
+        // 일정산 미반영 기사 — 수요일만 고를 수 있어야 한다.
+        const settlementWeekMatch = triggerId?.match(/^settlement-unmatched-(coupang|baemin)$/);
         if (settlementWeekMatch) {
-          const [, kind, weekPlatform] = settlementWeekMatch;
-          const hiddenInput = kind === 'log'
-            ? $(`#settlementLogWeek-${weekPlatform}`)
-            : $(`#settlementUnmatchedWeek-${weekPlatform}`);
+          const weekPlatform = settlementWeekMatch[1];
+          const hiddenInput = $(`#settlementUnmatchedWeek-${weekPlatform}`);
           if (!hiddenInput) return null;
           return {
             hiddenInput,
-            labelEl: kind === 'log'
-              ? $(`#settlementLogWeekBtn-${weekPlatform}`)
-              : $(`#settlementUnmatchedWeekBtn-${weekPlatform}`),
+            labelEl: $(`#settlementUnmatchedWeekBtn-${weekPlatform}`),
             onSelect(value) {
               handleSettlementWeekPicked(weekPlatform, value);
             }
@@ -4245,41 +4241,50 @@
     }
   }
 
-  function setSettlementWeekFilters(platform, weekStart) {
+  function setSettlementLogDay(platform, day) {
     const p = normalizePlatform(platform);
-    const picked = weekStartKey(weekStart || weekStartKey());
-    state.settlementLogWeekByPlatform[p] = picked;
+    const dayKey = String(day || '').slice(0, 10);
+    if (!dayKey) return '';
+    state.settlementLogDayByPlatform[p] = dayKey;
+    const input = $(`#settlementLogDay-${p}`);
+    if (input) input.value = dayKey;
+    return dayKey;
+  }
+
+  function setSettlementWeekFilters(platform, dateValue) {
+    const p = normalizePlatform(platform);
+    const raw = String(dateValue || '').slice(0, 10);
+    const picked = weekStartKey(raw || weekStartKey());
     state.settlementUnmatchedWeekByPlatform[p] = picked;
-    syncSettlementWeekPicker('log', p, picked);
     syncSettlementWeekPicker('unmatched', p, picked);
+    if (raw) setSettlementLogDay(p, raw);
     return picked;
   }
 
   function handleSettlementWeekPicked(platform, value) {
     const p = normalizePlatform(platform);
-    setSettlementWeekFilters(p, value);
-    renderSettlementUploadLogs(p);
+    const picked = weekStartKey(value || weekStartKey());
+    state.settlementUnmatchedWeekByPlatform[p] = picked;
+    syncSettlementWeekPicker('unmatched', p, picked);
     renderSettlementUnmatched(p);
   }
 
-  function ensureSettlementLogWeek(platform) {
+  function ensureSettlementLogDay(platform) {
     const p = normalizePlatform(platform);
-    if (!state.settlementLogWeekByPlatform[p]) {
+    if (!state.settlementLogDayByPlatform[p]) {
       const latest = latestSettlementActivityForPlatform(p);
-      state.settlementLogWeekByPlatform[p] = latest.weekStart || weekStartKey();
+      state.settlementLogDayByPlatform[p] = latest.period || today();
     }
-    syncSettlementWeekPicker('log', p, state.settlementLogWeekByPlatform[p]);
-    return state.settlementLogWeekByPlatform[p];
+    const input = $(`#settlementLogDay-${p}`);
+    if (input && !input.value) input.value = state.settlementLogDayByPlatform[p];
+    return state.settlementLogDayByPlatform[p];
   }
 
-  function updateSettlementLogWeekRangeLabel(platform) {
+  function updateSettlementLogDayLabel(platform, dayKey) {
     const p = normalizePlatform(platform);
-    const weekStart = ensureSettlementLogWeek(p);
-    const label = $(`#settlementLogWeekRange-${p}`);
+    const label = $(`#settlementLogDayRange-${p}`);
     if (label) {
-      label.textContent = weekStart
-        ? `표시 범위: ${formatDate(weekStart)}(수) ~ ${formatDate(weekEndKey(weekStart))}(화)`
-        : '';
+      label.textContent = dayKey ? `표시 정산일: ${formatDate(dayKey)}` : '';
     }
   }
 
@@ -4536,8 +4541,8 @@
 
   function renderSettlementUploadLogs(platform) {
     const p = normalizePlatform(platform);
-    const weekStart = ensureSettlementLogWeek(p);
-    updateSettlementLogWeekRangeLabel(p);
+    const dayKey = ensureSettlementLogDay(p);
+    updateSettlementLogDayLabel(p, dayKey);
     const rowsEl = $(`#settlementUploadLogRows-${p}`);
     const summaryEl = $(`#settlementUploadLogSummary-${p}`);
     if (!rowsEl) return;
@@ -4545,10 +4550,10 @@
     const rows = BremStorage.settlementUploadLogs.getFiltered({
       kind: 'daily',
       platform: p,
-      weekStart
+      period: dayKey
     });
 
-    const emptyMessage = `${formatDate(weekStart)} 주에 업로드한 ${platformLabel(p)} 일정산 기록이 없습니다. 다른 주 기록은 상단 적용주(수요일)를 변경하세요.`;
+    const emptyMessage = `${formatDate(dayKey)} 정산일 ${platformLabel(p)} 일정산 업로드 기록이 없습니다. 다른 날은 상단 정산일을 바꾸세요.`;
 
     rowsEl.innerHTML = rows.map(item => {
       const payrollEligible = settlementUploadLogPayrollEligible(item);
@@ -4957,22 +4962,22 @@
 
   function clearSettlementUploadLogsForSelectedWeek(platform) {
     const p = normalizePlatform(platform);
-    const weekStart = ensureSettlementLogWeek(p);
-    if (!weekStart) {
-      showToast('적용주를 먼저 선택하세요.');
+    const dayKey = ensureSettlementLogDay(p);
+    if (!dayKey) {
+      showToast('정산일을 먼저 선택하세요.');
       return;
     }
     const rows = BremStorage.settlementUploadLogs.getFiltered({
       kind: 'daily',
       platform: p,
-      weekStart
+      period: dayKey
     });
     if (!rows.length) {
-      showToast('선택한 주 업로드 기록이 없습니다.');
+      showToast('선택한 정산일 업로드 기록이 없습니다.');
       return;
     }
     const appliedCount = rows.filter(item => item.status === 'applied').length;
-    const rangeLabel = `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))}`;
+    const rangeLabel = formatDate(dayKey);
     const confirmMessage = appliedCount > 0
       ? `${rangeLabel} ${platformLabel(p)} 업로드 기록 ${rows.length}건을 전체 삭제하시겠습니까?\n반영된 기록 ${appliedCount}건은 연결된 일정산·콜수입력도 함께 제거됩니다.`
       : `${rangeLabel} ${platformLabel(p)} 업로드 기록 ${rows.length}건을 전체 삭제하시겠습니까?`;
@@ -4984,7 +4989,7 @@
           BremStorage.ensureSectionLoaded('settlements'),
           BremStorage.ensureSectionLoaded('calls')
         ]);
-        const result = await BremStorage.settlementUploadLogs.removeDailyByWeekAsync(weekStart, p);
+        const result = await BremStorage.settlementUploadLogs.removeDailyByWeekAsync(weekStartKey(dayKey), p, { period: dayKey });
         if (state.settlementUploadLogDetailId && rows.some(item => item.id === state.settlementUploadLogDetailId)) {
           hideSettlementUploadLogDetail();
         }
@@ -5012,23 +5017,23 @@
 
   function reapplySettlementUploadLogsForSelectedWeek(platform) {
     const p = normalizePlatform(platform);
-    const weekStart = ensureSettlementLogWeek(p);
-    if (!weekStart) {
-      showToast('적용주를 먼저 선택하세요.');
+    const dayKey = ensureSettlementLogDay(p);
+    if (!dayKey) {
+      showToast('정산일을 먼저 선택하세요.');
       return;
     }
     const rows = BremStorage.settlementUploadLogs.getFiltered({
       kind: 'daily',
       platform: p,
-      weekStart
+      period: dayKey
     });
     const logs = rows.filter(canReapplySettlementUploadLog);
     if (!logs.length) {
-      showToast('선택한 주에 재반영할 저장 데이터가 없습니다.');
+      showToast('선택한 정산일에 재반영할 저장 데이터가 없습니다.');
       return;
     }
 
-    const rangeLabel = `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))}`;
+    const rangeLabel = formatDate(dayKey);
     const riderTotal = logs.reduce(
       (sum, log) => sum + settlementUploadLogApplicableRecords(log).length,
       0
@@ -5082,7 +5087,7 @@
         await BremStorage.refetchDataKey?.(BremStorage.STORAGE_KEYS.calls);
         await BremStorage.refetchDataKey?.(BremStorage.STORAGE_KEYS.settlements);
         invalidateCallStatsIndex();
-        setSettlementWeekFilters(p, weekStart);
+        setSettlementLogDay(p, dayKey);
         renderSettlements();
         renderCalls();
         renderDashboard();
@@ -5103,7 +5108,7 @@
         renderDashboard();
       } finally {
         if (reapplyWeekBtn) {
-          reapplyWeekBtn.textContent = '해당주 전체 재반영';
+          reapplyWeekBtn.textContent = '해당일 전체 재반영';
           reapplyWeekBtn.disabled = !rows.some(canReapplySettlementUploadLog);
         }
       }
@@ -5864,6 +5869,43 @@
     renderBaeminHourlyInsurancePreview();
   }
 
+  function confirmProceedIfSettlementDriversPartial(driverLoad, driverList) {
+    if (driverLoad?.complete === false || driverLoad?.partial) {
+      const knownTotal = Number(driverLoad?.supabaseTotal || 0);
+      return window.confirm(
+        '기사 목록이 끝까지 불러와지지 않았습니다.\n\n'
+        + `로드됨: ${driverList.length}명${knownTotal ? ` / DB ${knownTotal}명` : ''}\n\n`
+        + '이 상태로 매칭하면 등록된 기사가 「미매칭」으로 잡혀\n'
+        + '정산 금액이 틀어질 수 있습니다.\n\n'
+        + '취소하고 잠시 후 다시 업로드하는 것을 권합니다.\n'
+        + '그래도 진행할까요?'
+      );
+    }
+    return true;
+  }
+
+  async function loadAllDriversForSettlementUpload() {
+    await BremStorage.ensureSectionLoaded?.('settlements');
+    const driverLoad = BremStorage.awaitDriversFullyLoaded
+      ? await BremStorage.awaitDriversFullyLoaded({ includeInactive: true, force: true })
+      : null;
+    if (driverLoad && driverLoad.ok === false) {
+      return { ok: false, message: driverLoad.message, driverLoad, driverList: [] };
+    }
+    if (!driverLoad) {
+      try {
+        await BremStorage.refreshDriversForSettlementMatch?.();
+      } catch (error) {
+        return { ok: false, message: error.message, driverLoad: null, driverList: [] };
+      }
+    }
+    const driverList = allDrivers();
+    if (!driverList.length) {
+      return { ok: false, message: '등록된 기사가 없습니다. 기사 목록을 확인하세요.', driverLoad, driverList };
+    }
+    return { ok: true, driverLoad, driverList };
+  }
+
   async function uploadBaeminHourlyInsurance(event) {
     event.preventDefault();
     const fileInput = $('#baeminHourlyInsuranceFile');
@@ -5879,23 +5921,21 @@
 
     applyBaeminHourlyInsuranceDateFromFilename(file.name);
     uploadBtn.disabled = true;
-    uploadBtn.textContent = '처리 중...';
+    uploadBtn.textContent = '기사 목록 불러오는 중...';
 
     try {
-      await BremStorage.ensureSectionLoaded?.('settlements');
-      const driverLoad = BremStorage.awaitDriversFullyLoaded
-        ? await BremStorage.awaitDriversFullyLoaded({ includeInactive: true })
-        : await BremStorage.refreshDriversForSettlementMatch?.();
-      if (driverLoad && driverLoad.ok === false) {
-        showToast(driverLoad?.message || '기사 목록을 불러오지 못했습니다.');
+      const loaded = await loadAllDriversForSettlementUpload();
+      if (!loaded.ok) {
+        showToast(loaded.message || '기사 목록을 불러오지 못했습니다.');
         return;
       }
-      const driverList = allDrivers();
-      if (!driverList.length) {
-        showToast('등록된 기사가 없습니다. 기사 목록을 확인하세요.');
+      const { driverLoad, driverList } = loaded;
+      if (!confirmProceedIfSettlementDriversPartial(driverLoad, driverList)) {
+        showToast('업로드를 취소했습니다. 기사 목록이 전원 로드된 뒤 다시 시도하세요.');
         return;
       }
 
+      uploadBtn.textContent = '시간제보험 처리 중...';
       const result = await BremSettlementParser.parseBaeminHourlyInsuranceFile({
         file,
         password: String(passwordInput?.value || '').trim(),
@@ -6120,6 +6160,114 @@
     }
   }
 
+  async function retryBaeminHourlyInsuranceLogMatching(logId) {
+    const log = BremStorage.settlementUploadLogs.getById(logId);
+    if (!log || log.kind !== 'hourly_insurance') {
+      showToast('업로드 기록을 찾지 못했습니다.');
+      return;
+    }
+    const unmatchedRecords = Array.isArray(log.unmatchedRecords) ? log.unmatchedRecords : [];
+    if (!unmatchedRecords.length) {
+      showToast('미매칭 내역이 없습니다.');
+      return;
+    }
+
+    const retryBtn = $('#settlementUploadLogDetailRetryMatch');
+    if (retryBtn) { retryBtn.disabled = true; retryBtn.textContent = '기사 전체 불러오는 중…'; }
+
+    try {
+      const loaded = await loadAllDriversForSettlementUpload();
+      if (!loaded.ok) {
+        showToast(loaded.message || '기사 목록을 불러오지 못했습니다.');
+        return;
+      }
+      if (!confirmProceedIfSettlementDriversPartial(loaded.driverLoad, loaded.driverList)) {
+        showToast('매칭 재시도를 취소했습니다.');
+        return;
+      }
+
+      const matchByBaeminId = window.BremDriverUtils?.matchDriverByBaeminErpId
+        ? (baeminId) => window.BremDriverUtils.matchDriverByBaeminErpId(baeminId, loaded.driverList)
+        : (baeminId) => {
+          const key = window.BremWeeklySettlement?.baeminIdMatchKey?.(baeminId);
+          if (!key) return null;
+          return loaded.driverList.find(
+            driver => window.BremWeeklySettlement?.baeminIdMatchKey?.(driver.baeminId) === key
+          ) || null;
+        };
+
+      const newlyMatched = [];
+      const stillUnmatched = [];
+      unmatchedRecords.forEach(record => {
+        const baeminId = String(record.baeminId || record.riderId || record.rawName || '').trim();
+        const driver = matchByBaeminId(baeminId);
+        if (!driver) {
+          stillUnmatched.push(record);
+          return;
+        }
+        newlyMatched.push({
+          driverId: driver.id,
+          driverName: driver.name || '',
+          riderId: baeminId,
+          baeminId,
+          rawName: baeminId,
+          name: driver.name || baeminId,
+          hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0))
+        });
+      });
+
+      if (!newlyMatched.length) {
+        showToast(`새로 매칭된 기사가 없습니다. (미매칭 ${stillUnmatched.length}명) — 기사 배민 ID 등록을 확인하세요.`);
+        return;
+      }
+
+      const existingMatched = (log.matchedRecords?.length ? log.matchedRecords : log.appliedRecords) || [];
+      const mergedMatched = existingMatched.concat(newlyMatched);
+      const serializedMatched = serializeSettlementLogRecords(mergedMatched);
+      const serializedUnmatched = serializeSettlementLogRecords(stillUnmatched);
+      const totalHourlyInsurance = mergedMatched.reduce(
+        (sum, row) => sum + Math.abs(Number(row.hourlyInsurance || 0)),
+        0
+      );
+
+      await BremStorage.ensureSectionLoaded?.('settlements');
+      if (log.status === 'applied') {
+        BremStorage.settlements.upsertHourlyInsuranceBatch({
+          period: log.period,
+          platform: 'baemin',
+          records: mergedMatched.map(record => ({
+            driverId: record.driverId,
+            riderId: record.riderId || record.baeminId || '',
+            hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0))
+          }))
+        });
+        await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+        setSettlementHistoryDay('baemin', log.period);
+        renderSettlements();
+      }
+
+      BremStorage.settlementUploadLogs.update(log.id, {
+        matchedRecords: serializedMatched,
+        appliedRecords: log.status === 'applied' ? serializedMatched : log.appliedRecords,
+        unmatchedRecords: serializedUnmatched,
+        matchedCount: serializedMatched.length,
+        unmatchedCount: serializedUnmatched.length,
+        totalDeliveryAmount: totalHourlyInsurance,
+        totalHourlyInsurance
+      });
+      await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+
+      renderBaeminHourlyInsuranceUploadLogs();
+      renderBaeminHourlyInsuranceLogDetail(log.id);
+      showToast(`매칭 재시도 · ${newlyMatched.length}명 새로 매칭됨 (남은 미매칭 ${stillUnmatched.length}명)`);
+    } catch (error) {
+      console.error('[BREM] baemin hourly insurance retry match failed:', error);
+      showToast(error.message || '매칭 재시도에 실패했습니다.');
+    } finally {
+      if (retryBtn) { retryBtn.disabled = false; retryBtn.textContent = '미매칭 매칭 재시도'; }
+    }
+  }
+
   async function reapplyBaeminHourlyInsuranceLog(logId) {
     const log = BremStorage.settlementUploadLogs.getById(logId);
     if (!canReapplyBaeminHourlyInsuranceLog(log)) {
@@ -6331,41 +6479,16 @@
     uploadBtn.textContent = '기사 목록 불러오는 중...';
 
     try {
-      await BremStorage.ensureSectionLoaded?.('settlements');
-
-      // 부분 로드(첫 100명)로 매칭하면 등록 기사도 미매칭으로 뜬다 — 전체 로드를 기다린다.
-      // (DB 행 수 > 로컬 수는 중복제거 때문에 흔함. 그걸로 업로드를 막지 않는다.)
-      const driverLoad = BremStorage.awaitDriversFullyLoaded
-        ? await BremStorage.awaitDriversFullyLoaded({ includeInactive: true })
-        : await BremStorage.refreshDriversForSettlementMatch?.();
-      if (driverLoad && driverLoad.ok === false) {
-        showToast(driverLoad?.message || '기사 목록을 불러오지 못했습니다.');
+      // 부분 로드·캐시만 쓰면 등록 기사도 미매칭으로 뜬다 — 서버에서 전원 다시 불러온다.
+      const loaded = await loadAllDriversForSettlementUpload();
+      if (!loaded.ok) {
+        showToast(loaded.message || '기사 목록을 불러오지 못했습니다.');
         return;
       }
-
-      const driverList = allDrivers();
-      if (!driverList.length) {
-        showToast('등록된 기사가 없습니다. 기사 목록을 확인하세요.');
+      const { driverLoad, driverList } = loaded;
+      if (!confirmProceedIfSettlementDriversPartial(driverLoad, driverList)) {
+        showToast('업로드를 취소했습니다. 기사 목록이 전원 로드된 뒤 다시 시도하세요.');
         return;
-      }
-      // 일부만 로드된 상태로 매칭하면 등록 기사가 "미매칭"으로 잡혀 정산이 틀어진다.
-      // 예전에는 토스트만 띄우고 그대로 진행해서 놓치기 쉬웠다.
-      // DB 수와 단순 비교로 하드 차단하면 중복제거 때문에 영구히 막힐 수 있으므로,
-      // 확인 창으로 바꿔 "모르고 지나가는" 경우만 없앤다. (정상 로드 시에는 안 뜬다)
-      if (driverLoad?.complete === false || driverLoad?.partial) {
-        const knownTotal = Number(driverLoad?.supabaseTotal || 0);
-        const proceed = window.confirm(
-          '기사 목록이 끝까지 불러와지지 않았습니다.\n\n'
-          + `로드됨: ${driverList.length}명${knownTotal ? ` / DB ${knownTotal}명` : ''}\n\n`
-          + '이 상태로 매칭하면 등록된 기사가 「미매칭」으로 잡혀\n'
-          + '정산 금액이 틀어질 수 있습니다.\n\n'
-          + '취소하고 잠시 후 다시 업로드하는 것을 권합니다.\n'
-          + '그래도 진행할까요?'
-        );
-        if (!proceed) {
-          showToast('업로드를 취소했습니다. 기사 목록이 전원 로드된 뒤 다시 시도하세요.');
-          return;
-        }
       }
 
       uploadBtn.textContent = '정산서 처리 중...';
@@ -6910,14 +7033,14 @@
     if (retryBtn) { retryBtn.disabled = true; retryBtn.textContent = '기사 전체 불러오는 중…'; }
 
     try {
-      // 부분 로드(첫 100명)로 재매칭하면 등록 기사도 계속 미매칭으로 남는다 — 전체 로드를 기다린다.
-      if (typeof BremStorage.awaitDriversFullyLoaded === 'function') {
-        await BremStorage.awaitDriversFullyLoaded({ includeInactive: true });
+      const loaded = await loadAllDriversForSettlementUpload();
+      if (!loaded.ok) {
+        showToast(loaded.message || '기사 목록을 불러오지 못했습니다.');
+        return;
       }
-      await BremStorage.ensureSectionLoaded?.('settlements');
       await BremStorage.ensureSectionLoaded?.('calls');
 
-      const driverList = BremStorage.drivers.getAll().map(driver => ({
+      const driverList = loaded.driverList.map(driver => ({
         id: driver.id,
         name: driver.name,
         phone: driver.phone || '',
@@ -7859,6 +7982,11 @@
     $('#settlementUploadLogDetailRetryMatch')?.addEventListener('click', () => {
       const logId = state.settlementUploadLogDetailId;
       if (!logId) return;
+      const log = BremStorage.settlementUploadLogs.getById(logId);
+      if (log?.kind === 'hourly_insurance') {
+        void retryBaeminHourlyInsuranceLogMatching(logId);
+        return;
+      }
       void retrySettlementUploadLogMatching(logId);
     });
     $('#settlementUploadLogDetailReapply')?.addEventListener('click', event => {
@@ -7929,6 +8057,16 @@
       });
       $(`#settlementPeriod-${p}`)?.addEventListener('change', () => {
         handleSettlementPeriodChange(p);
+      });
+      $(`#settlementLogDay-${p}`)?.addEventListener('change', event => {
+        const dayKey = String(event.target.value || '').slice(0, 10);
+        if (!dayKey) {
+          showToast('정산일을 선택하세요.');
+          ensureSettlementLogDay(p);
+          return;
+        }
+        setSettlementLogDay(p, dayKey);
+        renderSettlementUploadLogs(p);
       });
       $(`#settlementUploadLogReapplyWeek-${p}`)?.addEventListener('click', () => {
         reapplySettlementUploadLogsForSelectedWeek(p);
