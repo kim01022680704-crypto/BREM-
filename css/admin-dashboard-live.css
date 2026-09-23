@@ -583,3 +583,240 @@ body.dashboard-week-modal-open {
     font-size: 0.76rem;
   }
 }
+
+/* ── 폰 한눈에 버전: #dashboard.dashboard-fit (폭 720px 이하 또는 관리자앱) ──
+   admin-app.css 가 !important 로 글씨를 0.58rem 에 묶어 두어서 여기서도 !important 로 푼다. */
+#dashboard.dashboard-fit .dashboard-baemin-table-wrap,
+#dashboard.dashboard-fit .dashboard-coupang-table-wrap {
+  overflow-x: visible !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-compact-table {
+  min-width: 0 !important;
+  width: 100% !important;
+  table-layout: fixed;
+  font-size: 0.66rem !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-compact-table th,
+#dashboard.dashboard-fit .dashboard-baemin-compact-table td {
+  padding: 6px 3px !important;
+  text-align: left !important;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-compact-table thead th {
+  font-size: 0.66rem !important;
+  padding-top: 7px !important;
+  padding-bottom: 7px !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-compact-table th em {
+  display: none;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-compact-table th:first-child,
+#dashboard.dashboard-fit .dashboard-baemin-compact-table td:first-child {
+  position: static;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-compact-table td:first-child {
+  padding-left: 5px !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-region-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.7rem !important;
+  letter-spacing: -0.02em;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-region-meta {
+  display: none !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-compact-table tbody td:nth-child(2) {
+  font-size: 0.66rem !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-qcell__stack {
+  align-items: stretch !important;
+  gap: 2px !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-qcell__meta {
+  justify-content: flex-start !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-qcell__bar {
+  height: 4px;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-qcell__ratio {
+  font-size: 0.66rem !important;
+  letter-spacing: -0.02em;
+  text-align: left !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-qcell .baemin-quota-cell__percent {
+  display: inline !important;
+  font-size: 0.6rem !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-qcell__wait {
+  font-size: 0.6rem;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-qcell .baemin-quota-tag {
+  display: none !important;
+}
+
+/* 칸 폭: 배민 지역 19 · 운행 9 · 시간대 18×4 */
+#dashboard.dashboard-fit .dashboard-baemin-compact-table th:nth-child(1),
+#dashboard.dashboard-fit .dashboard-baemin-compact-table td:nth-child(1) {
+  width: 19% !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-compact-table th:nth-child(2),
+#dashboard.dashboard-fit .dashboard-baemin-compact-table td:nth-child(2) {
+  width: 9% !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-compact-table th:nth-child(n+3),
+#dashboard.dashboard-fit .dashboard-baemin-compact-table td:nth-child(n+3) {
+  width: 18% !important;
+}
+
+/* 쿠팡 지역 18 · 운행 8 · 피크 12.8×5 · 거절 10 */
+#dashboard.dashboard-fit .dashboard-coupang-compact-table th:nth-child(1),
+#dashboard.dashboard-fit .dashboard-coupang-compact-table td:nth-child(1) {
+  width: 18% !important;
+}
+
+#dashboard.dashboard-fit .dashboard-coupang-compact-table th:nth-child(2),
+#dashboard.dashboard-fit .dashboard-coupang-compact-table td:nth-child(2) {
+  width: 8% !important;
+}
+
+#dashboard.dashboard-fit .dashboard-coupang-compact-table th:nth-child(n+3):nth-child(-n+7),
+#dashboard.dashboard-fit .dashboard-coupang-compact-table td:nth-child(n+3):nth-child(-n+7) {
+  width: 12.8% !important;
+}
+
+#dashboard.dashboard-fit .dashboard-coupang-compact-table th:nth-child(8),
+#dashboard.dashboard-fit .dashboard-coupang-compact-table td:nth-child(8) {
+  width: 10% !important;
+}
+
+/* 카드 윗부분: 칩 4개 대신 '지금' 칩 하나, 부가 버튼은 숨김 */
+#dashboard.dashboard-fit .dashboard-slot-legend span:not(.is-current),
+#dashboard.dashboard-fit .dashboard-slot-legend small {
+  display: none;
+}
+
+#dashboard.dashboard-fit .dashboard-slot-legend {
+  padding: 6px 10px 0;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-applied-time {
+  padding: 6px 10px 0;
+  font-size: 0.74rem !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-live-card .admin-table-summary {
+  padding: 2px 10px 4px;
+  font-size: 0.7rem;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-live-panels {
+  padding: 4px 6px 8px !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-live-card__header {
+  padding-bottom: 8px;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-live-card__header .dashboard-baemin-live-help {
+  display: none;
+}
+
+#dashboard.dashboard-fit #dashboardBaeminOpenStatusBtn,
+#dashboard.dashboard-fit #dashboardCoupangOpenStatusBtn {
+  display: none;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-live-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 이번주 팝업: 아래에서 올라오는 시트 · 지역 칸은 매 줄 같아서 뺀다 */
+#dashboard.dashboard-fit .dashboard-week-modal {
+  padding: 0;
+  place-items: end stretch;
+}
+
+#dashboard.dashboard-fit .dashboard-week-modal__dialog {
+  width: 100%;
+  max-height: 88vh;
+  padding: 0 10px 14px;
+  border-radius: 16px 16px 0 0;
+}
+
+#dashboard.dashboard-fit .dashboard-week-modal__dialog .dashboard-baemin-week-block__head {
+  margin: 0 -10px 8px;
+  padding: 12px 10px 8px;
+}
+
+#dashboard.dashboard-fit .dashboard-week-modal__dialog .dashboard-baemin-week-block__head h3 {
+  font-size: 0.95rem;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-week-region-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  -webkit-overflow-scrolling: touch;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-week-region-tabs .baemin-region-tab {
+  flex-shrink: 0;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-baemin-compact-table th:first-child,
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-baemin-compact-table td:first-child {
+  display: none;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) th:nth-child(2),
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) td:nth-child(2) {
+  width: 18% !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) th:nth-child(n+3),
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) td:nth-child(n+3) {
+  width: 20.5% !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-coupang-compact-table th:nth-child(2),
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-coupang-compact-table td:nth-child(2) {
+  width: 16% !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-coupang-compact-table th:nth-child(n+3):nth-child(-n+7),
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-coupang-compact-table td:nth-child(n+3):nth-child(-n+7) {
+  width: 14% !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-coupang-compact-table th:nth-child(8),
+#dashboard.dashboard-fit .dashboard-baemin-week-block .dashboard-coupang-compact-table td:nth-child(8) {
+  width: 14% !important;
+}
+
+#dashboard.dashboard-fit .dashboard-baemin-date-cell {
+  font-size: 0.66rem !important;
+}

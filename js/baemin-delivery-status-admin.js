@@ -6011,6 +6011,8 @@
     host.dataset.weekModalsBound = '1';
     // 카드의 새로고침 흐림(opacity)이 팝업에 번지지 않게 카드 밖으로 뺀다.
     host.querySelectorAll('.dashboard-week-modal').forEach(modal => host.appendChild(modal));
+    syncDashboardFitClass();
+    window.matchMedia?.('(max-width: 720px)').addEventListener?.('change', syncDashboardFitClass);
 
     let lastTrigger = null;
     const close = (modal) => {
@@ -6289,6 +6291,15 @@
     return Boolean(document.querySelector('.admin-phone-app'));
   }
 
+  // 폰(관리자앱 또는 좁은 화면): 대시보드 표를 옆으로 밀지 않고 한 화면에 맞춘다.
+  function isDashboardFit() {
+    return isAdminPhoneApp() || window.matchMedia?.('(max-width: 720px)').matches === true;
+  }
+
+  function syncDashboardFitClass() {
+    $('dashboard')?.classList.toggle('dashboard-fit', isDashboardFit());
+  }
+
   function currentBaeminSlotKey(date = new Date()) {
     const hour = date.getHours();
     const weekend = date.getDay() === 0 || date.getDay() === 6;
@@ -6327,6 +6338,7 @@
   }
 
   function markCurrentBaeminSlots() {
+    syncDashboardFitClass();
     syncBaeminSlotLegendText();
     const key = currentBaeminSlotKey();
     document.querySelectorAll('#dashboard [data-baemin-slot]').forEach(el => {
@@ -6363,7 +6375,7 @@
         <div class="dashboard-baemin-qcell__bar" aria-hidden="true"><span class="dashboard-baemin-qcell__bar-fill" style="width:${width}%"></span></div>
         <span class="dashboard-baemin-qcell__ratio">${escapeHtml(empty ? '-' : prog.label)}</span>
         <span class="dashboard-baemin-qcell__meta">
-          ${phone ? '' : `<span class="baemin-quota-cell__percent${percentClass}">${escapeHtml(empty ? '' : prog.percentLabel)}</span>`}
+          <span class="baemin-quota-cell__percent${percentClass}">${escapeHtml(empty ? '' : prog.percentLabel)}</span>
           <span class="baemin-quota-tag${statusClass}">${tagLabel}</span>
         </span>
       </div>
@@ -6385,7 +6397,7 @@
   }
 
   function renderDashboardTodayTable(regionRows, totals) {
-    const phone = isAdminPhoneApp();
+    const phone = isDashboardFit();
     const nowSlot = currentBaeminSlotKey();
     const driveText = (count) => phone ? formatNumber(count) : `${formatNumber(count)}명`;
     const slotHead = (key, label) => {
