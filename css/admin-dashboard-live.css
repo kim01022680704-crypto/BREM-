@@ -374,14 +374,25 @@
 }
 
 /* 이번주 지역별 할당: 버튼으로 여는 팝업 */
-#dashboard .dashboard-week-open-btn {
-  border-color: rgba(255, 212, 0, 0.45);
+/* 기본 .small-btn 은 노란 배경이라 글자를 노랑으로 두면 안 보인다 */
+#dashboard .dashboard-week-open-btn,
+#dashboard #dashboardCoupangLiveCard .dashboard-baemin-live-actions .dashboard-week-open-btn {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255, 212, 0, 0.6);
+  background: #111111;
   color: #ffd400;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 #dashboard .dashboard-week-open-btn:hover {
-  background: rgba(255, 212, 0, 0.1);
+  background: rgba(255, 212, 0, 0.14);
+}
+
+#dashboard .dashboard-week-modal__close {
+  border: 1px solid #333333;
+  background: #111111;
+  color: #ffffff;
 }
 
 body.dashboard-week-modal-open {
@@ -481,14 +492,80 @@ body.dashboard-week-modal-open {
   white-space: nowrap;
 }
 
+/* 지역·운행 칸은 내용만큼만, 남는 폭은 시간대 칸으로 */
+#dashboard .dashboard-baemin-compact-table th:nth-child(1),
+#dashboard .dashboard-baemin-compact-table td:nth-child(1) {
+  width: 11%;
+}
+
+#dashboard .dashboard-baemin-compact-table th:nth-child(2),
+#dashboard .dashboard-baemin-compact-table td:nth-child(2) {
+  width: 7%;
+}
+
+#dashboard .dashboard-baemin-compact-table th:nth-child(n+3),
+#dashboard .dashboard-baemin-compact-table td:nth-child(n+3) {
+  width: 20.5%;
+}
+
+#dashboard .dashboard-coupang-compact-table th:nth-child(1),
+#dashboard .dashboard-coupang-compact-table td:nth-child(1) {
+  width: 9%;
+}
+
+#dashboard .dashboard-coupang-compact-table th:nth-child(2),
+#dashboard .dashboard-coupang-compact-table td:nth-child(2) {
+  width: 5%;
+}
+
+#dashboard .dashboard-coupang-compact-table th:nth-child(n+3):nth-child(-n+7),
+#dashboard .dashboard-coupang-compact-table td:nth-child(n+3):nth-child(-n+7) {
+  width: 16%;
+}
+
+#dashboard .dashboard-coupang-compact-table th:nth-child(8),
+#dashboard .dashboard-coupang-compact-table td:nth-child(8) {
+  width: 6%;
+}
+
+/* 이번주 팝업: 둘째 칸이 날짜라 조금 더 */
 #dashboard .dashboard-baemin-week-block .dashboard-baemin-compact-table th:nth-child(1),
 #dashboard .dashboard-baemin-week-block .dashboard-baemin-compact-table td:nth-child(1) {
-  width: 12%;
+  width: 10%;
 }
 
 #dashboard .dashboard-baemin-week-block .dashboard-baemin-compact-table th:nth-child(2),
 #dashboard .dashboard-baemin-week-block .dashboard-baemin-compact-table td:nth-child(2) {
-  width: 11%;
+  width: 9%;
+}
+
+#dashboard .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) th:nth-child(n+3),
+#dashboard .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) td:nth-child(n+3) {
+  width: 20.25%;
+}
+
+#dashboard .dashboard-baemin-week-block .dashboard-coupang-compact-table th:nth-child(n+3):nth-child(-n+7),
+#dashboard .dashboard-baemin-week-block .dashboard-coupang-compact-table td:nth-child(n+3):nth-child(-n+7) {
+  width: 15.2%;
+}
+
+/* 운행 숫자·헤더 글자 또렷하게 */
+#dashboard .dashboard-baemin-compact-table thead th {
+  color: #d4d4d8;
+}
+
+#dashboard .dashboard-baemin-compact-table tbody td:nth-child(2) {
+  color: #f4f4f5;
+  font-size: 0.86rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#dashboard .dashboard-coupang-compact-table tbody td:nth-child(8) {
+  color: #e4e4e7;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 #dashboard .dashboard-baemin-compact-table .dashboard-baemin-qcell__ratio,
