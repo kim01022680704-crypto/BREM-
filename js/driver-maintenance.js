@@ -50,6 +50,16 @@
     const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     return (state.logs || []).filter(row => row.date === key);
   }
+  function expensesOnDay(y, m, d) {
+    const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    return (state.expenses || []).filter(row => row.date === key);
+  }
+  function shortWon(n) {
+    const v = Number(n || 0);
+    if (v >= 10000) return `${Math.round(v / 1000) / 10}만`;
+    if (v >= 1000) return `${Math.round(v / 1000)}천`;
+    return won(v);
+  }
 
   function calendarHtml() {
     const y = state.calY;
@@ -59,15 +69,15 @@
     let cells = DOW.map(name => `<div class="mt-cal__h">${name}</div>`).join('');
     for (let i = 0; i < first; i += 1) cells += '<div class="mt-cal__cell mt-cal__cell--empty"></div>';
     for (let d = 1; d <= days; d += 1) {
-      const rows = logsOnDay(y, m, d);
-      if (!rows.length) {
-        cells += `<div class="mt-cal__cell"><span class="mt-cal__d">${d}</span></div>`;
-        continue;
-      }
-      const label = rows.map(row => row.partLabel).filter(Boolean).join('·');
-      const cost = rows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
-      const km = rows[rows.length - 1].km;
-      cells += `<div class="mt-cal__cell mt-cal__cell--on"><span class="mt-cal__d">${d}</span><b>${label}</b><span>${won(km)}km</span><strong>${won(cost)}</strong></div>`;
+      const mrows = logsOnDay(y, m, d);
+      const erows = expensesOnDay(y, m, d);
+      const mCost = mrows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
+      const eCost = erows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
+      const on = mrows.length || erows.length;
+      let body = `<span class="mt-cal__d">${d}</span>`;
+      if (mrows.length) body += `<b class="mt-cal__m">${shortWon(mCost)}</b>`;
+      if (erows.length) body += `<b class="mt-cal__e">${shortWon(eCost)}</b>`;
+      cells += `<div class="mt-cal__cell${on ? ' mt-cal__cell--on' : ''}">${body}</div>`;
     }
     return cells;
   }
@@ -137,7 +147,7 @@
 
       <div class="mt-card mt-bike">
         <div class="mt-bike__info">${bikeText}</div>
-        <button type="button" class="mt-yellow mt-yellow--block" id="mtBikeBtn">오토바이 등록</button>
+        <button type="button" class="mt-edit" id="mtBikeBtn">오토바이 등록 · 수정</button>
       </div>
 
       <form class="mt-card" id="mtForm">
@@ -152,7 +162,7 @@
           <label>내 오토바이 km<input id="mtKm" inputmode="numeric" placeholder="예: 18240"></label>
           <label class="mt-grid__full">금액<input id="mtCost" inputmode="numeric" placeholder="원"></label>
         </div>
-        <button type="submit" class="mt-yellow mt-yellow--block">이 날짜로 저장</button>
+        <div class="mt-save-row"><button type="submit" class="mt-save">저장</button></div>
       </form>
       <div class="mt-card"><div class="mt-formtitle">정비 날짜별</div>${maintRows || '<p class="mt-empty">이번 달 정비 기록이 없습니다.</p>'}</div>
 
@@ -167,7 +177,7 @@
           </label>
           <label>금액<input id="mtExpCost" inputmode="numeric" placeholder="원"></label>
         </div>
-        <button type="submit" class="mt-yellow mt-yellow--block">이 날짜로 저장</button>
+        <div class="mt-save-row"><button type="submit" class="mt-save mt-save--exp">저장</button></div>
       </form>
       ${exp.chips ? `<div class="mt-card mt-catsum">${exp.chips}</div>` : ''}
       <div class="mt-card"><div class="mt-formtitle">지출 날짜별</div>${exp.list || '<p class="mt-empty">이번 달 지출 기록이 없습니다.</p>'}</div>
@@ -175,9 +185,10 @@
       <div class="mt-card">
         <div class="mt-cal__nav">
           <button type="button" id="mtCalPrev" aria-label="이전달">‹</button>
-          <strong>${ym} 정비 달력</strong>
+          <strong>${ym} 달력</strong>
           <button type="button" id="mtCalNext" aria-label="다음달">›</button>
         </div>
+        <div class="mt-cal__legend"><span class="mt-cal__lg mt-cal__lg--m">정비</span><span class="mt-cal__lg mt-cal__lg--e">지출</span></div>
         <div class="mt-cal">${calendarHtml()}</div>
       </div>
     `;
