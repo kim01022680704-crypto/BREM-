@@ -24,7 +24,7 @@
     eventSettingsSort: { key: 'name', dir: 'asc' },
     settlementPreviewByPlatform: { coupang: null, baemin: null },
     baeminHourlyInsurancePreview: null,
-    baeminHourlyInsuranceLogWeek: '',
+    baeminHourlyInsuranceLogDay: '',
     settlementLogDayByPlatform: { coupang: '', baemin: '' },
     settlementUnmatchedWeekByPlatform: { coupang: null, baemin: null },
     settlementHistoryDayByPlatform: { coupang: null, baemin: null },
@@ -4923,10 +4923,28 @@
     if (periodKey) {
       setSettlementHistoryDay(p, periodKey);
       setSettlementWeekFilters(p, periodKey);
+      if (p === 'baemin') syncBaeminSettlementDay(periodKey, 'period');
       const holidayWarn = window.BremSettlementHoliday?.dailyPeriodWarning?.(periodKey, p);
       if (holidayWarn) showToast(holidayWarn);
     }
     renderSettlements();
+  }
+
+  // 배민 일정산 정산일과 시간제보험 정산일·기록은 항상 같은 날이다.
+  function syncBaeminSettlementDay(day, source) {
+    const dayKey = String(day || '').slice(0, 10);
+    if (!dayKey) return '';
+    const periodInput = $('#settlementPeriod-baemin');
+    if (periodInput && source !== 'period') periodInput.value = dayKey;
+    const insurancePeriod = $('#baeminHourlyInsurancePeriod');
+    if (insurancePeriod && source !== 'insurance') insurancePeriod.value = dayKey;
+    if (source !== 'log') setSettlementLogDay('baemin', dayKey);
+    if (source !== 'history') setSettlementHistoryDay('baemin', dayKey);
+    setBaeminHourlyInsuranceLogDay(dayKey);
+    if (source !== 'log') renderSettlementUploadLogs('baemin');
+    renderBaeminHourlyInsuranceUploadLogs();
+    if (source !== 'period' && source !== 'history') renderSettlements();
+    return dayKey;
   }
 
   function clearSettlementHistoryForSelectedPeriod(platform) {
@@ -5972,7 +5990,7 @@
         totalHourlyInsurance: result.totalHourlyInsurance || 0
       });
       state.baeminHourlyInsurancePreview.uploadLogId = uploadLog?.id || '';
-      setBaeminHourlyInsuranceLogWeek(weekStartKey(period));
+      setBaeminHourlyInsuranceLogDay(period);
       renderBaeminHourlyInsuranceUploadLogs();
       renderBaeminHourlyInsurancePreview();
       showToast(
@@ -6034,32 +6052,39 @@
     });
   }
 
-  function ensureBaeminHourlyInsuranceLogWeek() {
-    if (!state.baeminHourlyInsuranceLogWeek) {
-      state.baeminHourlyInsuranceLogWeek = weekStartKey();
+  function ensureBaeminHourlyInsuranceLogDay() {
+    if (!state.baeminHourlyInsuranceLogDay) {
+      const linked = state.settlementLogDayByPlatform.baemin
+        || String($('#settlementPeriod-baemin')?.value || '').slice(0, 10);
+      const latest = BremStorage.settlementUploadLogs.getFiltered({
+        kind: 'hourly_insurance',
+        platform: 'baemin'
+      })
+        .map(item => String(item.period || '').slice(0, 10))
+        .filter(Boolean)
+        .sort()
+        .pop();
+      state.baeminHourlyInsuranceLogDay = linked || latest || today();
     }
-    const input = $('#baeminHourlyInsuranceLogWeek');
-    if (input && !input.value) input.value = state.baeminHourlyInsuranceLogWeek;
-    return state.baeminHourlyInsuranceLogWeek;
+    const input = $('#baeminHourlyInsuranceLogDay');
+    if (input && !input.value) input.value = state.baeminHourlyInsuranceLogDay;
+    return state.baeminHourlyInsuranceLogDay;
   }
 
-  function setBaeminHourlyInsuranceLogWeek(weekStart) {
-    const picked = weekStartKey(weekStart || weekStartKey());
-    state.baeminHourlyInsuranceLogWeek = picked;
-    const input = $('#baeminHourlyInsuranceLogWeek');
-    if (input) input.value = picked;
-    const label = $('#baeminHourlyInsuranceLogWeekRange');
-    if (label) {
-      label.textContent = picked
-        ? `표시 범위: ${formatDate(picked)}(수) ~ ${formatDate(weekEndKey(picked))}(화)`
-        : '';
-    }
-    return picked;
+  function setBaeminHourlyInsuranceLogDay(day) {
+    const dayKey = String(day || '').slice(0, 10);
+    if (!dayKey) return '';
+    state.baeminHourlyInsuranceLogDay = dayKey;
+    const input = $('#baeminHourlyInsuranceLogDay');
+    if (input) input.value = dayKey;
+    const label = $('#baeminHourlyInsuranceLogDayRange');
+    if (label) label.textContent = `표시 정산일: ${formatDate(dayKey)}`;
+    return dayKey;
   }
 
   function renderBaeminHourlyInsuranceUploadLogs() {
-    const weekStart = ensureBaeminHourlyInsuranceLogWeek();
-    setBaeminHourlyInsuranceLogWeek(weekStart);
+    const dayKey = ensureBaeminHourlyInsuranceLogDay();
+    setBaeminHourlyInsuranceLogDay(dayKey);
     const rowsEl = $('#baeminHourlyInsuranceLogRows');
     const summaryEl = $('#baeminHourlyInsuranceLogSummary');
     if (!rowsEl) return;
@@ -6067,9 +6092,9 @@
     const rows = BremStorage.settlementUploadLogs.getFiltered({
       kind: 'hourly_insurance',
       platform: 'baemin',
-      weekStart
+      period: dayKey
     });
-    const emptyMessage = `${formatDate(weekStart)} 주에 업로드한 배민 시간제보험 기록이 없습니다.`;
+    const emptyMessage = `${formatDate(dayKey)} 정산일 배민 시간제보험 업로드 기록이 없습니다. 다른 날은 상단 정산일을 바꾸세요.`;
 
     rowsEl.innerHTML = rows.map(item => `
       <tr>
@@ -6304,18 +6329,18 @@
   }
 
   function clearBaeminHourlyInsuranceLogsForSelectedWeek() {
-    const weekStart = ensureBaeminHourlyInsuranceLogWeek();
+    const dayKey = ensureBaeminHourlyInsuranceLogDay();
     const rows = BremStorage.settlementUploadLogs.getFiltered({
       kind: 'hourly_insurance',
       platform: 'baemin',
-      weekStart
+      period: dayKey
     });
     if (!rows.length) {
-      showToast('선택한 주 시간제보험 기록이 없습니다.');
+      showToast('선택한 정산일 시간제보험 기록이 없습니다.');
       return;
     }
     const appliedCount = rows.filter(item => item.status === 'applied').length;
-    const rangeLabel = `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))}`;
+    const rangeLabel = formatDate(dayKey);
     const confirmMessage = appliedCount > 0
       ? `${rangeLabel} 배민 시간제보험 기록 ${rows.length}건을 전체 삭제할까요?\n반영된 ${appliedCount}건의 시간제보험 금액도 0으로 되돌립니다.`
       : `${rangeLabel} 배민 시간제보험 기록 ${rows.length}건을 전체 삭제할까요?`;
@@ -6324,7 +6349,7 @@
     void (async () => {
       try {
         await BremStorage.ensureSectionLoaded?.('settlements');
-        const result = await BremStorage.settlementUploadLogs.removeHourlyInsuranceByWeekAsync(weekStart, 'baemin');
+        const result = await BremStorage.settlementUploadLogs.removeHourlyInsuranceByWeekAsync(weekStartKey(dayKey), 'baemin', { period: dayKey });
         if (state.settlementUploadLogDetailId && rows.some(item => item.id === state.settlementUploadLogDetailId)) {
           hideSettlementUploadLogDetail();
         }
@@ -6345,17 +6370,17 @@
   }
 
   function reapplyBaeminHourlyInsuranceLogsForSelectedWeek() {
-    const weekStart = ensureBaeminHourlyInsuranceLogWeek();
+    const dayKey = ensureBaeminHourlyInsuranceLogDay();
     const logs = BremStorage.settlementUploadLogs.getFiltered({
       kind: 'hourly_insurance',
       platform: 'baemin',
-      weekStart
+      period: dayKey
     }).filter(canReapplyBaeminHourlyInsuranceLog);
     if (!logs.length) {
-      showToast('선택한 주에 재반영할 시간제보험 데이터가 없습니다.');
+      showToast('선택한 정산일에 재반영할 시간제보험 데이터가 없습니다.');
       return;
     }
-    if (!window.confirm(`${formatDate(weekStart)} 주 시간제보험 ${logs.length}건을 저장 데이터로 재반영할까요?`)) return;
+    if (!window.confirm(`${formatDate(dayKey)} 시간제보험 ${logs.length}건을 저장 데이터로 재반영할까요?`)) return;
     void (async () => {
       for (const log of logs) {
         await reapplyBaeminHourlyInsuranceLog(log.id);
@@ -6422,7 +6447,7 @@
         });
       }
       setSettlementHistoryDay('baemin', preview.period);
-      setBaeminHourlyInsuranceLogWeek(weekStartKey(preview.period));
+      setBaeminHourlyInsuranceLogDay(preview.period);
       clearBaeminHourlyInsurancePreview();
       renderBaeminHourlyInsuranceUploadLogs();
       renderSettlements();
@@ -8053,6 +8078,7 @@
           return;
         }
         setSettlementHistoryDay(p, dayKey);
+        if (p === 'baemin') syncBaeminSettlementDay(dayKey, 'history');
         renderSettlements();
       });
       $(`#settlementPeriod-${p}`)?.addEventListener('change', () => {
@@ -8066,6 +8092,7 @@
           return;
         }
         setSettlementLogDay(p, dayKey);
+        if (p === 'baemin') syncBaeminSettlementDay(dayKey, 'log');
         renderSettlementUploadLogs(p);
       });
       $(`#settlementUploadLogReapplyWeek-${p}`)?.addEventListener('click', () => {
@@ -8103,11 +8130,20 @@
       const file = event.target.files?.[0];
       if (!file) return;
       const date = applyBaeminHourlyInsuranceDateFromFilename(file.name);
-      if (date) showToast(`배민 시간제보험 정산일 ${formatDate(date)} 자동 설정`);
+      if (date) {
+        syncBaeminSettlementDay(date, 'insurance');
+        showToast(`배민 시간제보험 정산일 ${formatDate(date)} 자동 설정`);
+      }
     });
-    $('#baeminHourlyInsuranceLogWeek')?.addEventListener('change', event => {
-      setBaeminHourlyInsuranceLogWeek(event.target.value);
-      renderBaeminHourlyInsuranceUploadLogs();
+    $('#baeminHourlyInsurancePeriod')?.addEventListener('change', event => {
+      const dayKey = String(event.target.value || '').slice(0, 10);
+      if (!dayKey) return;
+      syncBaeminSettlementDay(dayKey, 'insurance');
+    });
+    $('#baeminHourlyInsuranceLogDay')?.addEventListener('change', event => {
+      const dayKey = String(event.target.value || '').slice(0, 10);
+      if (!dayKey) return;
+      syncBaeminSettlementDay(dayKey, 'hourlyLog');
     });
     $('#baeminHourlyInsuranceLogReapplyWeek')?.addEventListener('click', () => {
       reapplyBaeminHourlyInsuranceLogsForSelectedWeek();

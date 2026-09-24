@@ -12114,10 +12114,12 @@ const BremStorage = (function () {
       const weekKey = String(weekStart || '').slice(0, 10);
       if (!weekKey) return { removed: 0, appliedCount: 0, rolledBackHourly: 0 };
 
+      const periodKey = String(options.period || '').slice(0, 10);
       const targets = settlementUploadLogs.getFiltered({
         kind: 'hourly_insurance',
         platform: p,
-        weekStart: weekKey
+        weekStart: weekKey,
+        ...(periodKey ? { period: periodKey } : {})
       });
       if (!targets.length) return { removed: 0, appliedCount: 0, rolledBackHourly: 0 };
 
