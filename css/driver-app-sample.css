@@ -347,6 +347,70 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .content-grid tbody tr:hover td,
 .rider-ds .table-wrap tbody tr:hover td { background: var(--rd-hover); }
 
+/* ── 일별 콜수 (한 줄형) ─────────────────────────────── */
+.dc-list { padding: 12px 12px 0; display: flex; flex-direction: column; }
+
+.dc-summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 16px; margin-bottom: 12px;
+  background: linear-gradient(135deg, var(--rd-card-2), var(--rd-card));
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+}
+.dc-summary__total { display: flex; flex-direction: column; gap: 2px; }
+.dc-summary__total > span { font-size: var(--rd-fs-100); font-weight: 700; color: var(--rd-text-muted); letter-spacing: .02em; }
+.dc-summary__total > strong { font-size: var(--rd-fs-700); font-weight: 800; color: var(--rd-text); line-height: 1; font-variant-numeric: tabular-nums; }
+.dc-summary__total > strong i { font-size: var(--rd-fs-300); font-weight: 700; color: var(--rd-text-muted); font-style: normal; margin-left: 3px; }
+.dc-summary__split { display: flex; gap: 8px; }
+.dc-summary .dc-plat {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border-radius: var(--rd-radius-sm); background: var(--rd-card-2);
+}
+.dc-summary .dc-plat i { font-style: normal; font-size: var(--rd-fs-200); font-weight: 700; }
+.dc-summary .dc-plat b { font-size: var(--rd-fs-400); font-weight: 800; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.dc-summary .dc-plat--coupang { box-shadow: inset 2px 0 0 var(--rd-warning); }
+.dc-summary .dc-plat--coupang i { color: var(--rd-warning); }
+.dc-summary .dc-plat--baemin { box-shadow: inset 2px 0 0 var(--rd-teal); }
+.dc-summary .dc-plat--baemin i { color: var(--rd-teal); }
+
+.dc-rows { display: flex; flex-direction: column; }
+
+.dc-row {
+  position: relative; display: grid;
+  grid-template-columns: 58px 1fr auto; align-items: center; gap: 12px;
+  padding: 10px 14px 10px 16px; border-bottom: 1px solid var(--rd-border);
+}
+.dc-row:last-child { border-bottom: 0; }
+.dc-row--today { background: var(--rd-accent-soft); border-radius: var(--rd-radius-sm); }
+.dc-row--today::before {
+  content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px;
+  border-radius: var(--rd-radius-pill); background: var(--rd-accent);
+}
+
+.dc-row__day { display: flex; align-items: baseline; gap: 5px; }
+.dc-row__dow {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 6px;
+  background: var(--rd-card-2); color: var(--rd-text-muted);
+  font-size: var(--rd-fs-100); font-weight: 800;
+}
+.dc-row--today .dc-row__dow { background: var(--rd-accent); color: var(--rd-accent-ink); }
+.dc-row__date { font-size: var(--rd-fs-300); font-weight: 700; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+
+.dc-row__mid { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dc-row__bar { display: flex; height: 6px; border-radius: var(--rd-radius-pill); background: var(--rd-card-2); overflow: hidden; }
+.dc-row__seg { height: 100%; }
+.dc-row__seg--coupang { background: var(--rd-warning); }
+.dc-row__seg--baemin { background: var(--rd-teal); }
+.dc-row__sub { display: flex; gap: 10px; font-size: var(--rd-fs-100); font-weight: 700; font-variant-numeric: tabular-nums; }
+.dc-row__sub--coupang { color: var(--rd-warning); }
+.dc-row__sub--baemin { color: var(--rd-teal); }
+
+.dc-row__total { font-size: var(--rd-fs-500); font-weight: 800; color: var(--rd-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dc-row__total i { font-size: var(--rd-fs-100); font-weight: 700; color: var(--rd-text-muted); font-style: normal; margin-left: 2px; }
+
+.dc-empty { padding: 26px 14px; text-align: center; color: var(--rd-text-muted); font-size: var(--rd-fs-300); }
+
 /* 진행률 */
 .rider-ds .progress-info span {
   color: var(--rd-accent);

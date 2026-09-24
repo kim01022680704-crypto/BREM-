@@ -1029,23 +1029,72 @@
         }
       });
 
-    const rows = Array.from(byDate.entries())
-      .sort((a, b) => b[0].localeCompare(a[0]))
+    const todayKey = dateKey(new Date());
+    const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+    const entries = Array.from(byDate.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+
+    let sumCoupang = 0;
+    let sumBaemin = 0;
+    entries.forEach(([, counts]) => {
+      sumCoupang += counts.coupang;
+      sumBaemin += counts.baemin;
+    });
+    const sumTotal = sumCoupang + sumBaemin;
+
+    const rows = entries
       .map(([date, counts]) => {
         const total = counts.coupang + counts.baemin;
+        const coupangWidth = total ? Math.round((counts.coupang / total) * 100) : 0;
+        const baeminWidth = total ? 100 - coupangWidth : 0;
+        const cellDate = dateValue(date);
+        const monthDay = `${cellDate.getMonth() + 1}/${cellDate.getDate()}`;
+        const dow = DOW[cellDate.getDay()];
+        const isToday = date === todayKey;
         return `
-          <tr>
-            <td>${formatDate(date)}</td>
-            <td>${counts.coupang ? `<strong>${number(counts.coupang)}콜</strong>` : '-'}</td>
-            <td>${counts.baemin ? `<strong>${number(counts.baemin)}콜</strong>` : '-'}</td>
-            <td><strong>${number(total)}콜</strong></td>
-          </tr>
+          <div class="dc-row${isToday ? ' dc-row--today' : ''}">
+            <span class="dc-row__day">
+              <span class="dc-row__dow">${dow}</span>
+              <span class="dc-row__date">${monthDay}</span>
+            </span>
+            <span class="dc-row__mid">
+              <span class="dc-row__bar" role="img" aria-label="쿠팡 ${counts.coupang}콜 · 배민 ${counts.baemin}콜">
+                ${counts.coupang ? `<span class="dc-row__seg dc-row__seg--coupang" style="width:${coupangWidth}%"></span>` : ''}
+                ${counts.baemin ? `<span class="dc-row__seg dc-row__seg--baemin" style="width:${baeminWidth}%"></span>` : ''}
+              </span>
+              <span class="dc-row__sub">
+                <span class="dc-row__sub--coupang">쿠 ${counts.coupang ? number(counts.coupang) : '-'}</span>
+                <span class="dc-row__sub--baemin">배 ${counts.baemin ? number(counts.baemin) : '-'}</span>
+              </span>
+            </span>
+            <span class="dc-row__total">${number(total)}<i>콜</i></span>
+          </div>
         `;
       })
       .join('');
 
     setText('dailyRange', `${formatDate(dateKey(start))} ~ ${formatDate(dateKey(end))}`);
-    document.getElementById('dailyRows').innerHTML = rows || '<tr><td colspan="4" class="empty-text">선택한 주간의 콜수 기록이 없습니다.</td></tr>';
+
+    const summary = entries.length
+      ? `
+        <div class="dc-summary">
+          <div class="dc-summary__total">
+            <span>주간 합계</span>
+            <strong>${number(sumTotal)}<i>콜</i></strong>
+          </div>
+          <div class="dc-summary__split">
+            <span class="dc-plat dc-plat--coupang"><i>쿠팡</i><b>${number(sumCoupang)}</b></span>
+            <span class="dc-plat dc-plat--baemin"><i>배민</i><b>${number(sumBaemin)}</b></span>
+          </div>
+        </div>
+      `
+      : '';
+
+    const list = document.getElementById('dailyCallsList');
+    if (list) {
+      list.innerHTML = entries.length
+        ? `${summary}<div class="dc-rows">${rows}</div>`
+        : '<p class="dc-empty">선택한 주간의 콜수 기록이 없습니다.</p>';
+    }
   }
 
   function sortNotices(list) {
