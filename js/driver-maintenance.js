@@ -12,7 +12,8 @@
     { id: 'other', label: '기타' }
   ];
   const DOW = ['일', '월', '화', '수', '목', '금', '토'];
-  let state = { bike: null, logs: [], part: 'oil', openMonth: '' };
+  const now0 = new Date();
+  let state = { bike: null, logs: [], part: 'oil', calY: now0.getFullYear(), calM: now0.getMonth() + 1 };
 
   function won(n) { return Number(n || 0).toLocaleString('ko-KR'); }
   function todayKey() {
@@ -40,43 +41,50 @@
     return map;
   }
 
+  function logsOnDay(y, m, d) {
+    const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    return (state.logs || []).filter(row => row.date === key);
+  }
+
+  function calendarHtml() {
+    const y = state.calY;
+    const m = state.calM;
+    const first = new Date(y, m - 1, 1).getDay();
+    const days = new Date(y, m, 0).getDate();
+    let cells = DOW.map(name => `<div class="mt-cal__h">${name}</div>`).join('');
+    for (let i = 0; i < first; i += 1) cells += '<div class="mt-cal__cell mt-cal__cell--empty"></div>';
+    for (let d = 1; d <= days; d += 1) {
+      const rows = logsOnDay(y, m, d);
+      if (!rows.length) {
+        cells += `<div class="mt-cal__cell"><span class="mt-cal__d">${d}</span></div>`;
+        continue;
+      }
+      const label = rows.map(row => row.partLabel).filter(Boolean).join('·');
+      const cost = rows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
+      const km = rows[rows.length - 1].km;
+      cells += `<div class="mt-cal__cell mt-cal__cell--on"><span class="mt-cal__d">${d}</span><b>${label}</b><span>${won(km)}km</span><strong>${won(cost)}</strong></div>`;
+    }
+    return cells;
+  }
+
   function render() {
     const bike = state.bike;
     const logs = state.logs || [];
-    const now = new Date();
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    if (!state.openMonth) state.openMonth = monthKey;
+    const monthKey = `${state.calY}-${String(state.calM).padStart(2, '0')}`;
     const monthLogs = logs.filter(row => String(row.date).startsWith(monthKey));
     const monthSum = monthLogs.reduce((sum, row) => sum + Number(row.cost || 0), 0);
-    const groups = {};
-    logs.forEach(row => {
-      const key = String(row.date || '').slice(0, 7);
-      if (!key) return;
-      (groups[key] = groups[key] || []).push(row);
-    });
-    const keys = Object.keys(groups).sort((a, b) => b.localeCompare(a));
-    const lines = keys.map(key => {
-      const list = groups[key];
-      const sum = list.reduce((acc, row) => acc + Number(row.cost || 0), 0);
-      const title = `${key.slice(5)}월 · ${list.length}건 · ${won(sum)}원`;
-      if (state.openMonth !== key) {
-        return `<button type="button" class="mt-fold" data-month="${key}">${title} ▾</button>`;
-      }
-      const rows = list.map(row => {
-        const dt = new Date(`${row.date}T00:00:00`);
-        return `<div class="mt-row"><span><i>${DOW[dt.getDay()]}</i> ${dt.getMonth() + 1}/${dt.getDate()}</span><b>${row.partLabel || ''}</b><span class="mt-km">${won(row.km)}km</span><strong>${won(row.cost)}</strong></div>`;
-      }).join('');
-      return `<div class="mt-month">${title}</div>${rows}`;
-    }).join('');
+    const bikeText = bike
+      ? `<b>${bike.model}</b><span>오일교체주기 ${won(bike.cycleKm)}km</span>`
+      : '<b>등록된 오토바이 없음</b><span>오일교체주기를 함께 등록하세요</span>';
 
     panel.innerHTML = `
-      <div class="mt-head"><h2>정비기록</h2><button type="button" class="mt-add" id="mtToggle">+ 등록</button></div>
-      <div class="mt-card mt-sum"><div><span>${now.getMonth() + 1}월 정비 사용금액</span><strong>${won(monthSum)}<i>원</i></strong></div><em>${monthLogs.length}건</em></div>
+      <div class="mt-head"><h2>정비기록</h2></div>
+      <div class="mt-card mt-sum"><div><span>${state.calM}월 정비 사용금액</span><strong>${won(monthSum)}<i>원</i></strong></div><em>${monthLogs.length}건</em></div>
       <div class="mt-card mt-bike">
-        <div><b>${bike ? bike.model : '오토바이 없음'}</b><small>${bike ? `교체주기 ${won(bike.cycleKm)}km` : '종류와 교체주기를 등록하세요'}</small></div>
-        <button type="button" class="mt-yellow" id="mtBikeBtn">오토바이 등록</button>
+        <div class="mt-bike__info">${bikeText}</div>
+        <button type="button" class="mt-yellow mt-yellow--block" id="mtBikeBtn">오토바이 등록</button>
       </div>
-      <form class="mt-card" id="mtForm" hidden>
+      <form class="mt-card" id="mtForm">
         <div class="mt-grid">
           <label>날짜
             <button type="button" class="mt-date" id="mtDateBtn"><span id="mtDateLabel">${labelDate(todayKey())}</span></button>
@@ -89,15 +97,48 @@
           </label>
         </div>
         <label id="mtCustomWrap" ${state.part === 'other' ? '' : 'hidden'}>직접입력<input id="mtCustom" placeholder="예: 타이어"></label>
-        <button type="submit" class="mt-yellow">이 날짜로 저장</button>
+        <button type="submit" class="mt-yellow mt-yellow--block">이 날짜로 저장</button>
       </form>
-      <div class="mt-card">${lines || '<p class="mt-empty">아직 정비 기록이 없습니다.</p>'}</div>
+      <div class="mt-card">
+        <div class="mt-cal__nav">
+          <button type="button" id="mtCalPrev" aria-label="이전달">‹</button>
+          <strong>${state.calY}.${String(state.calM).padStart(2, '0')}</strong>
+          <button type="button" id="mtCalNext" aria-label="다음달">›</button>
+        </div>
+        <div class="mt-cal">${calendarHtml()}</div>
+      </div>
+      <div class="mt-pop" id="mtBikePop" hidden>
+        <button type="button" class="mt-pop__bg" data-close-bike aria-label="닫기"></button>
+        <form class="mt-pop__box" id="mtBikeForm">
+          <h3>오토바이 등록</h3>
+          <label>오토바이<input id="mtBikeModel" value="${bike ? bike.model : ''}" placeholder="예: PCX 125" required></label>
+          <label>오일교체주기<input id="mtBikeCycle" inputmode="numeric" value="${bike ? bike.cycleKm : ''}" placeholder="km" required></label>
+          <button type="submit" class="mt-yellow mt-yellow--block">저장</button>
+          <button type="button" class="mt-ghost" data-close-bike>닫기</button>
+        </form>
+      </div>
     `;
-    document.getElementById('mtToggle')?.addEventListener('click', () => {
-      const form = document.getElementById('mtForm');
-      if (form) form.hidden = !form.hidden;
+    document.getElementById('mtBikeBtn')?.addEventListener('click', () => {
+      const pop = document.getElementById('mtBikePop');
+      if (pop) pop.hidden = false;
     });
-    document.getElementById('mtBikeBtn')?.addEventListener('click', saveBike);
+    panel.querySelectorAll('[data-close-bike]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pop = document.getElementById('mtBikePop');
+        if (pop) pop.hidden = true;
+      });
+    });
+    document.getElementById('mtBikeForm')?.addEventListener('submit', saveBike);
+    document.getElementById('mtCalPrev')?.addEventListener('click', () => {
+      state.calM -= 1;
+      if (state.calM < 1) { state.calM = 12; state.calY -= 1; }
+      render();
+    });
+    document.getElementById('mtCalNext')?.addEventListener('click', () => {
+      state.calM += 1;
+      if (state.calM > 12) { state.calM = 1; state.calY += 1; }
+      render();
+    });
     document.getElementById('mtForm')?.addEventListener('submit', saveLog);
     document.getElementById('mtPart')?.addEventListener('change', event => {
       state.part = event.target.value;
@@ -115,13 +156,6 @@
       const label = document.getElementById('mtDateLabel');
       if (label) label.textContent = labelDate(dateInput.value);
     });
-    panel.querySelectorAll('[data-month]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.openMonth = btn.dataset.month;
-        render();
-      });
-    });
-    window.BremDriverPerfCalendar?.render?.();
   }
 
   async function load() {
@@ -135,11 +169,10 @@
     render();
   }
 
-  async function saveBike() {
-    const model = prompt('오토바이 종류', state.bike?.model || '');
-    if (!model) return;
-    const cycle = prompt('교체주기 km', state.bike?.cycleKm ? String(state.bike.cycleKm) : '');
-    if (!cycle) return;
+  async function saveBike(event) {
+    event.preventDefault();
+    const model = document.getElementById('mtBikeModel')?.value;
+    const cycle = document.getElementById('mtBikeCycle')?.value;
     const res = await window.BremStorage?.saveRiderMaintenanceBike?.({ model, cycleKm: cycle });
     if (!res?.ok) { toast(res?.message || '저장하지 못했습니다.'); return; }
     state.bike = res.bike || null;
@@ -161,7 +194,11 @@
     if (!res?.ok) { toast(res?.message || '저장하지 못했습니다.'); return; }
     state.bike = res.bike || state.bike;
     state.logs = res.logs || [];
-    state.openMonth = String(payload.date || '').slice(0, 7) || state.openMonth;
+    const savedDate = String(payload.date || '');
+    if (/^\d{4}-\d{2}/.test(savedDate)) {
+      state.calY = Number(savedDate.slice(0, 4));
+      state.calM = Number(savedDate.slice(5, 7));
+    }
     render();
     toast('정비일지를 저장했습니다.');
   }

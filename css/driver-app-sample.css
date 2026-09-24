@@ -411,9 +411,31 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 
 .dc-empty { padding: 26px 14px; text-align: center; color: var(--rd-text-muted); font-size: var(--rd-fs-300); }
 
-.rider-ds .ds-cal__cell--maint { box-shadow: inset 0 -3px 0 #f472b6; }
 .rider-ds .driver-maint-panel { display: grid; gap: 10px; }
-.rider-ds .mt-head, .rider-ds .mt-bike, .rider-ds .mt-sum { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rider-ds .mt-head, .rider-ds .mt-sum { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rider-ds .mt-bike { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+.rider-ds .mt-bike__info { display: flex; flex-direction: column; gap: 4px; }
+.rider-ds .mt-bike__info b { color: var(--rd-text); font-size: var(--rd-fs-500); }
+.rider-ds .mt-bike__info span { color: var(--rd-text-muted); font-size: var(--rd-fs-300); font-weight: 700; }
+.rider-ds .mt-yellow--block { width: 100%; }
+.rider-ds .mt-cal__nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; color: var(--rd-text); }
+.rider-ds .mt-cal__nav button { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--rd-border-strong); background: var(--rd-card-2); color: var(--rd-accent); font-weight: 800; cursor: pointer; }
+.rider-ds .mt-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.rider-ds .mt-cal__h { text-align: center; color: var(--rd-text-muted); font-size: 10px; font-weight: 800; }
+.rider-ds .mt-cal__cell { min-height: 52px; padding: 3px; border-radius: 8px; background: var(--rd-card-2); color: var(--rd-text); font-size: 9px; line-height: 1.2; overflow: hidden; }
+.rider-ds .mt-cal__cell--empty { background: transparent; }
+.rider-ds .mt-cal__cell--on { background: var(--rd-accent-soft); box-shadow: inset 0 0 0 1px var(--rd-accent); }
+.rider-ds .mt-cal__d { display: block; font-weight: 800; font-size: 11px; }
+.rider-ds .mt-cal__cell b { display: block; color: var(--rd-warning); font-size: 9px; }
+.rider-ds .mt-cal__cell strong { display: block; font-size: 9px; }
+.rider-ds .mt-pop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 18px; }
+.rider-ds .mt-pop[hidden] { display: none !important; }
+.rider-ds .mt-pop__bg { position: absolute; inset: 0; border: 0; background: rgba(0,0,0,.55); }
+.rider-ds .mt-pop__box { position: relative; width: min(360px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 16px; background: var(--rd-card); border: 1px solid var(--rd-border); }
+.rider-ds .mt-pop__box h3 { margin: 0; color: var(--rd-text); }
+.rider-ds .mt-pop__box label { display: flex; flex-direction: column; gap: 4px; color: var(--rd-text-muted); font-size: var(--rd-fs-200); font-weight: 700; }
+.rider-ds .mt-pop__box input { background: var(--rd-card-2); color: var(--rd-text); border: 1px solid var(--rd-border); border-radius: 8px; padding: 10px; font-weight: 700; }
+.rider-ds .mt-ghost { border: 1px solid var(--rd-border-strong); background: transparent; color: var(--rd-text); border-radius: 10px; padding: 10px; font-weight: 800; cursor: pointer; }
 .rider-ds .mt-head h2 { margin: 0; color: var(--rd-text); font-size: var(--rd-fs-500); }
 .rider-ds .mt-add { border: 0; background: transparent; color: var(--rd-accent); font-weight: 800; cursor: pointer; }
 .rider-ds .mt-card { background: var(--rd-card); border: 1px solid var(--rd-border); border-radius: var(--rd-radius); padding: 12px; }
