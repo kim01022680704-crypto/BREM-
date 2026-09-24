@@ -3,7 +3,7 @@ const { getRiderMe } = require('./rider-auth');
 const adminUsers = require('./admin-users');
 
 const KEY = 'brem_rider_maintenance';
-const PARTS = { oil: '오일', pad: '패드', drive: '구동계', other: '기타' };
+const PARTS = { oil: '오일', pad: '패드', drive: '구동계', tire: '타이어', other: '기타' };
 const EXPENSE_CATS = { meal: '밥값', fuel: '기름값', coffee: '커피값', snack: '간식값', other: '기타' };
 
 function emptyDoc() {

@@ -9,6 +9,7 @@
     { id: 'oil', label: '오일' },
     { id: 'pad', label: '패드' },
     { id: 'drive', label: '구동계' },
+    { id: 'tire', label: '타이어' },
     { id: 'other', label: '기타' }
   ];
   const CATS = [
@@ -91,6 +92,15 @@
     return { total, count: rows.length, chips, list };
   }
 
+  function maintList(monthKey) {
+    const rows = (state.logs || []).filter(row => String(row.date).startsWith(monthKey))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    return rows.map(row => {
+      const dt = new Date(`${row.date}T00:00:00`);
+      return `<div class="mt-row"><span><i>${DOW[dt.getDay()]}</i> ${dt.getMonth() + 1}/${dt.getDate()}</span><b>${row.partLabel || ''}</b><span class="mt-km">${won(row.km)}km</span><strong>${won(row.cost)}</strong></div>`;
+    }).join('');
+  }
+
   function render() {
     const bike = state.bike;
     const logs = state.logs || [];
@@ -102,14 +112,27 @@
       : '<b>등록된 오토바이 없음</b><span>오일교체주기를 함께 등록하세요</span>';
     const exp = expenseSummary(monthKey);
     const ym = `${state.calY}.${String(state.calM).padStart(2, '0')}`;
+    const maintRows = maintList(monthKey);
 
     panel.innerHTML = `
       <div class="mt-head"><h2>정비 · 지출</h2></div>
 
-      <div class="mt-card mt-sum">
+      <div class="mt-monthbar">
         <button type="button" class="mt-sum__nav" id="mtSumPrev" aria-label="이전달">‹</button>
-        <div><span>${ym} 정비 사용금액</span><strong>${won(monthSum)}<i>원</i></strong><em>${monthLogs.length}건</em></div>
+        <strong>${ym}</strong>
         <button type="button" class="mt-sum__nav" id="mtSumNext" aria-label="다음달">›</button>
+      </div>
+      <div class="mt-twin">
+        <div class="mt-card mt-twin__box mt-twin__box--maint">
+          <span>정비 사용금액</span>
+          <strong>${won(monthSum)}<i>원</i></strong>
+          <em>${monthLogs.length}건</em>
+        </div>
+        <div class="mt-card mt-twin__box mt-twin__box--exp">
+          <span>기타 지출금액</span>
+          <strong>${won(exp.total)}<i>원</i></strong>
+          <em>${exp.count}건</em>
+        </div>
       </div>
 
       <div class="mt-card mt-bike">
@@ -120,7 +143,7 @@
       <form class="mt-card" id="mtForm">
         <div class="mt-formtitle">정비 등록</div>
         <div class="mt-chips">${partChips()}</div>
-        <label id="mtCustomWrap" ${state.part === 'other' ? '' : 'hidden'}>직접입력<input id="mtCustom" placeholder="예: 타이어"></label>
+        <label id="mtCustomWrap" ${state.part === 'other' ? '' : 'hidden'}>직접입력<input id="mtCustom" placeholder="예: 브레이크액"></label>
         <div class="mt-grid">
           <label>날짜
             <button type="button" class="mt-date" id="mtDateBtn"><span id="mtDateLabel">${labelDate(todayKey())}</span></button>
@@ -131,25 +154,10 @@
         </div>
         <button type="submit" class="mt-yellow mt-yellow--block">이 날짜로 저장</button>
       </form>
-
-      <div class="mt-card">
-        <div class="mt-cal__nav">
-          <button type="button" id="mtCalPrev" aria-label="이전달">‹</button>
-          <strong>${ym}</strong>
-          <button type="button" id="mtCalNext" aria-label="다음달">›</button>
-        </div>
-        <div class="mt-cal">${calendarHtml()}</div>
-      </div>
-
-      <div class="mt-card mt-sum mt-sum--exp">
-        <button type="button" class="mt-sum__nav" id="mtExpPrev" aria-label="이전달">‹</button>
-        <div><span>${ym} 지출 합계</span><strong>${won(exp.total)}<i>원</i></strong><em>${exp.count}건</em></div>
-        <button type="button" class="mt-sum__nav" id="mtExpNext" aria-label="다음달">›</button>
-      </div>
-      ${exp.chips ? `<div class="mt-card mt-catsum">${exp.chips}</div>` : ''}
+      <div class="mt-card"><div class="mt-formtitle">정비 날짜별</div>${maintRows || '<p class="mt-empty">이번 달 정비 기록이 없습니다.</p>'}</div>
 
       <form class="mt-card" id="mtExpForm">
-        <div class="mt-formtitle">지출 등록 · 밥값 · 기름값 · 커피값 · 간식값</div>
+        <div class="mt-formtitle">기타 지출 등록 · 밥값 · 기름값 · 커피값 · 간식값</div>
         <div class="mt-chips">${catChips()}</div>
         <label id="mtExpCustomWrap" ${state.cat === 'other' ? '' : 'hidden'}>직접입력<input id="mtExpCustom" placeholder="예: 세차"></label>
         <div class="mt-grid">
@@ -161,7 +169,17 @@
         </div>
         <button type="submit" class="mt-yellow mt-yellow--block">이 날짜로 저장</button>
       </form>
-      <div class="mt-card">${exp.list || '<p class="mt-empty">이번 달 지출 기록이 없습니다.</p>'}</div>
+      ${exp.chips ? `<div class="mt-card mt-catsum">${exp.chips}</div>` : ''}
+      <div class="mt-card"><div class="mt-formtitle">지출 날짜별</div>${exp.list || '<p class="mt-empty">이번 달 지출 기록이 없습니다.</p>'}</div>
+
+      <div class="mt-card">
+        <div class="mt-cal__nav">
+          <button type="button" id="mtCalPrev" aria-label="이전달">‹</button>
+          <strong>${ym} 정비 달력</strong>
+          <button type="button" id="mtCalNext" aria-label="다음달">›</button>
+        </div>
+        <div class="mt-cal">${calendarHtml()}</div>
+      </div>
     `;
 
     bindCommon();
