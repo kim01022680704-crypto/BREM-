@@ -389,10 +389,12 @@ async function loadCoupangRejectRatesBatch(supabase, riders) {
     if (!pastRows.length && !todayRows.length) return;
     const pastAgg = sumCoupangRiderDailyRows(pastRows);
     const todayAgg = sumCoupangRiderDailyRows(todayRows);
-    const pastRate = calcRejectionRateFromCounts(pastAgg.complete, pastAgg.reject, pastAgg.cancel);
-    const todayRate = calcRejectionRateFromCounts(todayAgg.complete, todayAgg.reject, todayAgg.cancel);
-    // 기사앱 현재거절율과 동일: 오늘 완료·거절·취소만. 어제와 평균하지 않는다.
-    const rejectionRate = todayRate ?? pastRate;
+    // 기사앱 홈 주간 거절율과 동일: 정산주(수~화) 완료·거절·취소를 누적해서 계산한다.
+    // 오늘분(rider_daily today)이 들어가므로 수집될 때마다 실시간으로 갱신된다.
+    const weekComplete = pastAgg.complete + todayAgg.complete;
+    const weekReject = pastAgg.reject + todayAgg.reject;
+    const weekCancel = pastAgg.cancel + todayAgg.cancel;
+    const rejectionRate = calcRejectionRateFromCounts(weekComplete, weekReject, weekCancel);
     if (rejectionRate != null) rates.set(driverId, rejectionRate);
   });
   return rates;
