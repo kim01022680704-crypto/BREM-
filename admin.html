@@ -2116,6 +2116,20 @@
             </table>
           </div>
         </div>
+        <div class="panel" style="margin-top:16px">
+          <div class="panel-header"><h2>기사들 지출기록</h2></div>
+          <p class="form-help">밥값·기름값·커피값·간식값 등 기사가 앱에서 적은 소비 기록입니다. 위 필터의 기사 검색과 연·월이 함께 적용됩니다.</p>
+          <div class="maint-filters" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">
+            <select id="expCat"><option value="">항목 전체</option><option value="밥값">밥값</option><option value="기름값">기름값</option><option value="커피값">커피값</option><option value="간식값">간식값</option><option value="other">기타</option></select>
+            <strong id="expTotal" style="align-self:center"></strong>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>기사</th><th>전화</th><th>날짜</th><th>항목</th><th>금액</th></tr></thead>
+              <tbody id="expRows"></tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section class="section" id="lease-management">
@@ -9287,7 +9301,7 @@
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
   <script src="js/admin-lease-menus.js?v=20260813g"></script>
-  <script src="js/admin-rider-maintenance.js?v=20260924mt1"></script>
+  <script src="js/admin-rider-maintenance.js?v=20260924mt4"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-revenue-region-settlement.js?v=20260910region1"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>

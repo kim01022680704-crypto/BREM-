@@ -5,6 +5,7 @@
   const rowsEl = document.getElementById('maintRows');
   if (!rowsEl) return;
   let logs = [];
+  let expenses = [];
 
   function won(n) { return Number(n || 0).toLocaleString('ko-KR'); }
   function fillMonths() {
@@ -49,6 +50,31 @@
     });
     rowsEl.innerHTML = filtered.map(row => `<tr><td>${row.name || ''}</td><td>${row.phone || ''}</td><td>${row.bikeModel || ''}</td><td>${String(row.date || '').replace(/-/g, '.')}</td><td>${won(row.km)}</td><td>${row.partLabel || ''}</td><td>${won(row.cost)}</td></tr>`).join('')
       || '<tr><td colspan="7">기록이 없습니다.</td></tr>';
+    paintExpenses();
+  }
+
+  function paintExpenses() {
+    const expRows = document.getElementById('expRows');
+    if (!expRows) return;
+    const q = document.getElementById('maintSearch')?.value.trim() || '';
+    const cat = document.getElementById('expCat')?.value || '';
+    const year = document.getElementById('maintYear')?.value || '';
+    const month = document.getElementById('maintMonth')?.value || '';
+    const filtered = expenses.filter(row => {
+      const blob = `${row.name || ''}${row.phone || ''}`;
+      if (q && !blob.includes(q)) return false;
+      if (cat === 'other') {
+        if (['밥값', '기름값', '커피값', '간식값'].includes(row.categoryLabel)) return false;
+      } else if (cat && row.categoryLabel !== cat) return false;
+      if (year && !String(row.date).startsWith(year)) return false;
+      if (month && String(row.date).slice(5, 7) !== month) return false;
+      return true;
+    });
+    const total = filtered.reduce((sum, row) => sum + Number(row.cost || 0), 0);
+    const totalEl = document.getElementById('expTotal');
+    if (totalEl) totalEl.textContent = `합계 ${won(total)}원 · ${filtered.length}건`;
+    expRows.innerHTML = filtered.map(row => `<tr><td>${row.name || ''}</td><td>${row.phone || ''}</td><td>${String(row.date || '').replace(/-/g, '.')}</td><td>${row.categoryLabel || ''}</td><td>${won(row.cost)}</td></tr>`).join('')
+      || '<tr><td colspan="5">기록이 없습니다.</td></tr>';
   }
 
   async function load() {
@@ -58,10 +84,11 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return;
     logs = data.logs || [];
+    expenses = data.expenses || [];
     paint();
   }
 
-  ['maintSearch', 'maintBike', 'maintPart', 'maintYear', 'maintMonth'].forEach(id => {
+  ['maintSearch', 'maintBike', 'maintPart', 'maintYear', 'maintMonth', 'expCat'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', paint);
     document.getElementById(id)?.addEventListener('change', paint);
   });

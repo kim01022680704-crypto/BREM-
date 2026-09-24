@@ -4,9 +4,10 @@ const adminUsers = require('./admin-users');
 
 const KEY = 'brem_rider_maintenance';
 const PARTS = { oil: '오일', pad: '패드', drive: '구동계', other: '기타' };
+const EXPENSE_CATS = { meal: '밥값', fuel: '기름값', coffee: '커피값', snack: '간식값', other: '기타' };
 
 function emptyDoc() {
-  return { bikes: [], logs: [] };
+  return { bikes: [], logs: [], expenses: [] };
 }
 
 async function readDoc() {
@@ -19,7 +20,8 @@ async function readDoc() {
     ok: true,
     doc: {
       bikes: Array.isArray(value.bikes) ? value.bikes : [],
-      logs: Array.isArray(value.logs) ? value.logs : []
+      logs: Array.isArray(value.logs) ? value.logs : [],
+      expenses: Array.isArray(value.expenses) ? value.expenses : []
     }
   };
 }
@@ -29,7 +31,7 @@ async function writeDoc(doc) {
   if (!supabase) return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 없습니다.' };
   const { error } = await supabase.from('settings').upsert({
     key: KEY,
-    value: { bikes: doc.bikes || [], logs: doc.logs || [] },
+    value: { bikes: doc.bikes || [], logs: doc.logs || [], expenses: doc.expenses || [] },
     updated_at: new Date().toISOString()
   }, { onConflict: 'key' });
   if (error) return { ok: false, status: 500, error: error.message || '정비기록을 저장하지 못했습니다.' };
@@ -45,6 +47,8 @@ function mine(doc, riderId) {
   return {
     bike: (doc.bikes || []).find(row => String(row.riderId) === id) || null,
     logs: (doc.logs || []).filter(row => String(row.riderId) === id)
+      .sort((a, b) => String(b.date).localeCompare(String(a.date))),
+    expenses: (doc.expenses || []).filter(row => String(row.riderId) === id)
       .sort((a, b) => String(b.date).localeCompare(String(a.date)))
   };
 }
@@ -117,6 +121,36 @@ async function saveLog(accessToken, body = {}) {
   return { ok: true, ...mine(doc, me.riderId) };
 }
 
+async function saveExpense(accessToken, body = {}) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+  const date = String(body.date || '').slice(0, 10);
+  const cost = Math.max(0, Math.round(Number(body.cost) || 0));
+  const cat = EXPENSE_CATS[body.category] ? body.category : '';
+  const custom = String(body.custom || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, status: 400, error: '날짜를 선택하세요.' };
+  if (!cost) return { ok: false, status: 400, error: '금액을 입력하세요.' };
+  if (!cat) return { ok: false, status: 400, error: '항목을 선택하세요.' };
+  if (cat === 'other' && !custom) return { ok: false, status: 400, error: '기타 항목을 직접 입력하세요.' };
+  const loaded = await readDoc();
+  if (!loaded.ok) return loaded;
+  const doc = loaded.doc;
+  doc.expenses = (doc.expenses || []).concat({
+    id: `${me.riderId}-exp-${Date.now()}`,
+    riderId: me.riderId,
+    name: riderName(me),
+    phone: String(me.rider?.phone || '').trim(),
+    date,
+    cost,
+    category: cat,
+    categoryLabel: cat === 'other' ? custom : EXPENSE_CATS[cat],
+    createdAt: new Date().toISOString()
+  });
+  const saved = await writeDoc(doc);
+  if (!saved.ok) return saved;
+  return { ok: true, ...mine(doc, me.riderId) };
+}
+
 async function listAdmin(accessToken) {
   const admin = await adminUsers.getMyAdminAccount(accessToken);
   if (!admin.ok) return admin;
@@ -131,17 +165,20 @@ async function listAdmin(accessToken) {
       cycleKm: bike?.cycleKm || 0
     };
   }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
-  return { ok: true, bikes, logs };
+  const expenses = (loaded.doc.expenses || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  return { ok: true, bikes, logs, expenses };
 }
 
 module.exports = {
   KEY,
   PARTS,
+  EXPENSE_CATS,
   emptyDoc,
   readDoc,
   writeDoc,
   listMine,
   saveBike,
   saveLog,
+  saveExpense,
   listAdmin
 };

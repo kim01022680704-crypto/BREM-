@@ -3661,6 +3661,13 @@ const BremStorage = (function () {
     });
   }
 
+  async function saveRiderMaintenanceExpense(payload = {}) {
+    return riderApiFetch('/api/rider/maintenance/expense', 'rider-maintenance-expense', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  }
+
   async function fetchRiderInquiriesFromServer() {
     return riderApiFetch('/api/rider/inquiries', 'rider-inquiries');
   }
@@ -15512,6 +15519,7 @@ const BremStorage = (function () {
     fetchRiderMaintenanceFromServer,
     saveRiderMaintenanceBike,
     saveRiderMaintenanceLog,
+    saveRiderMaintenanceExpense,
     fetchRiderInquiriesFromServer,
     submitRiderInquiryToServer,
     ackRiderInquiryOnServer,

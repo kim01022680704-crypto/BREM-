@@ -439,6 +439,16 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .mt-pop__box label { display: flex; flex-direction: column; gap: 4px; color: var(--rd-text-muted); font-size: var(--rd-fs-200); font-weight: 700; }
 .rider-ds .mt-pop__box input { background: var(--rd-card-2); color: var(--rd-text); border: 1px solid var(--rd-border); border-radius: 8px; padding: 10px; font-weight: 700; }
 .rider-ds .mt-ghost { border: 1px solid var(--rd-border-strong); background: transparent; color: var(--rd-text); border-radius: 10px; padding: 10px; font-weight: 800; cursor: pointer; }
+.rider-ds .mt-formtitle { color: var(--rd-text); font-weight: 800; font-size: var(--rd-fs-300); margin-bottom: 10px; }
+.rider-ds .mt-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.rider-ds .mt-chip { border: 1px solid var(--rd-border-strong); background: var(--rd-card-2); color: var(--rd-text); border-radius: var(--rd-radius-pill); padding: 8px 14px; font-weight: 800; font-size: var(--rd-fs-200); cursor: pointer; }
+.rider-ds .mt-chip.on { background: var(--rd-accent); color: var(--rd-accent-ink); border-color: var(--rd-accent); }
+.rider-ds .mt-grid__full { grid-column: 1 / -1; }
+.rider-ds #mtCustomWrap[hidden], .rider-ds #mtExpCustomWrap[hidden] { display: none !important; }
+.rider-ds .mt-catsum { display: flex; flex-wrap: wrap; gap: 6px; }
+.rider-ds .mt-tag { background: var(--rd-card-2); border-radius: var(--rd-radius-pill); padding: 5px 10px; font-size: var(--rd-fs-100); font-weight: 800; color: var(--rd-text); }
+.rider-ds .mt-sum--exp .mt-sum__nav { color: var(--rd-teal); }
+.rider-ds .mt-sum--exp strong { color: var(--rd-teal); }
 .rider-ds .mt-head h2 { margin: 0; color: var(--rd-text); font-size: var(--rd-fs-500); }
 .rider-ds .mt-add { border: 0; background: transparent; color: var(--rd-accent); font-weight: 800; cursor: pointer; }
 .rider-ds .mt-card { background: var(--rd-card); border: 1px solid var(--rd-border); border-radius: var(--rd-radius); padding: 12px; }
@@ -451,7 +461,7 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .mt-grid label, .rider-ds #mtCustomWrap { display: flex; flex-direction: column; gap: 4px; color: var(--rd-text-muted); font-size: var(--rd-fs-100); font-weight: 700; }
 .rider-ds .mt-card input, .rider-ds .mt-card select, .rider-ds .mt-date { width: 100%; box-sizing: border-box; background: var(--rd-card-2); color: var(--rd-text); border: 1px solid var(--rd-border); border-radius: 8px; padding: 8px; font-weight: 700; text-align: left; }
 .rider-ds .mt-date { cursor: pointer; }
-.rider-ds #mtDate { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.rider-ds #mtDate, .rider-ds #mtExpDate { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .rider-ds #mtForm .mt-yellow { margin-top: 10px; }
 .rider-ds .mt-row { display: grid; grid-template-columns: 58px 1fr auto auto; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--rd-border); color: var(--rd-text); font-size: var(--rd-fs-200); }
 .rider-ds .mt-row i { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; border-radius: 5px; background: var(--rd-card-2); font-style: normal; font-size: 10px; font-weight: 800; }

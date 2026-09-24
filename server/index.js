@@ -595,6 +595,16 @@ app.post('/api/rider/maintenance/log', async (req, res) => {
   }
 });
 
+app.post('/api/rider/maintenance/expense', async (req, res) => {
+  try {
+    const result = await riderMaintenance.saveExpense(getBearerToken(req), req.body || {});
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '지출을 저장하지 못했습니다.' });
+  }
+});
+
 app.get('/api/admin/rider-maintenance', async (req, res) => {
   try {
     const result = await riderMaintenance.listAdmin(getBearerToken(req));
