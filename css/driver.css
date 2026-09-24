@@ -2057,6 +2057,9 @@ html.brem-app-nav[data-driver-tab]:not([data-driver-tab="perf"]) #driverPerfPane
   display: none !important;
 }
 
+#driverMaintPanel { display: none; }
+html.brem-app-nav[data-driver-tab="maint"] #driverMaintPanel { display: grid !important; }
+
 .notice-badge {
   display: inline-block;
   margin-right: 6px;

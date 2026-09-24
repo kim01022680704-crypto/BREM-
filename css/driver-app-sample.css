@@ -411,6 +411,30 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 
 .dc-empty { padding: 26px 14px; text-align: center; color: var(--rd-text-muted); font-size: var(--rd-fs-300); }
 
+.rider-ds .ds-cal__cell--maint { box-shadow: inset 0 -3px 0 #f472b6; }
+.rider-ds .driver-maint-panel { display: grid; gap: 10px; }
+.rider-ds .mt-head, .rider-ds .mt-bike, .rider-ds .mt-sum { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rider-ds .mt-head h2 { margin: 0; color: var(--rd-text); font-size: var(--rd-fs-500); }
+.rider-ds .mt-add { border: 0; background: transparent; color: var(--rd-accent); font-weight: 800; cursor: pointer; }
+.rider-ds .mt-card { background: var(--rd-card); border: 1px solid var(--rd-border); border-radius: var(--rd-radius); padding: 12px; }
+.rider-ds .mt-sum span, .rider-ds .mt-bike small, .rider-ds .mt-empty { color: var(--rd-text-muted); font-size: var(--rd-fs-200); }
+.rider-ds .mt-sum strong { display: block; color: var(--rd-text); font-size: var(--rd-fs-700); line-height: 1.1; }
+.rider-ds .mt-sum strong i, .rider-ds .mt-sum em { font-style: normal; font-size: var(--rd-fs-200); color: var(--rd-text-muted); font-weight: 700; }
+.rider-ds .mt-bike b { display: block; color: var(--rd-text); }
+.rider-ds .mt-yellow { border: 0; border-radius: 10px; padding: 10px 12px; background: var(--rd-accent); color: var(--rd-accent-ink); font-weight: 800; cursor: pointer; }
+.rider-ds .mt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rider-ds .mt-grid label, .rider-ds #mtCustomWrap { display: flex; flex-direction: column; gap: 4px; color: var(--rd-text-muted); font-size: var(--rd-fs-100); font-weight: 700; }
+.rider-ds .mt-card input, .rider-ds .mt-card select, .rider-ds .mt-date { width: 100%; box-sizing: border-box; background: var(--rd-card-2); color: var(--rd-text); border: 1px solid var(--rd-border); border-radius: 8px; padding: 8px; font-weight: 700; text-align: left; }
+.rider-ds .mt-date { cursor: pointer; }
+.rider-ds #mtDate { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.rider-ds #mtForm .mt-yellow { margin-top: 10px; }
+.rider-ds .mt-row { display: grid; grid-template-columns: 58px 1fr auto auto; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--rd-border); color: var(--rd-text); font-size: var(--rd-fs-200); }
+.rider-ds .mt-row i { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; border-radius: 5px; background: var(--rd-card-2); font-style: normal; font-size: 10px; font-weight: 800; }
+.rider-ds .mt-row b { color: var(--rd-warning); }
+.rider-ds .mt-km { color: var(--rd-text-muted); }
+.rider-ds .mt-month, .rider-ds .mt-fold { margin-top: 6px; color: var(--rd-text-muted); font-size: var(--rd-fs-100); font-weight: 800; }
+.rider-ds .mt-fold { display: flex; width: 100%; border: 0; background: var(--rd-card-2); color: var(--rd-text); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+
 /* 진행률 */
 .rider-ds .progress-info span {
   color: var(--rd-accent);

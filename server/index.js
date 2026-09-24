@@ -8,6 +8,7 @@ const { parseSettlementFile, openSheetRows } = require('./settlement-parser');
 const riderInquiriesStore = require('./rider-inquiries-store');
 const riderInquiriesSupabase = require('./rider-inquiries-supabase');
 const riderInquiriesRider = require('./rider-inquiries-rider');
+const riderMaintenance = require('./rider-maintenance');
 const adminBootstrap = require('./admin-bootstrap');
 const adminUsers = require('./admin-users');
 const adminAuth = require('./admin-auth');
@@ -561,6 +562,46 @@ app.post('/api/rider/inquiries', async (req, res) => {
     res.status(201).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '문의 접수에 실패했습니다.' });
+  }
+});
+
+app.get('/api/rider/maintenance', async (req, res) => {
+  try {
+    const result = await riderMaintenance.listMine(getBearerToken(req));
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '정비기록을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/rider/maintenance/bike', async (req, res) => {
+  try {
+    const result = await riderMaintenance.saveBike(getBearerToken(req), req.body || {});
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '오토바이를 저장하지 못했습니다.' });
+  }
+});
+
+app.post('/api/rider/maintenance/log', async (req, res) => {
+  try {
+    const result = await riderMaintenance.saveLog(getBearerToken(req), req.body || {});
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '정비일지를 저장하지 못했습니다.' });
+  }
+});
+
+app.get('/api/admin/rider-maintenance', async (req, res) => {
+  try {
+    const result = await riderMaintenance.listAdmin(getBearerToken(req));
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '정비기록을 불러오지 못했습니다.' });
   }
 });
 

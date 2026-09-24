@@ -119,6 +119,8 @@
       if (dow === 0) cls += ' ds-cal__cell--sun';
       if (dow === 6) cls += ' ds-cal__cell--sat';
       if (d === todayD) cls += ' ds-cal__cell--today';
+      const maintDays = window.BremDriverMaintenance?.daysInMonth?.(y, m) || {};
+      if (maintDays[d]) cls += ' ds-cal__cell--maint';
       let body = `<span class="ds-cal__day">${d}</span>`;
       const call = callMap ? callMap[d] : 0;
       if (call) body += `<span class="ds-cal__call">${call}콜</span>`;

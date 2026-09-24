@@ -77,7 +77,7 @@
   }
 
   function openTabPanel(tab) {
-    if (tab === 'notice') return;
+    if (tab === 'notice' || tab === 'perf' || tab === 'maint') return;
     if (tab === 'mission') window.BremDriverUrgentMissions?.open?.();
     else if (tab === 'withdraw') window.BremDriverWithdrawal?.open?.();
     else if (tab === 'payslip') window.BremDriverWeeklyPayslip?.open?.();
@@ -95,7 +95,8 @@
     current = next;
     syncActive();
     if (!options.keepPanels) closeAllPanels();
-    if (next === 'home' || next === 'notice' || next === 'perf') return true;
+    if (next === 'maint') window.BremDriverMaintenance?.open?.();
+    if (next === 'home' || next === 'notice' || next === 'perf' || next === 'maint') return true;
     openTabPanel(next);
     return true;
   }

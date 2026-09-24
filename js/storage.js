@@ -3643,6 +3643,24 @@ const BremStorage = (function () {
     return riderApiFetch(`/api/rider/weekly-payslip${qs}`, 'weekly-payslip');
   }
 
+  async function fetchRiderMaintenanceFromServer() {
+    return riderApiFetch('/api/rider/maintenance', 'rider-maintenance');
+  }
+
+  async function saveRiderMaintenanceBike(payload = {}) {
+    return riderApiFetch('/api/rider/maintenance/bike', 'rider-maintenance-bike', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  }
+
+  async function saveRiderMaintenanceLog(payload = {}) {
+    return riderApiFetch('/api/rider/maintenance/log', 'rider-maintenance-log', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  }
+
   async function fetchRiderInquiriesFromServer() {
     return riderApiFetch('/api/rider/inquiries', 'rider-inquiries');
   }
@@ -15483,6 +15501,9 @@ const BremStorage = (function () {
     sendAdminRiderPush,
     deleteAdminRiderPushLogs,
     fetchRiderWeeklyPayslipFromServer,
+    fetchRiderMaintenanceFromServer,
+    saveRiderMaintenanceBike,
+    saveRiderMaintenanceLog,
     fetchRiderInquiriesFromServer,
     submitRiderInquiryToServer,
     ackRiderInquiryOnServer,

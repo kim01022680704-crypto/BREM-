@@ -125,6 +125,7 @@
         <button class="nav-btn" data-section="missions">장기근속이벤트</button>
         <button class="nav-btn" data-section="mission-management">미션 관리</button>
         <button class="nav-btn" data-section="lease-management">리스 및 대여관리</button>
+        <button class="nav-btn" data-section="rider-maintenance">기사들 정비기록</button>
         <button class="nav-btn" data-section="calls">콜수 입력</button>
         <button class="nav-btn" data-section="baemin-biz-status">배민 BIZ 현황</button>
         <button class="nav-btn" data-section="baemin-status">배민현황</button>
@@ -2095,6 +2096,26 @@
             </table>
           </div>
         </article>
+      </section>
+
+      <section class="section" id="rider-maintenance">
+        <div class="panel">
+          <div class="panel-header"><h2>기사들 정비기록</h2></div>
+          <p class="form-help">기사가 앱에서 저장한 기록만 봅니다. PC에서 이름, 오토바이, 교체, 월로 거릅니다.</p>
+          <div class="maint-filters" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">
+            <input id="maintSearch" type="search" placeholder="이름·전화 검색">
+            <select id="maintBike"><option value="">오토바이 전체</option></select>
+            <select id="maintPart"><option value="">교체 전체</option><option value="오일">오일</option><option value="패드">패드</option><option value="구동계">구동계</option><option value="other">기타</option></select>
+            <select id="maintYear"></select>
+            <select id="maintMonth"></select>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>기사</th><th>전화</th><th>오토바이</th><th>날짜</th><th>km</th><th>교체</th><th>금액</th></tr></thead>
+              <tbody id="maintRows"></tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section class="section" id="lease-management">
@@ -9266,6 +9287,7 @@
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
   <script src="js/admin-lease-menus.js?v=20260813g"></script>
+  <script src="js/admin-rider-maintenance.js?v=20260924mt1"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-revenue-region-settlement.js?v=20260910region1"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>

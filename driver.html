@@ -25,11 +25,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260914perf1">
+  <link rel="stylesheet" href="css/driver.css?v=20260924mt1">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
   <link rel="stylesheet" href="css/driver-tokens.css?v=20260914light3">
-  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260924dc1">
+  <link rel="stylesheet" href="css/driver-app-sample.css?v=20260924mt1">
 </head>
 <body>
   <section class="login-page" id="driverLoginCard">
@@ -948,6 +948,7 @@
             </div>
           </div>
 
+          <section class="driver-maint-panel" id="driverMaintPanel"></section>
           <section class="driver-perf-panel" id="driverPerfPanel">
           <div class="week-nav week-nav--perf ds-week-switch">
             <button type="button" id="prevWeekBtn" class="ds-week-switch__nav" aria-label="이전 주">‹</button>
@@ -1110,6 +1111,10 @@
         <button type="button" class="driver-app-nav__item is-active" data-driver-tab="home">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
           <span>홈</span>
+        </button>
+        <button type="button" class="driver-app-nav__item" data-driver-tab="maint">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="17" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 17l3-7h4l3 7M9 10l1.2-3h3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>정비</span>
         </button>
         <button type="button" class="driver-app-nav__item" data-driver-tab="perf">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V4M4 20h16M8 20v-6M13 20V9M18 20v-9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1326,8 +1331,9 @@
   <script src="js/driver-inquiries.js?v=20260817inq7"></script>
   <script src="js/promotion-count-sim.js?v=20260910missim1"></script>
   <script src="js/driver.js?v=20260924dc1"></script>
-  <script src="js/driver-app-nav.js?v=20260914perf3"></script>
-  <script src="js/driver-perf-calendar.js?v=20260914perf2"></script>
+  <script src="js/driver-maintenance.js?v=20260924mt1"></script>
+  <script src="js/driver-app-nav.js?v=20260924mt1"></script>
+  <script src="js/driver-perf-calendar.js?v=20260924mt1"></script>
   <script src="js/driver-home-preview.js?v=20260915inquiry1"></script>
   <script src="js/driver-theme-toggle.js?v=20260914light2"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
