@@ -305,6 +305,7 @@ const BremFinalDeposit = (function () {
   }
 
   function transferStatus(info) {
+    if (info?.matchError) return info.matchError;
     if (Number(info?.netPay || 0) <= 0) return '입금0원';
     if (!info?.complete) return '계좌미등록';
     return '이체가능';
@@ -491,19 +492,52 @@ const BremFinalDeposit = (function () {
     return window.BremStorage?.drivers?.getById?.(id) || null;
   }
 
+  // getAll() 은 이름+전화 중복을 걸러 일부 기사가 빠질 수 있어서, id 기준 전체 목록을 쓴다.
+  function allKnownDrivers() {
+    const store = window.BremStorage?.drivers;
+    const known = store?.getAllKnownById?.();
+    if (Array.isArray(known) && known.length) return known;
+    if (known instanceof Map && known.size) return [...known.values()];
+    return store?.getAll?.() || [];
+  }
+
+  // 서로 다른 기사가 한 계좌로 가거나, 한 기사에게 서로 다른 정산 아이디가 붙으면 잘못 맞춘 것이다.
+  function findAccountConflicts(infos) {
+    const conflicts = [];
+    const shared = [];
+    const byAccount = new Map();
+    const byDriver = new Map();
+    infos.forEach(info => {
+      if (!(info.netPay > 0) || !info.complete || !info.driver) return;
+      const driverId = String(info.driver.id || '');
+      const account = normalizeAccountNumber(info.accountNumber);
+      if (account) {
+        if (!byAccount.has(account)) byAccount.set(account, []);
+        byAccount.get(account).push(info);
+      }
+      const driverKey = `${info.platform}|${driverId}`;
+      if (!byDriver.has(driverKey)) byDriver.set(driverKey, []);
+      byDriver.get(driverKey).push(info);
+    });
+    byAccount.forEach((items, account) => {
+      const owners = new Set(items.map(item => String(item.driver.id || '')));
+      if (owners.size > 1) {
+        shared.push(`${items[0].bankName} ${account} (예금주 ${items[0].accountHolder}): ${items.map(item => `${item.riderName}(${item.idLabel})`).join(', ')}`);
+      }
+    });
+    byDriver.forEach(items => {
+      const labels = new Set(items.map(item => idMatchKey(item.idLabel)).filter(Boolean));
+      if (labels.size > 1) {
+        conflicts.push(`${items[0].riderName} 한 사람에게 정산 아이디 ${labels.size}개: ${[...labels].join(', ')}`);
+      }
+    });
+    return { conflicts, shared };
+  }
+
   function loginIdForDriver(driver) {
     if (!driver) return '';
     const makeId = window.BremDriverUtils?.makeDriverLoginId;
     return typeof makeId === 'function' ? String(makeId(driver) || '').trim() : '';
-  }
-
-  function bankScore(driver) {
-    if (!driver) return 0;
-    let score = 0;
-    if (String(driver.bankName || '').trim()) score += 2;
-    if (String(driver.accountNumber || '').trim()) score += 4;
-    if (String(driver.accountHolder || '').trim()) score += 1;
-    return score;
   }
 
   function idLabelsOf(row) {
@@ -513,40 +547,82 @@ const BremFinalDeposit = (function () {
       .filter(part => part && part !== '-');
   }
 
-  // 삭제·미매칭·계좌 빈 기사도 ERP ID·이름으로 다시 찾아 구멍을 줄인다.
-  function resolveDriverForExport(row) {
+  function idMatchKey(value) {
     const utils = window.BremDriverUtils;
-    const list = window.BremStorage?.drivers?.getAll?.() || [];
-    let best = driverForRow(row);
-    let bestScore = bankScore(best);
+    if (typeof utils?.baeminIdMatchKey === 'function') return utils.baeminIdMatchKey(value);
+    const v = String(value || '').trim().replace(/\s+/g, '');
+    if (!v || v === '-') return '';
+    return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
+  }
 
-    const consider = (candidate) => {
-      if (!candidate) return;
-      const score = bankScore(candidate);
-      if (!best || score > bestScore) {
-        best = candidate;
-        bestScore = score;
-      }
-    };
+  function rawOf(driver) {
+    return driver?.raw_data && typeof driver.raw_data === 'object' ? driver.raw_data : {};
+  }
 
-    idLabelsOf(row).forEach(label => {
-      consider(utils?.matchDriverByCoupangErpId?.(label, list));
-      consider(utils?.matchDriverByBaeminErpId?.(label, list));
-      const byLogin = list.find(driver => loginIdForDriver(driver) === label.replace(/\s/g, ''));
-      consider(byLogin || null);
-    });
+  function baeminIdsOf(driver) {
+    if (!driver) return [];
+    const raw = rawOf(driver);
+    return [driver.baeminId, driver.baeminUserId, raw.baeminId, raw.baeminUserId, raw.baemin_id]
+      .map(idMatchKey)
+      .filter(Boolean);
+  }
 
-    const name = String(row?.name || '').replace(/\s+/g, '');
-    if (name) {
-      const sameName = list.filter(driver => String(driver.name || '').replace(/\s+/g, '') === name);
-      if (sameName.length === 1) consider(sameName[0]);
-      else {
-        const withBank = sameName.filter(driver => bankScore(driver) > 0);
-        if (withBank.length === 1) consider(withBank[0]);
-      }
+  function coupangIdsOf(driver) {
+    if (!driver) return [];
+    const raw = rawOf(driver);
+    const values = [
+      driver.coupangId,
+      driver.coupangLoginKey,
+      driver.coupangLoginId,
+      raw.coupangId,
+      raw.coupangLoginKey,
+      raw.coupangLoginId,
+      window.BremDriverUtils?.getErpCoupangId?.(driver)
+    ];
+    return [...new Set(values.map(idMatchKey).filter(Boolean))];
+  }
+
+  function platformIdsOf(driver, platform) {
+    if (platform === 'baemin') return baeminIdsOf(driver);
+    if (platform === 'coupang') return coupangIdsOf(driver);
+    return [...new Set([...baeminIdsOf(driver), ...coupangIdsOf(driver)])];
+  }
+
+  function samePlatformId(left, right) {
+    if (!left || !right) return false;
+    if (left === right) return true;
+    const a = String(left).replace(/\D/g, '');
+    const b = String(right).replace(/\D/g, '');
+    return a.length >= 10 && a === b;
+  }
+
+  function idsHit(driverIds, labels) {
+    return driverIds.some(id => labels.some(label => samePlatformId(id, label)));
+  }
+
+  // 정산서 아이디와 기사정보 아이디가 같은 한 사람의 계좌만 쓴다. 이름으로는 절대 채우지 않는다.
+  function resolveDriverForExport(row) {
+    const platform = row?.platform === 'coupang' ? 'coupang' : (row?.platform === 'baemin' ? 'baemin' : '');
+    const labels = idLabelsOf(row).map(idMatchKey).filter(Boolean);
+    const list = allKnownDrivers();
+    const hits = [];
+    const seen = new Set();
+    if (labels.length) {
+      list.forEach(driver => {
+        const id = String(driver?.id || '').trim();
+        if (!id || seen.has(id)) return;
+        if (!idsHit(platformIdsOf(driver, platform), labels)) return;
+        seen.add(id);
+        hits.push(driver);
+      });
     }
+    if (hits.length === 1) {
+      const matchedId = platformIdsOf(hits[0], platform).find(id => labels.some(label => samePlatformId(id, label))) || labels[0];
+      return { driver: hits[0], matchError: '', matchedId };
+    }
+    if (hits.length > 1) return { driver: null, matchError: '아이디중복', matchedId: '' };
 
-    return best;
+    return { driver: null, matchError: labels.length ? '아이디미등록' : '아이디없음', matchedId: '' };
   }
 
   function normalizeAccountNumber(value) {
@@ -554,24 +630,33 @@ const BremFinalDeposit = (function () {
   }
 
   function transferInfoForRow(row) {
-    const driver = resolveDriverForExport(row);
-    const bankName = String(driver?.bankName || '').trim();
-    const accountNumber = String(driver?.accountNumber || '').trim();
-    const accountHolder = String(driver?.accountHolder || driver?.name || row?.name || '').trim();
-    const erpId = loginIdForDriver(driver)
-      || idLabelsOf(row).find(label => /\d{3,}$/.test(label.replace(/\s/g, '')))
-      || idLabelsOf(row)[0]
-      || '';
-    const riderName = String(driver?.name || row?.name || '').trim();
+    const resolved = resolveDriverForExport(row);
+    const driver = resolved.driver;
+    const verified = Boolean(driver) && !resolved.matchError;
+    const bankName = verified ? String(driver?.bankName || '').trim() : '';
+    const accountNumber = verified ? String(driver?.accountNumber || '').trim() : '';
+    const accountHolder = verified ? String(driver?.accountHolder || '').trim() : '';
+    const phoneTail = String(driver?.phone || '').replace(/\D/g, '').slice(-4);
+    const platformId = idLabelsOf(row)[0] || '';
+    const matchedName = verified ? String(driver?.name || '').trim() : '';
+    const erpId = [
+      resolved.matchedId || platformId,
+      phoneTail ? `전화${phoneTail}` : '',
+      matchedName
+    ].filter(Boolean).join(' / ');
+    const riderName = String(row?.name || '').trim();
     return {
       driver,
+      matchError: resolved.matchError || '',
+      matchedName,
+      phoneTail,
       bankName,
       accountNumber,
       accountHolder,
       erpId,
       riderName,
       netPay: Math.round(Number(row?.netPay) || 0),
-      complete: Boolean(bankName && accountNumber && accountHolder)
+      complete: verified && Boolean(bankName && accountNumber && accountHolder)
     };
   }
 
@@ -611,10 +696,26 @@ const BremFinalDeposit = (function () {
     }
   }
 
-  function exportExcel() {
+  async function exportExcel() {
     if (!window.XLSX) {
       showToast('엑셀 모듈을 불러오지 못했습니다.');
       return;
+    }
+
+    const loadDrivers = window.BremStorage?.awaitDriversFullyLoaded;
+    if (typeof loadDrivers === 'function') {
+      showToast('기사 목록을 끝까지 불러온 뒤 아이디로 계좌를 맞춥니다.');
+      let loaded = null;
+      try {
+        loaded = await loadDrivers({ includeInactive: true, force: true });
+      } catch (error) {
+        showToast('기사 목록을 끝까지 불러오지 못해 이체 파일을 만들지 않았습니다.');
+        return;
+      }
+      if (!loaded || loaded.ok === false || loaded.complete === false || loaded.partial) {
+        showToast(loaded?.message || '기사 목록이 다 불러와지지 않아 이체 파일을 만들지 않았습니다.');
+        return;
+      }
     }
 
     const weekList = checkedSettlements();
@@ -653,18 +754,42 @@ const BremFinalDeposit = (function () {
     // 쿠팡/배민 합치지 않음 → 화면 행 수 = 입금 건수
     // 0원·계좌미등록 포함 전원. 걸러내지 않음 — 필요 없으면 엑셀에서 직접 삭제.
     const allPeople = buildTransferRows(rows, { includeZero: true });
-    const ready = allPeople.filter(info => info.netPay > 0 && info.complete);
-    const missing = allPeople.filter(info => info.netPay > 0 && !info.complete);
+    const ready = allPeople.filter(info => info.netPay > 0 && info.complete && !info.matchError);
+    const mismatched = allPeople.filter(info => info.netPay > 0 && info.matchError);
+    const missing = allPeople.filter(info => info.netPay > 0 && !info.complete && !info.matchError);
     const zeroPay = allPeople.filter(info => info.netPay <= 0);
+    const { conflicts, shared } = findAccountConflicts(allPeople);
+    if (conflicts.length) {
+      window.alert(
+        '한 기사에게 서로 다른 정산 아이디가 붙어 엑셀을 만들지 않았습니다.\n'
+        + '기사정보의 배민·쿠팡 아이디를 고친 뒤 다시 내보내세요.\n\n'
+        + conflicts.slice(0, 20).join('\n')
+      );
+      return;
+    }
+    if (mismatched.length && !window.confirm(
+      `아이디로 기사를 찾지 못한 ${mismatched.length}건은 이체 파일에 넣지 않습니다.\n`
+      + '기사정보에 배민·쿠팡 아이디를 등록하고 다시 내보내면 들어갑니다.\n'
+      + '이대로 내보내면 이 사람들은 따로 입금해야 합니다. (「아이디확인필요」 시트에 남김)\n\n'
+      + mismatched.slice(0, 30).map(info => `${info.riderName} · ${info.idLabel || '아이디없음'} · ${formatNumber(info.netPay)}원 · ${info.matchError}`).join('\n')
+      + '\n\n[확인] 그대로 내보내기  [취소] 기사정보 먼저 고치기'
+    )) return;
+    if (shared.length && !window.confirm(
+      '서로 다른 기사가 같은 계좌로 등록돼 있습니다.\n'
+      + 'ERP 기사정보에 이렇게 등록된 계좌입니다. 맞으면 [확인], 아니면 [취소] 후 기사정보를 고치세요.\n\n'
+      + shared.slice(0, 20).join('\n')
+    )) return;
     const slotCount = settlementRiderSlotCount(weekList);
     const weekLabel = formatDate(ensureWeek());
 
     if (!window.confirm(
       `${weekLabel}(수) 주 최종입금 엑셀 — ${matchScreen ? '화면 선택분' : '전원'} · 플랫폼별 각각 입금\n\n`
       + `· 정산서 ${weekList.length}건 · 파일 라이더칸 합 ${slotCount}\n`
-      + `· 「입금」·「입금_이체가능」: ${allPeople.length}건 (0원·계좌미등록 포함)\n`
-      + `  └ 이체가능 ${ready.length} · 계좌미등록 ${missing.length} · 입금0원 ${zeroPay.length}\n\n`
-      + `※ 0원도 입금 시트에 넣습니다. 필요 없으면 엑셀에서 직접 지우세요.\n`
+      + `· 「입금」: ${allPeople.length}건 (확인용, 계좌 없는 행 포함)\n`
+      + `· 「입금_이체가능」: ${ready.length}건 (정산서 아이디 = 기사정보 아이디인 행만)\n`
+      + `  └ 계좌미등록 ${missing.length} · 아이디확인필요 ${mismatched.length} · 입금0원 ${zeroPay.length}\n\n`
+      + `※ 계좌는 아이디로만 찾습니다. 이름으로는 채우지 않습니다.\n`
+      + `※ 비고에 매칭된 아이디·전화번호가 있습니다. 그 사람과 계좌가 맞는지 보고 이체하세요.\n`
       + `※ 같은 기사라도 쿠팡·배민은 각각 따로 입금됩니다.\n`
       + (hasExclusion
         ? (matchScreen
@@ -682,26 +807,28 @@ const BremFinalDeposit = (function () {
     // 「입금」= 전원 · 플랫폼별 1건. (이체파일용은 「입금_이체가능」)
     // 비고 = ERP ID만 (플랫폼·상태 문구 넣지 않음)
     const transfer = [
-      ['상태', '플랫폼', '입금은행', '입금계좌번호', '입금액', '받는사람', '비고', '기사명'],
+      ['상태', '플랫폼', '정산서이름', '매칭이름', '전화뒤4', '정산서ID', '입금은행', '입금계좌번호', '입금액', '예금주', '비고'],
       ...allPeople.map(info => [
         transferStatus(info),
         info.platform || '',
+        info.riderName || '',
+        info.matchedName || '',
+        info.phoneTail || '',
+        info.idLabel || '',
         info.bankName || '',
         info.accountNumber || '',
         info.netPay,
-        info.accountHolder || info.riderName || '',
-        info.erpId || info.idLabel || '',
-        info.riderName || ''
+        info.accountHolder || '',
+        info.erpId || ''
       ])
     ];
-    // 이체용도 전원(0원 포함). 불필요한 행은 직접 삭제.
     const transferReady = [
       ['입금은행', '입금계좌번호', '입금액', '받는사람', '비고'],
-      ...allPeople.map(info => [
+      ...ready.map(info => [
         info.bankName || '',
         info.accountNumber || '',
         info.netPay,
-        info.accountHolder || info.riderName || '',
+        info.accountHolder || '',
         info.erpId || info.idLabel || ''
       ])
     ];
@@ -710,12 +837,26 @@ const BremFinalDeposit = (function () {
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(detail), '최종입금');
 
     const transferSheet = window.XLSX.utils.aoa_to_sheet(transfer);
-    appendAccountTextColumn(transferSheet, transfer.length, 3);
+    appendAccountTextColumn(transferSheet, transfer.length, 7);
     window.XLSX.utils.book_append_sheet(wb, transferSheet, '입금');
 
     const readySheet = window.XLSX.utils.aoa_to_sheet(transferReady);
     appendAccountTextColumn(readySheet, transferReady.length, 1);
     window.XLSX.utils.book_append_sheet(wb, readySheet, '입금_이체가능');
+
+    if (mismatched.length) {
+      const mismatchSheet = [
+        ['플랫폼', '정산서이름', '정산서ID', '입금액', '사유'],
+        ...mismatched.map(info => [
+          info.platform,
+          info.riderName,
+          info.idLabel || '',
+          info.netPay,
+          info.matchError
+        ])
+      ];
+      window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(mismatchSheet), '아이디확인필요');
+    }
 
     if (missing.length) {
       const missingSheet = [
@@ -762,16 +903,16 @@ const BremFinalDeposit = (function () {
       ['파일 라이더칸 합', slotCount, '정산서별 N명 합'],
       ['화면 행', rows.length, '쿠팡·배민 분리 행'],
       ['입금 시트(전원)', allPeople.length, '플랫폼별 각각 · 0원·계좌미등록 포함'],
-      ['입금_이체가능', allPeople.length, '동일 전원(0원 포함) · 직접 삭제용'],
-      ['이체가능(참고)', ready.length, '최종입금>0 + 계좌완비'],
-      ['계좌미등록', missing.length, '최종입금>0 이지만 계좌 없음'],
+      ['입금_이체가능', ready.length, '정산서 ID와 등록 ID가 같고 계좌가 있는 행만'],
+      ['아이디확인필요', mismatched.length, '정산서 아이디와 같은 기사가 없거나 2명 이상. 이체 파일에서 제외'],
+      ['계좌미등록', missing.length, 'ID는 맞지만 계좌 없음'],
       ['입금0원', zeroPay.length, '최종입금 0원 이하 · 입금 시트에 포함됨'],
-      ['검증', ready.length + missing.length + zeroPay.length, '화면 행·입금 시트와 같아야 함']
+      ['검증', ready.length + missing.length + mismatched.length + zeroPay.length, '화면 행·입금 시트와 같아야 함']
     ];
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(summary), '인원요약');
 
     window.XLSX.writeFile(wb, `최종입금_${ensureWeek()}.xlsx`);
-    showToast(`엑셀 저장 · 입금 ${allPeople.length}건 (0원 ${zeroPay.length}건 포함 · 플랫폼별 각각)`);
+    showToast(`엑셀 저장 · 이체가능 ${ready.length}건 · 아이디확인필요 ${mismatched.length}건 · 계좌미등록 ${missing.length}건`);
   }
 
   // --- 데이터 로딩 ----------------------------------------------------------
