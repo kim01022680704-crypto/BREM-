@@ -13729,6 +13729,7 @@ const BremStorage = (function () {
     'missions',
     'mission-management',
     'lease-management',
+    'rider-maintenance',
     'calls',
     'baemin-biz-status',
     'baemin-status',
@@ -13880,6 +13881,13 @@ const BremStorage = (function () {
 
     if (normalized.includes('driver-management') && !normalized.includes('inactive-drivers')) {
       normalized.splice(normalized.indexOf('driver-management') + 1, 0, 'inactive-drivers');
+    }
+
+    if ((normalized.includes('lease-management') || normalized.includes('driver-management'))
+      && !normalized.includes('rider-maintenance')) {
+      const leaseIndex = normalized.indexOf('lease-management');
+      if (leaseIndex >= 0) normalized.splice(leaseIndex + 1, 0, 'rider-maintenance');
+      else normalized.splice(normalized.indexOf('driver-management') + 1, 0, 'rider-maintenance');
     }
 
     if (!normalized.includes('payroll-slips')) {

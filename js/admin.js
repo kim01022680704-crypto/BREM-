@@ -205,6 +205,7 @@
     { id: 'missions', label: '장기근속이벤트' },
     { id: 'mission-management', label: '미션 관리' },
     { id: 'lease-management', label: '리스 및 대여관리' },
+    { id: 'rider-maintenance', label: '기사들 정비기록' },
     { id: 'calls', label: '콜수 입력' },
     { id: 'baemin-biz-status', label: '배민 BIZ 현황' },
     { id: 'baemin-status', label: '배민현황' },
@@ -6080,6 +6081,7 @@
     }
     const input = $('#baeminHourlyInsuranceLogDay');
     if (input && !input.value) input.value = state.baeminHourlyInsuranceLogDay;
+    if (input) refreshCallDateLabel(input.id);
     return state.baeminHourlyInsuranceLogDay;
   }
 

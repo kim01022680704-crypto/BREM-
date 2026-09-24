@@ -79,7 +79,11 @@
 
     panel.innerHTML = `
       <div class="mt-head"><h2>정비기록</h2></div>
-      <div class="mt-card mt-sum"><div><span>${state.calM}월 정비 사용금액</span><strong>${won(monthSum)}<i>원</i></strong></div><em>${monthLogs.length}건</em></div>
+      <div class="mt-card mt-sum">
+        <button type="button" class="mt-sum__nav" id="mtSumPrev" aria-label="이전달">‹</button>
+        <div><span>${state.calY}.${String(state.calM).padStart(2, '0')} 정비 사용금액</span><strong>${won(monthSum)}<i>원</i></strong><em>${monthLogs.length}건</em></div>
+        <button type="button" class="mt-sum__nav" id="mtSumNext" aria-label="다음달">›</button>
+      </div>
       <div class="mt-card mt-bike">
         <div class="mt-bike__info">${bikeText}</div>
         <button type="button" class="mt-yellow mt-yellow--block" id="mtBikeBtn">오토바이 등록</button>
@@ -129,16 +133,16 @@
       });
     });
     document.getElementById('mtBikeForm')?.addEventListener('submit', saveBike);
-    document.getElementById('mtCalPrev')?.addEventListener('click', () => {
-      state.calM -= 1;
+    function shiftMonth(delta) {
+      state.calM += delta;
       if (state.calM < 1) { state.calM = 12; state.calY -= 1; }
-      render();
-    });
-    document.getElementById('mtCalNext')?.addEventListener('click', () => {
-      state.calM += 1;
       if (state.calM > 12) { state.calM = 1; state.calY += 1; }
       render();
-    });
+    }
+    document.getElementById('mtSumPrev')?.addEventListener('click', () => shiftMonth(-1));
+    document.getElementById('mtSumNext')?.addEventListener('click', () => shiftMonth(1));
+    document.getElementById('mtCalPrev')?.addEventListener('click', () => shiftMonth(-1));
+    document.getElementById('mtCalNext')?.addEventListener('click', () => shiftMonth(1));
     document.getElementById('mtForm')?.addEventListener('submit', saveLog);
     document.getElementById('mtPart')?.addEventListener('change', event => {
       state.part = event.target.value;

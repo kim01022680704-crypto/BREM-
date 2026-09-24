@@ -412,7 +412,10 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .dc-empty { padding: 26px 14px; text-align: center; color: var(--rd-text-muted); font-size: var(--rd-fs-300); }
 
 .rider-ds .driver-maint-panel { display: grid; gap: 10px; }
-.rider-ds .mt-head, .rider-ds .mt-sum { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rider-ds .mt-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rider-ds .mt-sum { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; gap: 8px; }
+.rider-ds .mt-sum em { display: block; margin-top: 4px; }
+.rider-ds .mt-sum__nav { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--rd-border-strong); background: var(--rd-card-2); color: var(--rd-accent); font-weight: 800; cursor: pointer; }
 .rider-ds .mt-bike { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
 .rider-ds .mt-bike__info { display: flex; flex-direction: column; gap: 4px; }
 .rider-ds .mt-bike__info b { color: var(--rd-text); font-size: var(--rd-fs-500); }
