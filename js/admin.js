@@ -4209,9 +4209,8 @@
       state.settlementHistoryDayByPlatform[p] = uploadPeriod || latest.period || today();
     }
     const input = $(`#settlementHistoryDay-${p}`);
-    if (input && !input.value) {
-      input.value = state.settlementHistoryDayByPlatform[p];
-    }
+    if (input && !input.value) input.value = state.settlementHistoryDayByPlatform[p];
+    if (input) refreshCallDateLabel(input.id);
     return state.settlementHistoryDayByPlatform[p];
   }
 
@@ -4224,7 +4223,10 @@
     const dayKey = String(dayValue || '').slice(0, 10);
     state.settlementHistoryDayByPlatform[p] = dayKey;
     const input = $(`#settlementHistoryDay-${p}`);
-    if (input) input.value = dayKey;
+    if (input) {
+      input.value = dayKey;
+      refreshCallDateLabel(input.id);
+    }
     return dayKey;
   }
 
@@ -4247,7 +4249,10 @@
     if (!dayKey) return '';
     state.settlementLogDayByPlatform[p] = dayKey;
     const input = $(`#settlementLogDay-${p}`);
-    if (input) input.value = dayKey;
+    if (input) {
+      input.value = dayKey;
+      refreshCallDateLabel(input.id);
+    }
     return dayKey;
   }
 
@@ -4277,6 +4282,7 @@
     }
     const input = $(`#settlementLogDay-${p}`);
     if (input && !input.value) input.value = state.settlementLogDayByPlatform[p];
+    if (input) refreshCallDateLabel(input.id);
     return state.settlementLogDayByPlatform[p];
   }
 
@@ -4935,9 +4941,15 @@
     const dayKey = String(day || '').slice(0, 10);
     if (!dayKey) return '';
     const periodInput = $('#settlementPeriod-baemin');
-    if (periodInput && source !== 'period') periodInput.value = dayKey;
+    if (periodInput && source !== 'period') {
+      periodInput.value = dayKey;
+      refreshCallDateLabel(periodInput.id);
+    }
     const insurancePeriod = $('#baeminHourlyInsurancePeriod');
-    if (insurancePeriod && source !== 'insurance') insurancePeriod.value = dayKey;
+    if (insurancePeriod && source !== 'insurance') {
+      insurancePeriod.value = dayKey;
+      refreshCallDateLabel(insurancePeriod.id);
+    }
     if (source !== 'log') setSettlementLogDay('baemin', dayKey);
     if (source !== 'history') setSettlementHistoryDay('baemin', dayKey);
     setBaeminHourlyInsuranceLogDay(dayKey);
@@ -6076,7 +6088,10 @@
     if (!dayKey) return '';
     state.baeminHourlyInsuranceLogDay = dayKey;
     const input = $('#baeminHourlyInsuranceLogDay');
-    if (input) input.value = dayKey;
+    if (input) {
+      input.value = dayKey;
+      refreshCallDateLabel(input.id);
+    }
     const label = $('#baeminHourlyInsuranceLogDayRange');
     if (label) label.textContent = `표시 정산일: ${formatDate(dayKey)}`;
     return dayKey;
