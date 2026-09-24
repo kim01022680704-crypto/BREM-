@@ -1,4 +1,5 @@
 (function () {
+  return;
   const panel = document.getElementById('driverUrgentMissionPanel');
   const listEl = document.getElementById('driverUrgentMissionList');
   const badgeEl = document.getElementById('driverMissionNavBadge');

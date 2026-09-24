@@ -72,14 +72,12 @@
     window.BremDriverRegionDashboard?.close?.();
     window.BremDriverBranchDashboard?.close?.();
     window.BremDriverCrewLeader?.close?.();
-    window.BremDriverUrgentMissions?.close?.();
     window.BremDriverInquiries?.close?.();
   }
 
   function openTabPanel(tab) {
     if (tab === 'notice' || tab === 'perf' || tab === 'maint') return;
-    if (tab === 'mission') window.BremDriverUrgentMissions?.open?.();
-    else if (tab === 'withdraw') window.BremDriverWithdrawal?.open?.();
+    if (tab === 'withdraw') window.BremDriverWithdrawal?.open?.();
     else if (tab === 'payslip') window.BremDriverWeeklyPayslip?.open?.();
     else if (tab === 'dash') window.BremDriverRegionDashboard?.open?.();
     else if (tab === 'branch') window.BremDriverBranchDashboard?.open?.();
