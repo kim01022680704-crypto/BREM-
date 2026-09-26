@@ -5202,7 +5202,7 @@
           BremStorage.ensureSectionLoaded('settlements'),
           BremStorage.ensureSectionLoaded('calls')
         ]);
-        const result = BremStorage.settlementUnmatched.retryDailyMatching({
+        const result = await BremStorage.settlementUnmatched.retryDailyMatching({
           platform: p,
           weekStart,
           recordIds
@@ -5613,7 +5613,7 @@
     ]);
     const weekStart = String(record.weekStart || '').slice(0, 10);
     const siblings = settlementMatchSiblingRecords(record);
-    const result = BremStorage.settlementUnmatched.retryDailyMatching({
+    const result = await BremStorage.settlementUnmatched.retryDailyMatching({
       platform: p,
       weekStart,
       recordIds: siblings.map(item => item.id)
@@ -6274,7 +6274,7 @@
 
       await BremStorage.ensureSectionLoaded?.('settlements');
       if (log.status === 'applied') {
-        BremStorage.settlements.upsertHourlyInsuranceBatch({
+        await BremStorage.settlements.upsertHourlyInsuranceBatch({
           period: log.period,
           platform: 'baemin',
           records: mergedMatched.map(record => ({
@@ -6319,7 +6319,7 @@
     const matched = (log.matchedRecords?.length ? log.matchedRecords : log.appliedRecords) || [];
     try {
       await BremStorage.ensureSectionLoaded?.('settlements');
-      BremStorage.settlements.upsertHourlyInsuranceBatch({
+      await BremStorage.settlements.upsertHourlyInsuranceBatch({
         period: log.period,
         platform: 'baemin',
         records: matched.map(record => ({
@@ -6437,7 +6437,7 @@
       if (window.BremPerf?.runSave) {
         await window.BremPerf.runSave('settlements.baeminHourlyInsurance', { write });
       } else {
-        write();
+        await write();
       }
 
       await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
@@ -6838,7 +6838,7 @@
 
       await window.BremPerf?.runSave?.(`settlements.apply.${p}`, {
         write: async () => {
-          const writeResult = BremStorage.settlements.upsertBatch({
+          const writeResult = await BremStorage.settlements.upsertBatch({
             period,
             platform: p,
             callFeeUnit,

@@ -10643,16 +10643,31 @@ const BremStorage = (function () {
     }
   };
 
+  /** 그 날짜 일정산을 서버에서 다시 읽어 메모리에 합친다. 화면 캐시만 보면 먼저 넣은 금액이 없다. */
+  async function reloadSettlementDay(period) {
+    const day = String(period || '').slice(0, 10);
+    if (!day || activeStorageAdapter?.type !== 'supabase' || !activeStorageAdapter.ensureKeysLoaded) return;
+    await activeStorageAdapter.ensureKeysLoaded([KEYS.settlements], {
+      force: true,
+      [KEYS.settlements]: {
+        sinceDate: day,
+        untilDate: day,
+        mergeWithExisting: true
+      }
+    });
+  }
+
   const settlements = {
     getAll() {
       return normalizeSettlements(storageAdapter.read(KEYS.settlements, []));
     },
 
-    upsertBatch({ period, records, platform = DEFAULT_PLATFORM, callFeeUnit } = {}) {
+    async upsertBatch({ period, records, platform = DEFAULT_PLATFORM, callFeeUnit } = {}) {
       if (!period) throw new Error('정산 기간이 필요합니다.');
 
       const p = normalizePlatform(platform);
       const callDate = String(period).slice(0, 10);
+      await reloadSettlementDay(callDate);
       const appliedAt = new Date().toISOString();
       const hasExplicitUnit = callFeeUnit != null && callFeeUnit !== '';
       const existingById = new Map(settlements.getAll().map(item => [String(item.id || ''), item]));
@@ -10665,16 +10680,21 @@ const BremStorage = (function () {
           ? payrollDailySettlement.computeCallFee(orderCount, p, callFeeUnit)
           : null;
         const keepFee = !computed && existing && existing.callFee != null && existing.callFee !== '';
+        const incomingInsurance = Math.abs(Number(record.hourlyInsurance || 0));
+        const existingInsurance = Math.abs(Number(existing?.hourlyInsurance || 0));
+        const incomingBase = Math.abs(Number(record.deductionBase || 0));
+        const existingBase = Math.abs(Number(existing?.deductionBase || 0));
         return {
           id,
           driverId: record.driverId,
           period: callDate,
           platform: p,
-          riderId: record.riderId || '',
+          riderId: String(record.riderId || existing?.riderId || ''),
           orderCount,
-          hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
-          // 원천세·고용·산재 기준 금액(쿠팡 AC열). 0 이면 정산금액 기준으로 계산된다.
-          deductionBase: Math.abs(Number(record.deductionBase || 0)),
+          // 배달처리비 파일에 시간제가 없으면(0) 이미 반영된 시간제를 유지한다.
+          hourlyInsurance: incomingInsurance > 0 ? incomingInsurance : existingInsurance,
+          // 원천세·고용·산재 기준 금액(쿠팡 AC열). 0 이면 이미 있는 기준을 유지한다.
+          deductionBase: incomingBase > 0 ? incomingBase : existingBase,
           settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
           deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
           // 콜수수료는 업로드 시 콜수×단가로 고정. 단가 변경이 과거 주를 소급하지 않게 한다.
@@ -10719,11 +10739,12 @@ const BremStorage = (function () {
       return persist || list;
     },
 
-    /** 시간제보험만 반영 — 콜수/정산금액·콜입력은 건드리지 않음 */
-    upsertHourlyInsuranceBatch({ period, records = [], platform = DEFAULT_PLATFORM }) {
+    /** 시간제보험만 반영. 서버에 있는 배달처리비·콜수는 유지한다. */
+    async upsertHourlyInsuranceBatch({ period, records = [], platform = DEFAULT_PLATFORM }) {
       if (!period) throw new Error('정산 기간이 필요합니다.');
       const p = normalizePlatform(platform);
       const callDate = String(period).slice(0, 10);
+      await reloadSettlementDay(callDate);
       const appliedAt = new Date().toISOString();
       const list = settlements.getAll();
       const byId = new Map(list.map(item => [item.id, { ...item }]));
@@ -12126,7 +12147,7 @@ const BremStorage = (function () {
         }));
       if (!records.length) return { rolledBackHourly: 0 };
 
-      settlements.upsertHourlyInsuranceBatch({
+      await settlements.upsertHourlyInsuranceBatch({
         period: periodKey,
         platform: p,
         records
@@ -13415,7 +13436,7 @@ const BremStorage = (function () {
       });
     },
 
-    retryDailyMatching({ platform, weekStart, period = '', recordIds = [], callFeeUnit } = {}) {
+    async retryDailyMatching({ platform, weekStart, period = '', recordIds = [], callFeeUnit } = {}) {
       const p = normalizePlatform(platform);
       const weekKey = String(weekStart || '').slice(0, 10);
       const periodKey = String(period || '').slice(0, 10);
@@ -13484,15 +13505,15 @@ const BremStorage = (function () {
       });
 
       let applied = 0;
-      byPeriod.forEach((group, periodKey) => {
-        settlements.upsertBatch({
+      for (const [periodKey, group] of byPeriod) {
+        await settlements.upsertBatch({
           period: periodKey,
           platform: p,
           records: group.records,
           callFeeUnit: group.callFeeUnit
         });
         applied += group.records.length;
-      });
+      }
 
       const current = settlementUnmatched.getAll();
       const other = current.filter(item => !(
