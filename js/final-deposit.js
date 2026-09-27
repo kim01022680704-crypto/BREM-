@@ -724,30 +724,12 @@ const BremFinalDeposit = (function () {
       return;
     }
 
-    // 화면에서 제외한 항목이 있으면 "화면과 동일하게 제외" vs "전원 포함(기본·누락 방지)" 중 고른다.
-    const excludedSettlementCount = weekList.filter(record =>
-      state.excludedSettlementIds.has(String(record.id))
-    ).length;
-    const screenRows = mergedRows();
-    const excludedDriverCount = screenRows.filter(row => !row.checked).length;
-    const hasExclusion = excludedSettlementCount > 0 || excludedDriverCount > 0;
-
-    let matchScreen = false;
-    if (hasExclusion) {
-      matchScreen = window.confirm(
-        '화면에서 제외한 항목이 있습니다.\n'
-        + (excludedSettlementCount ? `· 끈 정산서 ${excludedSettlementCount}건\n` : '')
-        + (excludedDriverCount ? `· 끈 기사 ${excludedDriverCount}명\n` : '')
-        + '\n엑셀을 어떻게 내보낼까요?\n\n'
-        + '[확인] 화면과 동일하게 제외하고 내보내기\n'
-        + '[취소] 전원 포함 (기본 · 누락 방지)'
-      );
-    }
-    const rows = matchScreen
-      ? screenRows.filter(row => row.checked)
-      : mergedRows({ allSettlements: true, allDrivers: true });
+    // 최종입금 엑셀은 화면에서 「체크된 행」만 내보낸다. (대량이체용)
+    // 끈 정산서·끈 기사는 빼고, 지금 보고 있는 부분(전체/부분1·2·3) 탭만 담는다.
+    // 다른 부분이나 반대 플랫폼 정산서는 그 탭을 열어 따로 내보낸다.
+    const rows = mergedRows().filter(row => row.checked);
     if (!rows.length) {
-      showToast(matchScreen ? '선택된 라이더가 없습니다. (화면에서 전원 제외됨)' : '정산서에 라이더가 없습니다.');
+      showToast('체크된 라이더가 없습니다. 내보낼 행을 먼저 체크하세요.');
       return;
     }
 
@@ -783,7 +765,7 @@ const BremFinalDeposit = (function () {
     const weekLabel = formatDate(ensureWeek());
 
     if (!window.confirm(
-      `${weekLabel}(수) 주 최종입금 엑셀 — ${matchScreen ? '화면 선택분' : '전원'} · 플랫폼별 각각 입금\n\n`
+      `${weekLabel}(수) 주 최종입금 엑셀 — 화면에서 체크된 ${rows.length}명 · 플랫폼별 각각 입금\n\n`
       + `· 정산서 ${weekList.length}건 · 파일 라이더칸 합 ${slotCount}\n`
       + `· 「입금」: ${allPeople.length}건 (확인용, 계좌 없는 행 포함)\n`
       + `· 「입금_이체가능」: ${ready.length}건 (정산서 아이디 = 기사정보 아이디인 행만)\n`
@@ -791,11 +773,7 @@ const BremFinalDeposit = (function () {
       + `※ 계좌는 아이디로만 찾습니다. 이름으로는 채우지 않습니다.\n`
       + `※ 비고에 매칭된 아이디·전화번호가 있습니다. 그 사람과 계좌가 맞는지 보고 이체하세요.\n`
       + `※ 같은 기사라도 쿠팡·배민은 각각 따로 입금됩니다.\n`
-      + (hasExclusion
-        ? (matchScreen
-          ? `※ 화면에서 제외한 항목은 이 엑셀에서도 빠집니다. (화면과 동일)`
-          : `※ 화면에서 끈 항목도 이 엑셀에는 전원 포함됩니다. (누락 방지)`)
-        : '')
+      + `※ 체크된 행만 내보냅니다. 다른 부분·반대 플랫폼은 그 탭을 열어 따로 내보내세요.`
     )) return;
 
     const cols = columns();
