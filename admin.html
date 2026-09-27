@@ -19,6 +19,7 @@
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
   <link rel="stylesheet" href="css/admin.css?v=20260922part4">
+  <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req2">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
@@ -121,6 +122,7 @@
         <button class="nav-btn" data-section="rider-inquiries">라이더 문의</button>
         <button class="nav-btn active" data-section="dashboard">대시보드</button>
         <button class="nav-btn" data-section="admin-schedule">관리자 스케줄표</button>
+        <button class="nav-btn" data-section="work-requests">업무</button>
         <button class="nav-btn" data-section="mission-results">장기근속이벤트 결과</button>
         <button class="nav-btn" data-section="missions">장기근속이벤트</button>
         <button class="nav-btn" data-section="mission-management">미션 관리</button>
@@ -407,6 +409,10 @@
             </article>
           </div>
         </div>
+      </section>
+
+      <section class="section" id="work-requests">
+        <div data-wr-root></div>
       </section>
 
       <section class="section" id="admin-schedule">
@@ -9265,8 +9271,8 @@
   <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js?v=20260923fast1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260922active2"></script>
-  <script src="js/storage.js?v=20260926merge1"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260927req1"></script>
+  <script src="js/storage.js?v=20260927req1"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
@@ -9327,9 +9333,10 @@
   <script src="js/mission-promotion-catalog.js?v=20260827mission10"></script>
   <script src="js/admin-missions.js?v=20260827mission10"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260926merge1"></script>
+    <script src="js/admin-work-requests.js?v=20260927req1"></script>
+    <script src="js/admin.js?v=20260927req3"></script>
   <script src="js/admin-driver-popups.js?v=20260914popup2" defer></script>
-  <script src="js/admin-sidebar-groups.js?v=20260924mt3" defer></script>
+  <script src="js/admin-sidebar-groups.js?v=20260927req3" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

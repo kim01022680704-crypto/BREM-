@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="css/login.css">
   <link rel="stylesheet" href="css/admin.css?v=20260818slotsch1">
   <link rel="stylesheet" href="css/admin-app.css?v=20260910reg1">
+  <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req2">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
 </head>
 <body>
@@ -332,6 +333,10 @@
         </article>
       </section>
 
+      <section class="admin-phone-panel" data-admin-app-panel="request" hidden>
+        <div data-wr-root></div>
+      </section>
+
       <section class="admin-phone-panel" data-admin-app-panel="inquiry" id="rider-inquiries">
         <article class="card">
           <div class="card-header">
@@ -348,6 +353,10 @@
       <button type="button" class="admin-app-nav__item is-active" data-admin-app-tab="home">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
         <span>대시보드</span>
+      </button>
+      <button type="button" class="admin-app-nav__item" data-admin-app-tab="request">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h8M8 10h8M8 14h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><rect x="5" y="3.5" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        <span>업무</span>
       </button>
       <button type="button" class="admin-app-nav__item" data-admin-app-tab="schedule">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 3.5v3M16 3.5v3M4 10h16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
@@ -452,8 +461,8 @@
   <script src="js/data-cache.js?v=20260621n"></script>
   <script src="js/storage-supabase-mapper.js?v=20260816popup1"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260915audit3"></script>
-  <script src="js/storage.js?v=20260909login1"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260927req1"></script>
+  <script src="js/storage.js?v=20260927req1"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
@@ -463,7 +472,8 @@
   <script src="js/payroll-slip-utils.js?v=20260814match1"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/admin-payroll-slip-search.js?v=20260817pay6"></script>
-  <script src="js/admin-app.js?v=20260817pay6"></script>
+  <script src="js/admin-work-requests.js?v=20260927req1"></script>
+  <script src="js/admin-app.js?v=20260927req3"></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
 </html>

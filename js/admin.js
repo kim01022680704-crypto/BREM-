@@ -201,6 +201,7 @@
     { id: 'rider-inquiries', label: '라이더 문의' },
     { id: 'dashboard', label: '대시보드' },
     { id: 'admin-schedule', label: '관리자 스케줄표' },
+    { id: 'work-requests', label: '업무' },
     { id: 'mission-results', label: '장기근속이벤트 결과' },
     { id: 'missions', label: '장기근속이벤트' },
     { id: 'mission-management', label: '미션 관리' },
@@ -7479,6 +7480,9 @@
     }
     if (sectionId === 'admin-schedule' && window.BremAdminSchedule?.refresh) {
       window.BremAdminSchedule.refresh();
+    }
+    if (sectionId === 'work-requests' && window.BremAdminWorkRequests?.reload) {
+      void window.BremAdminWorkRequests.reload();
     }
     if (sectionId === 'lease-management' && window.BremAdminLeaseMenus?.init) {
       void window.BremAdminLeaseMenus.init();

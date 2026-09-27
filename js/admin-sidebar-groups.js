@@ -11,6 +11,7 @@
   // ※ ops에서 'baemin-status'(배민현황)를 focus 버튼보다 먼저 두어 pageTitle 기본값 보존.
   var GROUPS = [
     { key: 'home',   title: '홈 · 대시보드',     icon: 'home',   items: ['dashboard', 'admin-schedule'] },
+    { key: 'work',   title: '업무',               icon: 'doc',    items: ['work-requests'] },
     { key: 'comm',   title: '소통 · 공지',        icon: 'bell',   items: ['notices', 'urgent-missions', 'rider-push', 'rider-inquiries'] },
     { key: 'ops',    title: '콜 · 현황',          icon: 'chart',  items: ['calls', 'rejections', 'targets', 'contribution', 'baemin-biz-status', 'baemin-status', 'baemin-status:calls_rejection_sync', 'coupang-rider-status', 'coupang-status'] },
     { key: 'settle', title: '정산 · 급여',        icon: 'coin',   items: ['settlements', 'weekly-settlement', 'weekly-settlement-direct', 'promotion-settlement', 'settlement-result-direct', 'final-deposit', 'payroll-slips', 'payroll-slip-search', 'payroll-daily-settlement', 'revenue-management', 'tax-management'] },
@@ -21,6 +22,7 @@
 
   var ICONS = {
     home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+    doc: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
     bell: '<path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/>',
     chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
     coin: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',

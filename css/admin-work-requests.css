@@ -1,0 +1,63 @@
+.wr-card + .wr-card {
+  margin-top: 14px;
+}
+
+.wr-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.wr-wide {
+  grid-column: 1 / -1;
+}
+
+.wr-item + .wr-item {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.wr-line {
+  font-weight: 800;
+  line-height: 1.45;
+  word-break: keep-all;
+}
+
+.wr-sub,
+.wr-subhead {
+  margin: 6px 0 0;
+  color: #9ca3af;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.wr-subhead {
+  margin-top: 16px;
+}
+
+.wr-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.wr-status {
+  font-weight: 900;
+}
+
+.wr-status--request { color: #fbbf24; }
+.wr-status--approved { color: #93c5fd; }
+.wr-status--done { color: #6ee7b7; }
+.wr-status--rejected { color: #fca5a5; }
+
+.wr-reject {
+  color: #fca5a5;
+}
+
+@media (max-width: 720px) {
+  .wr-form {
+    grid-template-columns: 1fr;
+  }
+}
+

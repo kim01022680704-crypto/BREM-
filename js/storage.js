@@ -68,7 +68,8 @@ const BremStorage = (function () {
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
     adminCredentials: 'brem_admin_credentials',
-    driverOrgChart: 'brem_admin_driver_org_chart_v1'
+    driverOrgChart: 'brem_admin_driver_org_chart_v1',
+    workRequests: 'brem_work_requests_v1'
   });
 
   const SCHEMA = Object.freeze({
@@ -1598,6 +1599,7 @@ const BremStorage = (function () {
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'inactive-drivers': [KEYS.drivers],
     'admin-schedule': [KEYS.adminSchedules],
+    'work-requests': [KEYS.workRequests],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
     'payroll-slip-search': [KEYS.payrollSlipLines],
     'payroll-daily-settlement': [
@@ -13753,6 +13755,7 @@ const BremStorage = (function () {
     'rider-inquiries',
     'dashboard',
     'admin-schedule',
+    'work-requests',
     'mission-results',
     'missions',
     'mission-management',
@@ -13918,6 +13921,16 @@ const BremStorage = (function () {
       else normalized.splice(normalized.indexOf('driver-management') + 1, 0, 'rider-maintenance');
     }
 
+    if (!normalized.includes('work-requests')) {
+      const scheduleIndex = normalized.indexOf('admin-schedule');
+      if (scheduleIndex >= 0) normalized.splice(scheduleIndex + 1, 0, 'work-requests');
+      else {
+        const dashboardIndex = normalized.indexOf('dashboard');
+        if (dashboardIndex >= 0) normalized.splice(dashboardIndex + 1, 0, 'work-requests');
+        else normalized.unshift('work-requests');
+      }
+    }
+
     if (!normalized.includes('payroll-slips')) {
       const backupIndex = normalized.indexOf('data-backup');
       if (backupIndex >= 0) {
@@ -14016,6 +14029,11 @@ const BremStorage = (function () {
     }
     if (next.includes('driver-management') && allowed.has('inactive-drivers') && !next.includes('inactive-drivers')) {
       next.splice(next.indexOf('driver-management') + 1, 0, 'inactive-drivers');
+    }
+    if (allowed.has('work-requests') && !next.includes('work-requests')) {
+      const scheduleIndex = next.indexOf('admin-schedule');
+      if (scheduleIndex >= 0) next.splice(scheduleIndex + 1, 0, 'work-requests');
+      else next.push('work-requests');
     }
     return next;
   }
@@ -15477,9 +15495,21 @@ const BremStorage = (function () {
     return result;
   }
 
+  const workRequests = {
+    getAll() {
+      const raw = storageAdapter.read(KEYS.workRequests, []);
+      return Array.isArray(raw) ? raw.map(item => ({ ...item })) : [];
+    },
+    saveAll(list) {
+      const next = Array.isArray(list) ? list : [];
+      return writeTableKey(KEYS.workRequests, next, { allowEmpty: next.length === 0 });
+    }
+  };
+
   return {
     createId,
     STORAGE_KEYS: KEYS,
+    workRequests,
     SCHEMA,
     DATA_GROUPS,
     dataBackup,

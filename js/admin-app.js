@@ -3,11 +3,13 @@
     home: { title: '대시보드', desc: '오늘 일정과 미확인 문의를 봅니다.' },
     schedule: { title: '스케줄', desc: '관리자 스케줄표를 등록·수정합니다.' },
     payslip: { title: '명세서', desc: '등록된 주급명세서를 검색합니다.' },
-    inquiry: { title: '문의', desc: '라이더 문의를 확인하고 답장합니다.' }
+    inquiry: { title: '문의', desc: '라이더 문의를 확인하고 답장합니다.' },
+    request: { title: '업무', desc: '업무 요청을 등록하고 승인 상태를 봅니다.' }
   };
   const TAB_MENUS = {
     home: 'dashboard',
     schedule: 'admin-schedule',
+    request: 'work-requests',
     payslip: 'payroll-slip-search',
     inquiry: 'rider-inquiries'
   };
@@ -60,7 +62,7 @@
   }
 
   function setTab(tab) {
-    const next = canOpenTab(tab) ? tab : (['home', 'schedule', 'payslip', 'inquiry'].find(canOpenTab) || 'home');
+    const next = canOpenTab(tab) ? tab : (['home', 'schedule', 'request', 'payslip', 'inquiry'].find(canOpenTab) || 'home');
     currentTab = next;
     document.documentElement.dataset.adminAppTab = next;
     document.querySelectorAll('[data-admin-app-panel]').forEach(panel => {
@@ -83,6 +85,7 @@
       window.BremCoupangStatusAdmin?.refreshDashboardCard?.();
     }
     if (next === 'schedule') window.BremAdminSchedule?.refresh?.();
+    if (next === 'request') void window.BremAdminWorkRequests?.reload?.();
     if (next === 'payslip') window.BremAdminPayrollSlipSearch?.refresh?.();
     if (next === 'inquiry') void renderInquiries();
   }
