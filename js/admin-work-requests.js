@@ -11,6 +11,7 @@
   let saveCounter = 0;
   let busy = false;
   let viewMode = 'week';
+  let subView = 'list';
   let anchor = new Date();
   let clearOnRender = false;
   let regionCatalog = { baemin: [], coupang: [], error: '' };
@@ -186,20 +187,6 @@
   }
 
   function processedHtml(items) {
-    if (viewMode === 'months') {
-      const groups = new Map();
-      byNewest(items).forEach(item => {
-        const key = monthKey(item) || 'none';
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(item);
-      });
-      const keys = [...groups.keys()].sort((a, b) => b.localeCompare(a));
-      if (!keys.length) return '<p class="empty">이 보기에 해당하는 요청이 없습니다.</p>';
-      return keys.map(key => `
-        <h4 class="wr-monthhead">${escapeHtml(monthLabel(key))}</h4>
-        ${listHtml(groups.get(key), '')}
-      `).join('');
-    }
     const period = periodOf(viewMode, anchor);
     const matched = byNewest(items.filter(item => inPeriod(item, period)));
     return listHtml(matched, '이 기간에 처리된 요청이 없습니다.');
@@ -208,8 +195,7 @@
   function viewButtons() {
     const modes = [
       ['week', '주별'],
-      ['month', '월별'],
-      ['months', '달별']
+      ['month', '월별']
     ];
     return modes.map(([id, label]) => (
       `<button type="button" class="wr-view${viewMode === id ? ' is-on' : ''}" data-wr-view="${id}">${label}</button>`
@@ -217,13 +203,22 @@
   }
 
   function periodNav() {
-    if (viewMode === 'months') return '';
     const period = periodOf(viewMode, anchor);
     return `<div class="wr-period">
       <button type="button" class="wr-nav-btn" data-wr-shift="-1" aria-label="이전">‹</button>
       <strong>${escapeHtml(period.label)}</strong>
       <button type="button" class="wr-nav-btn" data-wr-shift="1" aria-label="다음">›</button>
     </div>`;
+  }
+
+  function subTabs() {
+    const tabs = [
+      ['list', '리스트'],
+      ['apply', '신청']
+    ];
+    return `<div class="wr-subtabs">${tabs.map(([id, label]) => (
+      `<button type="button" class="wr-subtab${subView === id ? ' is-on' : ''}" data-wr-sub="${id}">${label}</button>`
+    )).join('')}</div>`;
   }
 
   function regionBox(selected) {
@@ -272,21 +267,17 @@
     if (!roots.length) return;
     const draft = clearOnRender ? null : readDraft();
     clearOnRender = false;
-    const periodLabel = viewMode === 'months' ? '달별' : periodOf(viewMode, anchor).label;
+    const periodLabel = periodOf(viewMode, anchor).label;
     const account = sessionAccount();
     const who = requesterId(account);
     const all = window.BremStorage?.workRequests?.getAll?.() || [];
     const pending = byNewest(all.filter(item => (item.status || 'request') === 'request'));
     const rest = all.filter(item => (item.status || 'request') !== 'request');
-    const html = `
+    const listCard = `
       <article class="card wr-card">
         <div class="card-header">
-          <h2>업무</h2>
+          <h2>리스트</h2>
           <button type="button" class="small-btn" data-wr-reload>새로고침</button>
-        </div>
-        <div class="wr-toolbar">
-          <div class="wr-views">${viewButtons()}</div>
-          ${periodNav()}
         </div>
         <div data-wr-list>
           <div class="wr-section">
@@ -294,13 +285,18 @@
             ${listHtml(pending, '승인 대기 중인 요청이 없습니다.')}
           </div>
           <div class="wr-section">
+            <div class="wr-toolbar">
+              <div class="wr-views">${viewButtons()}</div>
+              ${periodNav()}
+            </div>
             <h3 class="wr-subhead"><span class="wr-dot"></span>${escapeHtml(periodLabel)}</h3>
             ${processedHtml(rest)}
           </div>
         </div>
-      </article>
+      </article>`;
+    const applyCard = `
       <article class="card wr-card">
-        <div class="card-header"><h2>요청 등록</h2></div>
+        <div class="card-header"><h2>신청</h2></div>
         <form data-wr-form class="wr-form">
           <p class="wr-requester">요청자 <strong>${escapeHtml(who || '로그인 필요')}</strong></p>
           <div class="wr-row">
@@ -318,6 +314,7 @@
           <div class="wr-actions wr-actions--submit"><button type="submit" class="primary-btn">등록</button></div>
         </form>
       </article>`;
+    const html = `${subTabs()}${subView === 'apply' ? applyCard : listCard}`;
     roots.forEach(root => {
       root.innerHTML = html;
     });
@@ -404,7 +401,10 @@
       if (!next) return;
       await window.BremStorage.workRequests.saveAll(next);
       saveCounter += 1;
-      clearOnRender = doneMessage === '등록했습니다.';
+      if (doneMessage === '등록했습니다.') {
+        clearOnRender = true;
+        subView = 'list';
+      }
       render();
       toast(doneMessage);
     } catch (error) {
@@ -495,6 +495,13 @@
     if (reloadBtn) {
       event.preventDefault();
       void reload();
+      return;
+    }
+    const subBtn = event.target.closest?.('[data-wr-sub]');
+    if (subBtn) {
+      event.preventDefault();
+      subView = subBtn.dataset.wrSub || 'list';
+      render();
       return;
     }
     const viewBtn = event.target.closest?.('[data-wr-view]');
