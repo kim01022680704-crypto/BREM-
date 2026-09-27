@@ -639,11 +639,10 @@ const BremFinalDeposit = (function () {
     const phoneTail = String(driver?.phone || '').replace(/\D/g, '').slice(-4);
     const platformId = idLabelsOf(row)[0] || '';
     const matchedName = verified ? String(driver?.name || '').trim() : '';
-    const erpId = [
-      resolved.matchedId || platformId,
-      phoneTail ? `전화${phoneTail}` : '',
-      matchedName
-    ].filter(Boolean).join(' / ');
+    // 비고 = ERP ID 하나만. (기사정보와 매칭된 사람은 ERP 로그인ID, 못 찾으면 정산서 ID)
+    const erpId = verified
+      ? (loginIdForDriver(driver) || resolved.matchedId || platformId)
+      : (resolved.matchedId || platformId);
     const riderName = String(row?.name || '').trim();
     return {
       driver,
