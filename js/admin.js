@@ -4153,10 +4153,28 @@
     }, 20000);
   }
 
+  function setSidebarNavBadge(section, count) {
+    document.querySelectorAll(`.nav-btn[data-section="${section}"]`).forEach(btn => {
+      if (btn.hasAttribute('data-baemin-menu-focus')) return;
+      let badge = btn.querySelector('.nav-count-badge');
+      if (count > 0) {
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'nav-count-badge';
+          btn.appendChild(badge);
+        }
+        badge.textContent = count > 99 ? '99+' : String(count);
+      } else if (badge) {
+        badge.remove();
+      }
+    });
+  }
+
   async function watchNewRiderInquiries({ announce = true } = {}) {
     try {
       const list = await loadRiderInquiries();
       const fresh = list.filter(item => item.status === 'new');
+      setSidebarNavBadge('rider-inquiries', fresh.length);
       const seen = readSeenInquiryIds();
       const unseen = fresh.filter(item => !seen.has(String(item.id)));
       fresh.forEach(item => seen.add(String(item.id)));
@@ -4165,6 +4183,7 @@
     } catch {
       /* 목록 실패는 무시 */
     }
+    void window.BremAdminWorkRequests?.refreshBadge?.();
   }
 
   function isBaeminSettlementPlatform(platform) {

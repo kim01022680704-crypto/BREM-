@@ -102,6 +102,7 @@
     applyTabPermissions();
     setTab(currentTab);
     startInquiryWatch();
+    void window.BremAdminWorkRequests?.refreshBadge?.();
   }
 
   function showLogin() {

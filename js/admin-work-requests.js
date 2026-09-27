@@ -28,6 +28,33 @@
     return window.BremStorage?.auth?.getAdminSessionAccount?.() || null;
   }
 
+  function pendingCount() {
+    const all = window.BremStorage?.workRequests?.getAll?.() || [];
+    return all.filter(item => (item.status || 'request') === 'request').length;
+  }
+
+  function setNavBadge(selector, count) {
+    document.querySelectorAll(selector).forEach(btn => {
+      let badge = btn.querySelector('.nav-count-badge');
+      if (count > 0) {
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'nav-count-badge';
+          btn.appendChild(badge);
+        }
+        badge.textContent = count > 99 ? '99+' : String(count);
+      } else if (badge) {
+        badge.remove();
+      }
+    });
+  }
+
+  function updateNavBadges(count) {
+    const n = Number.isFinite(count) ? count : pendingCount();
+    setNavBadge('.nav-btn[data-section="work-requests"]', n);
+    setNavBadge('[data-admin-app-tab="request"]', n);
+  }
+
   function requesterId(account) {
     return String(account?.name || account?.email || '').trim();
   }
@@ -211,14 +238,15 @@
     </div>`;
   }
 
-  function subTabs() {
+  function subTabs(pendingCount) {
     const tabs = [
-      ['list', '리스트'],
-      ['apply', '신청']
+      ['apply', '신청', 0],
+      ['list', '리스트', pendingCount]
     ];
-    return `<div class="wr-subtabs">${tabs.map(([id, label]) => (
-      `<button type="button" class="wr-subtab${subView === id ? ' is-on' : ''}" data-wr-sub="${id}">${label}</button>`
-    )).join('')}</div>`;
+    return `<div class="wr-subtabs">${tabs.map(([id, label, count]) => {
+      const badge = count > 0 ? `<span class="wr-tabcount">${count > 99 ? '99+' : count}</span>` : '';
+      return `<button type="button" class="wr-subtab${subView === id ? ' is-on' : ''}" data-wr-sub="${id}">${label}${badge}</button>`;
+    }).join('')}</div>`;
   }
 
   function regionBox(selected) {
@@ -314,7 +342,8 @@
           <div class="wr-actions wr-actions--submit"><button type="submit" class="primary-btn">등록</button></div>
         </form>
       </article>`;
-    const html = `${subTabs()}${subView === 'apply' ? applyCard : listCard}`;
+    const html = `${subTabs(pending.length)}${subView === 'apply' ? applyCard : listCard}`;
+    updateNavBadges(pending.length);
     roots.forEach(root => {
       root.innerHTML = html;
     });
@@ -531,5 +560,14 @@
     submit(form);
   });
 
-  window.BremAdminWorkRequests = { reload, render };
+  async function refreshBadge() {
+    try {
+      await window.BremStorage?.ensureSectionLoaded?.('work-requests');
+    } catch (error) {
+      console.warn('[BREM] work request badge load failed:', error?.message || error);
+    }
+    updateNavBadges();
+  }
+
+  window.BremAdminWorkRequests = { reload, render, refreshBadge, pendingCount, updateNavBadges };
 })();
