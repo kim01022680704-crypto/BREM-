@@ -1,11 +1,253 @@
-.wr-card + .wr-card {
-  margin-top: 14px;
+/* 업무 요청 — 카드형 UI */
+:root {
+  --wr-border: rgba(255, 255, 255, 0.08);
+  --wr-panel: rgba(255, 255, 255, 0.03);
+  --wr-panel-2: rgba(255, 255, 255, 0.05);
+  --wr-yellow: #ffd400;
 }
 
+.wr-card + .wr-card {
+  margin-top: 16px;
+}
+
+/* ── 툴바 ── */
+.wr-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.wr-views {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--wr-panel-2);
+  gap: 2px;
+}
+
+.wr-view {
+  padding: 7px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #9ca3af;
+  font-weight: 800;
+  font-size: 0.82rem;
+  transition: background 0.15s, color 0.15s;
+}
+
+.wr-view.is-on {
+  background: var(--wr-yellow);
+  color: #111111;
+}
+
+.wr-period {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 800;
+}
+
+.wr-nav-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--wr-border);
+  border-radius: 10px;
+  background: var(--wr-panel);
+  color: #e5e7eb;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.wr-nav-btn:hover {
+  background: var(--wr-panel-2);
+}
+
+/* ── 섹션 헤더 ── */
+.wr-section + .wr-section {
+  margin-top: 22px;
+}
+
+.wr-subhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #e5e7eb;
+}
+
+.wr-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #64748b;
+}
+
+.wr-dot--wait {
+  background: var(--wr-yellow);
+  box-shadow: 0 0 0 4px rgba(255, 212, 0, 0.18);
+}
+
+.wr-count {
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--wr-panel-2);
+  color: #cbd5e1;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.wr-monthhead {
+  margin: 18px 0 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #9ca3af;
+}
+
+/* ── 목록 카드 ── */
+.wr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wr-item {
+  padding: 14px 16px;
+  border: 1px solid var(--wr-border);
+  border-left: 3px solid #64748b;
+  border-radius: 14px;
+  background: var(--wr-panel);
+}
+
+.wr-item--request { border-left-color: var(--wr-yellow); }
+.wr-item--approved { border-left-color: #60a5fa; }
+.wr-item--done { border-left-color: #34d399; }
+.wr-item--rejected { border-left-color: #f87171; }
+
+.wr-item__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.wr-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.wr-badge--request { background: rgba(255, 212, 0, 0.16); color: #fbbf24; }
+.wr-badge--approved { background: rgba(96, 165, 250, 0.18); color: #93c5fd; }
+.wr-badge--done { background: rgba(52, 211, 153, 0.18); color: #6ee7b7; }
+.wr-badge--rejected { background: rgba(248, 113, 113, 0.18); color: #fca5a5; }
+
+.wr-tag {
+  padding: 3px 10px;
+  border-radius: 8px;
+  background: var(--wr-panel-2);
+  color: #e5e7eb;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.wr-cost {
+  color: var(--wr-yellow);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.wr-item__regions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.wr-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #d1d5db;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.wr-body {
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  line-height: 1.55;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+.wr-item__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.wr-sub {
+  color: #9ca3af;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.wr-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.wr-btn {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 9px;
+  font-weight: 800;
+  font-size: 0.8rem;
+}
+
+.wr-btn--approve { background: var(--wr-yellow); color: #111111; }
+.wr-btn--done { background: #34d399; color: #05261a; }
+.wr-btn--reject { background: rgba(248, 113, 113, 0.15); color: #fca5a5; }
+
+.wr-empty {
+  margin: 0;
+  padding: 22px;
+  border: 1px dashed var(--wr-border);
+  border-radius: 12px;
+  text-align: center;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+/* ── 등록 폼 ── */
 .wr-form {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.wr-requester {
+  margin: 0;
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: rgba(255, 212, 0, 0.1);
+  font-weight: 700;
+  color: #d1d5db;
+}
+
+.wr-requester strong {
+  color: var(--wr-yellow);
 }
 
 .wr-row {
@@ -14,12 +256,69 @@
   gap: 12px;
 }
 
-.wr-wide {
-  grid-column: 1 / -1;
+.wr-form .field > span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #cbd5e1;
 }
 
-.wr-content-field {
-  margin-top: 4px;
+.wr-region-title {
+  margin: 12px 0 8px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  color: #9ca3af;
+}
+
+.wr-region-title:first-child {
+  margin-top: 0;
+}
+
+.wr-regions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 4px 2px 6px;
+}
+
+.wr-region {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 7px 13px;
+  border: 1px solid var(--wr-border);
+  border-radius: 999px;
+  background: var(--wr-panel);
+  font-weight: 700;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.wr-region span {
+  white-space: nowrap;
+}
+
+.wr-region input {
+  accent-color: var(--wr-yellow);
+}
+
+.wr-region:has(input:checked) {
+  border-color: var(--wr-yellow);
+  background: rgba(255, 212, 0, 0.14);
+  color: var(--wr-yellow);
+}
+
+.wr-region-box {
+  padding: 12px;
+  border: 1px solid var(--wr-border);
+  border-radius: 12px;
+  background: var(--wr-panel);
 }
 
 .wr-content {
@@ -30,125 +329,20 @@
   line-height: 1.6;
 }
 
-.wr-requester {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(255, 212, 0, 0.1);
-  font-weight: 700;
-  color: #d1d5db;
-}
-
-.wr-requester strong {
-  color: #ffd400;
-}
-
 .wr-actions--submit {
-  margin-top: 4px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .wr-actions--submit .primary-btn {
-  min-width: 140px;
-}
-
-.wr-toolbar,
-.wr-views,
-.wr-period {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.wr-toolbar {
-  margin-bottom: 12px;
-}
-
-.wr-view.is-on {
-  background: #ffd400;
-  color: #111111;
-}
-
-.wr-region-title {
-  margin: 10px 0 6px;
-  font-size: 0.78rem;
-  font-weight: 800;
-  color: #9ca3af;
-}
-
-.wr-regions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-height: 240px;
-  overflow: auto;
-  padding: 4px 0 8px;
-}
-
-.wr-region {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  font-weight: 700;
-}
-
-.wr-body {
-  margin: 8px 0 0;
-  white-space: pre-wrap;
-  line-height: 1.5;
-  font-weight: 600;
-}
-
-.wr-item + .wr-item {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.wr-line {
-  font-weight: 800;
-  line-height: 1.45;
-  word-break: keep-all;
-}
-
-.wr-sub,
-.wr-subhead {
-  margin: 6px 0 0;
-  color: #9ca3af;
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.wr-subhead {
-  margin-top: 16px;
-}
-
-.wr-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.wr-status {
-  font-weight: 900;
-}
-
-.wr-status--request { color: #fbbf24; }
-.wr-status--approved { color: #93c5fd; }
-.wr-status--done { color: #6ee7b7; }
-.wr-status--rejected { color: #fca5a5; }
-
-.wr-reject {
-  color: #fca5a5;
+  min-width: 160px;
 }
 
 @media (max-width: 720px) {
   .wr-row {
     grid-template-columns: 1fr;
   }
+  .wr-toolbar {
+    justify-content: center;
+  }
 }
-

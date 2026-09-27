@@ -130,32 +130,49 @@
     return list.slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   }
 
+  function regionChips(item) {
+    const list = Array.isArray(item.regions) && item.regions.length
+      ? item.regions
+      : (item.region ? [{ label: item.region }] : []);
+    if (!list.length) return '';
+    return `<div class="wr-item__regions">${list.map(region => (
+      `<span class="wr-chip">${escapeHtml(region.label || '')}</span>`
+    )).join('')}</div>`;
+  }
+
   function itemHtml(item) {
     const status = STATUS_LABEL[item.status] ? item.status : 'request';
     const amount = formatAmount(item.amount);
-    const regions = regionText(item) || '-';
-    const kind = item.kind ? `${item.kind} | ` : '';
-    const cost = amount ? `예상 ${amount} | ` : '';
     const actions = [];
     if (status === 'request') {
-      actions.push(`<button type="button" class="small-btn" data-wr-status="approved" data-wr-id="${escapeHtml(item.id)}">승인</button>`);
-      actions.push(`<button type="button" class="small-btn wr-reject" data-wr-status="rejected" data-wr-id="${escapeHtml(item.id)}">반려</button>`);
+      actions.push(`<button type="button" class="wr-btn wr-btn--approve" data-wr-status="approved" data-wr-id="${escapeHtml(item.id)}">승인</button>`);
+      actions.push(`<button type="button" class="wr-btn wr-btn--reject" data-wr-status="rejected" data-wr-id="${escapeHtml(item.id)}">반려</button>`);
     }
     if (status === 'approved') {
-      actions.push(`<button type="button" class="small-btn" data-wr-status="done" data-wr-id="${escapeHtml(item.id)}">완료</button>`);
+      actions.push(`<button type="button" class="wr-btn wr-btn--done" data-wr-status="done" data-wr-id="${escapeHtml(item.id)}">완료</button>`);
     }
-    const sub = [item.requester ? `요청자 ${item.requester}` : '', formatWhen(item.createdAt)].filter(Boolean).join(' · ');
-    return `<div class="wr-item">
-      <div class="wr-line">${escapeHtml(regions)} | ${escapeHtml(kind)}${escapeHtml(cost)}<span class="wr-status wr-status--${status}">${STATUS_LABEL[status]}</span></div>
+    const meta = [
+      item.kind ? `<span class="wr-tag">${escapeHtml(item.kind)}</span>` : '',
+      amount ? `<span class="wr-cost">예상 ${escapeHtml(amount)}</span>` : ''
+    ].filter(Boolean).join('');
+    const sub = [item.requester ? `요청자 ${escapeHtml(item.requester)}` : '', escapeHtml(formatWhen(item.createdAt))].filter(Boolean).join(' · ');
+    return `<div class="wr-item wr-item--${status}">
+      <div class="wr-item__top">
+        <span class="wr-badge wr-badge--${status}">${STATUS_LABEL[status]}</span>
+        ${meta}
+      </div>
+      ${regionChips(item)}
       <p class="wr-body">${escapeHtml(item.content || '')}</p>
-      ${sub ? `<div class="wr-sub">${escapeHtml(sub)}</div>` : ''}
-      ${actions.length ? `<div class="wr-actions">${actions.join('')}</div>` : ''}
+      <div class="wr-item__foot">
+        <span class="wr-sub">${sub}</span>
+        ${actions.length ? `<div class="wr-actions">${actions.join('')}</div>` : ''}
+      </div>
     </div>`;
   }
 
   function listHtml(items, emptyText) {
-    if (!items.length) return `<p class="empty">${escapeHtml(emptyText)}</p>`;
-    return items.map(itemHtml).join('');
+    if (!items.length) return `<p class="wr-empty">${escapeHtml(emptyText)}</p>`;
+    return `<div class="wr-list">${items.map(itemHtml).join('')}</div>`;
   }
 
   function monthKey(item) {
@@ -179,7 +196,7 @@
       const keys = [...groups.keys()].sort((a, b) => b.localeCompare(a));
       if (!keys.length) return '<p class="empty">이 보기에 해당하는 요청이 없습니다.</p>';
       return keys.map(key => `
-        <h3 class="wr-subhead">${escapeHtml(monthLabel(key))}</h3>
+        <h4 class="wr-monthhead">${escapeHtml(monthLabel(key))}</h4>
         ${listHtml(groups.get(key), '')}
       `).join('');
     }
@@ -195,7 +212,7 @@
       ['months', '달별']
     ];
     return modes.map(([id, label]) => (
-      `<button type="button" class="small-btn wr-view${viewMode === id ? ' is-on' : ''}" data-wr-view="${id}">${label}</button>`
+      `<button type="button" class="wr-view${viewMode === id ? ' is-on' : ''}" data-wr-view="${id}">${label}</button>`
     )).join('');
   }
 
@@ -203,9 +220,9 @@
     if (viewMode === 'months') return '';
     const period = periodOf(viewMode, anchor);
     return `<div class="wr-period">
-      <button type="button" class="small-btn" data-wr-shift="-1">이전</button>
+      <button type="button" class="wr-nav-btn" data-wr-shift="-1" aria-label="이전">‹</button>
       <strong>${escapeHtml(period.label)}</strong>
-      <button type="button" class="small-btn" data-wr-shift="1">다음</button>
+      <button type="button" class="wr-nav-btn" data-wr-shift="1" aria-label="다음">›</button>
     </div>`;
   }
 
@@ -218,7 +235,7 @@
     if (!groups.length) {
       return `<p class="form-help">${escapeHtml(regionCatalog.error || '크롤링 지역을 불러오는 중…')}</p>`;
     }
-    return groups.map(([title, list]) => `
+    const inner = groups.map(([title, list]) => `
       <p class="wr-region-title">${title}</p>
       <div class="wr-regions">
         ${list.map(region => {
@@ -230,6 +247,7 @@
         }).join('')}
       </div>
     `).join('');
+    return `<div class="wr-region-box">${inner}</div>`;
   }
 
   function kindOptions(selected) {
@@ -271,10 +289,14 @@
           ${periodNav()}
         </div>
         <div data-wr-list>
-          <h3 class="wr-subhead">승인 안 된 요청</h3>
-          ${listHtml(pending, '승인 대기 중인 요청이 없습니다.')}
-          <h3 class="wr-subhead">${escapeHtml(periodLabel)}</h3>
-          ${processedHtml(rest)}
+          <div class="wr-section">
+            <h3 class="wr-subhead"><span class="wr-dot wr-dot--wait"></span>승인 안 된 요청<span class="wr-count">${pending.length}</span></h3>
+            ${listHtml(pending, '승인 대기 중인 요청이 없습니다.')}
+          </div>
+          <div class="wr-section">
+            <h3 class="wr-subhead"><span class="wr-dot"></span>${escapeHtml(periodLabel)}</h3>
+            ${processedHtml(rest)}
+          </div>
         </div>
       </article>
       <article class="card wr-card">
