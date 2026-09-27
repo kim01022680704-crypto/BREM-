@@ -280,15 +280,20 @@
       <article class="card wr-card">
         <div class="card-header"><h2>요청 등록</h2></div>
         <form data-wr-form class="wr-form">
-          <p class="wr-requester">요청자 ${escapeHtml(who || '로그인 필요')}</p>
-          <label class="field"><span>종류</span><select name="kind" required>${kindOptions(draft?.kind || '')}</select></label>
-          <label class="field"><span>예상 지출비용</span><input name="amount" inputmode="numeric" placeholder="없으면 비움" value="${escapeHtml(draft?.amount || '')}"></label>
-          <label class="field wr-wide"><span>요청 내용</span><textarea name="content" class="wr-content" required placeholder="요청 내용을 입력하세요">${escapeHtml(draft?.content || '')}</textarea></label>
-          <div class="field wr-wide">
+          <p class="wr-requester">요청자 <strong>${escapeHtml(who || '로그인 필요')}</strong></p>
+          <div class="wr-row">
+            <label class="field"><span>종류</span><select name="kind" required>${kindOptions(draft?.kind || '')}</select></label>
+            <label class="field"><span>예상 지출비용</span><input name="amount" inputmode="numeric" placeholder="없으면 비움" value="${escapeHtml(draft?.amount || '')}"></label>
+          </div>
+          <div class="field">
             <span>지역</span>
             ${regionBox(draft?.regions || [])}
           </div>
-          <div class="wr-wide wr-actions"><button type="submit" class="primary-btn">등록</button></div>
+          <label class="field wr-content-field">
+            <span>요청 내용</span>
+            <textarea name="content" class="wr-content" required placeholder="요청 내용을 자세히 입력하세요">${escapeHtml(draft?.content || '')}</textarea>
+          </label>
+          <div class="wr-actions wr-actions--submit"><button type="submit" class="primary-btn">등록</button></div>
         </form>
       </article>`;
     roots.forEach(root => {
