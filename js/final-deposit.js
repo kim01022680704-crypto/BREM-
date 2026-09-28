@@ -237,17 +237,11 @@ const BremFinalDeposit = (function () {
    * allSettlements: 화면에서 끈 정산서도 포함 (엑셀 전체 인원용)
    * allDrivers: 화면에서 끈 기사도 포함
    */
-  function mergedRows(options = {}) {
-    const allSettlements = Boolean(options.allSettlements);
-    const allDrivers = Boolean(options.allDrivers);
-    const numericKeys = Calc().NUMERIC_KEYS;
-    const byDriver = new Map();
-
-    // 선정산은 출금 플랫폼에 먼저, 로스는 그 주 쿠팡+배민(부분 포함) 여유분으로만 넘긴다.
+  // 체크한 정산서마다 같은 주 배분으로 기사 줄을 만든다. 지역별 엑셀은 이 줄을 정산서 단위로 합친다.
+  function computeSettlementPacks(sourceList) {
     const week = ensureWeek();
     const weekAll = weekSettlementsAll();
     const slotList = weekSettlements();
-    const sourceList = allSettlements ? weekAll : checkedSettlements();
     const dateRange = Calc().partDateRange?.(sourceList) || Calc().partDateRange?.(slotList) || {};
     const dailySettlements = window.BremStorage?.settlements?.getAll?.() || [];
     const allocation = Calc().allocateWeekWithdrawals(
@@ -266,8 +260,9 @@ const BremFinalDeposit = (function () {
       dailySettlements,
       _allocation: allocation
     });
-    sourceList.forEach(settlement => {
-      Calc().computeRows(settlement, {
+    return (sourceList || []).map(settlement => ({
+      settlement,
+      rows: Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
         weekSettlements: weekAll,
         dateRange,
@@ -277,7 +272,20 @@ const BremFinalDeposit = (function () {
         _leaseLoanSpill: spill,
         _leaseConsumed: leaseConsumed,
         _loanConsumed: loanConsumed
-      }).forEach(row => {
+      })
+    }));
+  }
+
+  function mergedRows(options = {}) {
+    const allSettlements = Boolean(options.allSettlements);
+    const allDrivers = Boolean(options.allDrivers);
+    const numericKeys = Calc().NUMERIC_KEYS;
+    const byDriver = new Map();
+
+    // 선정산은 출금 플랫폼에 먼저, 로스는 그 주 쿠팡+배민(부분 포함) 여유분으로만 넘긴다.
+    const sourceList = allSettlements ? weekSettlementsAll() : checkedSettlements();
+    computeSettlementPacks(sourceList).forEach(({ rows }) => {
+      rows.forEach(row => {
         const key = driverKey(row);
         const existing = byDriver.get(key);
         if (!existing) {
@@ -921,6 +929,105 @@ const BremFinalDeposit = (function () {
     showToast(`엑셀 저장 · 이체가능 ${ready.length}건 · 아이디확인필요 ${mismatched.length}건 · 계좌미등록 ${missing.length}건`);
   }
 
+  function positiveNetSum(rows) {
+    return (rows || []).reduce((sum, row) => {
+      const net = Math.round(Number(row?.netPay || 0));
+      return net > 0 ? sum + net : sum;
+    }, 0);
+  }
+
+  function regionSheetName(platform, badge, used) {
+    const raw = `${platformLabel(platform)}_${badge || '전체'}`.replace(/[\\/?*[\]:]/g, ' ').trim();
+    const base = (raw || '정산서').slice(0, 31);
+    let name = base;
+    let n = 2;
+    while (used.has(name)) {
+      const suffix = `_${n}`;
+      name = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+      n += 1;
+    }
+    used.add(name);
+    return name;
+  }
+
+  function exportRegionExcel() {
+    if (!window.XLSX) {
+      showToast('엑셀 모듈을 불러오지 못했습니다.');
+      return;
+    }
+    const packs = computeSettlementPacks(checkedSettlements());
+    if (!packs.length) {
+      showToast('체크한 정산서가 없습니다.');
+      return;
+    }
+    const groups = new Map();
+    packs.forEach(({ settlement, rows }) => {
+      const meta = partMeta(settlement);
+      const platform = Calc().normalizePlatform(settlement.platform);
+      const badge = meta.slot ? `부분${meta.slot}` : '전체';
+      const key = `${platform}|${meta.slot}`;
+      if (!groups.has(key)) {
+        groups.set(key, { platform, slot: meta.slot, badge, items: [] });
+      }
+      groups.get(key).items.push({
+        region: String(settlement.region || '').trim() || '지역없음',
+        fileName: String(settlement.fileName || '').trim(),
+        amount: positiveNetSum(rows)
+      });
+    });
+    const ordered = [...groups.values()].sort((a, b) => {
+      if (a.platform !== b.platform) return a.platform === 'coupang' ? -1 : 1;
+      return a.slot - b.slot;
+    });
+    ordered.forEach(group => {
+      const counts = new Map();
+      group.items.forEach(item => counts.set(item.region, (counts.get(item.region) || 0) + 1));
+      group.items.forEach(item => {
+        if ((counts.get(item.region) || 0) > 1 && item.fileName) item.region = `${item.region} (${item.fileName})`;
+      });
+      group.items.sort((a, b) => String(a.region).localeCompare(String(b.region), 'ko-KR'));
+    });
+    const grand = ordered.reduce((sum, group) => (
+      sum + group.items.reduce((inner, item) => inner + item.amount, 0)
+    ), 0);
+    const weekLabel = formatDate(ensureWeek());
+    const lines = ordered.map(group => {
+      const sub = group.items.reduce((sum, item) => sum + item.amount, 0);
+      return `· ${platformLabel(group.platform)} ${group.badge} ${group.items.length}지역 ${formatNumber(sub)}원`;
+    });
+    if (!window.confirm(
+      `${weekLabel}(수) 주 지역별 최종입금\n`
+      + '정산서마다 시트를 나누고, 마이너스 금액은 합계에 넣지 않습니다.\n\n'
+      + `${lines.join('\n')}\n`
+      + `합계 ${formatNumber(grand)}원\n\n`
+      + 'A열 지역 · B열 최종입금'
+    )) return;
+
+    const wb = window.XLSX.utils.book_new();
+    const usedNames = new Set();
+    ordered.forEach(group => {
+      const total = group.items.reduce((sum, item) => sum + item.amount, 0);
+      const aoa = [
+        ['지역', '최종입금'],
+        ...group.items.map(item => [item.region, item.amount]),
+        ['합계', total]
+      ];
+      const sheet = window.XLSX.utils.aoa_to_sheet(aoa);
+      sheet['!cols'] = [{ wch: 28 }, { wch: 16 }];
+      for (let r = 1; r < aoa.length; r += 1) {
+        const cell = sheet[window.XLSX.utils.encode_cell({ r, c: 1 })];
+        if (cell) cell.z = '#,##0';
+      }
+      window.XLSX.utils.book_append_sheet(
+        wb,
+        sheet,
+        regionSheetName(group.platform, group.badge, usedNames)
+      );
+    });
+    window.XLSX.writeFile(wb, `최종입금_지역별_${ensureWeek()}.xlsx`);
+    showToast(`지역별 엑셀 저장 · ${ordered.length}개 정산서 · 합계 ${formatNumber(grand)}원`);
+  }
+
   // --- 데이터 로딩 ----------------------------------------------------------
 
   async function loadWithdrawals() {
@@ -958,6 +1065,7 @@ const BremFinalDeposit = (function () {
     $('#finalDepositWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     $('#finalDepositReloadBtn')?.addEventListener('click', () => { void reload(); });
     $('#finalDepositExportBtn')?.addEventListener('click', exportExcel);
+    $('#finalDepositRegionExportBtn')?.addEventListener('click', exportRegionExcel);
     $('#finalDepositPartTabs')?.addEventListener('click', event => {
       const btn = event.target?.closest?.('[data-part-slot]');
       if (!btn || btn.disabled) return;
