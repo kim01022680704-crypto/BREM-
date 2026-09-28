@@ -23,6 +23,8 @@ const BremSettlementResultDirect = (function () {
     payoutWaveId: '',
     excludedPartIds: new Set(),
     partSlot: null,
+    // 합산(주 전체) 보기: 배민 부분1+2를 한 주로 합쳐 선정산을 주 전체 한도로 붙인다.
+    combined: false,
     withdrawalsWeek: '',
     _settlementsCache: null
   };
@@ -122,16 +124,31 @@ const BremSettlementResultDirect = (function () {
     if (!host) return;
     const present = new Set((list || []).map(recordSlot));
     const current = ensurePartSlot(list);
-    host.innerHTML = [0, 1, 2, 3].map(slot => {
+    const slotBtns = [0, 1, 2, 3].map(slot => {
       const label = slot ? `부분${slot}` : '전체';
       const count = (list || []).filter(item => recordSlot(item) === slot).length;
-      const active = Number(current) === slot ? ' active' : '';
+      const active = !state.combined && Number(current) === slot ? ' active' : '';
       const disabled = count ? '' : ' disabled';
       return `<button type="button" data-part-slot="${slot}" class="${active.trim()}"${disabled}>${label}${count ? ` ${count}` : ''}</button>`;
     }).join('');
+    // 합산(주 전체): 부분이 2개 이상 있을 때만 의미가 있다. 배민 부분1+2를 한 주로 합쳐 본다.
+    const slotCount = [1, 2, 3].filter(s => present.has(s)).length;
+    const totalCount = (list || []).length;
+    const combinedActive = state.combined ? ' active' : '';
+    const combinedDisabled = slotCount >= 2 ? '' : ' disabled';
+    const combinedBtn = `<button type="button" data-part-slot="combined" class="wr-combined-tab${combinedActive}"${combinedDisabled} title="배민 부분1·2를 주 전체로 합쳐 선정산을 정확히 붙입니다">합산(주 전체)${totalCount ? ` ${totalCount}` : ''}</button>`;
+    host.innerHTML = slotBtns + combinedBtn;
   }
 
   function setPartSlot(slot) {
+    if (String(slot) === 'combined') {
+      state.combined = true;
+      state.settlementId = '';
+      state.excludedPartIds.clear();
+      void refresh(state.platform, { reuseWithdrawals: true });
+      return;
+    }
+    state.combined = false;
     state.partSlot = Number(slot) || 0;
     state.settlementId = '';
     state.excludedPartIds.clear();
@@ -217,6 +234,21 @@ const BremSettlementResultDirect = (function () {
 
     renderWeekButton();
     renderPartTabs('#settlementResultPartTabs', weekPlatformSettlements());
+
+    if (state.combined) {
+      const platformKo = state.platform === 'coupang' ? '쿠팡' : '배민';
+      const combinedList = combinedPlatformSettlements();
+      select.disabled = true;
+      select.innerHTML = `<option value="">합산 보기 (${platformKo} · 부분 전체 ${combinedList.length}건)</option>`;
+      setDeleteButtonsEnabled(false);
+      if (info) {
+        const slots = [...new Set(combinedList.map(recordSlot))].sort().map(s => (s ? `부분${s}` : '전체')).join('+');
+        info.textContent = combinedList.length
+          ? `${formatDate(ensureWeek())}(수) 주 · ${platformKo} ${slots} 합산 · 개별 금액 수정은 부분 탭에서 하세요.`
+          : `${formatDate(ensureWeek())}(수) 주 · ${platformKo} 합산할 부분 정산서가 없습니다.`;
+      }
+      return;
+    }
 
     const list = settlementList();
     const active = currentSettlement();
@@ -358,7 +390,91 @@ const BremSettlementResultDirect = (function () {
     return allDirectSettlements().filter(record => recordMatchesWeek(record, key));
   }
 
+  // 합산 보기 대상: 이 주 · 이 플랫폼의 모든 부분(부분1·2·3) 정산서.
+  function combinedPlatformSettlements() {
+    const week = ensureWeek();
+    return platformSettlements().filter(record => recordMatchesWeek(record, week));
+  }
+
+  // 합산(주 전체) 계산: 배민 부분1+2를 한 주로 합쳐 사람별 1줄로 묶는다.
+  // 선정산·리스·대여는 주 전체 한도(부분1+부분2 합)로 붙어 부분 쪼갬으로 새던 게 사라진다.
+  function computeCombinedRows() {
+    const Cx = Calc();
+    const platformList = combinedPlatformSettlements();
+    if (!platformList.length) return [];
+    const week = ensureWeek();
+    const allWeek = weekSettlementsForAllocation(week);
+    const dateRange = { start: week, end: Cx.weekEndFromStart ? Cx.weekEndFromStart(week) : addDaysKeyLocal(week, 6) };
+    const dailySettlements = window.BremStorage?.settlements?.getAll?.() || [];
+
+    // 부분별로 따로 붙이지 않도록, 주 전체를 한 번에 배분한 뒤 부분들을 이어서 계산한다.
+    const allocation = Cx.allocateWeekWithdrawals(
+      state.withdrawals, week, Cx.buildWeekCapacityMap(allWeek),
+      { dateRange, weekSettlements: allWeek, dailySettlements }
+    );
+    const remain = new Map();
+    const leaseConsumed = new Set();
+    const loanConsumed = new Set();
+    const spill = Cx.buildLeaseLoanSpilloverAllocation(allWeek, {
+      week, withdrawals: state.withdrawals, dateRange, dailySettlements, _allocation: allocation
+    });
+
+    const numericKeys = Cx.NUMERIC_KEYS;
+    const byDriver = new Map();
+    // 부분1 → 부분2 순서로 이어붙여, 앞 부분부터 선정산 한도를 채운다.
+    const ordered = [...platformList].sort((a, b) => {
+      const sa = recordSlot(a); const sb = recordSlot(b);
+      if (sa !== sb) return sa - sb;
+      return String(a.startDate || '').localeCompare(String(b.startDate || ''));
+    });
+    ordered.forEach(settlement => {
+      Cx.computeRows(settlement, {
+        withdrawals: state.withdrawals,
+        weekSettlements: allWeek,
+        dateRange,
+        dailySettlements,
+        _allocation: allocation,
+        _prepaidRemain: remain,
+        _leaseLoanSpill: spill,
+        _leaseConsumed: leaseConsumed,
+        _loanConsumed: loanConsumed
+      }).forEach(row => {
+        const key = row.driverId
+          ? `d:${row.driverId}`
+          : `u:${row.platform}:${row.idLabel}:${row.name}`;
+        const existing = byDriver.get(key);
+        if (!existing) {
+          byDriver.set(key, {
+            ...row,
+            _regions: new Set(row.region ? [row.region] : []),
+            _idLabels: new Set(row.idLabel && row.idLabel !== '-' ? [row.idLabel] : [])
+          });
+          return;
+        }
+        numericKeys.forEach(field => { existing[field] = Number(existing[field] || 0) + Number(row[field] || 0); });
+        if (row.region) existing._regions.add(row.region);
+        if (row.idLabel && row.idLabel !== '-') existing._idLabels.add(row.idLabel);
+        // Z고정은 한 줄이라도 있으면 유지(합산 표기용)
+        if (row.useSheetPayout) existing.useSheetPayout = true;
+      });
+    });
+
+    const rows = [...byDriver.values()].map(row => ({
+      ...row,
+      region: [...row._regions].join(', ') || row.region || '',
+      idLabel: [...row._idLabels].join(' / ') || row.idLabel || '-'
+    }));
+    return Cx.sortByName(rows);
+  }
+
+  function addDaysKeyLocal(startKey, days) {
+    const d = new Date(`${String(startKey).slice(0, 10)}T00:00:00`);
+    d.setDate(d.getDate() + Number(days || 0));
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
   function computeRows() {
+    if (state.combined) return computeCombinedRows();
     const settlement = currentSettlement();
     if (!settlement) return [];
     // 선정산은 출금 플랫폼에 먼저, 로스는 그 주 쿠팡+배민(부분 포함) 여유분으로만 넘긴다.
@@ -393,7 +509,7 @@ const BremSettlementResultDirect = (function () {
     // 열린 보조 카드는 정산주 변경 시 함께 갱신한다.
     if (!$('#settlementFinalCard')?.hidden) renderFinal();
     if (!$('#settlementSpilloverCard')?.hidden) renderSpillover();
-    const settlement = currentSettlement();
+    const settlement = state.combined ? (combinedPlatformSettlements()[0] || null) : currentSettlement();
     const colspan = columns().length;
 
     if (!settlement) {
@@ -470,7 +586,8 @@ const BremSettlementResultDirect = (function () {
     if (col.note) classes.push('settle-col-note');
 
     // BREM프로모션·리스차감·대여차감: 칸 클릭으로 이번 정산서만 금액 수정
-    if ((col.key === 'promo' || col.key === 'leaseFee' || col.key === 'loanFee') && row.driverId && row.settlementId) {
+    // 합산 보기에서는 한 줄이 여러 부분을 합친 것이라 개별 수정을 막는다(부분 탭에서 수정).
+    if (!state.combined && (col.key === 'promo' || col.key === 'leaseFee' || col.key === 'loanFee') && row.driverId && row.settlementId) {
       classes.push('settle-fee-editable');
       const title = col.key === 'promo'
         ? `${col.label} — 클릭하여 수기 입력 (0=없앰)`
@@ -1413,6 +1530,7 @@ const BremSettlementResultDirect = (function () {
 
   function allFinalWeekSettlements() {
     const all = weekDirectSettlements();
+    if (state.combined) return all; // 합산: 그 주 부분1·2 전부(쿠팡+배민)
     const slot = ensurePartSlot(all);
     return all.filter(record => recordSlot(record) === slot);
   }
@@ -1654,11 +1772,47 @@ const BremSettlementResultDirect = (function () {
         _loanConsumed: loanConsumed
       }).forEach(r => rows.push(r));
     });
+
+    // 합산 보기: 배민 부분1+2를 사람별 1줄로 묶는다. 같은 사람이 쿠팡·배민이면 각각 1줄.
+    // 합친 줄은 명세서 반영 때 회차 하나(주 전체)로 나가야 하므로 합성 정산서 id 를 부여한다.
+    const finalList = state.combined ? mergeFinalByDriver(rows, week) : rows;
+
     // 쿠팡 먼저, 그다음 배민, 각 그룹 내 이름순
-    return rows.sort((a, b) => {
+    return finalList.sort((a, b) => {
       if (a.platform !== b.platform) return a.platform === 'coupang' ? -1 : 1;
       return String(a.name).localeCompare(String(b.name), 'ko');
     });
+  }
+
+  // 합산: 사람(+플랫폼)별로 여러 부분 줄을 하나로 합친다.
+  function mergeFinalByDriver(rows, week) {
+    const numericKeys = Calc().NUMERIC_KEYS;
+    const byKey = new Map();
+    rows.forEach(row => {
+      const platform = row.platform === 'coupang' ? 'coupang' : 'baemin';
+      const idKey = row.driverId ? `d:${row.driverId}` : `u:${row.idLabel}:${row.name}`;
+      const key = `${platform}|${idKey}`;
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, {
+          ...row,
+          // 합성 정산서 id: 주·플랫폼·기사 단위로 고정 → 재반영 시 같은 명세서 줄을 덮어쓴다.
+          settlementId: `combined-${platform}-${week}-${row.driverId || row.idLabel || row.name}`,
+          _regions: new Set(row.region ? [row.region] : []),
+          _idLabels: new Set(row.idLabel && row.idLabel !== '-' ? [row.idLabel] : [])
+        });
+        return;
+      }
+      numericKeys.forEach(field => { existing[field] = Number(existing[field] || 0) + Number(row[field] || 0); });
+      if (row.region) existing._regions.add(row.region);
+      if (row.idLabel && row.idLabel !== '-') existing._idLabels.add(row.idLabel);
+      if (row.useSheetPayout) existing.useSheetPayout = true;
+    });
+    return [...byKey.values()].map(row => ({
+      ...row,
+      region: [...row._regions].join(', ') || row.region || '',
+      idLabel: [...row._idLabels].join(' / ') || row.idLabel || '-'
+    }));
   }
 
   function renderWavePicker() {
@@ -1900,9 +2054,13 @@ const BremSettlementResultDirect = (function () {
       })
       || '';
     const partLabels = selected.map(item => partBadge(item) || `${item.startDate}~${item.endDate}`).join(', ');
-    const payoutWaveId = selected.length === 1
-      ? `p${window.BremWeeklySettlement?.recordPartSlot?.(selected[0]) || 1}`
-      : `parts-${selected.length}`;
+    // 합산 반영은 회차를 「week」로 고정한다. 합성 정산서 id(combined-…)와 맞물려
+    // 다시 눌러도 같은 명세서 줄을 덮어쓰고, 사람당 주 1줄로 반영된다.
+    const payoutWaveId = state.combined
+      ? 'week'
+      : (selected.length === 1
+        ? `p${window.BremWeeklySettlement?.recordPartSlot?.(selected[0]) || 1}`
+        : `parts-${selected.length}`);
     const waveLines = [
       `${week}(수) 주 · ${partLabels || '선택 부분'}`,
       periodStart && periodEnd ? `부분 기간 ${periodStart} ~ ${periodEnd}` : '',
@@ -2015,6 +2173,10 @@ const BremSettlementResultDirect = (function () {
       }
       const rowEl = event.target?.closest?.('tr[data-result-row="1"]');
       if (!rowEl || !$('#settlementResultTable')?.contains(rowEl)) return;
+      if (state.combined) {
+        showToast('합산 보기에서는 개별 수정을 할 수 없습니다. 부분1·2 탭에서 수정하세요.');
+        return;
+      }
       const settlementId = String(rowEl.getAttribute('data-settlement-id') || '').trim();
       const driverId = String(rowEl.getAttribute('data-driver-id') || '').trim();
       const platform = String(rowEl.getAttribute('data-platform') || '').trim();
@@ -2034,6 +2196,10 @@ const BremSettlementResultDirect = (function () {
       }
       const rowEl = event.target?.closest?.('tr[data-final-row="1"]');
       if (!rowEl || !$('#settlementFinalTable')?.contains(rowEl)) return;
+      if (state.combined) {
+        showToast('합산 보기에서는 개별 수정을 할 수 없습니다. 부분1·2 탭에서 수정하세요.');
+        return;
+      }
       const settlementId = String(rowEl.getAttribute('data-settlement-id') || '').trim();
       const driverId = String(rowEl.getAttribute('data-driver-id') || '').trim();
       const platform = String(rowEl.getAttribute('data-platform') || '').trim();
@@ -2090,6 +2256,7 @@ const BremSettlementResultDirect = (function () {
       state.platform = next;
       state.settlementId = '';
       state.partSlot = null;
+      state.combined = false;
       state.viewMode = 'platform';
       const mainCard = $('#settlementResultMainCard');
       const finalCard = $('#settlementFinalCard');
