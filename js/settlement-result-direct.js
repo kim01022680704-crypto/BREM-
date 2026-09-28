@@ -251,8 +251,6 @@ const BremSettlementResultDirect = (function () {
     }
 
     const list = settlementList();
-    const active = currentSettlement();
-    state.settlementId = active?.id || '';
 
     if (!list.length) {
       select.innerHTML = '<option value="">저장된 정산서 없음</option>';
@@ -271,20 +269,31 @@ const BremSettlementResultDirect = (function () {
       return;
     }
 
+    if (state.settlementId && !list.some(item => item.id === state.settlementId)) {
+      state.settlementId = '';
+    }
+    const active = state.settlementId ? currentSettlement() : null;
+    const slotName = Number(state.partSlot) ? `부분${state.partSlot}` : '전체';
     select.disabled = false;
-    setDeleteButtonsEnabled(true);
-    select.innerHTML = list
-      .map(item => `<option value="${escapeHtml(item.id)}"${item.id === state.settlementId ? ' selected' : ''}>${escapeHtml(settlementOptionLabel(item))}</option>`)
-      .join('');
+    setDeleteButtonsEnabled(Boolean(state.settlementId));
+    select.innerHTML = `<option value="">${escapeHtml(`${slotName} 합계 ${list.length}건`)}</option>`
+      + list.map(item => `<option value="${escapeHtml(item.id)}"${item.id === state.settlementId ? ' selected' : ''}>${escapeHtml(settlementOptionLabel(item))}</option>`).join('');
 
     const weekInput = $('#settlementResultWeek');
-    if (weekInput) weekInput.value = settlementWeek(active);
+    if (weekInput && (active || list[0])) weekInput.value = settlementWeek(active || list[0]);
 
-    if (info && active) {
-      const file = active.fileName ? ` · 파일 ${active.fileName}` : '';
-      const part = partBadge(active);
-      const partText = part ? ` · ${part}` : '';
-      info.textContent = `기간 ${formatDate(active.startDate)} ~ ${formatDate(active.endDate)} · 정산주 ${formatDate(settlementWeek(active))}(수)${partText}${file}`;
+    if (info) {
+      if (!active) {
+        const range = Calc().partDateRange?.(list) || {};
+        info.textContent = `${formatDate(state.week)}(수) 주 · ${slotName} ${list.length}건 합계`
+          + (range.start ? ` · ${formatDate(range.start)} ~ ${formatDate(range.end)}` : '')
+          + ' · 지역을 고르면 그 정산서만 봅니다.';
+      } else {
+        const file = active.fileName ? ` · 파일 ${active.fileName}` : '';
+        const part = partBadge(active);
+        const partText = part ? ` · ${part}` : '';
+        info.textContent = `기간 ${formatDate(active.startDate)} ~ ${formatDate(active.endDate)} · 정산주 ${formatDate(settlementWeek(active))}(수)${partText}${file}`;
+      }
     }
   }
 
@@ -473,8 +482,68 @@ const BremSettlementResultDirect = (function () {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
+  // 전체·부분 탭의 기본 화면. 그 슬롯의 지역을 한 번에 모아 선정산 합계를 보여 준다.
+  function computeSlotRows() {
+    const Cx = Calc();
+    const platformList = settlementList();
+    if (!platformList.length) return [];
+    const week = ensureWeek();
+    const allWeek = weekSettlementsForAllocation(week);
+    const dateRange = Cx.partDateRange?.(platformList) || {};
+    const dailySettlements = window.BremStorage?.settlements?.getAll?.() || [];
+    const allocation = Cx.allocateWeekWithdrawals(
+      state.withdrawals, week, Cx.buildWeekCapacityMap(allWeek),
+      { dateRange, weekSettlements: allWeek, dailySettlements }
+    );
+    const remain = new Map();
+    const leaseConsumed = new Set();
+    const loanConsumed = new Set();
+    const spill = Cx.buildLeaseLoanSpilloverAllocation(allWeek, {
+      week, withdrawals: state.withdrawals, dateRange, dailySettlements, _allocation: allocation
+    });
+    const numericKeys = Cx.NUMERIC_KEYS;
+    const byDriver = new Map();
+    platformList.forEach(settlement => {
+      Cx.computeRows(settlement, {
+        withdrawals: state.withdrawals,
+        weekSettlements: allWeek,
+        dateRange,
+        dailySettlements,
+        _allocation: allocation,
+        _prepaidRemain: remain,
+        _leaseLoanSpill: spill,
+        _leaseConsumed: leaseConsumed,
+        _loanConsumed: loanConsumed
+      }).forEach(row => {
+        const key = row.driverId
+          ? `d:${row.driverId}`
+          : `u:${row.platform}:${row.idLabel}:${row.name}`;
+        const existing = byDriver.get(key);
+        if (!existing) {
+          byDriver.set(key, {
+            ...row,
+            _regions: new Set(row.region ? [row.region] : []),
+            _idLabels: new Set(row.idLabel && row.idLabel !== '-' ? [row.idLabel] : [])
+          });
+          return;
+        }
+        numericKeys.forEach(field => { existing[field] = Number(existing[field] || 0) + Number(row[field] || 0); });
+        if (row.region) existing._regions.add(row.region);
+        if (row.idLabel && row.idLabel !== '-') existing._idLabels.add(row.idLabel);
+        if (row.useSheetPayout) existing.useSheetPayout = true;
+      });
+    });
+    const rows = [...byDriver.values()].map(row => ({
+      ...row,
+      region: [...row._regions].join(', ') || row.region || '',
+      idLabel: [...row._idLabels].join(' / ') || row.idLabel || '-'
+    }));
+    return Cx.sortByName(rows);
+  }
+
   function computeRows() {
     if (state.combined) return computeCombinedRows();
+    if (!state.settlementId) return computeSlotRows();
     const settlement = currentSettlement();
     if (!settlement) return [];
     // 선정산은 출금 플랫폼에 먼저, 로스는 그 주 쿠팡+배민(부분 포함) 여유분으로만 넘긴다.
@@ -547,6 +616,16 @@ const BremSettlementResultDirect = (function () {
         // 선정산(처리완료)은 이 플랫폼에서 실제 출금한 금액을 그대로 공제한다.
         // 다 못 빼면 총지급액이 음수로 표기된다. 플랫폼 미지정 출금은 반영 못 하므로 알린다.
         const platformLabelKo = state.platform === 'coupang' ? '쿠팡' : '배민';
+        const slotName = Number(state.partSlot) ? `부분${state.partSlot}` : '전체';
+        let prepaidScope = formatNumber(totals.prepaid);
+        if (!state.combined && state.settlementId) {
+          const slotPrepaid = Calc().sumRows(computeSlotRows()).prepaid;
+          prepaidScope = `${formatNumber(totals.prepaid)} · ${slotName} 합계 ${formatNumber(slotPrepaid)}`;
+        } else if (!state.combined) {
+          prepaidScope = `${slotName} 합계 ${formatNumber(totals.prepaid)}`;
+        } else {
+          prepaidScope = `합산 ${formatNumber(totals.prepaid)}`;
+        }
         const negative = Number(totals.negativeNetCount || 0);
         const untagged = Number(totals.untaggedWithdrawalCount || 0);
         const notes = [];
@@ -562,7 +641,7 @@ const BremSettlementResultDirect = (function () {
           ? ` · <span class="muted-inline">총지급액 음수 <strong>${negativeCount}</strong>명 — 「마이너스 일괄 맞추기」로 0원 처리 가능</span>`
           : '';
         summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
-          + ` <span class="muted-inline">(BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · ${platformLabelKo} 선정산(처리완료) ${formatNumber(totals.prepaid)} · 리스차감 ${formatNumber(totals.leaseFee)} · 대여차감 ${formatNumber(totals.loanFee)})</span>`
+          + ` <span class="muted-inline">(BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · ${platformLabelKo} 선정산(처리완료) ${prepaidScope} · 리스차감 ${formatNumber(totals.leaseFee)} · 대여차감 ${formatNumber(totals.loanFee)})</span>`
           + extraNote + negNote;
       }
 
@@ -587,7 +666,7 @@ const BremSettlementResultDirect = (function () {
 
     // BREM프로모션·리스차감·대여차감: 칸 클릭으로 이번 정산서만 금액 수정
     // 합산 보기에서는 한 줄이 여러 부분을 합친 것이라 개별 수정을 막는다(부분 탭에서 수정).
-    if (!state.combined && (col.key === 'promo' || col.key === 'leaseFee' || col.key === 'loanFee') && row.driverId && row.settlementId) {
+    if (!state.combined && state.settlementId && (col.key === 'promo' || col.key === 'leaseFee' || col.key === 'loanFee') && row.driverId && row.settlementId) {
       classes.push('settle-fee-editable');
       const title = col.key === 'promo'
         ? `${col.label} — 클릭하여 수기 입력 (0=없앰)`

@@ -425,37 +425,99 @@ const BremDirectSettlementCalc = (function () {
   }
 
   /**
+   * 이 기간이 출금을 품는지.
+   * 기간 안이면 포함. 주 시작을 덮는 정산서는 그 주보다 앞선 같은 주 출금도,
+   * 주 끝을 덮는 정산서는 그 주보다 늦은 같은 주 출금도 포함한다.
+   * 금액은 하루 정산 한도로 자르지 않는다.
+   */
+  function rangeCoversWithdrawal(row, range, weekKey) {
+    const start = String(range?.start || '').slice(0, 10);
+    const end = String(range?.end || start).slice(0, 10);
+    if (!start) return false;
+    const week = String(weekKey || '').slice(0, 10);
+    const weekEndKey = week ? addDaysKey(week, 6) : '';
+    const coversWeekEnd = Boolean(weekEndKey) && end >= weekEndKey;
+    const coversWeekStart = Boolean(week) && start <= week;
+    if (isHoldPrepaidRow(row)) {
+      return inDateRange(String(row.weekStart || week).slice(0, 10), start, end);
+    }
+    if (withdrawalMatchesPartPeriod(row, start, end)) return true;
+    const rowWeek = String(row.weekStart || week).slice(0, 10);
+    const period = withdrawalPeriodGuess(row)
+      || String(row.requestDate || row.createdAt || '').slice(0, 10);
+    if (!week || rowWeek !== week || !period) return false;
+    if (coversWeekEnd && period > end) return true;
+    if (coversWeekStart && period < start) return true;
+    return false;
+  }
+
+  function driverKeysOnSettlements(settlements) {
+    const keys = new Set();
+    (Array.isArray(settlements) ? settlements : []).forEach(settlement => {
+      (Array.isArray(settlement?.riders) ? settlement.riders : []).forEach(rider => {
+        const key = canonicalDriverKey(String(rider?.matchedRiderId || '').trim());
+        if (key) keys.add(key);
+      });
+    });
+    return keys;
+  }
+
+  // 같은 플랫폼·같은 기간 정산서를 하나의 슬롯으로 묶는다.
+  function platformSlotRanges(weekSettlements, platform, weekKey) {
+    const groups = new Map();
+    (Array.isArray(weekSettlements) ? weekSettlements : []).forEach(settlement => {
+      if (settlementPlatform(settlement) !== platform) return;
+      const range = recordDateRange(settlement);
+      if (!range.start) return;
+      const id = `${range.start}|${range.end}`;
+      if (!groups.has(id)) groups.set(id, { start: range.start, end: range.end, files: [] });
+      groups.get(id).files.push(settlement);
+    });
+    return [...groups.values()].map(group => ({
+      start: group.start,
+      end: group.end,
+      keys: driverKeysOnSettlements(group.files)
+    }));
+  }
+
+  // 출금 1건은 그 플랫폼의 슬롯 중 정확히 하나에만 붙인다.
+  // 기간에 기사가 있으면 그 슬롯. 없으면 기사가 있는 슬롯(기간이 빠른 쪽)에 붙여
+  // 부분 합이 주 전체 출금과 같아지게 한다.
+  function owningSlotRange(row, ranges, weekKey) {
+    const key = canonicalDriverKey(String(row?.driverId || '').trim());
+    if (!key) return null;
+    const list = Array.isArray(ranges) ? ranges : [];
+    const natural = list.filter(range => range.keys.has(key) && rangeCoversWithdrawal(row, range, weekKey));
+    const strict = natural.filter(range => (
+      isHoldPrepaidRow(row) || withdrawalMatchesPartPeriod(row, range.start, range.end)
+    ));
+    const pool = strict.length ? strict : natural;
+    if (pool.length) {
+      pool.sort((a, b) => {
+        if (a.end !== b.end) return a.end < b.end ? -1 : 1;
+        if (a.start !== b.start) return a.start < b.start ? -1 : 1;
+        return 0;
+      });
+      return pool[0];
+    }
+    const having = list.filter(range => range.keys.has(key));
+    having.sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : (a.end < b.end ? -1 : 1)));
+    return having[0] || null;
+  }
+
+  /**
    * 부분 기간의 선정산은 「그 날짜 일정산」에 해당하는 출금만 쓴다.
    * 신청일 전날 = 일정산 period. 16~20 부분이면 신청 17~21일만, 22일 출금은 부분2.
-   * 일정산 금액이 있으면 그 구간 한도를 넘기지 않는다.
+   * 주 전체를 덮으면 그 주보다 이르거나 늦은 같은 주 출금도 포함한다.
+   * 출금 원금은 그대로 둔다.
    */
   function scopeWithdrawalsToDateRange(withdrawals, range, options = {}) {
     const start = String(range?.start || '').slice(0, 10);
     const end = String(range?.end || start).slice(0, 10);
     const list = Array.isArray(withdrawals) ? withdrawals : [];
     if (!start) return list;
-
     const weekKey = String(options.week || '').slice(0, 10);
-    const weekEndKey = weekKey ? addDaysKey(weekKey, 6) : '';
-    // 이 정산서 기간이 그 주 마지막 날(화)까지 덮으면 전체 주(또는 마지막 부분)이다.
-    // 이때는 신청이 늦어(그 주 종료일 이후) 「신청일 −1」규칙 때문에 기간 밖으로 밀린
-    // 같은 주 출금도 선정산에 포함해야, 선정산이 통째로 누락돼 이중지급되는 일을 막는다.
-    const coversWeekEnd = Boolean(weekEndKey) && end >= weekEndKey;
-    const daily = Array.isArray(options.dailySettlements)
-      ? options.dailySettlements
-      : loadDailySettlementsInRange(start, end);
-
-    const pools = new Map();
-    daily.forEach(row => {
-      const day = String(row.period || '').slice(0, 10);
-      const amount = dailySettlementAmount(row);
-      const driverId = String(row.driverId || '').trim();
-      if (!day || !driverId || amount <= 0 || !inDateRange(day, start, end)) return;
-      const key = driverPlatKey(driverId, row.platform);
-      const prev = pools.get(key) || 0;
-      pools.set(key, prev + amount);
-    });
-
+    const active = { start, end };
     const pending = [];
     const out = [];
     list.forEach(row => {
@@ -465,53 +527,16 @@ const BremDirectSettlementCalc = (function () {
       }
       const amount = Math.max(0, Math.round(Number(row.amount || 0)));
       if (amount <= 0) return;
-      if (isHoldPrepaidRow(row)) {
-        if (inDateRange(String(row.weekStart || weekKey).slice(0, 10), start, end)) out.push(row);
-        return;
-      }
-      if (!withdrawalMatchesPartPeriod(row, start, end)) {
-        // 그 주 종료일 이후 늦게 신청된 같은 주(weekStart 일치) 출금은,
-        // 그 주 마지막 날까지 덮는 정산서(전체/마지막 부분)에 한해 선정산으로 포함한다.
-        const rowWeek = String(row.weekStart || weekKey).slice(0, 10);
-        const period = withdrawalPeriodGuess(row)
-          || String(row.requestDate || row.createdAt || '').slice(0, 10);
-        const isLateSameWeek = coversWeekEnd && weekKey && rowWeek === weekKey
-          && Boolean(period) && period > end;
-        if (!isLateSameWeek) return;
-      }
+      if (!rangeCoversWithdrawal(row, active, weekKey)) return;
       pending.push(row);
     });
-
     pending.sort((a, b) => {
       const ad = String(a.requestDate || a.createdAt || '');
       const bd = String(b.requestDate || b.createdAt || '');
       if (ad !== bd) return ad.localeCompare(bd);
       return String(a.id || '').localeCompare(String(b.id || ''));
     });
-
-    pending.forEach(row => {
-      const amount = Math.max(0, Math.round(Number(row.amount || 0)));
-      const key = driverPlatKey(row.driverId, row.platform);
-      const hasPool = pools.has(key);
-      let take = amount;
-      if (hasPool) {
-        const room = Math.max(0, Math.round(Number(pools.get(key) || 0)));
-        take = Math.min(amount, room);
-        pools.set(key, room - take);
-      }
-      if (take <= 0) return;
-      if (take === amount) {
-        out.push(row);
-        return;
-      }
-      const prefer = normalizeWithdrawalPlatform(row.platform) || 'baemin';
-      const fee = withdrawalRowFee(row, prefer);
-      out.push({
-        ...row,
-        amount: take,
-        feeAmount: Math.round(fee * (take / amount))
-      });
-    });
+    pending.forEach(row => out.push(row));
     return out;
   }
 
@@ -560,9 +585,11 @@ const BremDirectSettlementCalc = (function () {
   }
 
   /**
-   * 1) 선정산은 출금 플랫폼에 먼저 붙인다. 배민 출금→배민, 쿠팡 출금→쿠팡.
-   * 2) 한도를 넘는 로스만, 반대쪽에 여유가 있을 때 넘긴다.
-   * 3) 넘기지 못한 초과분은 그 플랫폼 행에도 붙이지 않는다.
+   * 선정산은 출금 플랫폼 그대로 전액을 붙인다.
+   * 배민 출금은 배민, 쿠팡 출금은 쿠팡. 한도로 자르거나 반대 플랫폼으로 넘기지 않는다.
+   * 그래서 쿠팡 전체 = 쿠팡 합산 = 그 주 쿠팡 일출금,
+   * 배민 부분1+부분2 = 배민 합산 = 그 주 배민 일출금이 된다.
+   * 지급액보다 크면 총지급액은 음수로 남긴다.
    */
   function allocateWeekWithdrawals(withdrawals, week, capacityMap, options = {}) {
     const weekKey = String(week || '').slice(0, 10);
@@ -570,47 +597,30 @@ const BremDirectSettlementCalc = (function () {
     const range = options.dateRange && options.dateRange.start
       ? options.dateRange
       : partDateRange(options.weekSettlements || []);
-    if (range.start) {
-      list = scopeWithdrawalsToDateRange(list, range, {
-        week: weekKey,
-        dailySettlements: options.dailySettlements
+    const activeStart = String(range.start || '').slice(0, 10);
+    const activeEnd = String(range.end || activeStart).slice(0, 10);
+    const weekSettlements = options.weekSettlements || [];
+    const rangesByPlatform = {
+      coupang: platformSlotRanges(weekSettlements, 'coupang', weekKey),
+      baemin: platformSlotRanges(weekSettlements, 'baemin', weekKey)
+    };
+    if (activeStart) {
+      list = list.filter(row => {
+        if (String(row.status || '') !== 'completed') return true;
+        const amount = Math.max(0, Math.round(Number(row.amount || 0)));
+        if (amount <= 0) return false;
+        const platform = normalizeWithdrawalPlatform(row.platform);
+        const slots = platform ? rangesByPlatform[platform] : null;
+        const exact = slots && slots.find(slot => slot.start === activeStart && slot.end === activeEnd);
+        if (exact) {
+          const owner = owningSlotRange(row, slots, weekKey);
+          return Boolean(owner && owner.start === activeStart && owner.end === activeEnd);
+        }
+        return rangeCoversWithdrawal(row, { start: activeStart, end: activeEnd }, weekKey);
       });
     }
     const stamped = buildWeekPrepaidByPlatform(list, weekKey);
     stamped.unattachedAmount = Math.max(0, Math.round(Number(stamped.unattachedAmount || 0)));
-    const presence = buildWeekPlatformPresence(options.weekSettlements || []);
-    const cap = capacityMap instanceof Map ? capacityMap : new Map();
-    stamped.forEach((slice, key) => {
-      const has = presence.get(key) || { coupang: false, baemin: false };
-      const room = {
-        coupang: Math.max(0, Math.round(Number((cap.get(key) || {}).coupang || 0))),
-        baemin: Math.max(0, Math.round(Number((cap.get(key) || {}).baemin || 0)))
-      };
-      const next = {
-        coupang: {
-          prepaid: Math.max(0, Math.round(Number(slice.coupang.prepaid || 0))),
-          fee: Math.max(0, Math.round(Number(slice.coupang.fee || 0)))
-        },
-        baemin: {
-          prepaid: Math.max(0, Math.round(Number(slice.baemin.prepaid || 0))),
-          fee: Math.max(0, Math.round(Number(slice.baemin.fee || 0)))
-        }
-      };
-      ['coupang', 'baemin'].forEach(p => {
-        const other = p === 'coupang' ? 'baemin' : 'coupang';
-        if (!has[p] || !has[other]) return;
-        const loss = Math.max(0, usedSlice(next[p]) - room[p]);
-        const surplus = Math.max(0, room[other] - usedSlice(next[other]));
-        if (loss <= 0 || surplus <= 0) return;
-        movePrepaidSlice(next[p], next[other], Math.min(loss, surplus));
-      });
-      ['coupang', 'baemin'].forEach(p => {
-        const cut = clampSliceToRoom(next[p], room[p]);
-        if (cut > 0) stamped.unattachedAmount = Math.max(0, Number(stamped.unattachedAmount || 0)) + cut;
-      });
-      slice.coupang = next.coupang;
-      slice.baemin = next.baemin;
-    });
     return stamped;
   }
 
@@ -1180,7 +1190,8 @@ const BremDirectSettlementCalc = (function () {
       let prepaid = 0;
       let dailySettlementFee = 0;
       if (key) {
-        const taken = takePrepaidForRow(remain, key, platform, base.capacity);
+        // 지급 한도로 선정산을 자르지 않는다. 출금 전액이 공제되고, 부족하면 총지급액이 음수다.
+        const taken = takePrepaidForRow(remain, key, platform, Number.MAX_SAFE_INTEGER);
         prepaid = taken.prepaid;
         dailySettlementFee = taken.fee;
       }
