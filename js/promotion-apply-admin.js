@@ -543,6 +543,18 @@ const BremPromotionApplyAdmin = (function () {
     } else {
       select.value = '';
     }
+    if (platform === 'baemin') fillSecondPartSelect('promotionApplySettlementSelect2-baemin', options);
+  }
+
+  // 부분1·2 직접 선택용 두 번째 배민 정산서 목록을 채운다(같은 옵션).
+  function fillSecondPartSelect(id, options) {
+    const sel = $(`#${id}`);
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = ['<option value="">합칠 부분2 정산서 선택</option>']
+      .concat(options.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`))
+      .join('');
+    sel.value = (prev && options.some(item => item.id === prev)) ? prev : '';
   }
 
   function renderCombinedSettlementSelects() {
@@ -572,6 +584,7 @@ const BremPromotionApplyAdmin = (function () {
       } else {
         select.value = '';
       }
+      if (platform === 'baemin') fillSecondPartSelect('promotionApplySettlementSelect2-combined-baemin', options);
     });
   }
 
@@ -964,10 +977,17 @@ const BremPromotionApplyAdmin = (function () {
           }
           : { ignoreMissingRates, rainApply, assignmentMode, ...combinedMeta };
 
-        // 배민 부분1·2 합산 콜수 옵션: 같은 지역 배민 부분 정산서를 사람별로 합쳐 계산한다.
-        const baeminForCalc = $('#promotionApplyCombineParts-combined-baemin')?.checked
-          ? BremPromotionApply.mergeRegionPartSettlements(baeminSettlement, { channel: baeminChannel })
-          : baeminSettlement;
+        // 배민 부분1·2 합산: 두 번째로 고른 배민 정산서를 사람별로 합쳐 계산한다.
+        let baeminForCalc = baeminSettlement;
+        if ($('#promotionApplyCombineParts-combined-baemin')?.checked) {
+          const id2 = $('#promotionApplySettlementSelect2-combined-baemin')?.value || '';
+          const second = id2 ? BremStorage.weeklySettlements.getById(id2, baeminChannel) : null;
+          if (!second) {
+            showToast('합칠 배민 부분2 정산서를 선택하세요.');
+            return;
+          }
+          baeminForCalc = BremPromotionApply.mergePartSettlementsList([baeminSettlement, second], baeminSettlement);
+        }
         state.lastResult = BremPromotionApply.applyPromotionToCombinedSettlements(
           coupangSettlement,
           baeminForCalc,
@@ -1007,10 +1027,17 @@ const BremPromotionApplyAdmin = (function () {
           }
         }
 
-        // 배민 부분1·2 합산 콜수 옵션.
-        const settlementForCalc = (platform === 'baemin' && $('#promotionApplyCombineParts-baemin')?.checked)
-          ? BremPromotionApply.mergeRegionPartSettlements(settlement, { channel: state.channel })
-          : settlement;
+        // 배민 부분1·2 합산: 두 번째로 고른 배민 정산서를 사람별로 합쳐 계산한다.
+        let settlementForCalc = settlement;
+        if (platform === 'baemin' && $('#promotionApplyCombineParts-baemin')?.checked) {
+          const id2 = $('#promotionApplySettlementSelect2-baemin')?.value || '';
+          const second = id2 ? BremStorage.weeklySettlements.getById(id2, state.channel) : null;
+          if (!second) {
+            showToast('합칠 배민 부분2 정산서를 선택하세요.');
+            return;
+          }
+          settlementForCalc = BremPromotionApply.mergePartSettlementsList([settlement, second], settlement);
+        }
         state.lastResult = BremPromotionApply.applyPromotionToSettlement(
           settlementForCalc,
           ruleIds,
@@ -1256,6 +1283,16 @@ const BremPromotionApplyAdmin = (function () {
         renderCombinedSettlementSelects();
       });
     });
+
+    // 부분1·2 직접 선택 합산 토글: 두 번째 배민 정산서 선택칸을 보이고 숨긴다.
+    [['promotionApplyCombineParts-baemin', 'promotionApplySettlementSelect2Wrap-baemin'],
+     ['promotionApplyCombineParts-combined-baemin', 'promotionApplySettlementSelect2Wrap-combined-baemin']]
+      .forEach(([cbId, wrapId]) => {
+        $(`#${cbId}`)?.addEventListener('change', event => {
+          const wrap = $(`#${wrapId}`);
+          if (wrap) wrap.hidden = !event.target.checked;
+        });
+      });
 
     $('#promotionApplyForm')?.addEventListener('submit', event => {
       // 일반 계산은 무시 옵션을 끈다. 패널 버튼으로만 켠다.

@@ -1877,9 +1877,7 @@ const BremPromotionApply = (function () {
     XLSX.writeFile(workbook, `프로모션적용_${weekKey}.xlsx`);
   }
 
-  // 배민 부분1·부분2를 콜수 합산으로 계산하기 위한 가상 정산서 병합.
-  // 같은 지역·같은 정산주의 배민 부분 정산서를 사람별로 합쳐(콜수·배달료·지급항목 합산)
-  // 프로모션 구간이 부분 쪼갬 없이 주 전체 콜수로 잡히게 한다.
+  // 배민 부분1·부분2를 콜수 합산으로 계산하기 위한 가상 정산서 병합(자동: 같은 지역).
   function mergeRegionPartSettlements(settlement, options = {}) {
     if (!settlement) return settlement;
     const platform = normalizePlatform(settlement.platform);
@@ -1893,6 +1891,16 @@ const BremPromotionApply = (function () {
       && String(rec.region || '').trim() === region
       && applyWeekWednesday(rec.startDate || rec.baseSettlementDate) === week
     ));
+    if (parts.length <= 1) return settlement;
+    return mergePartSettlementsList(parts, settlement);
+  }
+
+  // 관리자가 직접 고른 배민 정산서 목록(부분1·부분2 등)을 사람별로 합쳐 하나의 가상 정산서로.
+  // 콜수(weeklyOrderCount)·배달료·지급항목을 합산해 프로모션 구간이 주 전체 콜수로 잡히게 한다.
+  function mergePartSettlementsList(settlements, baseSettlement) {
+    const parts = (Array.isArray(settlements) ? settlements : []).filter(Boolean);
+    const settlement = baseSettlement || parts[0];
+    if (!settlement) return settlement;
     if (parts.length <= 1) return settlement;
 
     const numericAmountKeys = new Set();
@@ -1945,6 +1953,7 @@ const BremPromotionApply = (function () {
     applyPromotionToSettlement,
     applyPromotionToCombinedSettlements,
     mergeRegionPartSettlements,
+    mergePartSettlementsList,
     selectedRulesNeedDeliveryFee,
     settlementNeedsDeliveryFee,
     combinedSettlementsNeedDeliveryFee,
