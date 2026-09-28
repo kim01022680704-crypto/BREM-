@@ -13,7 +13,8 @@ const BremFinalDeposit = (function () {
     excludedSettlementIds: new Set(),
     excludedDriverKeys: new Set(),
     payoutWaveId: '',
-    partSlot: null
+    partSlot: null,
+    combined: false
   };
 
   function escapeHtml(value) {
@@ -83,17 +84,25 @@ const BremFinalDeposit = (function () {
     if (!host) return;
     const list = weekSettlementsAll();
     const current = ensurePartSlot(list);
-    host.innerHTML = [0, 1, 2, 3].map(slot => {
+    const slotBtns = [0, 1, 2, 3].map(slot => {
       const label = slot ? `부분${slot}` : '전체';
       const count = list.filter(item => recordSlot(item) === slot).length;
-      const active = Number(current) === slot ? ' active' : '';
+      const active = !state.combined && Number(current) === slot ? ' active' : '';
       const disabled = count ? '' : ' disabled';
       return `<button type="button" data-part-slot="${slot}" class="${active.trim()}"${disabled}>${label}${count ? ` ${count}` : ''}</button>`;
     }).join('');
+    const combinedActive = state.combined ? ' active' : '';
+    const combinedDisabled = list.length ? '' : ' disabled';
+    host.innerHTML = `${slotBtns}<button type="button" data-part-slot="combined" class="wr-combined-tab${combinedActive}"${combinedDisabled}>합산(주 전체)${list.length ? ` ${list.length}` : ''}</button>`;
   }
 
   function setPartSlot(slot) {
-    state.partSlot = Number(slot) || 0;
+    if (String(slot) === 'combined') {
+      state.combined = true;
+    } else {
+      state.combined = false;
+      state.partSlot = Number(slot) || 0;
+    }
     state.excludedSettlementIds.clear();
     state.excludedDriverKeys.clear();
     void refresh();
@@ -103,6 +112,7 @@ const BremFinalDeposit = (function () {
   // 부분1·2·3은 같은 부분끼리만 합친다.
   function weekSettlements() {
     const list = weekSettlementsAll();
+    if (state.combined) return list;
     const slot = ensurePartSlot(list);
     return list.filter(record => recordSlot(record) === slot);
   }
@@ -127,6 +137,7 @@ const BremFinalDeposit = (function () {
     state.excludedDriverKeys.clear();
     state.payoutWaveId = '';
     state.partSlot = null;
+    state.combined = false;
     void refresh();
   }
 
@@ -157,8 +168,11 @@ const BremFinalDeposit = (function () {
     const list = weekSettlements();
     if (rangeEl) {
       const total = allSettlements().length;
+      const viewLabel = state.combined
+        ? `합산(주 전체) ${list.length}건 · 이미 반영된 입금은 총지급에서 뺍니다`
+        : `${Number(state.partSlot) ? `부분${state.partSlot}` : '전체'} ${list.length}건`;
       rangeEl.textContent = list.length
-        ? `정산주 ${formatDate(ensureWeek())}(수) · ${Number(state.partSlot) ? `부분${state.partSlot}` : '전체'} ${list.length}건`
+        ? `정산주 ${formatDate(ensureWeek())}(수) · ${viewLabel}`
         : `${formatDate(ensureWeek())}(수) 주에 저장된 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요. (전체 ${total}건)`;
     }
 
@@ -294,7 +308,13 @@ const BremFinalDeposit = (function () {
       regionLabel: [...row.regions].join(', ') || '-',
       checked: allDrivers ? true : !state.excludedDriverKeys.has(row.key)
     }));
-    return Calc().sortByName(rows);
+    const sorted = Calc().sortByName(rows);
+    if (!state.combined || typeof Calc().applyAlreadyPaidDeposits !== 'function') return sorted;
+    return Calc().applyAlreadyPaidDeposits(
+      sorted,
+      window.BremStorage?.payrollSlipLines?.getAll?.() || [],
+      ensureWeek()
+    );
   }
 
   /** 정산서에 적힌 라이더 칸 수(파일·지역 합, 같은 사람 중복 가능) */
@@ -772,7 +792,8 @@ const BremFinalDeposit = (function () {
     const weekLabel = formatDate(ensureWeek());
 
     if (!window.confirm(
-      `${weekLabel}(수) 주 최종입금 엑셀 — 화면에서 체크된 ${rows.length}명 · 플랫폼별 각각 입금\n\n`
+      `${weekLabel}(수) 주 최종입금 엑셀 — ${state.combined ? '합산(주 전체) · ' : ''}화면에서 체크된 ${rows.length}명 · 플랫폼별 각각 입금\n`
+      + (state.combined ? '이미 급여명세서로 나간 기입금은 입금액에서 빠져 있습니다. 마이너스는 이체 목록에 넣지 않습니다.\n\n' : '\n')
       + `· 정산서 ${weekList.length}건 · 파일 라이더칸 합 ${slotCount}\n`
       + `· 「입금」: ${allPeople.length}건 (확인용, 계좌 없는 행 포함)\n`
       + `· 「입금_이체가능」: ${ready.length}건 (정산서 아이디 = 기사정보 아이디인 행만)\n`

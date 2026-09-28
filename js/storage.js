@@ -1592,9 +1592,9 @@ const BremStorage = (function () {
       KEYS.settlementUnmatchedDirect
     ],
     'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
-    'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts],
+    'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts, KEYS.payrollSlipLines],
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
-    'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts],
+    'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts, KEYS.payrollSlipLines],
     'tax-management': [KEYS.drivers, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'inactive-drivers': [KEYS.drivers],

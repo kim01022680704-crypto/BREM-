@@ -5325,6 +5325,7 @@
           <button type="button" class="promotion-tab" id="settlementFinalTabBtn" title="그 주 전체(쿠팡+배민) 기사를 합치지 않고 나열 + 급여명세서 반영">최종결산</button>
           <button type="button" class="promotion-tab" id="settlementSpilloverTabBtn" title="리스·대여·선정산이 쿠팡/배민에 어떻게 배분됐는지 확인">스필오버</button>
           <button type="button" class="promotion-tab" id="settlementRetroUnpaidTabBtn" title="마이너스 일괄맞추기 소급분·미납잔액. 선택한 건만 차감관리로 이관">소급분 및 미납금</button>
+          <button type="button" class="promotion-tab" id="settlementNegativeTabBtn" title="부분1 입금 뒤 합산이 마이너스인 기사. 체크해서 차감으로 보냅니다">마이너스 정리</button>
         </div>
 
         <article class="card" id="settlementResultMainCard">
@@ -5366,6 +5367,19 @@
             </table>
           </div>
 
+        </article>
+
+        <article class="card" id="settlementNegativeCard" hidden>
+          <div class="card-header">
+            <h2>마이너스 정리</h2>
+            <div class="promotion-form-actions">
+              <button type="button" class="small-btn" id="settlementNegativeReloadBtn">불러오기</button>
+              <button type="button" class="small-btn primary-btn" id="settlementNegativeSendBtn">선택 차감으로 보내기</button>
+            </div>
+          </div>
+          <p class="form-help">이 주 쿠팡·배민 합산에서 이미 급여명세서로 나간 입금을 뺀 뒤, 총지급이 마이너스인 기사만 모읍니다. 체크한 금액은 미납·차감으로 넘어갑니다.</p>
+          <p class="direct-inline-stats" id="settlementNegativeSummary"></p>
+          <div id="settlementNegativeBody"></div>
         </article>
 
         <article class="card" id="settlementResultRetroCard" hidden>
@@ -5558,7 +5572,7 @@
               <input type="hidden" id="finalDepositWeek">
             </div>
           </div>
-          <p class="form-help">고른 정산주의 직계약 정산서를 합칩니다. <strong>전체</strong>는 평소 주정산, <strong>부분1·2·3</strong>은 그 부분끼리만 입금합니다.</p>
+          <p class="form-help">고른 정산주의 직계약 정산서를 합칩니다. <strong>전체</strong>는 평소 주정산, <strong>부분1·2·3</strong>은 그 부분끼리만 입금합니다. <strong>합산(주 전체)</strong>는 쿠팡·배민·부분까지 한 화면이고, 엑셀도 그 화면 그대로 나갑니다. 이미 반영된 입금은 합산 총지급에서 빠집니다.</p>
           <div class="weekly-part-view-tabs" id="finalDepositPartTabs"></div>
           <p class="settlement-week-range-label" id="finalDepositWeekRange"></p>
 
@@ -9295,7 +9309,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260923fast1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20260927req1"></script>
-  <script src="js/storage.js?v=20260927req1"></script>
+  <script src="js/storage.js?v=20260929neg1"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
@@ -9340,9 +9354,9 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260807b"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260905a"></script>
   <script src="js/direct-adjustment-admin.js?v=20260928promo2"></script>
-  <script src="js/direct-settlement-calc.js?v=20260928prepaid1"></script>
-  <script src="js/settlement-result-direct.js?v=20260928prepaid1"></script>
-  <script src="js/final-deposit.js?v=20260928promo1"></script>
+  <script src="js/direct-settlement-calc.js?v=20260929neg1"></script>
+  <script src="js/settlement-result-direct.js?v=20260929neg1"></script>
+  <script src="js/final-deposit.js?v=20260929neg1"></script>
   <script src="js/tax-management-admin.js?v=20260830tax2"></script>
   <script src="js/driver-management-admin.js?v=20260922active1"></script>
   <script src="js/inactive-drivers-admin.js?v=20260922active1"></script>

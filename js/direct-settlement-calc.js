@@ -35,6 +35,7 @@ const BremDirectSettlementCalc = (function () {
     { key: 'callFee', label: '콜수수료', group: 'deduct' },
     { key: 'dailySettlementFee', label: '일정산수수료', group: 'deduct' },
     { key: 'prepaid', label: '선정산(처리완료)', group: 'deduct' },
+    { key: 'alreadyPaid', label: '기입금(반영분)', group: 'deduct' },
     { key: 'leaseFee', label: '리스차감', group: 'deduct' },
     { key: 'loanFee', label: '대여차감', group: 'deduct' },
     { key: 'deductTotal', label: '공제합계', group: 'deduct', strong: true },
@@ -1430,6 +1431,37 @@ const BremDirectSettlementCalc = (function () {
     return totals;
   }
 
+  // 이미 급여명세서로 나간 입금(양수)을 합산 총지급에서 뺀다.
+  // 부분1이 입금된 뒤 같은 주 출금이 부분2에만 있으면, 합산 총지급이 마이너스가 된다.
+  function applyAlreadyPaidDeposits(rows, slipLines, week) {
+    const weekKey = String(week || '').slice(0, 10);
+    const paid = new Map();
+    (Array.isArray(slipLines) ? slipLines : []).forEach(line => {
+      const raw = line?.rawData && typeof line.rawData === 'object' ? line.rawData : {};
+      const payslip = raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : {};
+      const lineWeek = String(raw.settlementWeekStart || payslip.settlementWeekStart || '').slice(0, 10);
+      if (!weekKey || lineWeek !== weekKey) return;
+      const platform = normalizePlatform(raw.platform || payslip.platform);
+      const driverId = String(line?.driverId || payslip.driverId || raw.selectedDriverId || '').trim();
+      const net = Math.round(Number(line?.netPay != null ? line.netPay : payslip.netPay || 0));
+      if (!driverId || !platform || net <= 0) return;
+      const key = `${driverId}|${platform}`;
+      paid.set(key, (paid.get(key) || 0) + net);
+    });
+    return (Array.isArray(rows) ? rows : []).map(row => {
+      const key = `${String(row?.driverId || '').trim()}|${normalizePlatform(row?.platform)}`;
+      const alreadyPaid = Math.max(0, Math.round(Number(paid.get(key) || 0)));
+      if (!alreadyPaid) return { ...row, alreadyPaid: Math.round(Number(row?.alreadyPaid || 0)) };
+      return {
+        ...row,
+        alreadyPaid,
+        deductTotal: Math.round(Number(row.deductTotal || 0)) + alreadyPaid,
+        netPay: Math.round(Number(row.netPay || 0)) - alreadyPaid,
+        useSheetPayout: false
+      };
+    });
+  }
+
   return {
     PROMO_TAX_RATE,
     GROUPS,
@@ -1455,6 +1487,7 @@ const BremDirectSettlementCalc = (function () {
     callFeeUnit,
     resolveRiderCallFee,
     canonicalDriverKey,
+    applyAlreadyPaidDeposits,
     buildWeekPrepaidByPlatform,
     buildWeekCapacityMap,
     allocateWeekWithdrawals,

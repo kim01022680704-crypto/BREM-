@@ -14,6 +14,7 @@ const BremSettlementResultDirect = (function () {
     viewMode: 'platform',
     retroWeekFilter: '',
     retroSearch: '',
+    negativeRows: [],
     finalSearch: '',
     spillFilter: 'crossed',
     // 반영(급여명세서 반영) 안전장치용
@@ -473,7 +474,12 @@ const BremSettlementResultDirect = (function () {
       region: [...row._regions].join(', ') || row.region || '',
       idLabel: [...row._idLabels].join(' / ') || row.idLabel || '-'
     }));
-    return Cx.sortByName(rows);
+    const withPaid = Cx.applyAlreadyPaidDeposits?.(
+      rows,
+      window.BremStorage?.payrollSlipLines?.getAll?.() || [],
+      week
+    ) || rows;
+    return Cx.sortByName(withPaid);
   }
 
   function addDaysKeyLocal(startKey, days) {
@@ -2052,22 +2058,28 @@ const BremSettlementResultDirect = (function () {
   }
 
   function setSettlementView(mode) {
-    const next = mode === 'final' || mode === 'retroUnpaid' || mode === 'spillover' ? mode : 'platform';
+    const next = mode === 'final' || mode === 'retroUnpaid' || mode === 'spillover' || mode === 'negativeList'
+      ? mode
+      : 'platform';
     state.viewMode = next;
     const finalCard = $('#settlementFinalCard');
     const mainCard = $('#settlementResultMainCard');
     const retroCard = $('#settlementResultRetroCard');
     const spillCard = $('#settlementSpilloverCard');
+    const negativeCard = $('#settlementNegativeCard');
     const finalTab = $('#settlementFinalTabBtn');
     const retroTab = $('#settlementRetroUnpaidTabBtn');
     const spillTab = $('#settlementSpilloverTabBtn');
+    const negativeTab = $('#settlementNegativeTabBtn');
     if (mainCard) mainCard.hidden = next !== 'platform';
     if (finalCard) finalCard.hidden = next !== 'final';
     if (retroCard) retroCard.hidden = next !== 'retroUnpaid';
     if (spillCard) spillCard.hidden = next !== 'spillover';
+    if (negativeCard) negativeCard.hidden = next !== 'negativeList';
     if (finalTab) finalTab.classList.toggle('active', next === 'final');
     if (retroTab) retroTab.classList.toggle('active', next === 'retroUnpaid');
     if (spillTab) spillTab.classList.toggle('active', next === 'spillover');
+    if (negativeTab) negativeTab.classList.toggle('active', next === 'negativeList');
     if (next !== 'platform') {
       document.querySelectorAll('[data-admin-platform-tab="settlement-result-direct"]').forEach(btn => btn.classList.remove('active'));
     } else {
@@ -2078,6 +2090,171 @@ const BremSettlementResultDirect = (function () {
     if (next === 'final') renderFinal();
     if (next === 'retroUnpaid') renderRetro();
     if (next === 'spillover') renderSpillover();
+    if (next === 'negativeList') void renderNegativeList();
+  }
+
+  function combinedRowsForPlatform(platform) {
+    const savedPlatform = state.platform;
+    const savedCombined = state.combined;
+    state.platform = platform === 'coupang' ? 'coupang' : 'baemin';
+    state.combined = true;
+    try {
+      return computeCombinedRows();
+    } finally {
+      state.platform = savedPlatform;
+      state.combined = savedCombined;
+    }
+  }
+
+  async function renderNegativeList() {
+    const body = $('#settlementNegativeBody');
+    const summaryEl = $('#settlementNegativeSummary');
+    if (!body) return;
+    await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
+    await loadWithdrawals();
+    const week = ensureWeek();
+    const rows = ['baemin', 'coupang'].flatMap(platform => combinedRowsForPlatform(platform))
+      .filter(row => Math.round(Number(row.netPay || 0)) < 0)
+      .sort((a, b) => Number(a.netPay || 0) - Number(b.netPay || 0));
+    state.negativeRows = rows;
+    const owe = rows.reduce((sum, row) => sum + Math.abs(Math.round(Number(row.netPay || 0))), 0);
+    if (summaryEl) {
+      summaryEl.innerHTML = rows.length
+        ? `${formatDate(week)}(수) 주 · 마이너스 <strong>${rows.length}</strong>명 · 받을 금액 <strong>${formatNumber(owe)}</strong>원`
+        : `${formatDate(week)}(수) 주 · 합산 총지급이 마이너스인 기사가 없습니다.`;
+    }
+    if (!rows.length) {
+      body.innerHTML = '<p class="form-help">이 주는 합산 후 이미 입금된 금액을 빼도 마이너스가 없습니다.</p>';
+      return;
+    }
+    body.innerHTML = `
+      <div class="table-wrap">
+        <table class="weekly-settlement-saved-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="settlementNegativeCheckAll" title="전체 선택"></th>
+              <th>기사</th>
+              <th>플랫폼</th>
+              <th>ID</th>
+              <th>기입금(반영분)</th>
+              <th>선정산</th>
+              <th>총지급액</th>
+              <th>받을 금액</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row, index) => {
+              const oweAmount = Math.abs(Math.round(Number(row.netPay || 0)));
+              return `<tr>
+                <td><input type="checkbox" class="settlement-negative-check" data-negative-index="${index}"></td>
+                <td><strong>${escapeHtml(row.name || '-')}</strong></td>
+                <td>${escapeHtml(row.platform === 'coupang' ? '쿠팡' : '배민')}</td>
+                <td>${escapeHtml(row.idLabel || '-')}</td>
+                <td class="weekly-amount-cell">${formatNumber(row.alreadyPaid)}</td>
+                <td class="weekly-amount-cell">${formatNumber(row.prepaid)}</td>
+                <td class="weekly-amount-cell"><strong>${formatNumber(row.netPay)}</strong></td>
+                <td class="weekly-amount-cell"><strong>${formatNumber(oweAmount)}</strong></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    $('#settlementNegativeCheckAll')?.addEventListener('change', event => {
+      body.querySelectorAll('.settlement-negative-check').forEach(box => {
+        box.checked = event.target.checked;
+      });
+    });
+  }
+
+  async function sendNegativeListToDeduction() {
+    const rows = (state.negativeRows || []).filter((_, index) => (
+      document.querySelector(`.settlement-negative-check[data-negative-index="${index}"]`)?.checked
+    ));
+    if (!rows.length) {
+      showToast('차감으로 보낼 기사를 먼저 체크하세요.');
+      return;
+    }
+    const store = window.BremStorage?.directRetroAdjustments;
+    const ledger = window.BremStorage?.deductionLedger;
+    const pairFn = window.BremAdminLeaseMenus?.createRetroUnpaidPair;
+    if (!store || !ledger || typeof pairFn !== 'function') {
+      showToast('차감 연동을 불러오지 못했습니다. 페이지를 새로고침하세요.');
+      return;
+    }
+    const week = ensureWeek();
+    const total = rows.reduce((sum, row) => sum + Math.abs(Math.round(Number(row.netPay || 0))), 0);
+    const ok = window.confirm(
+      `${rows.length}명 / ${formatNumber(total)}원을 미납·차감으로 보낼까요?\n`
+      + '부분1 입금 뒤 합산이 마이너스인 금액입니다.\n\n'
+      + rows.slice(0, 12).map(row => `· ${row.name} ${formatNumber(Math.abs(Math.round(Number(row.netPay || 0))))}원`).join('\n')
+    );
+    if (!ok) return;
+    const drivers = window.BremStorage?.drivers?.getAll?.() || [];
+    const driverById = new Map(drivers.map(driver => [String(driver.id), driver]));
+    let created = 0;
+    let skipped = 0;
+    for (const row of rows) {
+      const unpaid = Math.abs(Math.round(Number(row.netPay || 0)));
+      const driverId = String(row.driverId || '').trim();
+      const platform = row.platform === 'coupang' ? 'coupang' : 'baemin';
+      if (!driverId || unpaid <= 0) {
+        skipped += 1;
+        continue;
+      }
+      const entryKey = `${driverId}|${platform}`;
+      const sourceRef = `already-paid-overlap:${week}:${entryKey}`;
+      const prev = store.getWeek?.(week)?.[entryKey];
+      if (prev?.status === 'sent_to_deduction' || ledger.findBySource?.('unpaid', sourceRef)) {
+        skipped += 1;
+        continue;
+      }
+      store.add?.(week, [{
+        driverId,
+        name: row.name || '',
+        idLabel: row.idLabel || '',
+        platform,
+        settlementId: row.settlementId || '',
+        amount: unpaid,
+        unpaidBalance: unpaid,
+        prepaid: unpaid,
+        status: 'logged',
+        reason: `${week} 부분1 입금 후 합산 마이너스`
+      }]);
+      const driver = driverById.get(driverId) || null;
+      const result = pairFn({
+        sourceRef,
+        weekStart: week,
+        unpaid,
+        dailyDeduct: unpaid,
+        driverId,
+        driverName: row.name || driver?.name || '',
+        driverPhone: driver?.phone || driver?.mobile || '',
+        reason: `${week} 부분1 입금 후 합산 마이너스`,
+        deductionPlatform: platform,
+        leaseFee: 0,
+        loanFee: 0,
+        prepaid: unpaid
+      });
+      if (!result?.ok) {
+        skipped += 1;
+        continue;
+      }
+      store.updateEntry?.(week, entryKey, {
+        status: 'sent_to_deduction',
+        ledgerId: result.ledger?.id || '',
+        arrearId: result.arrear?.id || ''
+      });
+      created += 1;
+    }
+    try {
+      await window.BremLeaseErp?.persistAll?.({ skipFlushStorage: true });
+    } catch (_err) { /* ignore */ }
+    await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    try {
+      window.BremAdminLeaseMenus?.refresh?.({ loadRemote: false });
+    } catch (_err) { /* ignore */ }
+    showToast(`마이너스 ${created}명을 차감으로 보냈습니다.${skipped ? ` 건너뜀 ${skipped}명` : ''}`);
+    await renderNegativeList();
   }
 
   function toggleFinalView(show) {
@@ -2198,6 +2375,9 @@ const BremSettlementResultDirect = (function () {
     $('#settlementFinalTabBtn')?.addEventListener('click', () => setSettlementView('final'));
     $('#settlementSpilloverTabBtn')?.addEventListener('click', () => setSettlementView('spillover'));
     $('#settlementRetroUnpaidTabBtn')?.addEventListener('click', () => setSettlementView('retroUnpaid'));
+    $('#settlementNegativeTabBtn')?.addEventListener('click', () => setSettlementView('negativeList'));
+    $('#settlementNegativeReloadBtn')?.addEventListener('click', () => { void renderNegativeList(); });
+    $('#settlementNegativeSendBtn')?.addEventListener('click', () => { void sendNegativeListToDeduction(); });
     $('#settlementFinalReloadBtn')?.addEventListener('click', async () => {
       await window.BremStorage.directSettlementAdjustments?.reloadFromServer?.();
       await loadWithdrawals();
