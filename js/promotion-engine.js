@@ -556,16 +556,73 @@ const BremPromotionEngine = (function () {
     return { payPerCall: Number(tier.payPerCall), appliedTier: tier };
   }
 
+  // 구간 단가: 지급 시작~다음 구간 직전까지는 기본 단가, 그 콜수부터는 구간 단가.
+  // 예) 시작 101 · 기본 1,500원 · 301건부터 2,000원 · 총 379건
+  //     101~300건 200건×1,500 + 301~379건 79건×2,000 = 458,000원
+  function calculateStepPay(totalOrders, payStart, baseRate, tiers) {
+    const cuts = [{ from: payStart, rate: baseRate }];
+    (tiers || [])
+      .filter(tier => Number(tier.minCalls) > payStart && Number(tier.payPerCall) > 0)
+      .map(tier => ({ from: Number(tier.minCalls), rate: Number(tier.payPerCall) }))
+      .sort((a, b) => a.from - b.from)
+      .forEach(tier => {
+        if (cuts[cuts.length - 1].from !== tier.from) cuts.push(tier);
+      });
+
+    let basePay = 0;
+    let paidCallCount = 0;
+    const parts = [];
+    const fmt = value => Number(value).toLocaleString('ko-KR');
+    for (let index = 0; index < cuts.length; index += 1) {
+      const from = cuts[index].from;
+      const nextFrom = index + 1 < cuts.length ? cuts[index + 1].from : totalOrders + 1;
+      const end = Math.min(totalOrders, nextFrom - 1);
+      if (end < from) continue;
+      const count = end - from + 1;
+      basePay += count * cuts[index].rate;
+      paidCallCount += count;
+      parts.push(`${fmt(from)}~${fmt(end)}건 ${fmt(count)}건×${fmt(cuts[index].rate)}원`);
+    }
+    return { basePay, paidCallCount, label: parts.join(' · ') };
+  }
+
   function calculateBasePayAmount(rule, riderData) {
     const base = getRuleBase(rule);
     const type = rule.type || 'count_per_order';
     const payStart = Number(base.payStartCallCount ?? 0);
-    const resolved = resolvePayPerCall(rule, riderData.totalOrders);
-    const payPerCall = resolved.payPerCall;
+    const stepMode = String(base.payPerCallTierMode || '') === 'step'
+      && Array.isArray(base.payPerCallTiers)
+      && base.payPerCallTiers.some(tier => Number(tier.minCalls) > 0 && Number(tier.payPerCall) > 0);
 
     if (type === 'guaranteed_unit_price') {
       return { basePay: 0, paidCallCount: 0, guaranteeEligible: true };
     }
+
+    if (stepMode) {
+      const baseRate = Number(base.payPerCall ?? 0);
+      if (baseRate <= 0 || payStart <= 0) {
+        return { basePay: 0, paidCallCount: 0, failureReasons: type === 'count_per_order' ? ['건당 지급 설정 없음'] : [] };
+      }
+      if (Number(riderData.totalOrders || 0) < payStart) {
+        return {
+          basePay: 0,
+          paidCallCount: 0,
+          failureReasons: [`지급 시작 콜수 미달 (${riderData.totalOrders}/${payStart})`]
+        };
+      }
+      const stepped = calculateStepPay(riderData.totalOrders, payStart, baseRate, base.payPerCallTiers);
+      return {
+        basePay: stepped.basePay,
+        paidCallCount: stepped.paidCallCount,
+        appliedPayPerCall: 0,
+        appliedPayPerCallTier: null,
+        payBandLabel: stepped.label,
+        failureReasons: []
+      };
+    }
+
+    const resolved = resolvePayPerCall(rule, riderData.totalOrders);
+    const payPerCall = resolved.payPerCall;
 
     if (payPerCall <= 0 || payStart <= 0) {
       return { basePay: 0, paidCallCount: 0, failureReasons: type === 'count_per_order' ? ['건당 지급 설정 없음'] : [] };
@@ -851,7 +908,9 @@ const BremPromotionEngine = (function () {
     }
 
     // 어느 소급 구간이 적용됐는지 보이지 않으면 금액 검증이 불가능하다.
-    if (basePay > 0 && baseResult.appliedPayPerCallTier) {
+    if (basePay > 0 && baseResult.payBandLabel) {
+      appliedBlockConditions.push({ name: baseResult.payBandLabel });
+    } else if (basePay > 0 && baseResult.appliedPayPerCallTier) {
       const tier = baseResult.appliedPayPerCallTier;
       appliedBlockConditions.push({
         name: `소급 단가 ${Number(tier.minCalls).toLocaleString('ko-KR')}건 달성 → 건당 ${Number(tier.payPerCall).toLocaleString('ko-KR')}원`

@@ -97,8 +97,11 @@ const BremPromotionConditions = (function () {
       payPerCall: Number(raw.payPerCall ?? legacy.payPerCall ?? legacy.payPerOrder ?? 0),
       guaranteedUnitPrice: Number(raw.guaranteedUnitPrice ?? legacy.guaranteedUnitPrice ?? 0),
       callTiers: Array.isArray(raw.callTiers ?? legacy.callTiers) ? raw.callTiers : [],
-      // 소급 단가 구간. 총콜수가 구간에 닿으면 기본 건당 단가를 이 값으로 갈아치운다.
-      // 비어 있으면 기존 규칙과 계산이 완전히 같다.
+      // 소급: 구간에 닿으면 지급 시작부터 전부 그 단가. 구간(step): 그 콜수부터만 그 단가.
+      // 예전 규칙은 모드가 없으면 소급이다.
+      payPerCallTierMode: String(raw.payPerCallTierMode ?? legacy.payPerCallTierMode ?? '') === 'step'
+        ? 'step'
+        : 'retroactive',
       payPerCallTiers: Array.isArray(raw.payPerCallTiers ?? legacy.payPerCallTiers)
         ? (raw.payPerCallTiers ?? legacy.payPerCallTiers)
         : []

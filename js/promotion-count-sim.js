@@ -31,7 +31,10 @@ window.BremPromotionCountSim = (function () {
       type: type || 'count_per_order',
       payStartCallCount,
       payPerCall,
-      payPerCallTiers: tiers
+      payPerCallTiers: tiers,
+      payPerCallTierMode: String(base.payPerCallTierMode ?? source.payPerCallTierMode ?? '') === 'step'
+        ? 'step'
+        : 'retroactive'
     };
   }
 
@@ -64,6 +67,36 @@ window.BremPromotionCountSim = (function () {
         remainToStart: payStart - calls,
         started: false,
         appliedTier: resolved.appliedTier
+      };
+    }
+    if (config.payPerCallTierMode === 'step') {
+      const cuts = [{ from: payStart, rate: num(config.payPerCall) }];
+      (config.payPerCallTiers || [])
+        .filter(tier => tier.minCalls > payStart && tier.payPerCall > 0)
+        .forEach(tier => {
+          if (cuts[cuts.length - 1].from !== tier.minCalls) {
+            cuts.push({ from: tier.minCalls, rate: tier.payPerCall });
+          }
+        });
+      let amount = 0;
+      let paidCallCount = 0;
+      for (let index = 0; index < cuts.length; index += 1) {
+        const from = cuts[index].from;
+        const nextFrom = index + 1 < cuts.length ? cuts[index + 1].from : calls + 1;
+        const end = Math.min(calls, nextFrom - 1);
+        if (end < from) continue;
+        const count = end - from + 1;
+        amount += count * cuts[index].rate;
+        paidCallCount += count;
+      }
+      return {
+        calls,
+        amount,
+        paidCallCount,
+        payPerCall: 0,
+        remainToStart: 0,
+        started: true,
+        appliedTier: null
       };
     }
     const paidCallCount = calls - payStart + 1;

@@ -430,7 +430,8 @@ const BremPromotionAdmin = (function () {
         payPerCall: 0,
         guaranteedUnitPrice: 0,
         callTiers: [],
-        payPerCallTiers: []
+        payPerCallTiers: [],
+        payPerCallTierMode: 'retroactive'
       },
       blockConditions: [],
       bonusConditions: [],
@@ -501,15 +502,16 @@ const BremPromotionAdmin = (function () {
     const container = $('#promotionPayTierRows');
     if (!container) return;
 
+    const stepMode = $('#promotionPayTierMode')?.value === 'step';
     const rows = tiers.length ? tiers : [{ id: '', minCalls: '', payPerCall: '' }];
     container.innerHTML = rows.map((tier, index) => `
       <div class="promotion-tier-row" data-tier-id="${escapeHtml(tier.id || '')}">
         <label>
-          <span>${index + 1}구간 · N건 달성</span>
-          <input type="number" min="0" step="1" data-pay-tier-min-calls value="${tier.minCalls ?? ''}" placeholder="예: 300">
+          <span>${index + 1}구간 · ${stepMode ? 'N건부터' : 'N건 달성'}</span>
+          <input type="number" min="0" step="1" data-pay-tier-min-calls value="${tier.minCalls ?? ''}" placeholder="${stepMode ? '예: 301' : '예: 300'}">
         </label>
         <label>
-          <span>소급 건당 단가 (원)</span>
+          <span>${stepMode ? '이 콜부터 건당 (원)' : '소급 건당 단가 (원)'}</span>
           <input type="number" min="0" step="100" data-pay-tier-pay-per-call value="${tier.payPerCall ?? ''}" placeholder="예: 1200">
         </label>
         <button type="button" class="small-btn danger-btn" data-remove-pay-tier aria-label="구간 삭제">삭제</button>
@@ -550,6 +552,8 @@ const BremPromotionAdmin = (function () {
     $('#promotionRuleBaseCallCount').value = base.baseCallCount ?? 0;
     $('#promotionRulePayStartCallCount').value = base.payStartCallCount ?? 0;
     $('#promotionRulePayPerCall').value = base.payPerCall ?? 0;
+    const tierMode = $('#promotionPayTierMode');
+    if (tierMode) tierMode.value = base.payPerCallTierMode === 'step' ? 'step' : 'retroactive';
     $('#promotionRuleApplyGlobalBlock').checked = draft.applyGlobalAcceptBlock !== false;
     $('#promotionRuleAllowDuplicate').checked = Boolean(draft.allowDuplicate);
     $('#promotionRuleDuplicateStrategy').value = draft.duplicateStrategy || 'highest_priority';
@@ -586,7 +590,8 @@ const BremPromotionAdmin = (function () {
       payPerCall: Number($('#promotionRulePayPerCall').value || 0),
       guaranteedUnitPrice: 0,
       callTiers,
-      payPerCallTiers: readPayTierRowsFromForm()
+      payPerCallTiers: readPayTierRowsFromForm(),
+      payPerCallTierMode: $('#promotionPayTierMode')?.value === 'step' ? 'step' : 'retroactive'
     };
 
     return {
@@ -631,25 +636,30 @@ const BremPromotionAdmin = (function () {
     }
 
     const payTiers = payload.base.payPerCallTiers || [];
+    const stepTiers = payload.base.payPerCallTierMode === 'step';
+    const tierWord = stepTiers ? '구간 단가' : '소급 단가';
     const halfFilled = payTiers.find(tier => !(tier.minCalls > 0) || !(tier.payPerCall > 0));
     if (halfFilled) {
-      return '소급 단가 구간은 달성 콜수와 건당 단가를 모두 입력하세요.';
+      return `${tierWord} 구간은 콜수와 건당 단가를 모두 입력하세요.`;
     }
     const payTierMins = payTiers.map(tier => tier.minCalls);
     if (new Set(payTierMins).size !== payTierMins.length) {
-      return '소급 단가 구간의 달성 콜수가 중복되면 안 됩니다.';
+      return `${tierWord} 구간의 콜수가 중복되면 안 됩니다.`;
     }
     if (payTiers.length > maxCallTiers()) {
-      return `소급 단가 구간은 최대 ${maxCallTiers()}개까지 저장할 수 있습니다.`;
+      return `${tierWord} 구간은 최대 ${maxCallTiers()}개까지 저장할 수 있습니다.`;
     }
     if (payTiers.length && !(payload.base.payStartCallCount > 0)) {
-      return '소급 단가 구간을 쓰려면 지급 시작 콜수를 입력하세요.';
+      return `${tierWord} 구간을 쓰려면 지급 시작 콜수를 입력하세요.`;
     }
     // 달성 콜수가 지급 시작 콜수보다 작으면 그 구간은 절대 단독으로 적용되지 않아
     // 설정한 사람이 의도한 금액과 다르게 나온다.
-    const tooEarly = payTiers.find(tier => tier.minCalls < payload.base.payStartCallCount);
+    const tooEarly = payTiers.find(tier => tier.minCalls < payload.base.payStartCallCount
+      || (stepTiers && tier.minCalls <= payload.base.payStartCallCount));
     if (tooEarly) {
-      return `소급 단가 구간의 달성 콜수(${tooEarly.minCalls}건)는 지급 시작 콜수(${payload.base.payStartCallCount}건) 이상이어야 합니다.`;
+      return stepTiers
+        ? `구간은 지급 시작 콜수(${payload.base.payStartCallCount}건)보다 큰 콜수부터 입력하세요. 101건부터 300건까지 기본 단가면 301을 입력합니다.`
+        : `소급 단가 구간의 달성 콜수(${tooEarly.minCalls}건)는 지급 시작 콜수(${payload.base.payStartCallCount}건) 이상이어야 합니다.`;
     }
 
     const allConditions = [
@@ -996,6 +1006,9 @@ const BremPromotionAdmin = (function () {
     $('#promotionRuleFormCancel')?.addEventListener('click', hideRuleForm);
     $('#promotionRuleForm')?.addEventListener('submit', saveRuleForm);
     $('#promotionGlobalSettingsForm')?.addEventListener('submit', saveGlobalSettings);
+    $('#promotionPayTierMode')?.addEventListener('change', () => {
+      renderPayTierRows(readPayTierRowsFromForm({ includeEmpty: true }));
+    });
     $('#promotionRuleType')?.addEventListener('change', () => {
       const platform = normalizePlatform($('#promotionRulePlatform')?.value || getActiveRulesPlatformTab());
       updateRateFieldLabels(platform);

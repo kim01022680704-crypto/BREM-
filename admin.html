@@ -3763,10 +3763,17 @@
               <p class="form-help">지급건수 = 총 콜수 − (지급 시작 콜수 − 1). 예: 160건, 시작 141 → 20건 × 건당금액</p>
 
               <div class="promotion-tier-toolbar">
-                <strong>소급 단가 구간 (선택)</strong>
+                <strong>단가 구간 (선택)</strong>
+                <label>
+                  적용 방식
+                  <select id="promotionPayTierMode">
+                    <option value="retroactive">소급 (달성하면 시작부터 전부)</option>
+                    <option value="step">구간 (그 콜수부터만)</option>
+                  </select>
+                </label>
                 <button type="button" class="small-btn" id="promotionAddPayTierBtn">구간 추가</button>
               </div>
-              <p class="form-help">총콜수가 구간에 도달하면 <strong>지급 시작 콜수부터 전체 콜</strong>의 건당 단가가 이 값으로 <strong>소급 상향</strong>됩니다. 달성한 구간 중 <strong>가장 높은 하나만</strong> 적용되며 기본 건당 지급액을 대체합니다. 예: 기본 101건부터 1,000원 · 300건 1,200원 · 400건 1,500원 → 총 400건이면 300건 × 1,500원 = 450,000원. 비워두면 기본 건당 지급액을 그대로 씁니다.</p>
+              <p class="form-help" id="promotionPayTierHelp">소급은 300건을 넘으면 101건부터 전부 그 단가입니다. 구간은 101건부터 300건까지는 기본 단가, 다음 칸에 <strong>301건부터 2,000원</strong>을 넣으면 301건부터만 2,000원입니다. 총 379건이면 200건×1,500원 + 79건×2,000원 = 458,000원입니다.</p>
               <div id="promotionPayTierRows" class="promotion-tier-rows"></div>
             </div>
 
@@ -9299,9 +9306,9 @@
   <script src="js/settlement-client.js?v=20260918hi1"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
-  <script src="js/promotion-conditions.js?v=20260928bonus1"></script>
-  <script src="js/promotion-engine.js?v=20260820a"></script>
-  <script src="js/promotion-admin.js?v=20260928bonus1"></script>
+  <script src="js/promotion-conditions.js?v=20260928step1"></script>
+  <script src="js/promotion-engine.js?v=20260928step1"></script>
+  <script src="js/promotion-admin.js?v=20260928step1"></script>
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
   <script src="js/weekly-settlement.js?v=20260922part4"></script>
   <script src="js/weekly-settlement-admin.js?v=20260922part5"></script>

@@ -218,6 +218,21 @@ console.log('\n[5] 구간 단가가 기본보다 낮게 설정된 경우 — 설
   check('총 300건 → 200건 × 800원', amountFor(rule, 300), 160000);
 }
 
+console.log('\n[6b] 구간 단가 — 101~300건은 기본, 301건부터만 다음 단가');
+{
+  const rule = makeRule({
+    base: {
+      payStartCallCount: 101,
+      payPerCall: 1500,
+      payPerCallTierMode: 'step',
+      payPerCallTiers: [{ id: 't1', minCalls: 301, payPerCall: 2000 }]
+    }
+  });
+  check('총 300건 → 200건 × 1,500원', amountFor(rule, 300), 300000);
+  check('총 301건 → 200건×1,500 + 1건×2,000', amountFor(rule, 301), 302000);
+  check('총 379건 → 200건×1,500 + 79건×2,000', amountFor(rule, 379), 458000);
+}
+
 console.log('\n[6] 추가 가산 조건과 함께 쓸 때 — 가산은 소급 단가에 그대로 더해진다');
 {
   const rule = makeRule({
