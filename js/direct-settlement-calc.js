@@ -1431,14 +1431,17 @@ const BremDirectSettlementCalc = (function () {
     return totals;
   }
 
-  // 이미 급여명세서로 나간 입금(양수)을 합산 총지급에서 뺀다.
-  // 부분1이 입금된 뒤 같은 주 출금이 부분2에만 있으면, 합산 총지급이 마이너스가 된다.
+  // 이미 통장으로 나간 부분 입금(양수)만 합산 총지급에서 뺀다.
+  // 합산(주 전체) 명세서(회차 week)는 이번 정산 그 자체라서 기입금으로 다시 빼지 않는다.
   function applyAlreadyPaidDeposits(rows, slipLines, week) {
     const weekKey = String(week || '').slice(0, 10);
     const paid = new Map();
     (Array.isArray(slipLines) ? slipLines : []).forEach(line => {
       const raw = line?.rawData && typeof line.rawData === 'object' ? line.rawData : {};
       const payslip = raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : {};
+      const waveId = String(raw.payoutWaveId || payslip.payoutWaveId || '').trim();
+      const settlementId = String(raw.settlementId || '').trim();
+      if (waveId === 'week' || settlementId.startsWith('combined-')) return;
       const lineWeek = String(raw.settlementWeekStart || payslip.settlementWeekStart || '').slice(0, 10);
       if (!weekKey || lineWeek !== weekKey) return;
       const platform = normalizePlatform(raw.platform || payslip.platform);
