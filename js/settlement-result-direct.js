@@ -475,12 +475,7 @@ const BremSettlementResultDirect = (function () {
       region: [...row._regions].join(', ') || row.region || '',
       idLabel: [...row._idLabels].join(' / ') || row.idLabel || '-'
     }));
-    const withPaid = Cx.applyAlreadyPaidDeposits?.(
-      rows,
-      window.BremStorage?.payrollSlipLines?.getAll?.() || [],
-      week
-    ) || rows;
-    return Cx.sortByName(withPaid);
+    return Cx.sortByName(rows);
   }
 
   function addDaysKeyLocal(startKey, days) {
@@ -2170,9 +2165,8 @@ const BremSettlementResultDirect = (function () {
         <td class="settlement-negative-week">${escapeHtml(weekRangeLabel(week))}</td>
         <td class="settlement-retro-name"><strong>${escapeHtml(row.name || '-')}</strong></td>
         <td class="settlement-retro-platform">${escapeHtml(row.platform === 'coupang' ? '쿠팡' : '배민')}</td>
-        <td class="settlement-retro-id">${escapeHtml(row.idLabel || '-')}</td>
-        <td class="settlement-retro-amount">${formatNumber(row.alreadyPaid)}</td>
-        <td class="settlement-retro-amount">${formatNumber(row.prepaid)}</td>
+                <td class="settlement-retro-id">${escapeHtml(row.idLabel || '-')}</td>
+                <td class="settlement-retro-amount">${formatNumber(row.prepaid)}</td>
         <td class="settlement-retro-amount settlement-negative-net">${formatNumber(row.netPay)}</td>
         <td class="settlement-retro-amount settlement-negative-owe">${formatNumber(oweAmount)}</td>
       </tr>`;
@@ -2192,7 +2186,6 @@ const BremSettlementResultDirect = (function () {
               <col class="settlement-negative-col-money">
               <col class="settlement-negative-col-money">
               <col class="settlement-negative-col-money">
-              <col class="settlement-negative-col-money">
             </colgroup>
             <thead>
               <tr>
@@ -2201,7 +2194,6 @@ const BremSettlementResultDirect = (function () {
                 <th class="settlement-retro-name">기사</th>
                 <th class="settlement-retro-platform">플랫폼</th>
                 <th class="settlement-retro-id">ID</th>
-                <th class="settlement-retro-amount">기입금</th>
                 <th class="settlement-retro-amount">선정산</th>
                 <th class="settlement-retro-amount">총지급액</th>
                 <th class="settlement-retro-amount">받을 금액</th>

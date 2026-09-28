@@ -169,7 +169,7 @@ const BremFinalDeposit = (function () {
     if (rangeEl) {
       const total = allSettlements().length;
       const viewLabel = state.combined
-        ? `합산(주 전체) ${list.length}건 · 이미 반영된 입금은 총지급에서 뺍니다`
+        ? `합산(주 전체) ${list.length}건`
         : `${Number(state.partSlot) ? `부분${state.partSlot}` : '전체'} ${list.length}건`;
       rangeEl.textContent = list.length
         ? `정산주 ${formatDate(ensureWeek())}(수) · ${viewLabel}`
@@ -316,13 +316,7 @@ const BremFinalDeposit = (function () {
       regionLabel: [...row.regions].join(', ') || '-',
       checked: allDrivers ? true : !state.excludedDriverKeys.has(row.key)
     }));
-    const sorted = Calc().sortByName(rows);
-    if (!state.combined || typeof Calc().applyAlreadyPaidDeposits !== 'function') return sorted;
-    return Calc().applyAlreadyPaidDeposits(
-      sorted,
-      window.BremStorage?.payrollSlipLines?.getAll?.() || [],
-      ensureWeek()
-    );
+    return Calc().sortByName(rows);
   }
 
   /** 정산서에 적힌 라이더 칸 수(파일·지역 합, 같은 사람 중복 가능) */
@@ -801,7 +795,7 @@ const BremFinalDeposit = (function () {
 
     if (!window.confirm(
       `${weekLabel}(수) 주 최종입금 엑셀 — ${state.combined ? '합산(주 전체) · ' : ''}화면에서 체크된 ${rows.length}명 · 플랫폼별 각각 입금\n`
-      + (state.combined ? '이미 급여명세서로 나간 기입금은 입금액에서 빠져 있습니다. 마이너스는 이체 목록에 넣지 않습니다.\n\n' : '\n')
+      + (state.combined ? '합산(주 전체)입니다. 마이너스는 이체 목록에 넣지 않습니다.\n\n' : '\n')
       + `· 정산서 ${weekList.length}건 · 파일 라이더칸 합 ${slotCount}\n`
       + `· 「입금」: ${allPeople.length}건 (확인용, 계좌 없는 행 포함)\n`
       + `· 「입금_이체가능」: ${ready.length}건 (정산서 아이디 = 기사정보 아이디인 행만)\n`
