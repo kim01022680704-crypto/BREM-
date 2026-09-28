@@ -7702,6 +7702,38 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   font-weight: 700;
 }
 
+.settlement-negative-table {
+  width: 100%;
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.settlement-negative-table col.settlement-negative-col-check { width: 48px; }
+.settlement-negative-table col.settlement-negative-col-name { width: 110px; }
+.settlement-negative-table col.settlement-negative-col-platform { width: 72px; }
+.settlement-negative-table col.settlement-negative-col-id { width: 150px; }
+.settlement-negative-table col.settlement-negative-col-money { width: 130px; }
+
+.settlement-negative-table th,
+.settlement-negative-table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settlement-negative-table th.settlement-retro-amount,
+.settlement-negative-table td.settlement-retro-amount {
+  text-align: right;
+}
+
+.settlement-negative-table td.settlement-negative-net {
+  color: #f87171;
+}
+
+.settlement-negative-table td.settlement-negative-owe {
+  color: #facc15;
+}
+
 .settlement-retro-row--sent {
   opacity: 0.55;
 }

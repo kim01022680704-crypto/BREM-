@@ -2128,32 +2128,42 @@ const BremSettlementResultDirect = (function () {
       return;
     }
     body.innerHTML = `
-      <div class="table-wrap">
-        <table class="weekly-settlement-saved-table">
+      <div class="table-wrap direct-scroll direct-scroll-wide">
+        <table class="settlement-retro-table settlement-negative-table">
+          <colgroup>
+            <col class="settlement-negative-col-check">
+            <col class="settlement-negative-col-name">
+            <col class="settlement-negative-col-platform">
+            <col class="settlement-negative-col-id">
+            <col class="settlement-negative-col-money">
+            <col class="settlement-negative-col-money">
+            <col class="settlement-negative-col-money">
+            <col class="settlement-negative-col-money">
+          </colgroup>
           <thead>
             <tr>
-              <th><input type="checkbox" id="settlementNegativeCheckAll" title="전체 선택"></th>
-              <th>기사</th>
-              <th>플랫폼</th>
-              <th>ID</th>
-              <th>기입금(반영분)</th>
-              <th>선정산</th>
-              <th>총지급액</th>
-              <th>받을 금액</th>
+              <th class="settlement-retro-check-cell"><input type="checkbox" id="settlementNegativeCheckAll" title="전체 선택"></th>
+              <th class="settlement-retro-name">기사</th>
+              <th class="settlement-retro-platform">플랫폼</th>
+              <th class="settlement-retro-id">ID</th>
+              <th class="settlement-retro-amount">기입금</th>
+              <th class="settlement-retro-amount">선정산</th>
+              <th class="settlement-retro-amount">총지급액</th>
+              <th class="settlement-retro-amount">받을 금액</th>
             </tr>
           </thead>
           <tbody>
             ${rows.map((row, index) => {
               const oweAmount = Math.abs(Math.round(Number(row.netPay || 0)));
               return `<tr>
-                <td><input type="checkbox" class="settlement-negative-check" data-negative-index="${index}"></td>
-                <td><strong>${escapeHtml(row.name || '-')}</strong></td>
-                <td>${escapeHtml(row.platform === 'coupang' ? '쿠팡' : '배민')}</td>
-                <td>${escapeHtml(row.idLabel || '-')}</td>
-                <td class="weekly-amount-cell">${formatNumber(row.alreadyPaid)}</td>
-                <td class="weekly-amount-cell">${formatNumber(row.prepaid)}</td>
-                <td class="weekly-amount-cell"><strong>${formatNumber(row.netPay)}</strong></td>
-                <td class="weekly-amount-cell"><strong>${formatNumber(oweAmount)}</strong></td>
+                <td class="settlement-retro-check-cell"><input type="checkbox" class="settlement-negative-check" data-negative-index="${index}"></td>
+                <td class="settlement-retro-name"><strong>${escapeHtml(row.name || '-')}</strong></td>
+                <td class="settlement-retro-platform">${escapeHtml(row.platform === 'coupang' ? '쿠팡' : '배민')}</td>
+                <td class="settlement-retro-id">${escapeHtml(row.idLabel || '-')}</td>
+                <td class="settlement-retro-amount">${formatNumber(row.alreadyPaid)}</td>
+                <td class="settlement-retro-amount">${formatNumber(row.prepaid)}</td>
+                <td class="settlement-retro-amount settlement-negative-net">${formatNumber(row.netPay)}</td>
+                <td class="settlement-retro-amount settlement-negative-owe">${formatNumber(oweAmount)}</td>
               </tr>`;
             }).join('')}
           </tbody>
