@@ -87,6 +87,7 @@ const BremPromotionAdmin = (function () {
   function syncRuleFormPlatformWithTab() {
     const formCard = $('#promotionRuleFormCard');
     if (!formCard || formCard.hidden || state.editingRuleId) return;
+    syncConditionDraftsFromForm();
     const tabPlatform = getActiveRulesPlatformTab();
     setPromotionRulePlatformField(tabPlatform);
     renderConditionLists(tabPlatform);
@@ -170,10 +171,42 @@ const BremPromotionAdmin = (function () {
     return Number(BremPromotionConditions.MAX_CALL_TIERS) || 50;
   }
 
-  function filterFilledConditions(conditions = []) {
-    return BremPromotionConditions.filterFilledConditions
-      ? BremPromotionConditions.filterFilledConditions(conditions)
-      : (conditions || []).filter(item => String(item?.conditionName || '').trim());
+  function namedConditions(conditions, platform) {
+    return (conditions || []).map(item => {
+      const name = String(item?.conditionName || '').trim();
+      if (name) return { ...item, conditionName: name };
+      const fallback = BremPromotionConditions.fallbackConditionName
+        ? BremPromotionConditions.fallbackConditionName(item, platform)
+        : (item?.conditionType || '조건');
+      return { ...item, conditionName: fallback };
+    });
+  }
+
+  function autoNameForRow(row, platform) {
+    const readField = name => row.querySelector(`[data-field="${name}"]`)?.value;
+    const draft = {
+      conditionName: '',
+      conditionType: readField('conditionType'),
+      processingMode: row.dataset.conditionMode,
+      rateThreshold: Number(readField('rateThreshold') || 0),
+      minTotalOrders: Number(readField('minTotalOrders') || 0),
+      minWorkingDays: Number(readField('minWorkingDays') || 6),
+      dailyMinOrders: Number(readField('dailyMinOrders') || 30),
+      minDailyOrderDays: Number(readField('minDailyOrderDays') || 6)
+    };
+    return BremPromotionConditions.fallbackConditionName
+      ? BremPromotionConditions.fallbackConditionName(draft, platform)
+      : (draft.conditionType || '조건');
+  }
+
+  function syncAutoConditionName(row, platform) {
+    const nameInput = row.querySelector('[data-field="conditionName"]');
+    if (!nameInput) return;
+    const next = autoNameForRow(row, platform);
+    const current = nameInput.value.trim();
+    const previous = nameInput.dataset.autoName || '';
+    if (!current || current === previous) nameInput.value = next;
+    nameInput.dataset.autoName = next;
   }
 
   function renderConditionRow(condition, processingMode, platform, index) {
@@ -212,6 +245,12 @@ const BremPromotionAdmin = (function () {
       el.innerHTML = items.length
         ? items.map((item, index) => renderConditionRow(item, mode, p, index)).join('')
         : '<p class="form-help">등록된 조건이 없습니다. 조건 추가 버튼을 눌러 주세요.</p>';
+      el.querySelectorAll('.promotion-condition-row').forEach(row => {
+        const nameInput = row.querySelector('[data-field="conditionName"]');
+        if (nameInput && !nameInput.dataset.autoName) {
+          nameInput.dataset.autoName = autoNameForRow(row, p);
+        }
+      });
     });
   }
 
@@ -558,9 +597,9 @@ const BremPromotionAdmin = (function () {
       startDate: $('#promotionRuleStartDate').value,
       endDate: $('#promotionRuleEndDate').value,
       base,
-      blockConditions: normalizeConditionsForPlatform(filterFilledConditions(readConditionsFromForm('block')), platform),
-      bonusConditions: normalizeConditionsForPlatform(filterFilledConditions(readConditionsFromForm('bonus')), platform),
-      referenceConditions: normalizeConditionsForPlatform(filterFilledConditions(readConditionsFromForm('reference')), platform),
+      blockConditions: normalizeConditionsForPlatform(namedConditions(readConditionsFromForm('block'), platform), platform),
+      bonusConditions: normalizeConditionsForPlatform(namedConditions(readConditionsFromForm('bonus'), platform), platform),
+      referenceConditions: normalizeConditionsForPlatform(namedConditions(readConditionsFromForm('reference'), platform), platform),
       applyGlobalAcceptBlock: $('#promotionRuleApplyGlobalBlock').checked,
       allowDuplicate: $('#promotionRuleAllowDuplicate').checked,
       duplicateStrategy: $('#promotionRuleDuplicateStrategy').value,
@@ -962,6 +1001,7 @@ const BremPromotionAdmin = (function () {
       updateRateFieldLabels(platform);
     });
     $('#promotionRulePlatform')?.addEventListener('change', event => {
+      syncConditionDraftsFromForm();
       const platform = normalizePlatform(event.target.value || getActiveRulesPlatformTab());
       renderConditionLists(platform);
       updateRateFieldLabels(platform);
@@ -996,6 +1036,7 @@ const BremPromotionAdmin = (function () {
         if (!row) return;
         const mode = row.dataset.conditionMode;
         const index = Number(row.dataset.conditionIndex || 0);
+        const platform = $('#promotionRulePlatform')?.value || getActiveRulesPlatformTab();
         if (field.dataset.field === 'conditionType' || field.dataset.field === 'actionType') {
           syncConditionDraftsFromForm();
           state.conditionDrafts[mode][index] = {
@@ -1003,12 +1044,17 @@ const BremPromotionAdmin = (function () {
             conditionType: row.querySelector('[data-field="conditionType"]')?.value,
             actionType: row.querySelector('[data-field="actionType"]')?.value || 'add_pay_per_order'
           };
-          refreshConditionRowFields(row, $('#promotionRulePlatform')?.value || 'baemin');
-          syncConditionNameInRow(row, $('#promotionRulePlatform')?.value || 'baemin');
+          const previousAuto = row.querySelector('[data-field="conditionName"]')?.dataset.autoName || '';
+          refreshConditionRowFields(row, platform);
+          const nameInput = row.querySelector('[data-field="conditionName"]');
+          if (nameInput) nameInput.dataset.autoName = previousAuto;
+          syncAutoConditionName(row, platform);
+          syncConditionNameInRow(row, platform);
           return;
         }
+        syncAutoConditionName(row, platform);
         if (field.dataset.field === 'rateThreshold') {
-          syncConditionNameInRow(row, $('#promotionRulePlatform')?.value || getActiveRulesPlatformTab());
+          syncConditionNameInRow(row, platform);
         }
       });
     });

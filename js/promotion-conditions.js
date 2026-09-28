@@ -335,22 +335,49 @@ const BremPromotionConditions = (function () {
     };
   }
 
+  // 조건명을 비워 두면 저장 시 줄이 사라졌다. 유형·숫자로 이름을 채운다.
+  function fallbackConditionName(condition, platform) {
+    const normalized = normalizeCondition({ ...condition, conditionName: '' });
+    const type = normalized.conditionType;
+    if (isRateConditionType(type)) return formatConditionLabel(normalized, platform);
+    if (type === 'total_orders_over' || type === 'total_orders_under') {
+      const min = Number(normalized.minTotalOrders ?? 0);
+      return type === 'total_orders_over'
+        ? `총 콜수 ${min}건 이상`
+        : `총 콜수 ${min}건 미달`;
+    }
+    if (type === 'working_days') {
+      const days = Number(normalized.minWorkingDays ?? 6);
+      const daily = Number(normalized.dailyMinOrders ?? 0);
+      return daily > 0 ? `주 ${days}일 이상 (일 ${daily}건)` : `주 ${days}일 이상`;
+    }
+    if (type === 'daily_min_days') {
+      const daily = Number(normalized.dailyMinOrders ?? 30);
+      const days = Number(normalized.minDailyOrderDays ?? 6);
+      return `하루 ${daily}건 이상 ${days}일`;
+    }
+    return CONDITION_TYPES[type]?.label || '조건';
+  }
+
   function emptyCondition(processingMode = 'block', platform = 'coupang') {
     const p = normalizePlatform(platform);
-    if (processingMode === 'bonus') {
-      return syncRateConditionName(normalizeCondition({
+    const draft = processingMode === 'bonus'
+      ? normalizeCondition({
         conditionName: '',
         conditionType: 'working_days',
         processingMode,
         actionType: 'add_pay_per_order'
-      }), p);
-    }
-    return normalizeCondition({
-      conditionName: '',
-      conditionType: 'total_orders_under',
-      processingMode,
-      actionType: 'add_pay_per_order'
-    });
+      })
+      : normalizeCondition({
+        conditionName: '',
+        conditionType: 'total_orders_under',
+        processingMode,
+        actionType: 'add_pay_per_order'
+      });
+    return {
+      ...draft,
+      conditionName: fallbackConditionName(draft, p)
+    };
   }
 
   function filterFilledConditions(conditions = []) {
@@ -376,6 +403,7 @@ const BremPromotionConditions = (function () {
     resolveRateCondition,
     formatConditionLabel,
     formatSatisfiedConditionLabel,
+    fallbackConditionName,
     syncRateConditionName
   };
 })();
