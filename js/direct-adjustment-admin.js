@@ -995,8 +995,12 @@ const BremDirectAdjustmentAdmin = (function () {
 
     // ERP 몫은 선택한 결과로 다시 쓰므로, 이번 선택에 없는 기존 ERP 적용분은 빠진다.
     // 조용히 사라지면 안 되니 미리 알린다.
+    const keptIds = new Set([
+      ...applicable.keys(),
+      ...notInSettlement.map(item => item.driverId)
+    ]);
     const droppedErp = Object.entries(applied)
-      .filter(([driverId, item]) => item?.source === 'erp' && !applicable.has(driverId))
+      .filter(([driverId, item]) => item?.source === 'erp' && !keptIds.has(driverId))
       .map(([driverId, item]) => ({
         driverId,
         name: item.driverName || driverName(driverId),
@@ -1037,7 +1041,7 @@ const BremDirectAdjustmentAdmin = (function () {
       warnings.push(`기사 ${plan.overlapDrivers.length}명이 선택한 결과 여러 곳에 들어 있어 금액이 합산됩니다.`);
     }
     if (plan.notInSettlement.length) {
-      warnings.push(`기사 ${plan.notInSettlement.length}명(${formatNumber(plan.notInSettlementAmount)}원)은 이 정산서에 없어 제외됩니다.`);
+      warnings.push(`기사 ${plan.notInSettlement.length}명(${formatNumber(plan.notInSettlementAmount)}원)은 이 정산서에 없습니다. 프로모션만 넣고 원천세 3.3%만 뗍니다.`);
     }
     if (plan.overwriteExcel.length) {
       warnings.push(`엑셀로 넣은 금액 ${plan.overwriteExcel.length}건을 ERP 금액이 덮어씁니다.`);
@@ -1051,7 +1055,7 @@ const BremDirectAdjustmentAdmin = (function () {
 
     box.hidden = false;
     box.innerHTML = `
-      <p class="direct-erp-preview-head">적용 미리보기 · 기사 <strong>${formatNumber(plan.applicable.size)}</strong>명 · 합계 <strong>${formatNumber(plan.total)}</strong>원</p>
+      <p class="direct-erp-preview-head">적용 미리보기 · 기사 <strong>${formatNumber(plan.applicable.size + plan.notInSettlement.length)}</strong>명 · 합계 <strong>${formatNumber(plan.total + plan.notInSettlementAmount)}</strong>원</p>
       ${warnings.length
         ? `<ul class="direct-erp-preview-warn">${warnings.map(text => `<li>${text}</li>`).join('')}</ul>`
         : '<p class="direct-erp-preview-ok">겹치거나 빠지는 기사 없이 깔끔하게 적용됩니다.</p>'}
@@ -1137,9 +1141,9 @@ const BremDirectAdjustmentAdmin = (function () {
       return;
     }
     const plan = buildErpPlan();
-    if (!plan.applicable.size && !plan.droppedErp.length) {
+    if (!plan.applicable.size && !plan.notInSettlement.length && !plan.droppedErp.length) {
       showToast(plan.perDriver.size
-        ? '선택한 결과의 기사가 이 정산서에 없습니다.'
+        ? '선택한 결과에 적용할 프로모션 금액이 없습니다.'
         : '선택한 결과에 매칭된 기사·금액이 없습니다.');
       return;
     }
@@ -1155,7 +1159,7 @@ const BremDirectAdjustmentAdmin = (function () {
       confirmLines.push(`· 기사 ${plan.overlapDrivers.length}명은 여러 결과에 있어 합산됩니다.`);
     }
     if (plan.notInSettlement.length) {
-      confirmLines.push(`· 기사 ${plan.notInSettlement.length}명(${formatNumber(plan.notInSettlementAmount)}원)은 이 정산서에 없어 제외됩니다.`);
+      confirmLines.push(`· 기사 ${plan.notInSettlement.length}명(${formatNumber(plan.notInSettlementAmount)}원)은 이 정산서에 없습니다. 프로모션만 넣고 원천세 3.3%만 뗍니다.`);
     }
     if (plan.overwriteExcel.length) {
       confirmLines.push(`· 엑셀로 넣은 금액 ${plan.overwriteExcel.length}건을 덮어씁니다.`);
@@ -1164,7 +1168,9 @@ const BremDirectAdjustmentAdmin = (function () {
       confirmLines.push(`· 전에 적용한 ERP 프로모션 ${plan.droppedErp.length}명(${formatNumber(plan.droppedErpAmount)}원)이 빠집니다.`);
     }
 
-    const summaryLine = `기사 ${formatNumber(plan.applicable.size)}명 · 합계 ${formatNumber(plan.total)}원을 적용합니다.`;
+    const applyCount = plan.applicable.size + plan.notInSettlement.length;
+    const applyTotal = plan.total + plan.notInSettlementAmount;
+    const summaryLine = `기사 ${formatNumber(applyCount)}명 · 합계 ${formatNumber(applyTotal)}원을 적용합니다.`;
     if (confirmLines.length) {
       const proceed = window.confirm(`${summaryLine}\n\n확인이 필요한 내용:\n${confirmLines.join('\n')}\n\n그대로 적용할까요?`);
       if (!proceed) return;
@@ -1174,8 +1180,12 @@ const BremDirectAdjustmentAdmin = (function () {
     // 엑셀로 넣은 금액은 이번 ERP 대상이 아닌 한 그대로 둔다.
     const store = window.BremStorage.directSettlementAdjustments;
     const existing = store.getSettlement('promotion', settlement.id) || {};
+    const saveIds = new Set([
+      ...plan.applicable.keys(),
+      ...plan.notInSettlement.map(item => item.driverId)
+    ]);
     const keepExcel = Object.entries(existing)
-      .filter(([driverId, item]) => item?.source !== 'erp' && !plan.applicable.has(driverId))
+      .filter(([driverId, item]) => item?.source !== 'erp' && !saveIds.has(driverId))
       .map(([driverId, item]) => ({
         driverId,
         amount: Number(item.amount || 0),
@@ -1185,7 +1195,7 @@ const BremDirectAdjustmentAdmin = (function () {
         source: 'excel'
       }));
 
-    const erpEntries = [...plan.applicable.entries()].map(([driverId, info]) => {
+    const erpEntries = [...plan.applicable.entries(), ...plan.notInSettlement.map(item => [item.driverId, item])].map(([driverId, info]) => {
       const driver = window.BremStorage?.drivers?.getById?.(driverId);
       const bulk = window.BremDirectAdjustmentBulk;
       return {
@@ -1206,8 +1216,8 @@ const BremDirectAdjustmentAdmin = (function () {
     renderAppliedSummary();
     renderErpPreview();
     renderRegistry();
-    let message = `ERP 프로모션 ${plan.applicable.size}명 · ${formatNumber(plan.total)}원 적용 완료`;
-    if (plan.notInSettlement.length) message += ` · 정산서에 없는 ${plan.notInSettlement.length}명 제외`;
+    let message = `ERP 프로모션 ${applyCount}명 · ${formatNumber(applyTotal)}원 적용 완료`;
+    if (plan.notInSettlement.length) message += ` · 정산서에 없는 ${plan.notInSettlement.length}명은 프로모션만`;
     if (plan.skippedUnmatched) message += ` · 미매칭 ${plan.skippedUnmatched}행 제외`;
     showToast(message);
   }

@@ -1259,7 +1259,66 @@ const BremDirectSettlementCalc = (function () {
         untaggedWithdrawalAmount: source.untaggedAmount || 0
       });
     });
+    rows.push(...promoOnlyRows(settlement, platform, adj, rows));
     return rows;
+  }
+
+  // 정산서에 없는 기사도 ERP 프로모션이 있으면 한 줄로 넣는다.
+  // 배달비·보험·선정산은 0이고, 지급합계(프로모션)에서 프로모션원천세 3.3%만 뺀다.
+  function promoOnlyRows(settlement, platform, adj, existingRows) {
+    const present = new Set(
+      (existingRows || []).map(row => String(row.driverId || '').trim()).filter(Boolean)
+    );
+    const promoMap = adj?.promoMap || {};
+    const extra = [];
+    Object.entries(promoMap).forEach(([driverId, entry]) => {
+      const id = String(driverId || '').trim();
+      if (!id || present.has(id)) return;
+      const promo = Math.max(0, Math.round(Number(entry?.amount || 0)));
+      if (!promo) return;
+      const driver = window.BremStorage?.drivers?.getById?.(id);
+      const tax = promoTax(promo);
+      const platformId = platform === 'coupang'
+        ? String(entry?.coupangId || driver?.coupangLoginKey || driver?.coupangId || '').trim()
+        : String(entry?.baeminId || driver?.baeminId || '').trim();
+      extra.push({
+        driverId: id,
+        platform,
+        settlementId: String(settlement.id || ''),
+        region: String(settlement.region || ''),
+        name: driverName(id, entry?.driverName),
+        idLabel: platformId || '-',
+        callCount: 0,
+        deliveryFee: 0,
+        missionPay: 0,
+        missionPayExcel: 0,
+        missionPayManual: false,
+        deductionDetail: 0,
+        other: 0,
+        promo,
+        grossPay: promo,
+        employmentInsurance: 0,
+        accidentInsurance: 0,
+        hourlyInsurance: 0,
+        withholdingTax: 0,
+        promotionWithholdingTax: tax,
+        callFee: 0,
+        dailySettlementFee: 0,
+        prepaid: 0,
+        leaseFee: 0,
+        loanFee: 0,
+        leaseFeeManual: false,
+        loanFeeManual: false,
+        deductTotal: tax,
+        netPay: promo - tax,
+        useSheetPayout: false,
+        sheetPayout: 0,
+        promoOnly: true,
+        untaggedWithdrawalCount: 0,
+        untaggedWithdrawalAmount: 0
+      });
+    });
+    return extra;
   }
 
   function escapeHtml(value) {

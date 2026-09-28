@@ -603,6 +603,14 @@ const BremFinalDeposit = (function () {
   // 정산서 아이디와 기사정보 아이디가 같은 한 사람의 계좌만 쓴다. 이름으로는 절대 채우지 않는다.
   function resolveDriverForExport(row) {
     const platform = row?.platform === 'coupang' ? 'coupang' : (row?.platform === 'baemin' ? 'baemin' : '');
+    // 정산서에 없어 프로모션만 넣은 줄은 이미 ERP 기사로 매칭돼 있다.
+    if (row?.promoOnly && row.driverId) {
+      const driver = allKnownDrivers().find(item => String(item?.id || '') === String(row.driverId));
+      if (driver) {
+        const ids = platformIdsOf(driver, platform);
+        return { driver, matchError: '', matchedId: ids[0] || loginIdForDriver(driver) };
+      }
+    }
     const labels = idLabelsOf(row).map(idMatchKey).filter(Boolean);
     const list = allKnownDrivers();
     const hits = [];
