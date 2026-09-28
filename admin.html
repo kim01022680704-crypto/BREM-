@@ -18,7 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260929neg2">
+  <link rel="stylesheet" href="css/admin.css?v=20260929neg3">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
@@ -5373,11 +5373,17 @@
           <div class="card-header">
             <h2>마이너스 정리</h2>
             <div class="promotion-form-actions">
+              <label class="settlement-week-filter">
+                <span>정산주</span>
+                <select id="settlementNegativeWeekFilter" class="admin-period-input">
+                  <option value="">전체 주</option>
+                </select>
+              </label>
               <button type="button" class="small-btn" id="settlementNegativeReloadBtn">불러오기</button>
               <button type="button" class="small-btn primary-btn" id="settlementNegativeSendBtn">선택 차감으로 보내기</button>
             </div>
           </div>
-          <p class="form-help">이 주 쿠팡·배민 합산에서 이미 급여명세서로 나간 입금을 뺀 뒤, 총지급이 마이너스인 기사만 모읍니다. 체크한 금액은 미납·차감으로 넘어갑니다.</p>
+          <p class="form-help">쿠팡·배민 합산에서 이미 급여명세서로 나간 입금을 뺀 뒤, 총지급이 마이너스인 기사를 <strong>정산주(수~화)별로</strong> 모읍니다. 체크한 금액은 그 주 미납·차감으로 넘어갑니다.</p>
           <p class="direct-inline-stats" id="settlementNegativeSummary"></p>
           <div id="settlementNegativeBody"></div>
         </article>
@@ -9355,7 +9361,7 @@
   <script src="js/direct-adjustment-bulk.js?v=20260905a"></script>
   <script src="js/direct-adjustment-admin.js?v=20260928promo2"></script>
   <script src="js/direct-settlement-calc.js?v=20260929neg1"></script>
-  <script src="js/settlement-result-direct.js?v=20260929neg2"></script>
+  <script src="js/settlement-result-direct.js?v=20260929neg3"></script>
   <script src="js/final-deposit.js?v=20260929neg1"></script>
   <script src="js/tax-management-admin.js?v=20260830tax2"></script>
   <script src="js/driver-management-admin.js?v=20260922active1"></script>

@@ -15,6 +15,7 @@ const BremSettlementResultDirect = (function () {
     retroWeekFilter: '',
     retroSearch: '',
     negativeRows: [],
+    negativeWeekFilter: null,
     finalSearch: '',
     spillFilter: 'crossed',
     // 반영(급여명세서 반영) 안전장치용
@@ -2106,72 +2107,156 @@ const BremSettlementResultDirect = (function () {
     }
   }
 
+  function directSettlementWeeks() {
+    const weeks = new Set();
+    allDirectSettlements().forEach(record => {
+      const week = String(settlementWeek(record) || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(week)) weeks.add(week);
+    });
+    return [...weeks].sort((a, b) => b.localeCompare(a));
+  }
+
+  function weekRangeLabel(week) {
+    const start = String(week || '').slice(0, 10);
+    if (!start) return '-';
+    const end = Calc().weekEndFromStart ? Calc().weekEndFromStart(start) : addDaysKeyLocal(start, 6);
+    return `${formatDate(start)}(수) ~ ${formatDate(end)}(화)`;
+  }
+
+  function negativeFilterWeek() {
+    if (state.negativeWeekFilter === '') return '';
+    if (state.negativeWeekFilter) return String(state.negativeWeekFilter).slice(0, 10);
+    return ensureWeek() || '';
+  }
+
+  function fillNegativeWeekFilter(weeks) {
+    const select = $('#settlementNegativeWeekFilter');
+    if (!select) return;
+    const current = negativeFilterWeek();
+    select.innerHTML = `<option value=""${current === '' ? ' selected' : ''}>전체 주</option>${weeks.map(week =>
+      `<option value="${escapeHtml(week)}"${week === current ? ' selected' : ''}>${escapeHtml(weekRangeLabel(week))}</option>`
+    ).join('')}`;
+  }
+
+  async function collectNegativeRowsForWeek(week) {
+    const saved = {
+      week: state.week,
+      weekAll: state.weekAll,
+      withdrawals: state.withdrawals,
+      withdrawalsWeek: state.withdrawalsWeek
+    };
+    state.weekAll = false;
+    state.week = week;
+    try {
+      await loadWithdrawals();
+      return ['baemin', 'coupang'].flatMap(platform => combinedRowsForPlatform(platform))
+        .filter(row => Math.round(Number(row.netPay || 0)) < 0)
+        .map(row => ({ ...row, weekStart: week }))
+        .sort((a, b) => Number(a.netPay || 0) - Number(b.netPay || 0));
+    } finally {
+      state.week = saved.week;
+      state.weekAll = saved.weekAll;
+      state.withdrawals = saved.withdrawals;
+      state.withdrawalsWeek = saved.withdrawalsWeek;
+    }
+  }
+
+  function negativeWeekTable(week, rows, startIndex) {
+    const bodyRows = rows.map((row, offset) => {
+      const index = startIndex + offset;
+      const oweAmount = Math.abs(Math.round(Number(row.netPay || 0)));
+      return `<tr>
+        <td class="settlement-retro-check-cell"><input type="checkbox" class="settlement-negative-check" data-negative-index="${index}" data-week="${escapeHtml(week)}"></td>
+        <td class="settlement-negative-week">${escapeHtml(weekRangeLabel(week))}</td>
+        <td class="settlement-retro-name"><strong>${escapeHtml(row.name || '-')}</strong></td>
+        <td class="settlement-retro-platform">${escapeHtml(row.platform === 'coupang' ? '쿠팡' : '배민')}</td>
+        <td class="settlement-retro-id">${escapeHtml(row.idLabel || '-')}</td>
+        <td class="settlement-retro-amount">${formatNumber(row.alreadyPaid)}</td>
+        <td class="settlement-retro-amount">${formatNumber(row.prepaid)}</td>
+        <td class="settlement-retro-amount settlement-negative-net">${formatNumber(row.netPay)}</td>
+        <td class="settlement-retro-amount settlement-negative-owe">${formatNumber(oweAmount)}</td>
+      </tr>`;
+    }).join('');
+    const owe = rows.reduce((sum, row) => sum + Math.abs(Math.round(Number(row.netPay || 0))), 0);
+    return `
+      <div class="settlement-retro-week">
+        <p class="settlement-retro-week-head"><strong>${escapeHtml(weekRangeLabel(week))}</strong> 주 · ${rows.length}명 · 받을 금액 <strong>${formatNumber(owe)}</strong>원</p>
+        <div class="table-wrap direct-scroll direct-scroll-wide">
+          <table class="settlement-retro-table settlement-negative-table">
+            <colgroup>
+              <col class="settlement-negative-col-check">
+              <col class="settlement-negative-col-week">
+              <col class="settlement-negative-col-name">
+              <col class="settlement-negative-col-platform">
+              <col class="settlement-negative-col-id">
+              <col class="settlement-negative-col-money">
+              <col class="settlement-negative-col-money">
+              <col class="settlement-negative-col-money">
+              <col class="settlement-negative-col-money">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="settlement-retro-check-cell"><input type="checkbox" class="settlement-negative-check-week" data-week="${escapeHtml(week)}" title="이 주 전체 선택"></th>
+                <th class="settlement-negative-week">정산주</th>
+                <th class="settlement-retro-name">기사</th>
+                <th class="settlement-retro-platform">플랫폼</th>
+                <th class="settlement-retro-id">ID</th>
+                <th class="settlement-retro-amount">기입금</th>
+                <th class="settlement-retro-amount">선정산</th>
+                <th class="settlement-retro-amount">총지급액</th>
+                <th class="settlement-retro-amount">받을 금액</th>
+              </tr>
+            </thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
   async function renderNegativeList() {
     const body = $('#settlementNegativeBody');
     const summaryEl = $('#settlementNegativeSummary');
     if (!body) return;
     await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
-    await loadWithdrawals();
-    const week = ensureWeek();
-    const rows = ['baemin', 'coupang'].flatMap(platform => combinedRowsForPlatform(platform))
-      .filter(row => Math.round(Number(row.netPay || 0)) < 0)
-      .sort((a, b) => Number(a.netPay || 0) - Number(b.netPay || 0));
-    state.negativeRows = rows;
-    const owe = rows.reduce((sum, row) => sum + Math.abs(Math.round(Number(row.netPay || 0))), 0);
-    if (summaryEl) {
-      summaryEl.innerHTML = rows.length
-        ? `${formatDate(week)}(수) 주 · 마이너스 <strong>${rows.length}</strong>명 · 받을 금액 <strong>${formatNumber(owe)}</strong>원`
-        : `${formatDate(week)}(수) 주 · 합산 총지급이 마이너스인 기사가 없습니다.`;
+    const weeks = directSettlementWeeks();
+    fillNegativeWeekFilter(weeks);
+    const filter = negativeFilterWeek();
+    const targetWeeks = filter ? [filter] : weeks;
+    if (summaryEl) summaryEl.textContent = '주별 마이너스를 계산하는 중입니다.';
+    body.innerHTML = '<p class="form-help">주별 마이너스를 계산하는 중입니다.</p>';
+    const groups = [];
+    for (let i = 0; i < targetWeeks.length; i += 1) {
+      const week = targetWeeks[i];
+      if (summaryEl) summaryEl.textContent = `${weekRangeLabel(week)} 계산 중 (${i + 1}/${targetWeeks.length})`;
+      const rows = await collectNegativeRowsForWeek(week);
+      if (rows.length || filter) groups.push({ week, rows });
     }
-    if (!rows.length) {
-      body.innerHTML = '<p class="form-help">이 주는 합산 후 이미 입금된 금액을 빼도 마이너스가 없습니다.</p>';
+    const flat = groups.flatMap(group => group.rows);
+    state.negativeRows = flat;
+    const owe = flat.reduce((sum, row) => sum + Math.abs(Math.round(Number(row.netPay || 0))), 0);
+    const weekCount = groups.filter(group => group.rows.length).length;
+    if (summaryEl) {
+      const scope = filter ? weekRangeLabel(filter) : `전체 ${weekCount}주`;
+      summaryEl.innerHTML = flat.length
+        ? `${escapeHtml(scope)} · 마이너스 <strong>${flat.length}</strong>명 · 받을 금액 <strong>${formatNumber(owe)}</strong>원`
+        : `${escapeHtml(scope)} · 합산 총지급이 마이너스인 기사가 없습니다.`;
+    }
+    if (!flat.length) {
+      body.innerHTML = '<p class="form-help">이 범위는 합산 후 이미 입금된 금액을 빼도 마이너스가 없습니다.</p>';
       return;
     }
-    body.innerHTML = `
-      <div class="table-wrap direct-scroll direct-scroll-wide">
-        <table class="settlement-retro-table settlement-negative-table">
-          <colgroup>
-            <col class="settlement-negative-col-check">
-            <col class="settlement-negative-col-name">
-            <col class="settlement-negative-col-platform">
-            <col class="settlement-negative-col-id">
-            <col class="settlement-negative-col-money">
-            <col class="settlement-negative-col-money">
-            <col class="settlement-negative-col-money">
-            <col class="settlement-negative-col-money">
-          </colgroup>
-          <thead>
-            <tr>
-              <th class="settlement-retro-check-cell"><input type="checkbox" id="settlementNegativeCheckAll" title="전체 선택"></th>
-              <th class="settlement-retro-name">기사</th>
-              <th class="settlement-retro-platform">플랫폼</th>
-              <th class="settlement-retro-id">ID</th>
-              <th class="settlement-retro-amount">기입금</th>
-              <th class="settlement-retro-amount">선정산</th>
-              <th class="settlement-retro-amount">총지급액</th>
-              <th class="settlement-retro-amount">받을 금액</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map((row, index) => {
-              const oweAmount = Math.abs(Math.round(Number(row.netPay || 0)));
-              return `<tr>
-                <td class="settlement-retro-check-cell"><input type="checkbox" class="settlement-negative-check" data-negative-index="${index}"></td>
-                <td class="settlement-retro-name"><strong>${escapeHtml(row.name || '-')}</strong></td>
-                <td class="settlement-retro-platform">${escapeHtml(row.platform === 'coupang' ? '쿠팡' : '배민')}</td>
-                <td class="settlement-retro-id">${escapeHtml(row.idLabel || '-')}</td>
-                <td class="settlement-retro-amount">${formatNumber(row.alreadyPaid)}</td>
-                <td class="settlement-retro-amount">${formatNumber(row.prepaid)}</td>
-                <td class="settlement-retro-amount settlement-negative-net">${formatNumber(row.netPay)}</td>
-                <td class="settlement-retro-amount settlement-negative-owe">${formatNumber(oweAmount)}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>`;
-    $('#settlementNegativeCheckAll')?.addEventListener('change', event => {
-      body.querySelectorAll('.settlement-negative-check').forEach(box => {
-        box.checked = event.target.checked;
+    let index = 0;
+    body.innerHTML = groups.filter(group => group.rows.length).map(group => {
+      const html = negativeWeekTable(group.week, group.rows, index);
+      index += group.rows.length;
+      return html;
+    }).join('');
+    body.querySelectorAll('.settlement-negative-check-week').forEach(box => {
+      box.addEventListener('change', event => {
+        const week = event.target.getAttribute('data-week');
+        body.querySelectorAll(`.settlement-negative-check[data-week="${week}"]`).forEach(item => {
+          item.checked = event.target.checked;
+        });
       });
     });
   }
@@ -2191,12 +2276,23 @@ const BremSettlementResultDirect = (function () {
       showToast('차감 연동을 불러오지 못했습니다. 페이지를 새로고침하세요.');
       return;
     }
-    const week = ensureWeek();
     const total = rows.reduce((sum, row) => sum + Math.abs(Math.round(Number(row.netPay || 0))), 0);
+    const weekLines = [];
+    const byWeek = new Map();
+    rows.forEach(row => {
+      const week = String(row.weekStart || '').slice(0, 10);
+      if (!byWeek.has(week)) byWeek.set(week, []);
+      byWeek.get(week).push(row);
+    });
+    byWeek.forEach((list, week) => {
+      const sub = list.reduce((sum, row) => sum + Math.abs(Math.round(Number(row.netPay || 0))), 0);
+      weekLines.push(`${weekRangeLabel(week)} ${list.length}명 ${formatNumber(sub)}원`);
+    });
     const ok = window.confirm(
       `${rows.length}명 / ${formatNumber(total)}원을 미납·차감으로 보낼까요?\n`
-      + '부분1 입금 뒤 합산이 마이너스인 금액입니다.\n\n'
-      + rows.slice(0, 12).map(row => `· ${row.name} ${formatNumber(Math.abs(Math.round(Number(row.netPay || 0))))}원`).join('\n')
+      + '각 기사의 정산주 기준으로 보냅니다.\n\n'
+      + weekLines.join('\n') + '\n\n'
+      + rows.slice(0, 12).map(row => `· ${String(row.weekStart || '').slice(0, 10)} ${row.name} ${formatNumber(Math.abs(Math.round(Number(row.netPay || 0))))}원`).join('\n')
     );
     if (!ok) return;
     const drivers = window.BremStorage?.drivers?.getAll?.() || [];
@@ -2211,6 +2307,7 @@ const BremSettlementResultDirect = (function () {
         skipped += 1;
         continue;
       }
+      const week = String(row.weekStart || '').slice(0, 10);
       const entryKey = `${driverId}|${platform}`;
       const sourceRef = `already-paid-overlap:${week}:${entryKey}`;
       const prev = store.getWeek?.(week)?.[entryKey];
@@ -2386,6 +2483,10 @@ const BremSettlementResultDirect = (function () {
     $('#settlementSpilloverTabBtn')?.addEventListener('click', () => setSettlementView('spillover'));
     $('#settlementRetroUnpaidTabBtn')?.addEventListener('click', () => setSettlementView('retroUnpaid'));
     $('#settlementNegativeTabBtn')?.addEventListener('click', () => setSettlementView('negativeList'));
+    $('#settlementNegativeWeekFilter')?.addEventListener('change', event => {
+      state.negativeWeekFilter = String(event.target.value || '');
+      void renderNegativeList();
+    });
     $('#settlementNegativeReloadBtn')?.addEventListener('click', () => { void renderNegativeList(); });
     $('#settlementNegativeSendBtn')?.addEventListener('click', () => { void sendNegativeListToDeduction(); });
     $('#settlementFinalReloadBtn')?.addEventListener('click', async () => {
