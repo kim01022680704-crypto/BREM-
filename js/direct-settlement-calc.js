@@ -436,6 +436,11 @@ const BremDirectSettlementCalc = (function () {
     if (!start) return list;
 
     const weekKey = String(options.week || '').slice(0, 10);
+    const weekEndKey = weekKey ? addDaysKey(weekKey, 6) : '';
+    // 이 정산서 기간이 그 주 마지막 날(화)까지 덮으면 전체 주(또는 마지막 부분)이다.
+    // 이때는 신청이 늦어(그 주 종료일 이후) 「신청일 −1」규칙 때문에 기간 밖으로 밀린
+    // 같은 주 출금도 선정산에 포함해야, 선정산이 통째로 누락돼 이중지급되는 일을 막는다.
+    const coversWeekEnd = Boolean(weekEndKey) && end >= weekEndKey;
     const daily = Array.isArray(options.dailySettlements)
       ? options.dailySettlements
       : loadDailySettlementsInRange(start, end);
@@ -464,7 +469,16 @@ const BremDirectSettlementCalc = (function () {
         if (inDateRange(String(row.weekStart || weekKey).slice(0, 10), start, end)) out.push(row);
         return;
       }
-      if (!withdrawalMatchesPartPeriod(row, start, end)) return;
+      if (!withdrawalMatchesPartPeriod(row, start, end)) {
+        // 그 주 종료일 이후 늦게 신청된 같은 주(weekStart 일치) 출금은,
+        // 그 주 마지막 날까지 덮는 정산서(전체/마지막 부분)에 한해 선정산으로 포함한다.
+        const rowWeek = String(row.weekStart || weekKey).slice(0, 10);
+        const period = withdrawalPeriodGuess(row)
+          || String(row.requestDate || row.createdAt || '').slice(0, 10);
+        const isLateSameWeek = coversWeekEnd && weekKey && rowWeek === weekKey
+          && Boolean(period) && period > end;
+        if (!isLateSameWeek) return;
+      }
       pending.push(row);
     });
 
