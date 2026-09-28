@@ -964,9 +964,13 @@ const BremPromotionApplyAdmin = (function () {
           }
           : { ignoreMissingRates, rainApply, assignmentMode, ...combinedMeta };
 
+        // 배민 부분1·2 합산 콜수 옵션: 같은 지역 배민 부분 정산서를 사람별로 합쳐 계산한다.
+        const baeminForCalc = $('#promotionApplyCombineParts-combined-baemin')?.checked
+          ? BremPromotionApply.mergeRegionPartSettlements(baeminSettlement, { channel: baeminChannel })
+          : baeminSettlement;
         state.lastResult = BremPromotionApply.applyPromotionToCombinedSettlements(
           coupangSettlement,
-          baeminSettlement,
+          baeminForCalc,
           ruleIds,
           undefined,
           applyOptions
@@ -1003,8 +1007,12 @@ const BremPromotionApplyAdmin = (function () {
           }
         }
 
+        // 배민 부분1·2 합산 콜수 옵션.
+        const settlementForCalc = (platform === 'baemin' && $('#promotionApplyCombineParts-baemin')?.checked)
+          ? BremPromotionApply.mergeRegionPartSettlements(settlement, { channel: state.channel })
+          : settlement;
         state.lastResult = BremPromotionApply.applyPromotionToSettlement(
-          settlement,
+          settlementForCalc,
           ruleIds,
           undefined,
           applyOptions

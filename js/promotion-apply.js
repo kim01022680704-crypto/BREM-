@@ -1877,9 +1877,74 @@ const BremPromotionApply = (function () {
     XLSX.writeFile(workbook, `프로모션적용_${weekKey}.xlsx`);
   }
 
+  // 배민 부분1·부분2를 콜수 합산으로 계산하기 위한 가상 정산서 병합.
+  // 같은 지역·같은 정산주의 배민 부분 정산서를 사람별로 합쳐(콜수·배달료·지급항목 합산)
+  // 프로모션 구간이 부분 쪼갬 없이 주 전체 콜수로 잡히게 한다.
+  function mergeRegionPartSettlements(settlement, options = {}) {
+    if (!settlement) return settlement;
+    const platform = normalizePlatform(settlement.platform);
+    if (platform !== 'baemin') return settlement;
+    const channel = normalizeChannel(options.channel || settlement.channel);
+    const week = applyWeekWednesday(settlement.startDate || settlement.baseSettlementDate);
+    const region = String(settlement.region || '').trim();
+    const all = BremStorage.weeklySettlements.getAll(channel === 'direct' ? 'direct' : 'bro') || [];
+    const parts = all.filter(rec => (
+      normalizePlatform(rec.platform) === 'baemin'
+      && String(rec.region || '').trim() === region
+      && applyWeekWednesday(rec.startDate || rec.baseSettlementDate) === week
+    ));
+    if (parts.length <= 1) return settlement;
+
+    const numericAmountKeys = new Set();
+    parts.forEach(rec => (rec.riders || []).forEach(rider => {
+      Object.keys(rider.amounts || {}).forEach(k => {
+        if (typeof rider.amounts[k] === 'number') numericAmountKeys.add(k);
+      });
+    }));
+
+    const ordered = [...parts].sort((a, b) => String(a.startDate || '').localeCompare(String(b.startDate || '')));
+    const byKey = new Map();
+    function riderKey(rider) {
+      const mid = String(rider.matchedRiderId || '').trim();
+      if (mid) return `m:${mid}`;
+      const bid = matchKeyBaemin(rider.baeminUserId || rider.originalName);
+      if (bid) return `b:${bid}`;
+      return `n:${String(rider.riderName || rider.originalName || '').replace(/\s+/g, '')}`;
+    }
+    ordered.forEach(rec => (rec.riders || []).forEach(rider => {
+      const key = riderKey(rider);
+      if (!key) return;
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, { ...rider, amounts: { ...(rider.amounts || {}) }, weeklyOrderCount: Math.round(Number(rider.weeklyOrderCount || 0)) });
+        return;
+      }
+      existing.weeklyOrderCount = Math.round(Number(existing.weeklyOrderCount || 0)) + Math.round(Number(rider.weeklyOrderCount || 0));
+      numericAmountKeys.forEach(k => {
+        existing.amounts[k] = Number(existing.amounts[k] || 0) + Number(rider.amounts?.[k] || 0);
+      });
+      // 매칭·아이디는 있는 값 우선 유지
+      if (!existing.matchedRiderId && rider.matchedRiderId) existing.matchedRiderId = rider.matchedRiderId;
+      if (!existing.baeminUserId && rider.baeminUserId) existing.baeminUserId = rider.baeminUserId;
+    }));
+
+    const startDate = ordered.map(r => String(r.startDate || '').slice(0, 10)).filter(Boolean).sort()[0] || settlement.startDate;
+    const endDate = ordered.map(r => String(r.endDate || '').slice(0, 10)).filter(Boolean).sort().slice(-1)[0] || settlement.endDate;
+    return {
+      ...settlement,
+      id: `combined-parts:${settlement.id}`,
+      startDate,
+      endDate,
+      riders: [...byKey.values()],
+      _combinedPartIds: ordered.map(r => r.id),
+      _combinedParts: true
+    };
+  }
+
   return {
     applyPromotionToSettlement,
     applyPromotionToCombinedSettlements,
+    mergeRegionPartSettlements,
     selectedRulesNeedDeliveryFee,
     settlementNeedsDeliveryFee,
     combinedSettlementsNeedDeliveryFee,
