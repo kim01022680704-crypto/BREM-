@@ -349,6 +349,37 @@ function isDirectPayslipLine(line) {
   return String(line?.upload_id || '').startsWith('direct-');
 }
 
+function linePayoutWaveId(line) {
+  const raw = line?.raw_data && typeof line.raw_data === 'object' ? line.raw_data : {};
+  const payslip = raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : {};
+  return String(raw.payoutWaveId || payslip.payoutWaveId || '').trim();
+}
+
+function isCombinedDirectLine(line) {
+  const raw = line?.raw_data && typeof line.raw_data === 'object' ? line.raw_data : {};
+  const settlementId = String(raw.settlementId || '').trim();
+  return linePayoutWaveId(line) === 'week' || settlementId.startsWith('combined-');
+}
+
+// 합산(주 전체) 줄이 있으면 그 플랫폼의 부분 줄은 빼지 않는다.
+// 부분1 콜수수료와 주 전체 콜수수료가 명세서에서 두 번 더해지는 것을 막는다.
+function preferCombinedDirectLines(lines) {
+  const list = Array.isArray(lines) ? lines : [];
+  const combinedPlatforms = new Set();
+  list.forEach(line => {
+    if (!isDirectPayslipLine(line) || !isCombinedDirectLine(line)) return;
+    const platform = resolveLinePlatform(line);
+    if (platform === 'coupang' || platform === 'baemin') combinedPlatforms.add(platform);
+  });
+  if (!combinedPlatforms.size) return list;
+  return list.filter(line => {
+    if (!isDirectPayslipLine(line) || isCombinedDirectLine(line)) return true;
+    const platform = resolveLinePlatform(line);
+    if (platform !== 'coupang' && platform !== 'baemin') return true;
+    return !combinedPlatforms.has(platform);
+  });
+}
+
 function bucketHasActivity(bucket) {
   if (!bucket) return false;
   return Boolean(
@@ -366,7 +397,7 @@ function bucketHasActivity(bucket) {
 }
 
 function buildPayslipFromLines(weekLines, meta = {}) {
-  const list = Array.isArray(weekLines) ? weekLines : [];
+  const list = preferCombinedDirectLines(weekLines);
   const platforms = {
     coupang: emptyDirectBucket(),
     baemin: emptyDirectBucket()
@@ -417,7 +448,7 @@ function buildPayslipFromLines(weekLines, meta = {}) {
  * - 브로가 쿠팡/배민으로 명시돼 있으면 그대로 그 플랫폼에
  */
 function buildPayslipFromMixedSources(weekLines, meta = {}) {
-  const list = Array.isArray(weekLines) ? weekLines : [];
+  const list = preferCombinedDirectLines(weekLines);
   const directLines = list.filter(isDirectPayslipLine);
   const broLines = list.filter(line => !isDirectPayslipLine(line));
 
