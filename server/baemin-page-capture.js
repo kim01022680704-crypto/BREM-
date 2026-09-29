@@ -176,7 +176,16 @@ async function dismissBaeminBlockingModals(page) {
       '.ant-modal-footer button:has-text("닫기")',
       'button:has-text("확인")',
       'button:has-text("오늘 하루 보지 않기")',
-      'button:has-text("다시 보지 않기")'
+      'button:has-text("다시 보지 않기")',
+      'button:has-text("오늘 그만 보기")',
+      'button:has-text("오늘 그만보기")',
+      'button:has-text("그만 보기")',
+      'a:has-text("오늘 그만 보기")',
+      'a:has-text("오늘 그만보기")',
+      'a:has-text("그만 보기")',
+      '.ant-modal-close',
+      '[role="dialog"] [aria-label="close"]',
+      '[role="dialog"] [aria-label="닫기"]'
     ];
     for (const selector of candidates) {
       const loc = page.locator(selector);
@@ -204,7 +213,7 @@ async function dismissBaeminBlockingModals(page) {
         '[role="dialog"], .ant-modal, .ant-modal-wrap, .modal, [class*="Modal"], [class*="dialog"]'
       )).filter(isVisible);
       const roots = dialogs.length ? dialogs : [document.body];
-      const labels = ['닫기', '확인', '오늘 하루 보지 않기', '다시 보지 않기'];
+      const labels = ['닫기', '확인', '오늘 하루 보지 않기', '다시 보지 않기', '오늘 그만 보기', '오늘 그만보기', '그만 보기'];
       roots.forEach((root) => {
         const buttons = Array.from(root.querySelectorAll('button, a, [role="button"]'));
         buttons.forEach((btn) => {
@@ -223,7 +232,7 @@ async function dismissBaeminBlockingModals(page) {
       });
       // SLA/등급제 안내 텍스트가 보이면 Escape키로도 시도
       const bodyText = document.body?.innerText || '';
-      if (/신규\s*SLA|등급제\s*안내|SLA\/등급제/.test(bodyText) && n === 0) {
+      if (/신규\s*SLA|등급제\s*안내|SLA\/등급제|운영\s*기준\s*변경|운영\s*기준\s*안내/.test(bodyText) && n === 0) {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       }
       return n;
