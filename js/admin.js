@@ -26,6 +26,7 @@
     baeminHourlyInsurancePreview: null,
     baeminHourlyInsuranceLogDay: '',
     settlementLogDayByPlatform: { coupang: '', baemin: '' },
+    settlementVerifyByPlatform: { coupang: null, baemin: null },
     settlementUnmatchedWeekByPlatform: { coupang: null, baemin: null },
     settlementHistoryDayByPlatform: { coupang: null, baemin: null },
     settlementUploadLogDetailId: '',
@@ -4319,6 +4320,8 @@
     switch (String(status || '')) {
       case 'applied':
         return '반영완료';
+      case 'applied_gap':
+        return '저장누락';
       case 'duplicate_skipped':
         return '중복스킵';
       case 'saved':
@@ -4326,6 +4329,105 @@
       default:
         return '업로드';
     }
+  }
+
+  function settlementRecordLabel(record) {
+    return String(record?.driverName || record?.name || record?.rawName || record?.driverId || '').trim();
+  }
+
+  function settlementRecordsRequiringSave(records) {
+    return (Array.isArray(records) ? records : []).filter(record => {
+      const driverId = String(record?.driverId || '').trim();
+      if (!driverId) return false;
+      const amount = Math.abs(Number(record.settlementAmount ?? record.deliveryAmount ?? 0));
+      const orders = Number(record.orderCount || 0);
+      return amount > 0 || orders > 0;
+    });
+  }
+
+  function missingSettlementRecords(expected, savedRows) {
+    const savedIds = new Set((savedRows || []).map(row => String(row.driver_id || '')));
+    return expected.filter(record => !savedIds.has(String(record.driverId || '')));
+  }
+
+  async function fetchDailySettlementSavedRows(period, platform) {
+    const client = await BremStorage.ensureSupabaseClient?.();
+    if (!client) throw new Error('Supabase 연결이 없습니다. 로그인 후 다시 시도하세요.');
+    const day = String(period || '').slice(0, 10);
+    const p = normalizePlatform(platform);
+    const rows = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await client.from('daily_settlements')
+        .select('driver_id,settlement_amount,order_count')
+        .eq('period', day)
+        .eq('platform', p)
+        .range(from, from + 999);
+      if (error) throw new Error(error.message || '일정산 저장 조회에 실패했습니다.');
+      if (!data?.length) break;
+      rows.push(...data);
+      if (data.length < 1000) break;
+      from += 1000;
+    }
+    return rows;
+  }
+
+  function renderSettlementVerifyBadge(platform) {
+    const p = normalizePlatform(platform);
+    const el = $(`#settlementVerifyBadge-${p}`);
+    if (!el) return;
+    const report = state.settlementVerifyByPlatform?.[p];
+    const dayKey = ensureSettlementLogDay(p);
+    if (!report || report.period !== dayKey) {
+      el.hidden = true;
+      el.textContent = '';
+      el.className = 'settlement-verify-badge';
+      return;
+    }
+    el.hidden = false;
+    if (!report.missing.length) {
+      el.className = 'settlement-verify-badge is-ok';
+      el.textContent = `저장 대조 일치 · 반영 ${report.expected.toLocaleString('ko-KR')}명 / 저장 ${report.saved.toLocaleString('ko-KR')}건`;
+      return;
+    }
+    const names = report.missing.slice(0, 8).join(', ');
+    const more = report.missing.length > 8 ? ` 외 ${report.missing.length - 8}명` : '';
+    el.className = 'settlement-verify-badge is-gap';
+    el.textContent = `저장 누락 ${report.missing.length}명 · ${names}${more}`;
+  }
+
+  async function reconcileSettlementDay(platform, options = {}) {
+    const p = normalizePlatform(platform);
+    const dayKey = String(options.period || ensureSettlementLogDay(p) || '').slice(0, 10);
+    if (!dayKey) throw new Error('정산일을 선택하세요.');
+    const logs = BremStorage.settlementUploadLogs.getFiltered({
+      kind: 'daily',
+      platform: p,
+      period: dayKey
+    }).filter(log => log.status === 'applied' || log.status === 'applied_gap');
+    const expected = new Map();
+    logs.forEach(log => {
+      const records = log.appliedRecords?.length ? log.appliedRecords : log.matchedRecords;
+      settlementRecordsRequiringSave(records).forEach(record => {
+        const driverId = String(record.driverId || '').trim();
+        if (!expected.has(driverId)) expected.set(driverId, settlementRecordLabel(record) || driverId);
+      });
+    });
+    const saved = await fetchDailySettlementSavedRows(dayKey, p);
+    const savedIds = new Set(saved.map(row => String(row.driver_id || '')));
+    const missing = [];
+    expected.forEach((name, driverId) => {
+      if (!savedIds.has(driverId)) missing.push(name);
+    });
+    const report = {
+      period: dayKey,
+      expected: expected.size,
+      saved: saved.length,
+      missing
+    };
+    state.settlementVerifyByPlatform[p] = report;
+    renderSettlementVerifyBadge(p);
+    return report;
   }
 
   function serializeSettlementLogRecords(records = []) {
@@ -4443,6 +4545,9 @@
     const duplicateNote = log.status === 'duplicate_skipped'
       ? `<p class="weekly-call-mismatch-banner">⚠ ${escapeHtml(log.skipReason || '동일 데이터 — 중복 반영을 건너뛰었습니다.')}</p>`
       : '';
+    const gapNote = log.status === 'applied_gap'
+      ? `<p class="weekly-call-mismatch-banner">⚠ ${escapeHtml(log.skipReason || '저장 누락 — 반영완료로 확정되지 않았습니다.')}</p>`
+      : '';
     const duplicateRef = log.duplicateOfLogId
       ? `<p>중복 기준 기록 ID: <code>${escapeHtml(log.duplicateOfLogId)}</code></p>`
       : '';
@@ -4457,6 +4562,7 @@
       <p>매칭 시간제보험: <strong>${formatMoney(totalHourlyInsurance)}</strong></p>
       <p>업로드: ${escapeHtml(formatDateTime(log.uploadedAt))}${log.appliedAt ? ` · 반영: ${escapeHtml(formatDateTime(log.appliedAt))}` : ''}</p>
       ${duplicateNote}
+      ${gapNote}
       ${duplicateRef}
     `;
 
@@ -4584,12 +4690,16 @@
 
     rowsEl.innerHTML = rows.map(item => {
       const payrollEligible = settlementUploadLogPayrollEligible(item);
+      const statusLabel = settlementUploadLogStatusLabel(item.status);
+      const statusHtml = item.status === 'applied_gap'
+        ? `<strong class="settlement-verify-gap">${escapeHtml(statusLabel)}</strong>`
+        : escapeHtml(statusLabel);
       return `
       <tr>
         <td>${formatDate(item.weekStart)} ~ ${formatDate(item.weekEnd)}</td>
         <td>${formatDate(item.period)}</td>
         <td>${escapeHtml(item.fileName || '-')} ${formatSettlementCallFeeLogBadge(resolveDailyLogCallFeeUnit(item))}</td>
-        <td>${escapeHtml(settlementUploadLogStatusLabel(item.status))}</td>
+        <td>${statusHtml}</td>
         <td><strong class="${payrollEligible ? 'text-success' : ''}">${payrollEligible ? '반영' : '미반영'}</strong></td>
         <td>${Number(item.matchedCount || 0).toLocaleString('ko-KR')}명</td>
         <td>${formatDate(String(item.uploadedAt || '').slice(0, 10))}</td>
@@ -4620,6 +4730,7 @@
     if (reapplyWeekBtn) {
       reapplyWeekBtn.disabled = !rows.some(canReapplySettlementUploadLog);
     }
+    renderSettlementVerifyBadge(p);
   }
 
   function matchesSettlementPeriod(record, periodKey) {
@@ -5113,6 +5224,7 @@
 
         let successCount = 0;
         let appliedRiders = 0;
+        let gapPeople = 0;
         for (const log of sorted) {
           const applicable = settlementUploadLogApplicableRecords(log);
           const result = await applyDailySettlementFromLogData(p, {
@@ -5128,9 +5240,11 @@
             skipRender: true,
             silent: true
           });
-          if (result.ok) {
+          if (result.verified) {
             successCount += 1;
             appliedRiders += applicable.length;
+          } else if (result.gap) {
+            gapPeople += result.gap;
           }
         }
 
@@ -5145,10 +5259,17 @@
         if (state.settlementUploadLogDetailId) {
           renderSettlementUploadLogDetail(state.settlementUploadLogDetailId);
         }
+        try {
+          await reconcileSettlementDay(p, { period: dayKey });
+        } catch (verifyError) {
+          console.warn('[BREM] settlement day verify skipped:', verifyError?.message || verifyError);
+        }
         showToast(
-          successCount > 0
-            ? `${platformLabel(p)} ${rangeLabel} 업로드 ${successCount}건 · ${appliedRiders}명 재반영 완료`
-            : '재반영에 성공한 기록이 없습니다.'
+          gapPeople > 0
+            ? `${platformLabel(p)} ${rangeLabel} 재반영 ${successCount}건 · 저장 누락 ${gapPeople}명 (반영완료로 확정 안 됨)`
+            : (successCount > 0
+              ? `${platformLabel(p)} ${rangeLabel} 업로드 ${successCount}건 · ${appliedRiders}명 재반영 완료 · 저장 대조 일치`
+              : '재반영에 성공한 기록이 없습니다.')
         );
       } catch (error) {
         console.error('[BREM] settlement upload log week reapply failed:', error);
@@ -6856,25 +6977,48 @@
     try {
       await BremStorage.ensureSectionLoaded?.('settlements');
 
+      const toWriteRecord = record => ({
+        driverId: record.driverId,
+        riderId: record.riderId || '',
+        orderCount: record.orderCount,
+        hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
+        // 공제기준금액(쿠팡 AC열)을 빼면 0으로 저장되어 원천세가 정산금액 기준으로 계산된다.
+        // → 실지급액이 부풀고 초과출금으로 이어진다. 반드시 같이 넘긴다.
+        deductionBase: Math.abs(Number(record.deductionBase || 0)),
+        deliveryAmount: settlementAmountValue(record),
+        settlementAmount: settlementAmountValue(record)
+      });
+      let verifyResult = null;
+
       await window.BremPerf?.runSave?.(`settlements.apply.${p}`, {
         write: async () => {
           const writeResult = await BremStorage.settlements.upsertBatch({
             period,
             platform: p,
             callFeeUnit,
-            records: matched.map(record => ({
-              driverId: record.driverId,
-              riderId: record.riderId || '',
-              orderCount: record.orderCount,
-              hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
-              // 공제기준금액(쿠팡 AC열)을 빼면 0으로 저장되어 원천세가 정산금액 기준으로 계산된다.
-              // → 실지급액이 부풀고 초과출금으로 이어진다. 반드시 같이 넘긴다.
-              deductionBase: Math.abs(Number(record.deductionBase || 0)),
-              deliveryAmount: settlementAmountValue(record),
-              settlementAmount: settlementAmountValue(record)
-            }))
+            records: matched.map(toWriteRecord)
           });
           await BremStorage.awaitPersist?.(writeResult);
+
+          const required = settlementRecordsRequiringSave(matched);
+          let missing = [];
+          if (required.length) {
+            let savedRows = await fetchDailySettlementSavedRows(period, p);
+            missing = missingSettlementRecords(required, savedRows);
+            if (missing.length) {
+              const retryResult = await BremStorage.settlements.upsertBatch({
+                period,
+                platform: p,
+                callFeeUnit,
+                records: missing.map(toWriteRecord)
+              });
+              await BremStorage.awaitPersist?.(retryResult);
+              savedRows = await fetchDailySettlementSavedRows(period, p);
+              missing = missingSettlementRecords(required, savedRows);
+            }
+          }
+          const verified = missing.length === 0;
+          verifyResult = { verified, missing };
 
           BremStorage.payrollDailySettlement?.setPayrollDailyEligibleForRecords?.({
             period,
@@ -6885,7 +7029,7 @@
           await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
 
           const applyPatch = {
-            status: 'applied',
+            status: verified ? 'applied' : 'applied_gap',
             appliedAt: new Date().toISOString(),
             matchedCount: matched.length,
             unmatchedCount: unmatched.length,
@@ -6897,7 +7041,9 @@
             totalDeliveryAmount,
             totalOrderCount: appliedRecords.reduce((sum, row) => sum + Number(row.orderCount || 0), 0),
             duplicateOfLogId: '',
-            skipReason: '',
+            skipReason: verified
+              ? ''
+              : `저장 누락 ${missing.length}명 (${missing.slice(0, 8).map(settlementRecordLabel).join(', ')}${missing.length > 8 ? '…' : ''}) · 재저장 후에도 반영되지 않았습니다`,
             payrollDailyEligible,
             callFeeUnit
           };
@@ -6943,7 +7089,27 @@
         }
       });
 
-      return { ok: true, count: matched.length };
+      if (!verifyResult) {
+        return { ok: false, verified: false, gap: 0, count: matched.length };
+      }
+      if (!silent && !verifyResult.verified) {
+        const names = verifyResult.missing.slice(0, 6).map(settlementRecordLabel).join(', ');
+        showToast(`저장 대조 실패 · ${verifyResult.missing.length}명 누락 (${names}). 반영완료로 표시하지 않았습니다.`);
+      }
+      if (!skipRender) {
+        try {
+          await reconcileSettlementDay(p, { period });
+        } catch (verifyError) {
+          console.warn('[BREM] settlement day verify skipped:', verifyError?.message || verifyError);
+        }
+      }
+      return {
+        ok: verifyResult.verified,
+        verified: verifyResult.verified,
+        gap: verifyResult.missing.length,
+        missingNames: verifyResult.missing.map(settlementRecordLabel),
+        count: matched.length
+      };
     } catch (error) {
       console.error('[BREM] settlement apply failed:', error);
       showToast(error.message || '일정산 반영 저장에 실패했습니다. 다시 시도하세요.');
@@ -7000,7 +7166,7 @@
     const p = normalizePlatform(log.platform);
     const period = String(log.period || '').slice(0, 10);
     const rangeLabel = formatDate(period);
-    const confirmMessage = log.status === 'applied'
+    const confirmMessage = log.status === 'applied' || log.status === 'applied_gap'
       ? `${rangeLabel} ${platformLabel(p)} 저장 데이터 ${applicable.length}명을 다시 반영하시겠습니까?\n기존 콜수·일정산이 덮어씌워집니다.\n(엑셀 파일 없이 저장된 매칭 데이터만 사용합니다.)`
       : `${rangeLabel} ${platformLabel(p)} 저장 데이터 ${applicable.length}명을 반영하시겠습니까?\n(엑셀 파일 없이 저장된 매칭 데이터만 사용합니다.)`;
     if (!window.confirm(confirmMessage)) return;
@@ -7021,7 +7187,7 @@
       });
       if (result.ok) {
         invalidateCallStatsIndex();
-        showToast(`${platformLabel(p)} 일정산 ${result.count}건을 저장 데이터로 재반영했습니다.`);
+        showToast(`${platformLabel(p)} 일정산 ${result.count}건을 저장 데이터로 재반영했습니다. · 저장 대조 일치`);
       }
     } catch (error) {
       console.error('[BREM] settlement reapply failed:', error);
@@ -7202,7 +7368,7 @@
           (payrollDailyEligible
             ? `${platformLabel(p)} 일정산 ${preview.matched.length}건 반영 · 매칭 기사 급여 일정산 포함`
             : `${platformLabel(p)} 일정산 ${preview.matched.length}건 반영 · 급여 일정산 미포함`)
-          + ` · 콜수수료 ${callFeeUnit.toLocaleString('ko-KR')}원/콜`
+          + ` · 콜수수료 ${callFeeUnit.toLocaleString('ko-KR')}원/콜 · 저장 대조 일치`
         );
       }
     } finally {
@@ -8137,6 +8303,25 @@
       });
       $(`#settlementUploadLogReapplyWeek-${p}`)?.addEventListener('click', () => {
         reapplySettlementUploadLogsForSelectedWeek(p);
+      });
+      $(`#settlementVerifyDay-${p}`)?.addEventListener('click', () => {
+        const btn = $(`#settlementVerifyDay-${p}`);
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = '대조 중…';
+        }
+        void reconcileSettlementDay(p).then(result => {
+          showToast(result.missing.length
+            ? `${formatDate(result.period)} 저장 누락 ${result.missing.length}명`
+            : `${formatDate(result.period)} 저장 대조 일치 (${result.expected}명)`);
+        }).catch(error => {
+          showToast(error.message || '저장 대조에 실패했습니다.');
+        }).finally(() => {
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = '저장 대조';
+          }
+        });
       });
       $(`#settlementUploadLogClearWeek-${p}`)?.addEventListener('click', () => {
         clearSettlementUploadLogsForSelectedWeek(p);

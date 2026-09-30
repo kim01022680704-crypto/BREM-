@@ -18,7 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260929neg3">
+  <link rel="stylesheet" href="css/admin.css?v=20260930verify1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
@@ -3877,11 +3877,13 @@
                 <span>정산일</span>
                 <input type="date" id="settlementLogDay-coupang" class="admin-period-input">
               </div>
+              <button type="button" class="small-btn" id="settlementVerifyDay-coupang">저장 대조</button>
               <button type="button" class="small-btn primary-btn" id="settlementUploadLogReapplyWeek-coupang" disabled>해당일 전체 재반영</button>
               <button type="button" class="small-btn danger-btn" id="settlementUploadLogClearWeek-coupang" disabled>해당일 전체 삭제</button>
             </div>
           </div>
           <p class="settlement-week-range-label" id="settlementLogDayRange-coupang"></p>
+          <p class="settlement-verify-badge" id="settlementVerifyBadge-coupang" hidden></p>
           <p class="admin-table-summary" id="settlementUploadLogSummary-coupang"></p>
           <div class="table-wrap admin-scroll-table-wrap admin-scroll-table-wrap--upload-log">
             <table class="settlement-upload-log-table">
@@ -4184,11 +4186,13 @@
                 <span>정산일</span>
                 <input type="date" id="settlementLogDay-baemin" class="admin-period-input">
               </div>
+              <button type="button" class="small-btn" id="settlementVerifyDay-baemin">저장 대조</button>
               <button type="button" class="small-btn primary-btn" id="settlementUploadLogReapplyWeek-baemin" disabled>해당일 전체 재반영</button>
               <button type="button" class="small-btn danger-btn" id="settlementUploadLogClearWeek-baemin" disabled>해당일 전체 삭제</button>
             </div>
           </div>
           <p class="settlement-week-range-label" id="settlementLogDayRange-baemin"></p>
+          <p class="settlement-verify-badge" id="settlementVerifyBadge-baemin" hidden></p>
           <p class="admin-table-summary" id="settlementUploadLogSummary-baemin"></p>
           <div class="table-wrap admin-scroll-table-wrap admin-scroll-table-wrap--upload-log">
             <table class="settlement-upload-log-table">
@@ -9378,7 +9382,7 @@
   <script src="js/admin-missions.js?v=20260827mission10"></script>
   <script src="js/table-sort.js"></script>
     <script src="js/admin-work-requests.js?v=20260927req8"></script>
-    <script src="js/admin.js?v=20260927req8"></script>
+    <script src="js/admin.js?v=20260930verify1"></script>
   <script src="js/admin-driver-popups.js?v=20260914popup2" defer></script>
   <script src="js/admin-sidebar-groups.js?v=20260927req3" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
