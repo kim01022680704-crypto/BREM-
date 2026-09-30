@@ -2200,7 +2200,7 @@ async function runFullCollectPipeline(options = {}) {
         collectProgress.setPartnerTotal(orderedPartners.length);
       }
 
-      async function collectPartnerShard(page, ctx, partners, workerId) {
+      async function collectPartnerShard(page, ctx, partners, workerId, forceSessionChange = false) {
         const localRegistry = {
           ...registry,
           endpoints: { ...(registry.endpoints || {}) },
@@ -2243,7 +2243,7 @@ async function runFullCollectPipeline(options = {}) {
             console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 시작 (${partner.partnerId})`);
             const active = await selectPartnerCenter(page, {
               ...partner,
-              requireSessionChange: i > 0 || workerId !== 'A'
+              requireSessionChange: forceSessionChange || i > 0 || workerId !== 'A'
             });
             localRegistry.centerContext = {
               centerId: active.centerId || partner.partnerId,
@@ -2260,7 +2260,7 @@ async function runFullCollectPipeline(options = {}) {
             console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 완료 · ${uiNow.partnerName || partner.partnerName} (${partner.partnerId})`);
             localPipe.partnerCollectIndex = globalIndex;
             localPipe.lastPartnerMenuFingerprints = { ...lastFp };
-            scope.requireSessionChange = i > 0;
+            scope.requireSessionChange = forceSessionChange || i > 0;
             const loopResult = await runForPartner({
               ...partner,
               ...active,
@@ -2309,6 +2309,11 @@ async function runFullCollectPipeline(options = {}) {
         console.log(`[BREM][collect] 창 ${idx === 0 ? 'A' : 'B'} ${shard.length}곳 · 지역 ${regions}`);
       });
 
+      const normPartnerId = (v) => String(v || '').trim().toUpperCase();
+      const collectedOkIds = () => new Set(
+        partnerSummaries.filter(s => s.ok).map(s => normPartnerId(s.partnerId))
+      );
+
       if (shards.length >= 2 && playwrightContext) {
         let clone = null;
         const runShardSafe = async (page, ctx, partners, workerId, startDelayMs = 0) => {
@@ -2325,31 +2330,49 @@ async function runFullCollectPipeline(options = {}) {
           clone = await launchClonedCollectContext(playwrightContext);
           if (!clone?.page) throw new Error('두 번째 Playwright 창을 열지 못했습니다.');
           console.log('[BREM][collect] Playwright 2창 병렬 수집 시작');
-          const settled = await Promise.all([
+          await Promise.all([
             runShardSafe(playwrightPage, playwrightContext, shards[0], 'A'),
             runShardSafe(clone.page, clone.context, shards[1], 'B', 2500)
           ]);
-          const failed = settled.filter(row => !row.ok);
-          if (failed.length) {
-            const doneIds = new Set(partnerSummaries.map(s => String(s.partnerId || '').trim()));
-            const remaining = orderedPartners.filter(p => !doneIds.has(String(p.partnerId || '').trim()));
-            if (remaining.length) {
-              console.warn(`[BREM][collect] 2창 일부 실패 → 남은 ${remaining.length}곳 1창으로 이어서 수집`);
-              await collectPartnerShard(playwrightPage, playwrightContext, remaining, 'A');
-            }
-          }
         } catch (error) {
           console.warn('[BREM][collect] 2창 수집 실패, 1창 순차로 전환:', error.message);
-          const doneIds = new Set(partnerSummaries.map(s => String(s.partnerId || '').trim()));
-          const remaining = orderedPartners.filter(p => !doneIds.has(String(p.partnerId || '').trim()));
-          if (remaining.length) {
-            await collectPartnerShard(playwrightPage, playwrightContext, remaining, 'A');
-          }
         } finally {
           if (clone) await clone.close().catch(() => {});
         }
       } else {
         await collectPartnerShard(playwrightPage, playwrightContext, orderedPartners, 'A');
+      }
+
+      // ── 미수집 협력사 보강 (근본 해결) ──────────────────────────────────
+      // 2창 병렬은 같은 배민 로그인을 공유해 센터전환이 충돌하면 한 묶음이 통째로 빠질 수 있다.
+      // "성공(ok)"한 협력사만 완료로 보고, 성공하지 못한 곳(시도했다 실패한 곳 포함)을
+      // 메인 창에서 순차로 최대 2패스 재수집한다. clone 창은 이미 닫힌 뒤라 충돌이 없다.
+      const RECONCILE_PASSES = 2;
+      for (let pass = 1; pass <= RECONCILE_PASSES; pass += 1) {
+        const okIds = collectedOkIds();
+        const remaining = orderedPartners.filter(p => !okIds.has(normPartnerId(p.partnerId)));
+        if (!remaining.length) break;
+        console.warn(`[BREM][collect] 미수집 보강 ${pass}/${RECONCILE_PASSES}패스 · ${remaining.length}곳 메인창 순차 재수집: ${remaining.map(p => p.regionName || p.partnerName || p.partnerId).join(', ')}`);
+        await collectPartnerShard(playwrightPage, playwrightContext, remaining, 'A', true).catch(error => {
+          console.warn(`[BREM][collect] 보강 ${pass}패스 오류:`, error.message);
+        });
+      }
+
+      // 재시도로 생긴 중복·실패기록 정리: 협력사별 성공/최대 저장건 1건만 유지
+      if (partnerSummaries.length > 1) {
+        const bestByPartner = new Map();
+        for (const s of partnerSummaries) {
+          const keyId = normPartnerId(s.partnerId);
+          const prev = bestByPartner.get(keyId);
+          const better = !prev
+            || (s.ok && !prev.ok)
+            || (Boolean(s.ok) === Boolean(prev.ok) && Number(s.savedCount || 0) > Number(prev.savedCount || 0));
+          if (better) bestByPartner.set(keyId, s);
+        }
+        if (bestByPartner.size !== partnerSummaries.length) {
+          partnerSummaries.length = 0;
+          partnerSummaries.push(...bestByPartner.values());
+        }
       }
     } else {
       const partner = partnersToCollect[0] || registry.centerContext || {};
