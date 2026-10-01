@@ -18,7 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260930verify1">
+  <link rel="stylesheet" href="css/admin.css?v=20261001notin1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
@@ -5320,6 +5320,23 @@
             </div>
           </form>
         </dialog>
+
+        <dialog class="baemin-json-dialog" id="directErpNotInDialog">
+          <form method="dialog" class="baemin-json-dialog__inner" onsubmit="return false;">
+            <h3>정산서에 없는 기사 넣기 선택</h3>
+            <p class="form-help">이 정산서에 없는 기사입니다. 넣으면 배달비·보험·선정산 없이 <strong>프로모션만</strong> 들어가고 원천세 3.3%만 뗍니다. 다른 정산서(예: 남A)에 넣을 사람은 체크하지 말고 두면 이번 정산서에서 빠집니다.</p>
+            <div class="direct-erp-notin-tools">
+              <button type="button" class="small-btn" id="directErpNotInAllBtn">전체 넣기</button>
+              <button type="button" class="small-btn" id="directErpNotInNoneBtn">전체 빼기</button>
+              <span class="direct-inline-stats" id="directErpNotInHint"></span>
+            </div>
+            <div class="direct-erp-notin-list" id="directErpNotInList"></div>
+            <div class="baemin-json-dialog__actions">
+              <button type="button" class="primary-btn" id="directErpNotInApplyBtn">선택대로 적용</button>
+              <button type="button" class="small-btn" id="directErpNotInCancelBtn">취소</button>
+            </div>
+          </form>
+        </dialog>
       </section>
 
       <section class="section" id="settlement-result-direct">
@@ -9364,7 +9381,7 @@
   <script src="js/payroll-promotion-bulk.js?v=20260822other1"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260807b"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260905a"></script>
-  <script src="js/direct-adjustment-admin.js?v=20260928promo2"></script>
+  <script src="js/direct-adjustment-admin.js?v=20261001notin1"></script>
   <script src="js/direct-settlement-calc.js?v=20260929nopaid1"></script>
   <script src="js/settlement-result-direct.js?v=20260929nopaid1"></script>
   <script src="js/final-deposit.js?v=20260929nopaid1"></script>

@@ -1174,36 +1174,28 @@ const BremDirectAdjustmentAdmin = (function () {
       if (!proceed) return;
     }
 
-    // 정산서에 없는 기사는 이름을 보여주고, 확인을 누른 경우에만 프로모션만 넣는다.
-    let includePromoOnly = false;
+    // 정산서에 없는 기사는 한 명씩 넣기/빼기를 고르게 한다.
+    // 예) 포항북A 정산서에 없는 기사는 남A 정산서에 넣어야 하므로 여기선 빼둔다.
     if (plan.notInSettlement.length) {
-      const lines = plan.notInSettlement.map(item => {
-        const promo = Math.round(Number(item.amount || 0));
-        const tax = Math.floor(promo * 0.033);
-        const name = item.name || driverName(item.driverId);
-        return `· ${name}  프로모션 ${formatNumber(promo)}원 · 원천세 ${formatNumber(tax)}원 · 총지급 ${formatNumber(promo - tax)}원`;
-      });
-      includePromoOnly = window.confirm([
-        `정산서에 없는 기사 ${plan.notInSettlement.length}명을 프로모션만 넣을까요?`,
-        '배달비·보험·선정산은 넣지 않고, 프로모션에서 원천세 3.3%만 뗍니다.',
-        '',
-        ...lines,
-        '',
-        '확인을 누르면 정산결과와 최종입금에 들어갑니다.'
-      ].join('\n'));
-      if (!includePromoOnly && !plan.applicable.size && !plan.droppedErp.length) {
-        showToast('정산서에 없는 기사 프로모션 넣기를 취소했습니다.');
-        return;
-      }
+      openErpNotInDialog(settlement, plan);
+      return;
     }
-    const promoOnlyList = includePromoOnly ? plan.notInSettlement : [];
+    commitErp(settlement, plan, []);
+  }
+
+  // 선택을 실제 저장에 반영한다. promoOnlyList = 정산서에 없지만 이번에 '프로모션만' 넣기로 고른 기사.
+  function commitErp(settlement, plan, promoOnlyList) {
+    if (!settlement || !plan) return;
+    const included = Array.isArray(promoOnlyList) ? promoOnlyList : [];
 
     // ERP 몫은 선택한 결과로 매번 다시 쓴다. 그래야 여러 번 눌러도 금액이 쌓이지 않는다.
     // 엑셀로 넣은 금액은 이번 ERP 대상이 아닌 한 그대로 둔다.
     const store = window.BremStorage.directSettlementAdjustments;
     const existing = store.getSettlement('promotion', settlement.id) || {};
+    const includedIds = new Set(included.map(item => item.driverId));
+    // 이번에 '넣기'로 고르지 않은, 정산서에 없는 기사 = 뺀 사람.
     const declinedIds = new Set(
-      includePromoOnly ? [] : plan.notInSettlement.map(item => item.driverId)
+      plan.notInSettlement.filter(item => !includedIds.has(item.driverId)).map(item => item.driverId)
     );
     const keepDeclined = Object.entries(existing)
       .filter(([driverId, item]) => item?.source === 'erp' && declinedIds.has(driverId))
@@ -1217,7 +1209,7 @@ const BremDirectAdjustmentAdmin = (function () {
       }));
     const saveIds = new Set([
       ...plan.applicable.keys(),
-      ...promoOnlyList.map(item => item.driverId),
+      ...included.map(item => item.driverId),
       ...keepDeclined.map(item => item.driverId)
     ]);
     const keepExcel = Object.entries(existing)
@@ -1231,7 +1223,7 @@ const BremDirectAdjustmentAdmin = (function () {
         source: 'excel'
       }));
 
-    const erpEntries = [...plan.applicable.entries(), ...promoOnlyList.map(item => [item.driverId, item])].map(([driverId, info]) => {
+    const erpEntries = [...plan.applicable.entries(), ...included.map(item => [item.driverId, item])].map(([driverId, info]) => {
       const driver = window.BremStorage?.drivers?.getById?.(driverId);
       const bulk = window.BremDirectAdjustmentBulk;
       return {
@@ -1252,13 +1244,97 @@ const BremDirectAdjustmentAdmin = (function () {
     renderAppliedSummary();
     renderErpPreview();
     renderRegistry();
-    const savedCount = plan.applicable.size + promoOnlyList.length;
-    const savedTotal = plan.total + promoOnlyList.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const excludedCount = plan.notInSettlement.length - included.length;
+    const savedCount = plan.applicable.size + included.length;
+    const savedTotal = plan.total + included.reduce((sum, item) => sum + Number(item.amount || 0), 0);
     let message = `ERP 프로모션 ${savedCount}명 · ${formatNumber(savedTotal)}원 적용 완료`;
-    if (promoOnlyList.length) message += ` · 정산서에 없는 ${promoOnlyList.length}명은 확인 후 프로모션만`;
-    if (plan.notInSettlement.length && !includePromoOnly) message += ` · 정산서에 없는 ${plan.notInSettlement.length}명은 넣지 않음`;
+    if (included.length) message += ` · 정산서에 없는 ${included.length}명은 프로모션만 넣음`;
+    if (excludedCount) message += ` · 정산서에 없는 ${excludedCount}명은 빼둠`;
     if (plan.skippedUnmatched) message += ` · 미매칭 ${plan.skippedUnmatched}행 제외`;
     showToast(message);
+  }
+
+  // --- 정산서에 없는 기사 넣기/빼기 선택 모달 --------------------------------
+  let erpNotInPending = null;
+
+  function erpNotInDialogEls() {
+    return {
+      dialog: $('#directErpNotInDialog'),
+      list: $('#directErpNotInList'),
+      hint: $('#directErpNotInHint'),
+      allBtn: $('#directErpNotInAllBtn'),
+      noneBtn: $('#directErpNotInNoneBtn'),
+      apply: $('#directErpNotInApplyBtn'),
+      cancel: $('#directErpNotInCancelBtn')
+    };
+  }
+
+  function renderErpNotInHint() {
+    const els = erpNotInDialogEls();
+    if (!els.list || !els.hint) return;
+    const boxes = [...els.list.querySelectorAll('input[type="checkbox"][data-notin-id]')];
+    const checked = boxes.filter(box => box.checked);
+    const amount = checked.reduce((sum, box) => sum + Number(box.dataset.amount || 0), 0);
+    els.hint.textContent = `넣기 ${checked.length}명 · 빼기 ${boxes.length - checked.length}명 · 넣는 금액 ${formatNumber(amount)}원`;
+  }
+
+  function openErpNotInDialog(settlement, plan) {
+    const els = erpNotInDialogEls();
+    // 모달이 없으면(구버전 HTML) 통째로 넣을지 한 번만 묻는 예전 방식으로 떨어뜨린다.
+    if (!els.dialog || !els.list) {
+      const ok = window.confirm(`정산서에 없는 기사 ${plan.notInSettlement.length}명을 프로모션만 넣을까요?`);
+      if (!ok && !plan.applicable.size && !plan.droppedErp.length) {
+        showToast('정산서에 없는 기사 프로모션 넣기를 취소했습니다.');
+        return;
+      }
+      commitErp(settlement, plan, ok ? plan.notInSettlement : []);
+      return;
+    }
+    els.list.innerHTML = plan.notInSettlement.map(item => {
+      const promo = Math.round(Number(item.amount || 0));
+      const tax = Math.floor(promo * 0.033);
+      const name = escapeHtml(item.name || driverName(item.driverId));
+      return `<label class="direct-erp-notin-row">
+        <input type="checkbox" data-notin-id="${escapeHtml(item.driverId)}" data-amount="${promo}">
+        <span class="direct-erp-notin-name">${name}</span>
+        <span class="direct-erp-notin-amt">프로모션 ${formatNumber(promo)}원 · 원천세 ${formatNumber(tax)}원 · 총지급 ${formatNumber(promo - tax)}원</span>
+      </label>`;
+    }).join('');
+    erpNotInPending = { settlement, plan };
+    renderErpNotInHint();
+    if (typeof els.dialog.showModal === 'function') els.dialog.showModal();
+    else els.dialog.setAttribute('open', '');
+  }
+
+  function closeErpNotInDialog() {
+    const els = erpNotInDialogEls();
+    erpNotInPending = null;
+    if (els.dialog?.open && typeof els.dialog.close === 'function') els.dialog.close();
+    else els.dialog?.removeAttribute('open');
+  }
+
+  function confirmErpNotInDialog() {
+    if (!erpNotInPending) { closeErpNotInDialog(); return; }
+    const { settlement, plan } = erpNotInPending;
+    const els = erpNotInDialogEls();
+    const checkedIds = new Set(
+      [...(els.list?.querySelectorAll('input[type="checkbox"][data-notin-id]:checked') || [])]
+        .map(box => box.dataset.notinId)
+    );
+    const promoOnlyList = plan.notInSettlement.filter(item => checkedIds.has(item.driverId));
+    if (!promoOnlyList.length && !plan.applicable.size && !plan.droppedErp.length) {
+      showToast('넣을 기사를 고르지 않아 적용을 멈췄습니다.');
+      return;
+    }
+    closeErpNotInDialog();
+    commitErp(settlement, plan, promoOnlyList);
+  }
+
+  function setAllErpNotIn(checked) {
+    const els = erpNotInDialogEls();
+    els.list?.querySelectorAll('input[type="checkbox"][data-notin-id]')
+      .forEach(box => { box.checked = checked; });
+    renderErpNotInHint();
   }
 
   // --- 이벤트 --------------------------------------------------------------
@@ -1325,6 +1401,16 @@ const BremDirectAdjustmentAdmin = (function () {
     $('#directErpSelectAllBtn')?.addEventListener('click', () => toggleErpSelectAll(true));
     $('#directErpSelectAllChk')?.addEventListener('change', event => toggleErpSelectAll(event.target.checked));
     $('#directErpApplyBtn')?.addEventListener('click', applyErp);
+
+    const notInEls = erpNotInDialogEls();
+    notInEls.apply?.addEventListener('click', () => confirmErpNotInDialog());
+    notInEls.cancel?.addEventListener('click', () => closeErpNotInDialog());
+    notInEls.allBtn?.addEventListener('click', () => setAllErpNotIn(true));
+    notInEls.noneBtn?.addEventListener('click', () => setAllErpNotIn(false));
+    notInEls.dialog?.addEventListener('cancel', event => { event.preventDefault(); closeErpNotInDialog(); });
+    notInEls.list?.addEventListener('change', event => {
+      if (event.target.closest('input[type="checkbox"][data-notin-id]')) renderErpNotInHint();
+    });
 
     const section = document.getElementById('promotion-settlement');
     section?.addEventListener('change', event => {

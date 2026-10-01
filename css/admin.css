@@ -7546,6 +7546,42 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   font-size: 12px;
 }
 
+.direct-erp-notin-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.direct-erp-notin-list {
+  display: grid;
+  gap: 4px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+.direct-erp-notin-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.direct-erp-notin-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.direct-erp-notin-name {
+  font-weight: 600;
+}
+.direct-erp-notin-amt {
+  color: #9aa4b2;
+  font-size: 12px;
+  text-align: right;
+}
+
 /* ERP 카드 버튼: 너무 넓지 않게 컴팩트하게 */
 #directErpCard .promotion-form-actions {
   flex-wrap: wrap;
