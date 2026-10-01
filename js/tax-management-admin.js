@@ -127,12 +127,15 @@ const BremTaxManagementAdmin = (function () {
     const id = String(driverId || '').trim();
     const driver = id ? window.BremStorage?.drivers?.getById?.(id) : null;
     const utils = window.BremDriverUtils;
-    const erpId = utils?.makeDriverLoginId?.(driver) || '';
-    const coupangId = utils?.getErpCoupangId?.(driver)
-      || String(driver?.coupangId || driver?.coupangLoginKey || '').trim()
-      || '';
-    const baeminId = String(driver?.baeminId || driver?.raw_data?.baeminId || '').trim()
-      || '';
+    const erpId = driver ? (utils?.makeDriverLoginId?.(driver) || '') : '';
+    const coupangId = driver
+      ? (utils?.getErpCoupangId?.(driver)
+        || String(driver.coupangId || driver.coupangLoginKey || '').trim()
+        || '')
+      : '';
+    const baeminId = driver
+      ? (String(driver.baeminId || driver.raw_data?.baeminId || '').trim() || '')
+      : '';
     // 정산서 매칭 ID 보조 (기사 DB에 없을 때)
     const labels = String(row.idLabel || '').split('/').map(s => s.trim()).filter(s => s && s !== '-');
     const coupangFromRow = labels.find(l => /[가-힣a-zA-Z]/.test(l) && /\d{3,}$/.test(l.replace(/\s/g, '')));
@@ -284,12 +287,17 @@ const BremTaxManagementAdmin = (function () {
       showToast('정산서를 하나 이상 선택하세요.');
       return;
     }
-    await window.BremStorage?.ensureSectionLoaded?.('tax-management');
-    const rows = buildRowsFromSettlements(settlements);
-    state.calculated = { settlements, rows };
-    renderTable();
-    const totalGross = rows.reduce((sum, row) => sum + Number(row.grossPay || 0), 0);
-    showToast(`기사 ${formatNumber(rows.length)}명 · 지급합계 ${formatNumber(totalGross)}원 집계했습니다.`);
+    try {
+      await window.BremStorage?.ensureSectionLoaded?.('tax-management');
+      const rows = buildRowsFromSettlements(settlements);
+      state.calculated = { settlements, rows };
+      renderTable();
+      const totalGross = rows.reduce((sum, row) => sum + Number(row.grossPay || 0), 0);
+      showToast(`기사 ${formatNumber(rows.length)}명 · 지급합계 ${formatNumber(totalGross)}원 집계했습니다.`);
+    } catch (error) {
+      console.warn('[tax management] calculate failed:', error);
+      showToast(error?.message || '계산에 실패했습니다. 다시 눌러주세요.');
+    }
   }
 
   function exportExcel() {
