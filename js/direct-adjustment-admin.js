@@ -68,6 +68,21 @@ const BremDirectAdjustmentAdmin = (function () {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
 
+  // 저장을 서버까지 끝낸 뒤에 "저장 완료"를 알린다.
+  // 새로고침해도 사라지지 않게, 업로드가 끝날 때까지 기다리는 게 핵심이다.
+  async function flushAndToast(baseMessage) {
+    showToast(`${baseMessage} · 저장 중…`);
+    try {
+      await window.BremStorage?.flushStorage?.();
+      showToast(`${baseMessage} · 저장 완료`);
+      return true;
+    } catch (error) {
+      console.error('[BREM] direct adjustment flush failed:', error);
+      showToast(`저장 실패 · 새로고침 전에 다시 눌러주세요 (${error?.message || error})`);
+      return false;
+    }
+  }
+
   // 날짜를 로컬 기준으로 찍는다. toISOString 을 쓰면 UTC+9 에서 하루씩 밀린다.
   function dateKey(date) {
     const year = date.getFullYear();
@@ -452,7 +467,7 @@ const BremDirectAdjustmentAdmin = (function () {
     }).join('');
   }
 
-  function applyPending(kind) {
+  async function applyPending(kind) {
     const cfg = KINDS[kind];
     const settlement = currentSettlement();
     if (!settlement) {
@@ -497,7 +512,6 @@ const BremDirectAdjustmentAdmin = (function () {
     const already = window.BremStorage.directSettlementAdjustments.getSettlement(kind, settlement.id);
     const addedToExisting = toApply.filter(row => already[String(row.driverId || '').trim()]).length;
     window.BremStorage.directSettlementAdjustments.applyEntries(kind, settlement.id, entries, { add: true });
-    void window.BremStorage.flushStorage?.();
     state.pending[kind] = null;
     const fileInput = $(cfg.file);
     if (fileInput) fileInput.value = '';
@@ -511,7 +525,7 @@ const BremDirectAdjustmentAdmin = (function () {
     if (mergedDrivers) message += ` · 중복 ${mergedDrivers}명(${mergedRows + mergedDrivers}행) 합산`;
     if (skippedUnmatched) message += ` · 미매칭 ${skippedUnmatched}행 제외`;
     if (skippedNoAmount) message += ` · 금액 없음 ${skippedNoAmount} 제외`;
-    showToast(message);
+    await flushAndToast(message);
   }
 
   function clearPending(kind) {
@@ -636,19 +650,19 @@ const BremDirectAdjustmentAdmin = (function () {
     }
   }
 
-  function removeApplied(kind, driverId) {
+  async function removeApplied(kind, driverId) {
     const settlement = currentSettlement();
     if (!settlement) return;
     window.BremStorage.directSettlementAdjustments.removeDriver(kind, settlement.id, driverId);
-    void window.BremStorage.flushStorage?.();
     renderApplied(kind);
     renderPromoTax();
     renderAppliedSummary();
     renderRegistry();
+    await flushAndToast(`${KINDS[kind].label} 1명 삭제`);
   }
 
   // 이 정산서에 등록된 금액을 한 번에 비운다. 되돌릴 수 없으니 건수·합계를 보여주고 확인받는다.
-  function clearAllApplied(kind) {
+  async function clearAllApplied(kind) {
     const cfg = KINDS[kind];
     const settlement = currentSettlement();
     if (!settlement) {
@@ -670,7 +684,6 @@ const BremDirectAdjustmentAdmin = (function () {
     if (!window.confirm(message)) return;
 
     window.BremStorage.directSettlementAdjustments.clearSettlement(kind, settlement.id);
-    void window.BremStorage.flushStorage?.();
     // 프로모션을 비웠으면 ERP 선택도 풀어야 한다. 선택이 남아 있으면
     // 다음에 「선택 → 적용」을 누를 때 방금 지운 금액이 되살아난다.
     if (kind === 'promotion') state.erpSelected.clear();
@@ -679,7 +692,7 @@ const BremDirectAdjustmentAdmin = (function () {
     renderAppliedSummary();
     renderRegistry();
     if (kind === 'promotion') renderErpList();
-    showToast(`${cfg.label} ${entries.length}명 · ${formatNumber(total)}원 전체 삭제 완료`);
+    await flushAndToast(`${cfg.label} ${entries.length}명 · ${formatNumber(total)}원 전체 삭제`);
   }
 
   // --- 정산서 미지정(구 데이터) --------------------------------------------
@@ -819,7 +832,7 @@ const BremDirectAdjustmentAdmin = (function () {
     }
   }
 
-  function moveLegacy(kind, week) {
+  async function moveLegacy(kind, week) {
     const settlement = currentSettlement();
     if (!settlement) {
       showToast('먼저 정산서를 선택하세요.');
@@ -841,13 +854,12 @@ const BremDirectAdjustmentAdmin = (function () {
     if (!window.confirm(`${label}을(를) 선택한 정산서(${settlementOptionLabel(settlement)})로 옮길까요?\n\n같은 기사에 이미 등록된 금액이 있으면 덮어씁니다.`)) return;
     window.BremStorage.directSettlementAdjustments.applyEntries(kind, settlement.id, entries);
     window.BremStorage.directPayAdjustments.clearWeek(kind, week);
-    void window.BremStorage.flushStorage?.();
     renderApplied(kind);
     renderPromoTax();
     renderAppliedSummary();
     renderRegistry();
     renderLegacy();
-    showToast(`${label} → ${formatDate(settlement.startDate)} 정산서로 이동 완료`);
+    await flushAndToast(`${label} → ${formatDate(settlement.startDate)} 정산서로 이동`);
   }
 
   // --- ERP 프로모션 불러오기 -----------------------------------------------
@@ -1184,7 +1196,7 @@ const BremDirectAdjustmentAdmin = (function () {
   }
 
   // 선택을 실제 저장에 반영한다. promoOnlyList = 정산서에 없지만 이번에 '프로모션만' 넣기로 고른 기사.
-  function commitErp(settlement, plan, promoOnlyList) {
+  async function commitErp(settlement, plan, promoOnlyList) {
     if (!settlement || !plan) return;
     const included = Array.isArray(promoOnlyList) ? promoOnlyList : [];
 
@@ -1238,7 +1250,6 @@ const BremDirectAdjustmentAdmin = (function () {
     });
 
     store.applyEntries('promotion', settlement.id, [...keepExcel, ...keepDeclined, ...erpEntries], { replace: true });
-    void window.BremStorage.flushStorage?.();
     renderApplied('promotion');
     renderPromoTax();
     renderAppliedSummary();
@@ -1251,7 +1262,7 @@ const BremDirectAdjustmentAdmin = (function () {
     if (included.length) message += ` · 정산서에 없는 ${included.length}명은 프로모션만 넣음`;
     if (excludedCount) message += ` · 정산서에 없는 ${excludedCount}명은 빼둠`;
     if (plan.skippedUnmatched) message += ` · 미매칭 ${plan.skippedUnmatched}행 제외`;
-    showToast(message);
+    await flushAndToast(message);
   }
 
   // --- 정산서에 없는 기사 넣기/빼기 선택 모달 --------------------------------
