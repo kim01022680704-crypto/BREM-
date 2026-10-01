@@ -1938,13 +1938,25 @@ const BremPromotionApply = (function () {
 
     const startDate = ordered.map(r => String(r.startDate || '').slice(0, 10)).filter(Boolean).sort()[0] || settlement.startDate;
     const endDate = ordered.map(r => String(r.endDate || '').slice(0, 10)).filter(Boolean).sort().slice(-1)[0] || settlement.endDate;
+    // 합친 부분(부분1·부분2)의 지역을 모두 라벨·지역에 남긴다. 부분1만 보이던 표기를 둘 다 보이게 한다.
+    const partRegions = [];
+    const seenRegion = new Set();
+    ordered.forEach(rec => {
+      const region = String(rec.region || '').trim();
+      if (!region || seenRegion.has(region)) return;
+      seenRegion.add(region);
+      partRegions.push(region);
+    });
+    const regionLabel = partRegions.join(' + ') || settlement.region;
     return {
       ...settlement,
       id: `combined-parts:${settlement.id}`,
+      region: regionLabel,
       startDate,
       endDate,
       riders: [...byKey.values()],
       _combinedPartIds: ordered.map(r => r.id),
+      _combinedPartRegions: partRegions,
       _combinedParts: true
     };
   }
