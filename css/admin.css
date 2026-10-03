@@ -7365,6 +7365,32 @@ tr.direct-erp-stale-row > td {
   font-weight: 800;
 }
 
+.withdrawal-manage-paste-label {
+  display: block;
+  margin: 12px 0 6px;
+  font-weight: 700;
+}
+.withdrawal-manage-paste {
+  width: 100%;
+  min-height: 160px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--black-2);
+  color: inherit;
+  resize: vertical;
+}
+.withdrawal-manage-actions {
+  margin: 10px 0 14px;
+}
+.withdrawal-manage-unmatched-title {
+  margin: 18px 0 6px;
+  font-size: 1rem;
+}
+
 /* 카드 헤더 옆에 붙는 요약은 테두리 없이 글자만 */
 .direct-head-note {
   color: var(--muted);

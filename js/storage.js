@@ -1596,6 +1596,7 @@ const BremStorage = (function () {
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
     'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts, KEYS.payrollSlipLines],
     'tax-management': [KEYS.drivers, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
+    'withdrawal-management': [KEYS.drivers],
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'inactive-drivers': [KEYS.drivers],
     'admin-schedule': [KEYS.adminSchedules],
@@ -13777,6 +13778,8 @@ const BremStorage = (function () {
     'weekly-settlement-direct',
     'settlement-result-direct',
     'final-deposit',
+    'withdrawal-management',
+    'tax-management',
     'driver-management',
     'inactive-drivers',
     'admin-account',
@@ -13902,6 +13905,15 @@ const BremStorage = (function () {
     }
     if (normalized.includes('final-deposit') && !normalized.includes('tax-management')) {
       normalized.splice(normalized.indexOf('final-deposit') + 1, 0, 'tax-management');
+    }
+    // 출금 관리는 최종입금·세무·일정산을 보는 계정에게 함께 연다.
+    if ((normalized.includes('final-deposit') || normalized.includes('tax-management') || normalized.includes('payroll-daily-settlement'))
+      && !normalized.includes('withdrawal-management')) {
+      const after = normalized.includes('tax-management')
+        ? normalized.indexOf('tax-management')
+        : (normalized.includes('final-deposit') ? normalized.indexOf('final-deposit') : -1);
+      if (after >= 0) normalized.splice(after + 1, 0, 'withdrawal-management');
+      else normalized.push('withdrawal-management');
     }
 
     if (!normalized.includes('driver-management')) {
