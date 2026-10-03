@@ -14047,6 +14047,14 @@ const BremStorage = (function () {
       if (scheduleIndex >= 0) next.splice(scheduleIndex + 1, 0, 'work-requests');
       else next.push('work-requests');
     }
+    if (allowed.has('withdrawal-management') && !next.includes('withdrawal-management')
+      && (next.includes('final-deposit') || next.includes('tax-management') || next.includes('payroll-daily-settlement'))) {
+      const after = next.includes('tax-management')
+        ? next.indexOf('tax-management')
+        : (next.includes('final-deposit') ? next.indexOf('final-deposit') : -1);
+      if (after >= 0) next.splice(after + 1, 0, 'withdrawal-management');
+      else next.push('withdrawal-management');
+    }
     return next;
   }
 

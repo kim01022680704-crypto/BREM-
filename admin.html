@@ -5632,17 +5632,17 @@
           <div class="card-header">
             <h2>출금 관리</h2>
             <div class="promotion-form-actions">
-              <button type="button" class="small-btn" id="withdrawalManageCopyBtn" disabled>목록 복사</button>
-              <button type="button" class="small-btn" id="withdrawalManageExportBtn" disabled>대량이체 엑셀</button>
-              <button type="button" class="small-btn" id="withdrawalManageClearBtn">비우기</button>
+              <button type="button" class="small-btn" id="withdrawalManageCopyBtn" data-readonly-allow="true" disabled>목록 복사</button>
+              <button type="button" class="small-btn" id="withdrawalManageExportBtn" data-readonly-allow="true" disabled>대량이체 엑셀</button>
+              <button type="button" class="small-btn" id="withdrawalManageClearBtn" data-readonly-allow="true">비우기</button>
             </div>
           </div>
           <p class="form-help">엑셀에서 <strong>A열 ERP ID 또는 배민ID · B열 금액</strong>을 복사해 붙여넣으세요. 같은 사람이 여러 줄이면 금액을 합칩니다. 리스트는 대량이체 파일과 같이 <strong>은행 · 계좌번호 · 이름 · ERP ID</strong> 순입니다.</p>
 
           <label class="withdrawal-manage-paste-label" for="withdrawalManagePaste">엑셀 붙여넣기</label>
-          <textarea id="withdrawalManagePaste" class="withdrawal-manage-paste" rows="8" spellcheck="false" placeholder="김득우9103&#9;50000&#10;tmcno00&#9;120000"></textarea>
+          <textarea id="withdrawalManagePaste" class="withdrawal-manage-paste" rows="8" spellcheck="false" data-readonly-allow="true" placeholder="김득우9103&#9;50000&#10;tmcno00&#9;120000"></textarea>
           <div class="promotion-form-actions withdrawal-manage-actions">
-            <button type="button" class="primary-btn" id="withdrawalManageParseBtn">리스트 만들기</button>
+            <button type="button" class="primary-btn" id="withdrawalManageParseBtn" data-readonly-allow="true">리스트 만들기</button>
           </div>
           <p class="direct-inline-stats" id="withdrawalManageSummary">엑셀을 붙여넣은 뒤 「리스트 만들기」를 누르세요.</p>
 
@@ -9393,7 +9393,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260923fast1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20260927req1"></script>
-  <script src="js/storage.js?v=20261003wd1"></script>
+  <script src="js/storage.js?v=20261003wd2"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
@@ -9441,7 +9441,7 @@
   <script src="js/direct-settlement-calc.js?v=20260929nopaid1"></script>
   <script src="js/settlement-result-direct.js?v=20260929nopaid1"></script>
   <script src="js/final-deposit.js?v=20260929nopaid1"></script>
-  <script src="js/withdrawal-management-admin.js?v=20261003wd1"></script>
+  <script src="js/withdrawal-management-admin.js?v=20261003wd2"></script>
   <script src="js/tax-management-admin.js?v=20261001tax1"></script>
   <script src="js/driver-management-admin.js?v=20260922active1"></script>
   <script src="js/inactive-drivers-admin.js?v=20260922active1"></script>
