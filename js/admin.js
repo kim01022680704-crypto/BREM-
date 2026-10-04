@@ -4346,9 +4346,14 @@
     });
   }
 
+  // 줄이 없거나 금액이 다르면 누락으로 본다. 금액까지 봐야 덮어쓰기로 줄어든 경우가 잡힌다.
   function missingSettlementRecords(expected, savedRows) {
-    const savedIds = new Set((savedRows || []).map(row => String(row.driver_id || '')));
-    return expected.filter(record => !savedIds.has(String(record.driverId || '')));
+    const savedById = new Map((savedRows || []).map(row => [String(row.driver_id || ''), row]));
+    return expected.filter(record => {
+      const saved = savedById.get(String(record.driverId || ''));
+      if (!saved) return true;
+      return Math.round(Number(saved.settlement_amount || 0)) !== Math.round(settlementAmountValue(record));
+    });
   }
 
   async function fetchDailySettlementSavedRows(period, platform) {
@@ -4401,24 +4406,22 @@
     const p = normalizePlatform(platform);
     const dayKey = String(options.period || ensureSettlementLogDay(p) || '').slice(0, 10);
     if (!dayKey) throw new Error('정산일을 선택하세요.');
-    const logs = BremStorage.settlementUploadLogs.getFiltered({
-      kind: 'daily',
-      platform: p,
-      period: dayKey
-    }).filter(log => log.status === 'applied' || log.status === 'applied_gap');
+    // 저장할 때와 같은 기준(파일마다 최근 반영, 같은 내용 파일은 한 번, 여러 파일은 합산)으로 기대값을 만든다.
+    const shares = await BremStorage.settlements.otherDailyFileShares({ period: dayKey, platform: p });
     const expected = new Map();
-    logs.forEach(log => {
-      const records = log.appliedRecords?.length ? log.appliedRecords : log.matchedRecords;
-      settlementRecordsRequiringSave(records).forEach(record => {
-        const driverId = String(record.driverId || '').trim();
-        if (!expected.has(driverId)) expected.set(driverId, settlementRecordLabel(record) || driverId);
-      });
+    shares.forEach((share, driverId) => {
+      if (!(Math.abs(share.settlementAmount) > 0 || share.orderCount > 0)) return;
+      expected.set(driverId, { name: share.driverName || driverId, amount: share.settlementAmount });
     });
     const saved = await fetchDailySettlementSavedRows(dayKey, p);
-    const savedIds = new Set(saved.map(row => String(row.driver_id || '')));
+    const savedById = new Map(saved.map(row => [String(row.driver_id || ''), row]));
     const missing = [];
-    expected.forEach((name, driverId) => {
-      if (!savedIds.has(driverId)) missing.push(name);
+    expected.forEach((item, driverId) => {
+      const row = savedById.get(driverId);
+      if (!row) missing.push(item.name);
+      else if (Math.round(Number(row.settlement_amount || 0)) !== Math.round(item.amount)) {
+        missing.push(`${item.name}(금액 ${Math.round(Number(row.settlement_amount || 0)).toLocaleString('ko-KR')}≠${Math.round(item.amount).toLocaleString('ko-KR')})`);
+      }
     });
     const report = {
       period: dayKey,
@@ -6980,6 +6983,7 @@
 
       const toWriteRecord = record => ({
         driverId: record.driverId,
+        driverName: record.driverName || record.name || '',
         riderId: record.riderId || '',
         orderCount: record.orderCount,
         hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
@@ -6990,18 +6994,29 @@
         settlementAmount: settlementAmountValue(record)
       });
       let verifyResult = null;
+      let mergedDrivers = [];
 
       await window.BremPerf?.runSave?.(`settlements.apply.${p}`, {
         write: async () => {
+          // 같은 날 다른 지역 파일에도 있는 기사는 그 파일 몫을 더해 합계로 저장한다(덮어쓰기 방지).
+          const merged = await BremStorage.settlements.mergeDailyFileShares({
+            period,
+            platform: p,
+            records: matched.map(toWriteRecord),
+            excludeFileName: sourceFileName,
+            excludeLogId: uploadLogId
+          });
+          const writeRecords = merged.records;
+          mergedDrivers = merged.mergedDrivers;
           const writeResult = await BremStorage.settlements.upsertBatch({
             period,
             platform: p,
             callFeeUnit,
-            records: matched.map(toWriteRecord)
+            records: writeRecords
           });
           await BremStorage.awaitPersist?.(writeResult);
 
-          const required = settlementRecordsRequiringSave(matched);
+          const required = settlementRecordsRequiringSave(writeRecords);
           let missing = [];
           if (required.length) {
             let savedRows = await fetchDailySettlementSavedRows(period, p);
@@ -7011,7 +7026,7 @@
                 period,
                 platform: p,
                 callFeeUnit,
-                records: missing.map(toWriteRecord)
+                records: missing
               });
               await BremStorage.awaitPersist?.(retryResult);
               savedRows = await fetchDailySettlementSavedRows(period, p);
@@ -7109,6 +7124,7 @@
         verified: verifyResult.verified,
         gap: verifyResult.missing.length,
         missingNames: verifyResult.missing.map(settlementRecordLabel),
+        mergedDrivers,
         count: matched.length
       };
     } catch (error) {
@@ -7370,6 +7386,9 @@
             ? `${platformLabel(p)} 일정산 ${preview.matched.length}건 반영 · 매칭 기사 급여 일정산 포함`
             : `${platformLabel(p)} 일정산 ${preview.matched.length}건 반영 · 급여 일정산 미포함`)
           + ` · 콜수수료 ${callFeeUnit.toLocaleString('ko-KR')}원/콜 · 저장 대조 일치`
+          + (result.mergedDrivers?.length
+            ? ` · 같은 날 다른 파일과 합산 ${result.mergedDrivers.length}명 (${result.mergedDrivers.slice(0, 3).map(item => item.driverName || item.driverId).join(', ')}${result.mergedDrivers.length > 3 ? ' 외' : ''})`
+            : '')
         );
       }
     } finally {

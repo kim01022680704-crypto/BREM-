@@ -10660,9 +10660,162 @@ const BremStorage = (function () {
     });
   }
 
+  function addDailyFileShare(map, record) {
+    const driverId = String(record?.driverId || '').trim();
+    if (!driverId) return;
+    const cur = map.get(driverId) || {
+      driverId,
+      riderId: String(record.riderId || ''),
+      driverName: String(record.driverName || record.name || ''),
+      orderCount: 0,
+      settlementAmount: 0,
+      deductionBase: 0,
+      hourlyInsurance: 0
+    };
+    cur.orderCount += Number(record.orderCount ?? record.callCount ?? 0) || 0;
+    cur.settlementAmount += Number(record.settlementAmount ?? record.deliveryAmount ?? 0) || 0;
+    cur.deductionBase += Math.abs(Number(record.deductionBase || 0)) || 0;
+    cur.hourlyInsurance += Math.abs(Number(record.hourlyInsurance || 0)) || 0;
+    if (!cur.riderId && record.riderId) cur.riderId = String(record.riderId);
+    if (!cur.driverName && (record.driverName || record.name)) cur.driverName = String(record.driverName || record.name);
+    map.set(driverId, cur);
+  }
+
+  // 「파일 (1).xlsx」·「파일 - 복사본.xlsx」 처럼 같은 파일을 다시 받은 이름은 한 파일로 본다. 「(Z)」 같은 센터 표기는 유지.
+  function dailyUploadFileKey(fileName) {
+    return String(fileName || '')
+      .trim()
+      .toLowerCase()
+      .replace(/(\s*-\s*복사본|\s*-\s*copy)+(?=\.[a-z0-9]+$|$)/g, '')
+      .replace(/(\s*\(\d+\))+(?=\.[a-z0-9]+$|$)/g, '')
+      .trim();
+  }
+
+  function dailyFileShareSignature(shares) {
+    return [...shares.values()]
+      .map(share => `${share.driverId}:${Math.round(share.settlementAmount)}:${share.orderCount}`)
+      .sort()
+      .join('|');
+  }
+
+  function dailyFileShareToRecord(share) {
+    return {
+      driverId: share.driverId,
+      riderId: share.riderId,
+      driverName: share.driverName,
+      orderCount: share.orderCount,
+      hourlyInsurance: share.hourlyInsurance,
+      deductionBase: share.deductionBase,
+      deliveryAmount: share.settlementAmount,
+      settlementAmount: share.settlementAmount
+    };
+  }
+
   const settlements = {
     getAll() {
       return normalizeSettlements(storageAdapter.read(KEYS.settlements, []));
+    },
+
+    /**
+     * 같은 정산일·플랫폼의 다른 업로드 파일(지역·센터)에서 반영된 기사별 몫.
+     * 일정산 저장 id 는 기사·날짜·플랫폼 하나라, 한 기사가 두 파일에 있으면
+     * 나중 파일이 앞 파일 금액을 덮어쓴다. 파일마다 가장 최근 반영 기록만 센다.
+     * 다른 PC에서 올린 파일도 잡히도록 서버 기록을 읽는다.
+     */
+    async otherDailyFileShares({
+      period,
+      platform = DEFAULT_PLATFORM,
+      excludeFileName = '',
+      excludeExactFileName = '',
+      excludeLogId = '',
+      excludeSignature = ''
+    } = {}) {
+      const p = normalizePlatform(platform);
+      const day = String(period || '').slice(0, 10);
+      const skipKey = dailyUploadFileKey(excludeFileName);
+      const skipExact = String(excludeExactFileName || '').trim();
+      const skipId = String(excludeLogId || '').trim();
+      let logs;
+      if (activeStorageAdapter?.type === 'supabase') {
+        const client = await ensureSupabaseClient();
+        if (!client) throw new Error('Supabase 연결이 없어 같은 날 다른 파일 금액을 확인하지 못했습니다.');
+        const { data, error } = await client.from('settlement_upload_logs')
+          .select('id,file_name,status,applied_at,uploaded_at,matched_records,applied_records')
+          .eq('kind', 'daily')
+          .eq('platform', p)
+          .eq('period', day);
+        if (error) throw new Error(`같은 날 다른 파일 금액을 확인하지 못했습니다: ${error.message || error}`);
+        logs = (data || []).map(row => ({
+          id: String(row.id || ''),
+          fileName: row.file_name || '',
+          status: row.status || '',
+          appliedAt: String(row.applied_at || row.uploaded_at || ''),
+          matchedRecords: row.matched_records,
+          appliedRecords: row.applied_records
+        }));
+      } else {
+        logs = settlementUploadLogs.getFiltered({ kind: 'daily', platform: p })
+          .filter(log => String(log.period || '').slice(0, 10) === day)
+          .map(log => ({ ...log, appliedAt: String(log.appliedAt || log.uploadedAt || '') }));
+      }
+      const latestByFile = new Map();
+      logs.forEach(log => {
+        if (log.status !== 'applied' && log.status !== 'applied_gap') return;
+        if (skipId && log.id === skipId) return;
+        const name = String(log.fileName || '').trim();
+        if (skipExact && name === skipExact) return;
+        const fileKey = dailyUploadFileKey(name) || log.id;
+        if (skipKey && fileKey === skipKey) return;
+        const prev = latestByFile.get(fileKey);
+        if (!prev || log.appliedAt > prev.appliedAt) latestByFile.set(fileKey, log);
+      });
+      const shares = new Map();
+      const seenSignatures = new Set(excludeSignature ? [excludeSignature] : []);
+      latestByFile.forEach(log => {
+        const records = (Array.isArray(log.matchedRecords) && log.matchedRecords.length
+          ? log.matchedRecords
+          : log.appliedRecords) || [];
+        const fileShares = new Map();
+        records.forEach(record => addDailyFileShare(fileShares, record));
+        if (!fileShares.size) return;
+        // 이름만 다른 같은 내용 파일은 한 번만 센다.
+        const signature = dailyFileShareSignature(fileShares);
+        if (seenSignatures.has(signature)) return;
+        seenSignatures.add(signature);
+        fileShares.forEach(share => addDailyFileShare(shares, share));
+      });
+      return shares;
+    },
+
+    /**
+     * 이번 파일 행에 같은 날 다른 파일 몫을 더해 기사별 합계 행으로 만든다.
+     * 같은 파일 안에서 한 기사가 여러 줄이어도 합친다.
+     * excludeFileName / excludeLogId: 이번 파일(재반영이면 예전 기록 포함)은 다른 파일로 세지 않는다.
+     */
+    async mergeDailyFileShares({ period, platform = DEFAULT_PLATFORM, records = [], excludeFileName = '', excludeLogId = '' } = {}) {
+      const incoming = new Map();
+      (Array.isArray(records) ? records : []).forEach(record => addDailyFileShare(incoming, record));
+      const others = await settlements.otherDailyFileShares({
+        period,
+        platform,
+        excludeFileName,
+        excludeLogId,
+        excludeSignature: excludeFileName || excludeLogId ? dailyFileShareSignature(incoming) : ''
+      });
+      const mergedDrivers = [];
+      const out = [...incoming.values()].map(share => {
+        const other = others.get(share.driverId);
+        if (!other) return dailyFileShareToRecord(share);
+        mergedDrivers.push({ driverId: share.driverId, driverName: share.driverName, otherAmount: other.settlementAmount });
+        return dailyFileShareToRecord({
+          ...share,
+          orderCount: share.orderCount + other.orderCount,
+          settlementAmount: share.settlementAmount + other.settlementAmount,
+          deductionBase: share.deductionBase + other.deductionBase,
+          hourlyInsurance: share.hourlyInsurance + other.hourlyInsurance
+        });
+      });
+      return { records: out, mergedDrivers };
     },
 
     async upsertBatch({ period, records, platform = DEFAULT_PLATFORM, callFeeUnit } = {}) {
@@ -12036,12 +12189,16 @@ const BremStorage = (function () {
       if (!periodKey) return { rolledBackSettlements: 0, rolledBackCalls: 0 };
 
       const logAppliedAt = String(log.appliedAt || log.uploadedAt || '');
+      // 같은 파일을 나중에 다시 반영한 기록이 있으면 이 기록은 이미 대체됐다.
+      // 다른 파일(지역)의 기록은 상관없다 — 아래에서 그 파일 몫만 남긴다.
+      const logFileName = String(log.fileName || '').trim();
       const hasNewerAppliedLog = settlementUploadLogs.getAll().some(item => (
         item.id !== log.id
         && item.kind === 'daily'
         && normalizePlatform(item.platform) === p
         && String(item.period).slice(0, 10) === periodKey
         && item.status === 'applied'
+        && (!logFileName || String(item.fileName || '').trim() === logFileName)
         && String(item.appliedAt || item.uploadedAt || '') > logAppliedAt
       ));
       if (hasNewerAppliedLog) {
@@ -12077,10 +12234,31 @@ const BremStorage = (function () {
         return { rolledBackSettlements: 0, rolledBackCalls: 0 };
       }
 
+      // 같은 날 다른 파일에도 있는 기사는 지우지 않고 그 파일 몫만 남긴다.
+      const remainingShares = await settlements.otherDailyFileShares({
+        period: periodKey,
+        platform: p,
+        excludeExactFileName: log.fileName,
+        excludeLogId: log.id
+      });
+
       let rolledBackSettlements = 0;
       let rolledBackCalls = 0;
       for (const driverId of driverIds) {
         const settlementId = `${driverId}-${periodKey}-${p}`;
+        const remaining = remainingShares.get(driverId);
+        if (remaining && (remaining.settlementAmount || remaining.orderCount)) {
+          const existing = settlements.getAll().find(item => item.id === settlementId);
+          await settlements.upsertBatch({
+            period: periodKey,
+            platform: p,
+            records: [dailyFileShareToRecord(remaining)],
+            callFeeUnit: existing?.callFeeUnit
+          });
+          rolledBackSettlements += 1;
+          rolledBackCalls += 1;
+          continue;
+        }
         const matches = settlements.getAll().filter(item => item.id === settlementId);
         let removed = false;
 
@@ -13553,10 +13731,16 @@ const BremStorage = (function () {
 
       let applied = 0;
       for (const [periodKey, group] of byPeriod) {
+        // 이 행은 아직 어느 업로드 기록의 매칭분에도 없다 → 반영된 파일 몫 전부와 합친다.
+        const merged = await settlements.mergeDailyFileShares({
+          period: periodKey,
+          platform: p,
+          records: group.records
+        });
         await settlements.upsertBatch({
           period: periodKey,
           platform: p,
-          records: group.records,
+          records: merged.records,
           callFeeUnit: group.callFeeUnit
         });
         applied += group.records.length;
