@@ -12531,76 +12531,91 @@ const BremStorage = (function () {
       const all = this.getAll();
       return (all[wk] && typeof all[wk] === 'object' && !Array.isArray(all[wk])) ? all[wk] : {};
     },
+    // directSettlementAdjustments.commit 과 같은 방식: 서버 최신값 위에 다시 적용된다.
+    commit(op, options = {}) {
+      const all = op(this.getAll());
+      storageAdapter.write(KEYS.directRetroAdjustments, all, { ...options, rebaseOps: [op] });
+      return all;
+    },
     add(weekStart, entries) {
       const wk = String(weekStart || '').slice(0, 10);
       if (!wk) return {};
-      const all = this.getAll();
-      const wkMap = (all[wk] && typeof all[wk] === 'object' && !Array.isArray(all[wk])) ? { ...all[wk] } : {};
       const now = new Date().toISOString();
-      (Array.isArray(entries) ? entries : []).forEach(e => {
-        const id = String(e.driverId || '').trim();
-        if (!id) return;
-        const add = Math.round(Number(e.amount || 0));
-        if (!add) return;
-        const key = `${id}|${e.platform || ''}`;
-        const prev = wkMap[key];
-        const unpaidBalance = Math.max(
-          0,
-          Math.round(Number(e.unpaidBalance != null ? e.unpaidBalance : (prev?.unpaidBalance || 0)))
-        );
-        wkMap[key] = {
-          driverId: id,
-          name: String(e.name || prev?.name || ''),
-          idLabel: String(e.idLabel || prev?.idLabel || ''),
-          platform: e.platform || prev?.platform || '',
-          settlementId: String(e.settlementId || prev?.settlementId || ''),
-          amount: (prev ? Number(prev.amount || 0) : 0) + add,
-          grossUpAmount: (prev ? Number(prev.grossUpAmount || prev.amount || 0) : 0) + add,
-          unpaidBalance: unpaidBalance > 0
-            ? unpaidBalance
-            : Math.max(0, Math.round(Number(prev?.unpaidBalance || 0))),
-          status: prev?.status === 'sent_to_deduction'
-            ? prev.status
-            : String(e.status || prev?.status || 'logged'),
-          reason: String(e.reason != null ? e.reason : (prev?.reason || '')),
-          ledgerId: String(
-            prev?.status === 'sent_to_deduction'
-              ? (prev.ledgerId || '')
-              : (e.ledgerId != null ? e.ledgerId : (prev?.ledgerId || ''))
-          ),
-          updatedAt: now
-        };
+      const list = (Array.isArray(entries) ? entries : []).map(e => ({ ...e }));
+      const all = this.commit(raw => {
+        const next = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+        const wkMap = (next[wk] && typeof next[wk] === 'object' && !Array.isArray(next[wk])) ? { ...next[wk] } : {};
+        list.forEach(e => {
+          const id = String(e.driverId || '').trim();
+          if (!id) return;
+          const add = Math.round(Number(e.amount || 0));
+          if (!add) return;
+          const key = `${id}|${e.platform || ''}`;
+          const prev = wkMap[key];
+          const unpaidBalance = Math.max(
+            0,
+            Math.round(Number(e.unpaidBalance != null ? e.unpaidBalance : (prev?.unpaidBalance || 0)))
+          );
+          wkMap[key] = {
+            driverId: id,
+            name: String(e.name || prev?.name || ''),
+            idLabel: String(e.idLabel || prev?.idLabel || ''),
+            platform: e.platform || prev?.platform || '',
+            settlementId: String(e.settlementId || prev?.settlementId || ''),
+            amount: (prev ? Number(prev.amount || 0) : 0) + add,
+            grossUpAmount: (prev ? Number(prev.grossUpAmount || prev.amount || 0) : 0) + add,
+            unpaidBalance: unpaidBalance > 0
+              ? unpaidBalance
+              : Math.max(0, Math.round(Number(prev?.unpaidBalance || 0))),
+            status: prev?.status === 'sent_to_deduction'
+              ? prev.status
+              : String(e.status || prev?.status || 'logged'),
+            reason: String(e.reason != null ? e.reason : (prev?.reason || '')),
+            ledgerId: String(
+              prev?.status === 'sent_to_deduction'
+                ? (prev.ledgerId || '')
+                : (e.ledgerId != null ? e.ledgerId : (prev?.ledgerId || ''))
+            ),
+            updatedAt: now
+          };
+        });
+        next[wk] = wkMap;
+        return next;
       });
-      all[wk] = wkMap;
-      storageAdapter.write(KEYS.directRetroAdjustments, all);
-      return wkMap;
+      return all[wk];
     },
     updateEntry(weekStart, entryKey, patch = {}) {
       const wk = String(weekStart || '').slice(0, 10);
       const key = String(entryKey || '').trim();
       if (!wk || !key) return null;
-      const all = this.getAll();
-      const wkMap = (all[wk] && typeof all[wk] === 'object' && !Array.isArray(all[wk])) ? { ...all[wk] } : {};
-      const prev = wkMap[key];
-      if (!prev) return null;
-      wkMap[key] = {
-        ...prev,
-        ...patch,
-        driverId: prev.driverId,
-        platform: prev.platform,
-        updatedAt: new Date().toISOString()
-      };
-      all[wk] = wkMap;
-      storageAdapter.write(KEYS.directRetroAdjustments, all);
-      return wkMap[key];
+      if (!this.getWeek(wk)[key]) return null;
+      const now = new Date().toISOString();
+      const patchCopy = { ...patch };
+      const all = this.commit(raw => {
+        const next = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+        const wkMap = (next[wk] && typeof next[wk] === 'object' && !Array.isArray(next[wk])) ? { ...next[wk] } : {};
+        const prev = wkMap[key];
+        if (!prev) return next;
+        wkMap[key] = {
+          ...prev,
+          ...patchCopy,
+          driverId: prev.driverId,
+          platform: prev.platform,
+          updatedAt: now
+        };
+        next[wk] = wkMap;
+        return next;
+      });
+      return all[wk]?.[key] || null;
     },
     clearWeek(weekStart) {
       const wk = String(weekStart || '').slice(0, 10);
-      const all = this.getAll();
-      if (all[wk]) {
-        delete all[wk];
-        storageAdapter.write(KEYS.directRetroAdjustments, all, { allowEmpty: true });
-      }
+      if (!this.getAll()[wk]) return;
+      this.commit(raw => {
+        const next = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+        delete next[wk];
+        return next;
+      }, { allowEmpty: true });
     }
   };
 
@@ -13123,57 +13138,85 @@ const BremStorage = (function () {
       const entry = this.getKind(kind)[id];
       return (entry && typeof entry === 'object') ? entry : {};
     },
+    // 합산 보기의 합성 id(combined-…)는 실제 정산서가 아니라 정산결과·최종입금이 읽지 않는다.
+    assertRealSettlementId(id) {
+      if (!String(id || '').startsWith('combined-')) return;
+      const message = '합산(주 전체) 보기에서는 금액을 저장할 수 없습니다. 부분 탭(부분1·2)에서 저장하세요.';
+      document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
+      throw new Error(message);
+    },
+    // op 은 이 탭 캐시에 한 번, 서버 저장 직전에 서버 최신값 위에 한 번 더 적용된다.
+    commit(op, options = {}) {
+      const blob = op(this.getBlob());
+      storageAdapter.write(KEYS.directSettlementAdjustments, blob, { ...options, rebaseOps: [op] });
+      return blob;
+    },
     // entries: [{ driverId, amount, baeminId, driverName, source }]
     applyEntries(kind, settlementId, entries, options = {}) {
       const k = this.normalizeKind(kind);
       const id = String(settlementId || '').trim();
       if (!id) return {};
-      const blob = this.getBlob();
-      const byKind = (blob[k] && typeof blob[k] === 'object') ? { ...blob[k] } : {};
-      const existing = options.replace
-        ? {}
-        : (byKind[id] && typeof byKind[id] === 'object' ? { ...byKind[id] } : {});
+      this.assertRealSettlementId(id);
       const now = new Date().toISOString();
-      (Array.isArray(entries) ? entries : []).forEach(entry => {
-        const driverId = String(entry.driverId || '').trim();
-        if (!driverId) return;
-        const prev = existing[driverId];
-        const incoming = Math.round(Number(entry.amount || 0));
-        const amount = options.add
-          ? Math.round(Number(prev?.amount || 0)) + incoming
-          : incoming;
-        existing[driverId] = {
-          amount,
-          baeminId: String(entry.baeminId || prev?.baeminId || '').trim(),
-          coupangId: String(entry.coupangId || prev?.coupangId || '').trim(),
-          driverName: String(entry.driverName || prev?.driverName || '').trim(),
-          source: this.normalizeSource(entry.source || prev?.source),
-          updatedAt: now
-        };
+      const list = (Array.isArray(entries) ? entries : []).map(entry => ({ ...entry }));
+      const normalizeSource = source => this.normalizeSource(source);
+      const blob = this.commit(raw => {
+        const next = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+        const byKind = (next[k] && typeof next[k] === 'object') ? { ...next[k] } : {};
+        let existing = options.replace
+          ? {}
+          : (byKind[id] && typeof byKind[id] === 'object' ? { ...byKind[id] } : {});
+        // dropWhere(entry, driverId): 서버 최신값 기준으로 지울 줄을 고른다 (replace 대신 사용).
+        if (typeof options.dropWhere === 'function') {
+          existing = Object.fromEntries(
+            Object.entries(existing).filter(([driverId, item]) => !options.dropWhere(item, driverId))
+          );
+        }
+        list.forEach(entry => {
+          const driverId = String(entry.driverId || '').trim();
+          if (!driverId) return;
+          const prev = existing[driverId];
+          const incoming = Math.round(Number(entry.amount || 0));
+          const amount = options.add
+            ? Math.round(Number(prev?.amount || 0)) + incoming
+            : incoming;
+          existing[driverId] = {
+            amount,
+            baeminId: String(entry.baeminId || prev?.baeminId || '').trim(),
+            coupangId: String(entry.coupangId || prev?.coupangId || '').trim(),
+            driverName: String(entry.driverName || prev?.driverName || '').trim(),
+            source: normalizeSource(entry.source || prev?.source),
+            updatedAt: now
+          };
+        });
+        byKind[id] = existing;
+        next[k] = byKind;
+        return next;
       });
-      byKind[id] = existing;
-      blob[k] = byKind;
-      storageAdapter.write(KEYS.directSettlementAdjustments, blob);
-      return existing;
+      return blob[k][id];
     },
     removeDriver(kind, settlementId, driverId) {
       const k = this.normalizeKind(kind);
       const id = String(settlementId || '').trim();
-      const blob = this.getBlob();
-      if (blob[k] && blob[k][id]) {
-        delete blob[k][id][String(driverId || '').trim()];
-        storageAdapter.write(KEYS.directSettlementAdjustments, blob, { allowEmpty: true });
-      }
+      const target = String(driverId || '').trim();
+      this.assertRealSettlementId(id);
+      if (!this.getBlob()[k]?.[id]?.[target]) return this.getSettlement(k, id);
+      const blob = this.commit(raw => {
+        const next = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+        if (next[k] && next[k][id]) delete next[k][id][target];
+        return next;
+      }, { allowEmpty: true });
       return (blob[k] && blob[k][id]) || {};
     },
     clearSettlement(kind, settlementId) {
       const k = this.normalizeKind(kind);
       const id = String(settlementId || '').trim();
-      const blob = this.getBlob();
-      if (blob[k]) {
-        delete blob[k][id];
-        storageAdapter.write(KEYS.directSettlementAdjustments, blob, { allowEmpty: true });
-      }
+      if (!this.getBlob()[k]?.[id]) return;
+      this.commit(raw => {
+        const next = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+        if (next[k]) delete next[k][id];
+        return next;
+      }, { allowEmpty: true });
     },
     summary(settlementId) {
       const promo = this.getSettlement('promotion', settlementId);
@@ -13196,6 +13239,7 @@ const BremStorage = (function () {
       };
     },
     async reloadFromServer() {
+      if (activeStorageAdapter.type !== 'supabase') return;
       if (typeof activeStorageAdapter.reloadSettingKey === 'function') {
         await activeStorageAdapter.reloadSettingKey(KEYS.directSettlementAdjustments);
         return;

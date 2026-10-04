@@ -2175,6 +2175,51 @@ window.BremSupabaseStorageAdapter = (function () {
       [keys.missions]: persistMissions
     };
 
+    // settings JSON 은 키 하나에 전체가 들어 있어, 탭 캐시 값을 그대로 올리면
+    // 그 사이 다른 탭·PC가 저장한 내용이 지워진다.
+    // 서버 최신값 위에 이번 변경(rebaseOps)만 다시 적용하고, updated_at 이 그대로일 때만 쓴다.
+    async function persistSettingRebased(key, rebaseOps, options = {}) {
+      const MAX_ATTEMPTS = 6;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+        const { data, error } = await client
+          .from('settings')
+          .select('value,updated_at')
+          .eq('key', key)
+          .maybeSingle();
+        if (error) throw error;
+        let next = data?.value ?? null;
+        if (typeof next === 'string') {
+          try { next = JSON.parse(next); } catch (_) { /* 원본 유지 */ }
+        }
+        rebaseOps.forEach(op => {
+          const result = op(next);
+          if (result !== undefined) next = result;
+        });
+        const check = validatePersistPayload(key, next, options);
+        if (!check.ok) {
+          window.BremStorageGuard?.logBlocked?.(check);
+          if (check.blocked) return null;
+          throw new Error(check.message || '데이터 저장이 보호 정책에 의해 차단되었습니다.');
+        }
+        const now = new Date().toISOString();
+        if (!data) {
+          const { error: insertError } = await client
+            .from('settings')
+            .insert({ key, value: next, updated_at: now });
+          if (!insertError) return next;
+          if (String(insertError.code || '') === '23505') continue;
+          throw insertError;
+        }
+        let query = client.from('settings').update({ value: next, updated_at: now }).eq('key', key);
+        query = data.updated_at ? query.eq('updated_at', data.updated_at) : query.is('updated_at', null);
+        const { data: updated, error: updateError } = await query.select('key');
+        if (updateError) throw updateError;
+        if (Array.isArray(updated) && updated.length) return next;
+        await new Promise(resolve => setTimeout(resolve, 150 + Math.random() * 350));
+      }
+      throw new Error('다른 화면에서 같은 데이터를 동시에 저장하고 있어 저장하지 못했습니다. 잠시 후 다시 눌러주세요.');
+    }
+
     async function persistQueuedEntry(key, value, options = {}) {
       if (isLocalReadOnlySupabase()) return noopLocalPersist();
       const check = validatePersistPayload(key, value, options);
@@ -2185,6 +2230,16 @@ window.BremSupabaseStorageAdapter = (function () {
         }
         window.BremStorageGuard?.logBlocked?.(check);
         throw new Error(check.message || '데이터 저장이 보호 정책에 의해 차단되었습니다.');
+      }
+      const rebaseOps = Array.isArray(options.rebaseOps) ? options.rebaseOps : null;
+      if (rebaseOps?.length && !persistHandlers[key] && !isTableKey(key)) {
+        const merged = await persistSettingRebased(key, rebaseOps, options);
+        // 저장 중에 이 탭에서 또 고친 값이 대기 중이면, 그 값이 다음 저장에서 다시 합쳐진다.
+        if (merged != null && !pendingPersist.has(key)) {
+          setCache(key, merged);
+          window.BremDataCache?.set?.(key, merged);
+        }
+        return;
       }
       if (persistHandlers[key]) {
         await persistHandlers[key](value, options);
@@ -2247,6 +2302,11 @@ window.BremSupabaseStorageAdapter = (function () {
         ...(Array.isArray(next.deletedRowIds) ? next.deletedRowIds : [])
       ].map(id => String(id || '').trim()).filter(Boolean));
       if (deletedRowIds.size) merged.deletedRowIds = [...deletedRowIds];
+      // 변경 목록은 이어 붙인다. 한쪽이라도 전체값 저장이면 전체값(최신)으로 올린다.
+      const prevOps = Array.isArray(prev.rebaseOps) ? prev.rebaseOps : null;
+      const nextOps = Array.isArray(next.rebaseOps) ? next.rebaseOps : null;
+      if (prevOps && nextOps) merged.rebaseOps = [...prevOps, ...nextOps];
+      else delete merged.rebaseOps;
       merged.allowEmpty = Boolean(prev.allowEmpty || next.allowEmpty);
       merged.deleteOnly = Boolean(prev.deleteOnly && next.deleteOnly) && !merged.incrementalRows;
       return merged;

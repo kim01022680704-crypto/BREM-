@@ -29,6 +29,20 @@ const BremFinalDeposit = (function () {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
 
+  // 기타지급·프로모션은 탭 캐시에 한 번 담기면 다시 받지 않는다.
+  // 다른 탭·PC에서 넣은 금액이 이체에서 빠지지 않게 매번 서버에서 다시 읽는다.
+  async function reloadAdjustmentsFromServer() {
+    const store = window.BremStorage?.directSettlementAdjustments;
+    if (typeof store?.reloadFromServer !== 'function') return true;
+    try {
+      await store.reloadFromServer();
+      return true;
+    } catch (error) {
+      console.warn('[BREM] final-deposit: adjustment reload failed:', error);
+      return false;
+    }
+  }
+
   function formatDate(value) {
     if (!value) return '-';
     return new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
@@ -747,6 +761,12 @@ const BremFinalDeposit = (function () {
       }
     }
 
+    if (!(await reloadAdjustmentsFromServer())) {
+      showToast('기타지급·프로모션 최신값을 서버에서 불러오지 못해 이체 파일을 만들지 않았습니다.');
+      return;
+    }
+    render();
+
     const weekList = checkedSettlements();
     if (!weekList.length) {
       showToast('이 주에 저장된 직계약 정산서가 없습니다.');
@@ -944,11 +964,16 @@ const BremFinalDeposit = (function () {
     return name;
   }
 
-  function exportRegionExcel() {
+  async function exportRegionExcel() {
     if (!window.XLSX) {
       showToast('엑셀 모듈을 불러오지 못했습니다.');
       return;
     }
+    if (!(await reloadAdjustmentsFromServer())) {
+      showToast('기타지급·프로모션 최신값을 서버에서 불러오지 못해 엑셀을 만들지 않았습니다.');
+      return;
+    }
+    render();
     const packs = computeSettlementPacks(checkedSettlements());
     if (!packs.length) {
       showToast('체크한 정산서가 없습니다.');
@@ -1046,9 +1071,12 @@ const BremFinalDeposit = (function () {
 
   async function reload() {
     await window.BremStorage?.ensureSectionLoaded?.('final-deposit');
+    const fresh = await reloadAdjustmentsFromServer();
     await loadWithdrawals();
     render();
-    showToast('최종입금 내역을 다시 불러왔습니다.');
+    showToast(fresh
+      ? '최종입금 내역을 다시 불러왔습니다.'
+      : '기타지급·프로모션 최신값을 서버에서 불러오지 못했습니다. 새로고침(F5) 후 다시 확인하세요.');
   }
 
   function bindEvents() {
@@ -1112,6 +1140,7 @@ const BremFinalDeposit = (function () {
     ensureWeek();
     bindEvents();
     await window.BremStorage?.ensureSectionLoaded?.('final-deposit');
+    await reloadAdjustmentsFromServer();
     await loadWithdrawals();
     render();
   }

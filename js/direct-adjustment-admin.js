@@ -1203,37 +1203,11 @@ const BremDirectAdjustmentAdmin = (function () {
     // ERP 몫은 선택한 결과로 매번 다시 쓴다. 그래야 여러 번 눌러도 금액이 쌓이지 않는다.
     // 엑셀로 넣은 금액은 이번 ERP 대상이 아닌 한 그대로 둔다.
     const store = window.BremStorage.directSettlementAdjustments;
-    const existing = store.getSettlement('promotion', settlement.id) || {};
     const includedIds = new Set(included.map(item => item.driverId));
-    // 이번에 '넣기'로 고르지 않은, 정산서에 없는 기사 = 뺀 사람.
+    // 이번에 '넣기'로 고르지 않은, 정산서에 없는 기사 = 뺀 사람. 그 사람의 기존 ERP 몫은 남긴다.
     const declinedIds = new Set(
       plan.notInSettlement.filter(item => !includedIds.has(item.driverId)).map(item => item.driverId)
     );
-    const keepDeclined = Object.entries(existing)
-      .filter(([driverId, item]) => item?.source === 'erp' && declinedIds.has(driverId))
-      .map(([driverId, item]) => ({
-        driverId,
-        amount: Number(item.amount || 0),
-        baeminId: item.baeminId || '',
-        coupangId: item.coupangId || '',
-        driverName: item.driverName || '',
-        source: 'erp'
-      }));
-    const saveIds = new Set([
-      ...plan.applicable.keys(),
-      ...included.map(item => item.driverId),
-      ...keepDeclined.map(item => item.driverId)
-    ]);
-    const keepExcel = Object.entries(existing)
-      .filter(([driverId, item]) => item?.source !== 'erp' && !saveIds.has(driverId))
-      .map(([driverId, item]) => ({
-        driverId,
-        amount: Number(item.amount || 0),
-        baeminId: item.baeminId || '',
-        coupangId: item.coupangId || '',
-        driverName: item.driverName || '',
-        source: 'excel'
-      }));
 
     const erpEntries = [...plan.applicable.entries(), ...included.map(item => [item.driverId, item])].map(([driverId, info]) => {
       const driver = window.BremStorage?.drivers?.getById?.(driverId);
@@ -1249,7 +1223,10 @@ const BremDirectAdjustmentAdmin = (function () {
       };
     });
 
-    store.applyEntries('promotion', settlement.id, [...keepExcel, ...keepDeclined, ...erpEntries], { replace: true });
+    // 지울 줄은 서버 최신값에서 고른다. 다른 탭에서 그 사이 넣은 엑셀 프로모션이 지워지지 않게.
+    store.applyEntries('promotion', settlement.id, erpEntries, {
+      dropWhere: (item, driverId) => item?.source === 'erp' && !declinedIds.has(driverId)
+    });
     renderApplied('promotion');
     renderPromoTax();
     renderAppliedSummary();
