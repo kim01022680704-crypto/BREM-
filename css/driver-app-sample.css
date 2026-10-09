@@ -1510,11 +1510,12 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .ds-statcard__head { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; }
 .rider-ds .ds-statcard__title { display: flex; align-items: center; gap: 8px; color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 700; }
 .rider-ds .ds-statcard__when { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
-.rider-ds .ds-stats { display: flex; padding: 4px 15px 12px; }
-.rider-ds .ds-stat { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rider-ds .ds-stats { display: flex; flex-wrap: wrap; padding: 4px 15px 12px; gap: 8px 4px; }
+.rider-ds .ds-stat { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 56px; }
 .rider-ds .ds-stat span { color: var(--rd-text-muted); font-size: var(--rd-fs-100); }
 .rider-ds .ds-stat strong { color: var(--rd-text); font-size: var(--rd-fs-600); font-weight: 800; font-variant-numeric: tabular-nums; }
 .rider-ds .ds-stat--complete strong { color: var(--rd-success); }
+.rider-ds .ds-stat--slaout strong { color: var(--rd-accent-strong); }
 .rider-ds .ds-stat--reject strong { color: var(--rd-danger); }
 .rider-ds .ds-stat--rate strong { color: var(--rd-info); }
 
@@ -1597,8 +1598,9 @@ html.rider-ds.brem-app-nav[data-driver-tab]:not([data-driver-tab="home"]) .drive
 .rider-ds .ds-period[hidden] { display: none; }
 .rider-ds .ds-plat-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--rd-border); }
 .rider-ds .ds-plat-row:first-child { border-top: 0; }
-.rider-ds .ds-plat-metrics { display: flex; gap: 14px; flex: 1; min-width: 0; }
-.rider-ds .ds-metric { display: flex; flex-direction: column; gap: 1px; }
+.rider-ds .ds-plat-metrics { display: flex; flex-wrap: wrap; gap: 10px 12px; flex: 1; min-width: 0; }
+.rider-ds .ds-plat-metrics--baemin { gap: 8px 10px; }
+.rider-ds .ds-metric { display: flex; flex-direction: column; gap: 1px; min-width: 48px; }
 .rider-ds .ds-metric span { color: var(--rd-text-muted); font-size: var(--rd-fs-100); }
 .rider-ds .ds-metric strong { color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 700; font-variant-numeric: tabular-nums; }
 .rider-ds .ds-metric strong.pos { color: var(--rd-success); }

@@ -937,6 +937,16 @@ h3 {
 }
 .live-ops-metric--complete .live-ops-metric__value { color: #15803d; }
 
+.live-ops-metric--slaout {
+  border-color: #fde68a;
+  background: linear-gradient(180deg, #fffbeb, #ffffff);
+}
+.live-ops-metric--slaout .live-ops-metric__icon {
+  background: #fef3c7;
+  color: #b45309;
+}
+.live-ops-metric--slaout .live-ops-metric__value { color: #b45309; }
+
 .live-ops-metric--reject {
   border-color: #fecaca;
   background: linear-gradient(180deg, #fef2f2, #ffffff);

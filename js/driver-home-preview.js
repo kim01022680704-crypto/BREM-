@@ -123,6 +123,7 @@
 
         // 실시간 현황 — 오늘
         setTxt('hv2TdBmComplete', stripUnit(txt('baeminOpsComplete')));
+        setTxt('hv2TdBmSlaOut', stripUnit(txt('baeminOpsSlaOut')));
         setTxt('hv2TdBmAccept', txt('baeminOpsAcceptRate') || '-');
         setTxt('hv2TdBmReject', stripUnit(txt('baeminOpsReject')));
         setTxt('hv2TdBmCancel', stripUnit(txt('baeminOpsCancel')));
@@ -133,6 +134,7 @@
 
         // 실시간 현황 — 주간
         setTxt('hv2WkBmComplete', stripUnit(txt('baeminRateComplete')));
+        setTxt('hv2WkBmSlaOut', stripUnit(txt('baeminRateSlaOut')));
         setTxt('hv2WkBmAccept', txt('weeklyAcceptanceRateBaemin') || '-');
         setTxt('hv2WkBmReject', stripUnit(txt('baeminRateReject')));
         setTxt('hv2WkBmCancel', stripUnit(txt('baeminRateDispatchCancel')));

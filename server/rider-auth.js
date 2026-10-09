@@ -1039,9 +1039,19 @@ function baeminIdLookupVariants(value) {
   return [...new Set([raw, key].filter(Boolean))];
 }
 
+function extractSlaOutComplete(parsed = {}) {
+  return Math.max(0, Number(
+    parsed.slaOutComplete
+    ?? parsed.slaOutsideComplete
+    ?? parsed.outOfSlaComplete
+    ?? 0
+  ) || 0);
+}
+
 function extractDeliveryStatusMetrics(parsed = {}) {
   return {
-    complete: Math.max(0, Number(parsed.totalComplete || parsed.completeCount || 0) || 0),
+    complete: Math.max(0, Number(parsed.allDayComplete || parsed.totalComplete || parsed.completeCount || 0) || 0),
+    slaOutComplete: extractSlaOutComplete(parsed),
     foodReject: Math.max(0, Number(parsed.foodReject || 0) || 0),
     foodCancel: Math.max(0, Number(parsed.foodCancel || 0) || 0),
     foodRiderFault: Math.max(0, Number(parsed.foodRiderFault || 0) || 0)
@@ -1103,6 +1113,40 @@ async function fetchLatestDeliveryStatusForBaeminId(supabase, baeminId, options 
     return { row: sorted[0], source: table };
   }
   return null;
+}
+
+async function fetchWeekSlaOutComplete(supabase, baeminId, weekStart, today) {
+  const variants = baeminIdLookupVariants(baeminId);
+  const from = String(weekStart || '').slice(0, 10);
+  const to = String(today || '').slice(0, 10);
+  if (!variants.length || !from || !to) return { sum: 0, days: new Set() };
+
+  const tables = ['baemin_delivery_applied_items', 'baemin_biz_collect_items'];
+  for (const table of tables) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('parsed_json,collect_date')
+      .eq('source_menu', 'rider_history')
+      .in('rider_user_id', variants)
+      .limit(80);
+    if (error) {
+      if (/does not exist|Could not find the table/i.test(String(error.message || ''))) continue;
+      console.warn(`[BREM] rider baeminOps week slaOut (${table}):`, error.message || error);
+      continue;
+    }
+    if (!data?.length) continue;
+    const days = new Set();
+    let sum = 0;
+    data.forEach(row => {
+      const parsed = row.parsed_json || {};
+      const day = String(parsed.deliveryDate || parsed.businessDate || row.collect_date || '').slice(0, 10);
+      if (!day || day < from || day > to || days.has(day)) return;
+      days.add(day);
+      sum += extractSlaOutComplete(parsed);
+    });
+    return { sum, days };
+  }
+  return { sum: 0, days: new Set() };
 }
 
 async function fetchLatestLiveAcceptRate(supabase, { baeminId, driverId }) {
@@ -1189,6 +1233,7 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
     riderId: driverId,
     baeminId: baeminId || '',
     complete: 0,
+    slaOutComplete: 0,
     foodReject: 0,
     foodCancel: 0,
     foodRiderFault: 0,
@@ -1213,9 +1258,10 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
     weekStart = today;
   }
 
-  const [deliveryHitRaw, acceptRowRaw] = await Promise.all([
+  const [deliveryHitRaw, acceptRowRaw, weekSlaHit] = await Promise.all([
     baeminId ? fetchLatestDeliveryStatusForBaeminId(supabase, baeminId, { minCollectDate: weekStart }) : Promise.resolve(null),
-    fetchLatestLiveAcceptRate(supabase, { baeminId, driverId })
+    fetchLatestLiveAcceptRate(supabase, { baeminId, driverId }),
+    baeminId ? fetchWeekSlaOutComplete(supabase, baeminId, weekStart, today) : Promise.resolve({ sum: 0, days: new Set() })
   ]);
 
   // 정산주 밖의 배달현황·다른 주 스냅샷은 쓰지 않는다.
@@ -1240,7 +1286,7 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
 
   const metrics = deliveryHit?.row
     ? extractDeliveryStatusMetrics(deliveryHit.row.parsed_json || {})
-    : { complete: 0, foodReject: 0, foodCancel: 0, foodRiderFault: 0 };
+    : { complete: 0, slaOutComplete: 0, foodReject: 0, foodCancel: 0, foodRiderFault: 0 };
 
   // 정산주(수~화) 첫날(수요일)에는 라이더 과거내역이 없어, 주간 스냅샷(과거+오늘) 대신
   // 오늘 배달현황만으로 계산해야 화면의 완료/거절 수치와 일치한다.
@@ -1283,17 +1329,26 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
       }
       : metrics);
 
+  const todaySlaOut = metrics.slaOutComplete || 0;
+  const weekSlaDays = weekSlaHit?.days || new Set();
+  const weekSlaOutComplete = Math.max(
+    0,
+    Number(weekSlaHit?.sum || 0) + (today && !weekSlaDays.has(today) ? todaySlaOut : 0)
+  );
+
   return {
     available: true,
     riderId: driverId,
     baeminId,
     complete: metrics.complete,
+    slaOutComplete: todaySlaOut,
     foodReject: metrics.foodReject,
     foodCancel: metrics.foodCancel,
     foodRiderFault: metrics.foodRiderFault,
     acceptRate,
     acceptRateSource,
     weekComplete: weekMetrics.complete,
+    weekSlaOutComplete,
     weekFoodReject: weekMetrics.foodReject,
     weekFoodCancel: weekMetrics.foodCancel,
     weekFoodRiderFault: weekMetrics.foodRiderFault,

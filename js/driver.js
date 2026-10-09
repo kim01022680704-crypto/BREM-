@@ -222,10 +222,12 @@
     const reject = Number(ops.weekFoodReject ?? ops.foodReject ?? 0);
     const cancel = Number(ops.weekFoodCancel ?? ops.foodCancel ?? 0);
     const fault = Number(ops.weekFoodRiderFault ?? ops.foodRiderFault ?? 0);
+    const slaOut = Number(ops.weekSlaOutComplete ?? ops.slaOutComplete ?? 0);
     return {
       rate,
       stats: {
         completeTotal: complete,
+        slaOutComplete: Number.isFinite(slaOut) ? Math.max(0, slaOut) : 0,
         rejectCount: reject,
         dispatchCancelCount: cancel,
         riderCancelCount: fault,
@@ -422,6 +424,7 @@
       const dispatch = serviceCount(stats, 'dispatchCancelByService', 'dispatchCancelCount');
       const rider = serviceCount(stats, 'riderFaultByService', 'riderCancelCount');
       setText('baeminRateComplete', entry ? countLabel(stats.completeTotal || 0) : empty);
+      setText('baeminRateSlaOut', entry && stats.slaOutComplete != null ? countLabel(stats.slaOutComplete || 0) : empty);
       setText('baeminRateRejectFood', entry ? countLabel(reject.food) : empty);
       setText('baeminRateRejectBmart', entry ? countLabel(reject.bmart) : empty);
       setText('baeminRateRejectStore', entry ? countLabel(reject.store) : empty);
@@ -1559,6 +1562,7 @@
       available ? `${number(value)}콜` : '-'
     );
     setText('baeminOpsComplete', callText(ops?.complete));
+    setText('baeminOpsSlaOut', callText(ops?.slaOutComplete));
     setText('baeminOpsReject', callText(ops?.foodReject));
     setText('baeminOpsCancel', callText(ops?.foodCancel));
     setText('baeminOpsRiderFault', callText(ops?.foodRiderFault));
