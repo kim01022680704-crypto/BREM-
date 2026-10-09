@@ -1380,6 +1380,7 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 /* =====================================================================
    크루장 메인 표/이름변경 폼 · 지사 기사수 배지 (잔여 밝은 면) 다크
    ===================================================================== */
+.rider-ds .driver-crew-ops-stack { display: inline-flex; flex-direction: column; align-items: stretch; gap: 3px; }
 .rider-ds .driver-crew-table-wrap { background: var(--rd-card); border: 1px solid var(--rd-border); }
 .rider-ds .driver-crew-leader-panel .driver-crew-table th { background: var(--rd-card-2); color: var(--rd-accent-strong); }
 .rider-ds .driver-crew-leader-panel .driver-crew-table td { border-bottom: 1px solid var(--rd-border); color: var(--rd-text); }

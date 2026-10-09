@@ -103,14 +103,33 @@
     return `${fmt(weekStart, '수')}~${fmt(weekEnd, '화')}`;
   }
 
-  function operatingTagHtml(operating) {
+  function operatingTagHtml(operating, label) {
+    const prefix = label ? `${escapeHtml(label)} ` : '';
     if (operating === true) {
-      return '<span class="driver-crew-tag driver-crew-tag--on"><span class="driver-crew-tag__dot" aria-hidden="true"></span>운행중</span>';
+      return `<span class="driver-crew-tag driver-crew-tag--on"><span class="driver-crew-tag__dot" aria-hidden="true"></span>${prefix}운행중</span>`;
     }
     if (operating === false) {
-      return '<span class="driver-crew-tag driver-crew-tag--off"><span class="driver-crew-tag__dot" aria-hidden="true"></span>미운행</span>';
+      return `<span class="driver-crew-tag driver-crew-tag--off"><span class="driver-crew-tag__dot" aria-hidden="true"></span>${prefix}미운행</span>`;
     }
-    return '<span class="driver-crew-tag driver-crew-tag--unk"><span class="driver-crew-tag__dot" aria-hidden="true"></span>미확인</span>';
+    return `<span class="driver-crew-tag driver-crew-tag--unk"><span class="driver-crew-tag__dot" aria-hidden="true"></span>${prefix}미확인</span>`;
+  }
+
+  function operatingCellHtml(member) {
+    const tags = [];
+    if (member.baeminOperating !== undefined && member.baeminOperating !== null) {
+      tags.push(operatingTagHtml(member.baeminOperating, '배민'));
+    }
+    if (member.coupangOperating !== undefined && member.coupangOperating !== null) {
+      tags.push(operatingTagHtml(member.coupangOperating, '쿠팡'));
+    }
+    if (!tags.length) tags.push(operatingTagHtml(member.operating));
+    return `<div class="driver-crew-ops-stack">${tags.join('')}</div>`;
+  }
+
+  function formatCount(value) {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return '0';
+    return (Math.round(n * 10) / 10).toLocaleString('ko-KR', { maximumFractionDigits: 1 });
   }
 
   function formatRatePct(value) {
@@ -251,7 +270,8 @@
     const summary = result.summary || {};
     if (summaryEl) {
       summaryEl.textContent = `인원 ${formatNumber(summary.memberCount)} · 운행중 ${formatNumber(summary.operatingCount)}`
-        + ` · 오늘배민 ${formatNumber(summary.todayBaemin ?? summary.todayCalls)}`
+        + ` · 오늘배민 ${formatCount(summary.todayBaemin ?? summary.todayCalls)}`
+        + ` · 오늘쿠팡 ${formatCount(summary.todayCoupang)}`
         + ` · 주간 배민 ${formatNumber(summary.weekBaemin)} · 쿠팡 ${formatNumber(summary.weekCoupang)}`
         + ` · 합계 ${formatNumber(summary.weekCalls)}`;
     }
@@ -267,15 +287,16 @@
                 ${member.isSelf ? '<span class="driver-crew-name__badges"><span class="driver-crew-tag driver-crew-tag--self">나</span></span>' : ''}
               </div>
             </td>
-            <td class="driver-crew-ops">${operatingTagHtml(member.operating)}</td>
+            <td class="driver-crew-ops">${operatingCellHtml(member)}</td>
             ${rateCellHtml(member.baeminAcceptRate, 'baemin')}
             ${rateCellHtml(member.coupangRejectRate, 'coupang')}
-            <td class="driver-crew-num">${formatNumber(member.todayBaemin ?? member.todayCalls)}</td>
+            <td class="driver-crew-num">${formatCount(member.todayBaemin ?? member.todayCalls)}</td>
+            <td class="driver-crew-num">${formatCount(member.todayCoupang)}</td>
             <td class="driver-crew-num">${formatNumber(member.weekBaemin)}</td>
             <td class="driver-crew-num">${formatNumber(member.weekCoupang)}</td>
             <td class="driver-crew-num">${formatNumber(member.weekCalls)}</td>
           </tr>`).join('')
-        : '<tr><td colspan="8" class="empty">소속 기사가 없습니다.</td></tr>';
+        : '<tr><td colspan="9" class="empty">소속 기사가 없습니다.</td></tr>';
     }
   }
 

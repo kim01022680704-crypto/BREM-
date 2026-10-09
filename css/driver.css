@@ -3405,6 +3405,13 @@ button.calendar-day:hover {
   text-align: center;
 }
 
+.driver-crew-ops-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+
 .driver-crew-ops .driver-crew-tag {
   padding: 2px 6px;
   font-size: 10px;

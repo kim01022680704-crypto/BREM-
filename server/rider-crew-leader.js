@@ -43,6 +43,12 @@ function isDrivingStatus(statusDesc) {
   return compact.includes('운행중');
 }
 
+function isCoupangDrivingStatus(edpStatus) {
+  const compact = String(edpStatus || '').replace(/[\s_-]+/g, '').toUpperCase();
+  if (!compact) return false;
+  return compact === 'ONLINE';
+}
+
 function normalizeBaeminUserId(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -177,14 +183,15 @@ async function loadRidersByIds(supabase, driverIds) {
   const byId = new Map(rows.map(row => [String(row.id), row]));
   return ids.map(id => {
     const row = byId.get(id);
-    if (!row) return { id, name: '', phone: '', baemin_id: '' };
+    if (!row) return { id, name: '', phone: '', baemin_id: '', coupangId: '' };
     const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
     const baeminId = String(row.baemin_id || raw.baeminId || raw.baemin_id || '').trim();
     return {
       id,
       name: String(row.name || '').trim(),
-      phone: String(row.phone || '').trim(),
-      baemin_id: baeminId
+      phone: String(row.phone || raw.phone || '').trim(),
+      baemin_id: baeminId,
+      coupangId: String(raw.coupangId || raw.coupangLoginKey || raw.courierId || '').trim()
     };
   });
 }
@@ -464,6 +471,71 @@ async function loadBaeminLiveByRiders(supabase, riders) {
   return result;
 }
 
+/**
+ * 쿠팡 라이더일일(rider_daily)에서 운행중·오늘완료콜 매칭
+ * edpStatus: ON_LINE / OFF_LINE / IDLE
+ */
+async function loadCoupangLiveByRiders(supabase, riders) {
+  const result = new Map();
+  const { makeRiderLoginId } = require('./rider-auth');
+  const keyToDriver = new Map();
+  const courierToDriver = new Map();
+  (riders || []).forEach(rider => {
+    const id = String(rider.id || '').trim();
+    if (!id) return;
+    const key = makeRiderLoginId(rider);
+    if (key && key.length >= 5 && !keyToDriver.has(key)) keyToDriver.set(key, id);
+    const courierId = String(rider.coupangId || '').trim();
+    if (courierId && !courierToDriver.has(courierId)) courierToDriver.set(courierId, id);
+  });
+  const keys = [...keyToDriver.keys()];
+  if (!keys.length) return result;
+
+  const today = formatKstDateKey();
+  for (let i = 0; i < keys.length; i += 40) {
+    const chunk = keys.slice(i, i + 40);
+    const { data, error } = await supabase
+      .from('coupang_collect_items')
+      .select('collected_at,collect_date,match_key,courier_id,parsed_json')
+      .eq('source_menu', 'rider_daily')
+      .eq('collect_date', today)
+      .in('match_key', chunk)
+      .limit(2000);
+    if (error) {
+      if (!/does not exist|Could not find the table/i.test(String(error.message || ''))) {
+        console.warn('[BREM] crew-leader coupang ops:', error.message || error);
+      }
+      break;
+    }
+    (data || []).forEach(row => {
+      const key = String(row.match_key || '').trim();
+      const courierId = String(row.courier_id || '').trim();
+      const driverId = keyToDriver.get(key) || courierToDriver.get(courierId);
+      if (!driverId) return;
+      const prev = result.get(driverId);
+      const collectedAt = Date.parse(row.collected_at || '') || 0;
+      if (prev && collectedAt && collectedAt < prev.collectedAt) return;
+      const parsed = row.parsed_json && typeof row.parsed_json === 'object' ? row.parsed_json : {};
+      const status = String(parsed.edpStatus || '').trim();
+      const complete = Math.max(0, Number(parsed.completeCount || 0) || 0);
+      result.set(driverId, {
+        operating: isCoupangDrivingStatus(status),
+        liveComplete: complete,
+        collectDate: String(row.collect_date || '').slice(0, 10),
+        collectedAt,
+        statusDesc: status
+      });
+    });
+  }
+  return result;
+}
+
+function mergeOperating(baeminOp, coupangOp) {
+  if (baeminOp === true || coupangOp === true) return true;
+  if (baeminOp === false || coupangOp === false) return false;
+  return null;
+}
+
 function collectSubtreeDriverBoxMap(chart, rootNode) {
   if (!rootNode) return new Map();
   const byId = new Map((chart.nodes || []).map(node => [node.id, node]));
@@ -721,31 +793,35 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
   const today = formatKstDateKey();
 
   const riders = await loadRidersByIds(supabase, memberIds);
-  const liveMap = await loadBaeminLiveByRiders(supabase, riders);
-  const [calls, rates] = await Promise.all([
-    loadCallCounts(supabase, memberIds, weekStart, weekEnd, today),
-    loadLiveRatesForDrivers(supabase, riders, liveMap)
+  const [liveMap, coupangLiveMap, calls] = await Promise.all([
+    loadBaeminLiveByRiders(supabase, riders),
+    loadCoupangLiveByRiders(supabase, riders),
+    loadCallCounts(supabase, memberIds, weekStart, weekEnd, today)
   ]);
+  const rates = await loadLiveRatesForDrivers(supabase, riders, liveMap);
 
   const members = riders.map(rider => {
     const id = String(rider.id || '').trim();
     const live = liveMap.get(id);
+    const coupangLive = coupangLiveMap.get(id);
     const weekBaemin = calls.weekBaemin.get(id) || 0;
     const weekCoupang = calls.weekCoupang.get(id) || 0;
     const weekCalls = weekBaemin + weekCoupang;
-    // 오늘 실시간: 배민 배달현황 크롤만 (쿠팡은 실시간 없음)
-    const liveComplete = live?.liveComplete || 0;
-    const todayBaemin = Math.max(calls.todayBaemin.get(id) || 0, liveComplete);
-    const todayCoupang = calls.todayCoupang.get(id) || 0;
-    let operating = null;
-    if (live && (live.statusDesc || live.collectedAt)) {
-      operating = Boolean(live.operating);
-    }
+    const todayBaemin = Math.max(calls.todayBaemin.get(id) || 0, live?.liveComplete || 0);
+    const todayCoupang = Math.max(calls.todayCoupang.get(id) || 0, coupangLive?.liveComplete || 0);
+    const baeminOperating = live && (live.statusDesc || live.collectedAt)
+      ? Boolean(live.operating)
+      : null;
+    const coupangOperating = coupangLive && (coupangLive.statusDesc || coupangLive.collectedAt)
+      ? Boolean(coupangLive.operating)
+      : null;
     return {
       driverId: id,
       name: String(rider.name || '').trim() || '이름 없음',
       isSelf: id === riderId,
-      operating,
+      operating: mergeOperating(baeminOperating, coupangOperating),
+      baeminOperating,
+      coupangOperating,
       baeminAcceptRate: rates.baemin.has(id) ? rates.baemin.get(id) : null,
       coupangRejectRate: rates.coupang.has(id) ? rates.coupang.get(id) : null,
       todayCalls: todayBaemin,
@@ -778,6 +854,7 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
       operatingKnown: knownOps,
       todayCalls: members.reduce((sum, m) => sum + m.todayBaemin, 0),
       todayBaemin: members.reduce((sum, m) => sum + m.todayBaemin, 0),
+      todayCoupang: members.reduce((sum, m) => sum + m.todayCoupang, 0),
       weekBaemin: members.reduce((sum, m) => sum + m.weekBaemin, 0),
       weekCoupang: members.reduce((sum, m) => sum + m.weekCoupang, 0),
       weekCalls: members.reduce((sum, m) => sum + m.weekCalls, 0)
