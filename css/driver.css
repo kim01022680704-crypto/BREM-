@@ -4612,6 +4612,7 @@ html.brem-app-nav .driver-payslip-close {
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: -0.03em;
+  white-space: nowrap;
 }
 
 .driver-app-nav__badge {
