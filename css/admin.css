@@ -6709,9 +6709,18 @@ textarea {
   gap: 10px;
 }
 
+.promotion-sla-btn {
+  color: #111111;
+  background: var(--yellow);
+}
+.promotion-sla-btn:not(.is-active) {
+  color: #e8e8e8;
+  background: #2a2a2a;
+  border: 1px solid var(--line);
+}
 .promotion-sla-btn.is-active {
-  border-color: var(--yellow);
-  color: var(--yellow);
+  color: #111111;
+  background: var(--yellow);
 }
 
 .promotion-sla-tag {
