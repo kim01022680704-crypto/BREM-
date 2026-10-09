@@ -2,6 +2,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+.coupang-local-accounts.json
 data/
 _restore_tmp/
 .DS_Store

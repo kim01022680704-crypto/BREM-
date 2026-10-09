@@ -31,8 +31,12 @@ function isBaeminPhoneAuthLikeUrl(url) {
 
 function isCoupangLoginLikeUrl(url) {
   const value = String(url || '').toLowerCase();
-  return /login|signin|sign-in|auth|oauth|otp|verify|2fa|mfa|cert/.test(value)
-    && (/coupang|partner\.coupangeats|xauth\.coupang/.test(value) || !value.includes('http'));
+  if (!value) return false;
+  // 파트너 포털 URL 안의 auth 문자열까지 로그인으로 보면
+  // 정상 대시보드를 로그아웃으로 오인하고 페이지를 다시 연다.
+  if (value.includes('xauth.coupang.com')) return true;
+  return /partner\.coupangeats\.com/.test(value)
+    && /\/login|signin|sign-in|openid-connect/.test(value);
 }
 
 function resolveBaeminAuthState({

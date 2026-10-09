@@ -14,19 +14,19 @@ const NAVER_MAIL_ALL_URL = 'https://mail.naver.com/v2/folders/-1';
 const NAVER_LOGIN_URL = 'https://nid.naver.com/nidlogin.login';
 const DEFAULT_PROFILE = path.join(process.cwd(), '.naver-playwright-profile');
 const OTP_PATTERNS = [
-  /인증\s*번호\s*([0-9]{4,8})/i,
-  /인증번호\s*([0-9]{4,8})/i,
-  /인증\s*번호[:\s]*([0-9]{4,8})/i,
-  /인증번호[:\s]*([0-9]{4,8})/i,
+  /인증\s*번호\s*[:\s]*([0-9]{4,8})/i,
+  /인증번호\s*[:\s]*([0-9]{4,8})/i,
+  /이메일\s*인증\s*코드[:\s]*([0-9]{4,8})/i,
   /verification\s*code[:\s]*([0-9]{4,8})/i,
   /OTP[:\s]*([0-9]{4,8})/i,
-  /\b([0-9]{6})\b/
+  /인증[^\d]{0,24}([0-9]{6,8})/
 ];
 
 let sharedContext = null;
 let sharedCdpBrowser = null;
 let cdpAttached = false;
 let recovering = false;
+let boundContext = null;
 
 function findChromeExecutable() {
   const candidates = [
@@ -144,7 +144,53 @@ function extractOtpFromText(text) {
   return '';
 }
 
+function isNaverUrl(url) {
+  return /nid\.naver\.com|mail\.naver\.com|(^|\/\/)(www\.)?naver\.com/i.test(String(url || ''));
+}
+
+function bindSharedBrowserContext(ctx) {
+  boundContext = ctx || null;
+  if (ctx) sharedContext = ctx;
+}
+
+function findNaverPageInContext(ctx) {
+  if (!ctx) return null;
+  try {
+    const pages = ctx.pages().filter((page) => {
+      try { return !page.isClosed(); } catch { return false; }
+    });
+    return pages.find((page) => isNaverUrl(page.url())) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureNaverTabInContext(ctx) {
+  const context = ctx || boundContext || sharedContext;
+  if (!context) return null;
+  let page = findNaverPageInContext(context);
+  if (!page) {
+    page = await context.newPage();
+    await page.goto(NAVER_MAIL_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+  } else {
+    const url = String(page.url() || '');
+    if (!url || url === 'about:blank') {
+      await page.goto(NAVER_MAIL_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+    }
+  }
+  return page;
+}
+
+async function isBoundNaverLoggedIn() {
+  const page = findNaverPageInContext(boundContext) || findNaverPageInContext(sharedContext);
+  if (!page) return false;
+  return pageLooksLoggedIntoNaver(page);
+}
+
 async function closeNaverContext(options = {}) {
+  if (boundContext) {
+    return;
+  }
   if (cdpAttached) {
     if (options.closeBrowser && sharedCdpBrowser) {
       try { await sharedCdpBrowser.close(); } catch { /* ignore */ }
@@ -162,6 +208,10 @@ async function closeNaverContext(options = {}) {
 }
 
 async function ensureNaverContext(options = {}) {
+  if (boundContext) {
+    sharedContext = boundContext;
+    return boundContext;
+  }
   const manualFriendly = options.manualFriendly === true
     || (options.manualFriendly !== false && process.env.NAVER_MANUAL_LOGIN === '1');
 
@@ -484,8 +534,10 @@ async function fillNaverLoginForm(page, id, password) {
  */
 async function ensureNaverLoggedIn(page, options = {}) {
   const creds = getNaverCredentials();
-  await page.goto(NAVER_MAIL_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-  await page.waitForTimeout(1500);
+  if (!boundContext || !isNaverUrl(page.url()) || String(page.url() || '') === 'about:blank') {
+    await page.goto(NAVER_MAIL_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+  }
 
   if (await pageLooksLoggedIntoNaver(page)) {
     return { ok: true, alreadyLoggedIn: true };
@@ -499,28 +551,14 @@ async function ensureNaverLoggedIn(page, options = {}) {
     };
   }
 
-  if (options.skipAutoLogin || process.env.NAVER_MANUAL_LOGIN === '1') {
-    await page.goto(NAVER_MAIL_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-    await page.waitForTimeout(800);
+  if (options.skipAutoLogin || process.env.NAVER_MANUAL_LOGIN === '1' || boundContext) {
     if (await pageLooksLoggedIntoNaver(page)) {
       return { ok: true, via: 'manual', alreadyLoggedIn: true };
     }
-    if (!/nid\.naver\.com/.test(page.url())) {
-      await page.goto(NAVER_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-    }
-    const waitMs = Math.max(60000, Number(options.manualWaitMs || 300000));
-    console.log(`[NAVER] 수동 로그인 대기 (${Math.round(waitMs / 1000)}초) — 창에서 직접 로그인해 주세요`);
-    const deadline = Date.now() + waitMs;
-    while (Date.now() < deadline) {
-      if (await pageLooksLoggedIntoNaver(page)) {
-        return { ok: true, via: 'manual' };
-      }
-      await page.waitForTimeout(2500);
-    }
     return {
       ok: false,
-      error: 'NAVER_MANUAL_LOGIN_REQUIRED',
-      message: '네이버 수동 로그인이 필요합니다. ERP에서 「119 네이버 열기」 후 로그인해 주세요.'
+      error: 'NAVER_NOT_LOGGED_IN',
+      message: '네이버 탭에서 직접 로그인한 뒤 유지하세요. 자동 입력은 하지 않습니다.'
     };
   }
 
@@ -702,9 +740,11 @@ async function openNaverMailForLogin(options = {}) {
 }
 
 async function openNaverAllMailFolder(page) {
-  // 1) 전체메일 URL (folder -1)
-  await page.goto(NAVER_MAIL_ALL_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-  await page.waitForTimeout(1200);
+  const url = String(page.url() || '');
+  if (!/mail\.naver\.com\/v2\/folders\/-1/.test(url)) {
+    await page.goto(NAVER_MAIL_ALL_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+  }
+  await page.waitForTimeout(2000);
 
   // 2) 사이드바 「전체메일」 클릭 (받은메일함만 보는 문제 방지)
   const allMailTab = page.getByText('전체메일', { exact: true }).first();
@@ -721,116 +761,359 @@ async function openNaverAllMailFolder(page) {
   }
 }
 
-async function openLatestCoupangVerifyMail(page) {
-  // 제목: [프로모션] [쿠팡] 이메일 인증번호가 도착하였습니다.
-  const selectors = [
-    'text=[쿠팡] 이메일 인증번호가 도착하였습니다',
-    'text=이메일 인증번호가 도착하였습니다',
-    'a:has-text("이메일 인증번호")',
-    'a:has-text("[쿠팡]")',
-    '[class*="mail"]:has-text("인증번호")',
-    '[class*="subject"]:has-text("쿠팡")',
-    'span:has-text("이메일 인증번호")',
-    'div:has-text("[쿠팡] 이메일 인증번호")'
-  ];
-  for (const selector of selectors) {
-    const loc = page.locator(selector).first();
-    if (!(await loc.count().catch(() => 0))) continue;
-    if (!(await loc.isVisible().catch(() => false))) continue;
-    await loc.click({ timeout: 5000, force: true }).catch(() => {});
-    await page.waitForTimeout(1200);
-    return true;
+function parseNaverMailTimeMs(raw, nowMs = Date.now()) {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  const now = new Date(nowMs);
+  let match = text.match(/(오전|오후)\s*(\d{1,2}):(\d{2})/);
+  if (match) {
+    let hour = Number(match[2]);
+    const minute = Number(match[3]);
+    if (match[1] === '오후' && hour < 12) hour += 12;
+    if (match[1] === '오전' && hour === 12) hour = 0;
+    const date = new Date(now);
+    date.setHours(hour, minute, 0, 0);
+    return date.getTime();
   }
+  match = text.match(/\b(\d{1,2}):(\d{2})\b/);
+  if (match) {
+    const date = new Date(now);
+    date.setHours(Number(match[1]), Number(match[2]), 0, 0);
+    return date.getTime();
+  }
+  match = text.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+  if (match) {
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0).getTime();
+  }
+  match = text.match(/\b(\d{1,2})[\/.](\d{1,2})\b/);
+  if (match) {
+    const month = Number(match[1]);
+    const day = Number(match[2]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const date = new Date(now.getFullYear(), month - 1, day, 12, 0, 0);
+      if (date.getTime() > nowMs + 12 * 60 * 60 * 1000) date.setFullYear(date.getFullYear() - 1);
+      if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()) {
+        return nowMs;
+      }
+      return date.getTime();
+    }
+  }
+  return 0;
+}
 
-  // 목록에서 쿠팡+인증번호 행 클릭
-  return page.evaluate(() => {
-    const rows = Array.from(document.querySelectorAll('a, tr, li, div[role="row"], .mail_item, [class*="mail"]'));
-    const target = rows.find((el) => {
-      const t = (el.textContent || '').replace(/\s+/g, ' ');
-      return /쿠팡/.test(t) && /인증번호|인증\s*번호/.test(t);
+function isCoupangVerifySubject(text) {
+  const t = String(text || '').replace(/\s+/g, ' ');
+  return /쿠팡/.test(t) && /인증번호|인증\s*번호/.test(t);
+}
+
+async function evaluateOpenVerifyMail(ctx, sinceMs, allowUnreadFallback) {
+  return ctx.evaluate(({ since, allowUnread }) => {
+    const parseTime = (raw) => {
+      const text = String(raw || '').replace(/\s+/g, ' ').trim();
+      const now = new Date();
+      let match = text.match(/(오전|오후)\s*(\d{1,2}):(\d{2})/);
+      if (match) {
+        let hour = Number(match[2]);
+        const minute = Number(match[3]);
+        if (match[1] === '오후' && hour < 12) hour += 12;
+        if (match[1] === '오전' && hour === 12) hour = 0;
+        const date = new Date();
+        date.setHours(hour, minute, 0, 0);
+        return date.getTime();
+      }
+      match = text.match(/\b(\d{1,2}):(\d{2})\b/);
+      if (match) {
+        const date = new Date();
+        date.setHours(Number(match[1]), Number(match[2]), 0, 0);
+        return date.getTime();
+      }
+      match = text.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+      if (match) {
+        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0).getTime();
+      }
+      match = text.match(/\b(\d{1,2})[\/.](\d{1,2})\b/);
+      if (match) {
+        const month = Number(match[1]);
+        const day = Number(match[2]);
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          const date = new Date(now.getFullYear(), month - 1, day, 12, 0, 0);
+          if (date.getTime() > Date.now() + 12 * 60 * 60 * 1000) date.setFullYear(date.getFullYear() - 1);
+          if (date.getMonth() === now.getMonth() && date.getDate() === now.getDate()) return Date.now();
+          return date.getTime();
+        }
+      }
+      return 0;
+    };
+    const looksSubject = (t) => /쿠팡/.test(t) && /인증번호|인증\s*번호/.test(t) && t.length < 140;
+    const collectDeep = (root, out = []) => {
+      if (!root) return out;
+      const list = root.querySelectorAll ? root.querySelectorAll('a, span, strong, em, div, li, tr, button') : [];
+      list.forEach((el) => {
+        out.push(el);
+        if (el.shadowRoot) collectDeep(el.shadowRoot, out);
+      });
+      return out;
+    };
+    const nodes = collectDeep(document);
+    const hits = [];
+    const seen = new Set();
+    nodes.forEach((el) => {
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!looksSubject(text)) return;
+      const row = el.closest('li, tr, [role="row"], [class*="mail_item"], [class*="MailItem"], [class*="list_item"]') || el;
+      if (seen.has(row)) return;
+      seen.add(row);
+      const rowText = (row.textContent || '').replace(/\s+/g, ' ');
+      const timeBit = rowText.match(/(오전|오후)\s*\d{1,2}:\d{2}|\b\d{1,2}:\d{2}\b|\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2}|\b\d{1,2}[\/.]\d{1,2}\b/);
+      const ms = timeBit ? parseTime(timeBit[0]) : 0;
+      const cls = `${row.className || ''} ${el.className || ''}`;
+      const unread = /unread|안읽|new_mail|is_unread/i.test(cls)
+        || Number(window.getComputedStyle(el).fontWeight || 0) >= 600;
+      hits.push({ el, row, ms, unread, text: text.slice(0, 90) });
     });
-    if (!target) return false;
+    const fresh = hits
+      .filter((row) => !row.ms || row.ms >= since - 30000)
+      .sort((a, b) => (b.ms || 0) - (a.ms || 0) || (b.unread ? 1 : 0) - (a.unread ? 1 : 0));
+    const pick = fresh[0] || (allowUnread ? hits.slice().sort((a, b) => (b.ms || 0) - (a.ms || 0))[0] : null);
+    if (!pick) return { opened: false, candidates: hits.length, unread: hits.filter((row) => row.unread).length };
+    (pick.el.closest('a') || pick.el).click();
+    return { opened: true, ms: pick.ms, text: pick.text, unread: pick.unread, fallback: !fresh[0] };
+  }, { since: Number(sinceMs) || 0, allowUnread: Boolean(allowUnreadFallback) }).catch(() => ({ opened: false, candidates: 0 }));
+}
+
+async function clickCoupangOtpConfirm(page) {
+  return page.evaluate(() => {
+    const norm = (el) => (el.textContent || '').replace(/\s+/g, '').trim();
+    const reject = (t) => /전송|발송|재전송|다시요청|인증코드전송|닫기|취소/.test(t);
+    const buttons = Array.from(document.querySelectorAll('button, input[type="submit"], [role="button"]'));
+    const prefer = buttons.find((b) => {
+      const t = norm(b);
+      return (t === '확인' || t === '인증하기' || t === '인증완료' || t === '로그인') && !reject(t);
+    });
+    const fallback = buttons.find((b) => {
+      const t = norm(b);
+      return /확인|인증완료|다음|로그인/.test(t) && !reject(t);
+    });
+    const target = prefer || fallback;
+    if (!target) return { clicked: false, text: '' };
     target.click();
+    return { clicked: true, text: norm(target) };
+  }).catch(() => ({ clicked: false, text: '' }));
+}
+
+async function clickTopCoupangVerifyMail(ctx, sinceMs) {
+  const phrases = [
+    '이메일 인증번호가 도착하였습니다',
+    '[쿠팡] 이메일 인증번호',
+    '이메일 인증번호'
+  ];
+  const candidates = [];
+  for (const phrase of phrases) {
+    const loc = ctx.getByText(phrase, { exact: false });
+    const count = await loc.count().catch(() => 0);
+    for (let i = 0; i < Math.min(count, 8); i += 1) {
+      const item = loc.nth(i);
+      if (!(await item.isVisible().catch(() => false))) continue;
+      const text = String(await item.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+      if (text.length > 160) continue;
+      const rowText = String(await item.evaluate((el) => {
+        const row = el.closest('li, tr, [role="row"], [class*="item"], [class*="mail"]') || el.parentElement || el;
+        return row.textContent || '';
+      }).catch(() => text)).replace(/\s+/g, ' ');
+      const timeBit = rowText.match(/(오전|오후)\s*\d{1,2}:\d{2}|\b\d{1,2}:\d{2}\b/);
+      const ms = timeBit ? parseNaverMailTimeMs(timeBit[0]) : 0;
+      if (ms && ms < Number(sinceMs) - 120000) continue;
+      candidates.push({ item, ms, text, count });
+    }
+  }
+  if (!candidates.length) return { opened: false, locatorCount: 0 };
+  candidates.sort((a, b) => (b.ms || 0) - (a.ms || 0));
+  const pick = candidates[0];
+  await pick.item.click({ timeout: 4000, force: true }).catch(async () => {
+    await pick.item.click({ timeout: 3000 }).catch(() => {});
+  });
+  return { opened: true, ms: pick.ms || Date.now(), text: pick.text.slice(0, 90), locatorCount: pick.count };
+}
+
+async function openCoupangVerifyMailAfter(page, sinceMs, options = {}) {
+  const allowUnreadFallback = options.allowUnreadFallback === true;
+  try { await page.bringToFront(); } catch { /* ignore */ }
+  const frames = [page, ...(typeof page.frames === 'function' ? page.frames() : [])];
+  let last = { opened: false, candidates: 0, locatorCount: 0 };
+  for (const ctx of frames) {
+    const clicked = await clickTopCoupangVerifyMail(ctx, sinceMs);
+    if (clicked?.opened) return clicked;
+    last.locatorCount = Math.max(last.locatorCount, Number(clicked?.locatorCount || 0));
+  }
+  for (const ctx of frames) {
+    const result = await evaluateOpenVerifyMail(ctx, sinceMs, allowUnreadFallback);
+    if (result?.opened) return result;
+    if (Number(result?.candidates || 0) > Number(last.candidates || 0)) last = { ...last, ...result };
+  }
+  return last;
+}
+
+async function readAllFramesText(page) {
+  const chunks = [];
+  const frames = [page, ...(typeof page.frames === 'function' ? page.frames() : [])];
+  for (const ctx of frames) {
+    const text = await ctx.evaluate(() => {
+      const walk = (root, out = []) => {
+        if (!root) return out;
+        const t = root.innerText || root.textContent || '';
+        if (t) out.push(t);
+        const nodes = root.querySelectorAll ? root.querySelectorAll('*') : [];
+        nodes.forEach((el) => {
+          if (el.shadowRoot) walk(el.shadowRoot, out);
+        });
+        return out;
+      };
+      return walk(document.body || document.documentElement).join('\n');
+    }).catch(() => '');
+    if (text) chunks.push(text);
+  }
+  return chunks.join('\n');
+}
+
+async function refreshNaverMailList(page) {
+  const labels = ['새로고침', '안읽음'];
+  for (const label of labels) {
+    const loc = page.getByText(label, { exact: true }).first();
+    if (await loc.count().catch(() => 0) && await loc.isVisible().catch(() => false)) {
+      if (label === '새로고침') {
+        await loc.click({ timeout: 3000, force: true }).catch(() => {});
+        await page.waitForTimeout(900);
+        return true;
+      }
+    }
+  }
+  const clicked = await page.evaluate(() => {
+    const el = Array.from(document.querySelectorAll('button, a, span, div'))
+      .find((node) => (node.textContent || '').replace(/\s+/g, ' ').trim() === '새로고침');
+    if (!el) return false;
+    el.click();
     return true;
   }).catch(() => false);
+  if (clicked) await page.waitForTimeout(900);
+  return clicked;
+}
+
+async function resolveNaverMailPage(options = {}) {
+  if (boundContext) {
+    const page = await ensureNaverTabInContext(boundContext);
+    if (!page) return { ok: false, error: 'NAVER_TAB_MISSING', message: '같은 창의 네이버 탭을 찾지 못했습니다.' };
+    const login = await ensureNaverLoggedIn(page, { skipAutoLogin: true });
+    if (!login.ok) return { ok: false, page, ...login };
+    return { ok: true, page };
+  }
+  const context = await ensureNaverContext({ headless: options.headless === true });
+  const page = findNaverPageInContext(context) || context.pages()[0] || await context.newPage();
+  const login = await ensureNaverLoggedIn(page, { skipAutoLogin: true });
+  if (!login.ok) return { ok: false, page, ...login };
+  return { ok: true, page };
+}
+
+async function peekLatestCoupangOtp(options = {}) {
+  const ready = await resolveNaverMailPage(options);
+  if (!ready.ok) return { ok: false, error: ready.error, message: ready.message };
+  try {
+    await openNaverAllMailFolder(ready.page);
+    const opened = await openCoupangVerifyMailAfter(ready.page, Date.now() - 24 * 60 * 60 * 1000);
+    await ready.page.waitForTimeout(800);
+    const text = await ready.page.evaluate(() => document.body?.innerText || '');
+    const otp = extractOtpFromText(text);
+    return { ok: Boolean(otp), otp: otp || '', opened: Boolean(opened?.opened) };
+  } catch (error) {
+    return { ok: false, message: error?.message || String(error) };
+  }
 }
 
 /**
  * 전체메일에서 쿠팡 인증 OTP를 찾는다.
- * (받은메일함에는 안 오고 [프로모션] 전체메일에만 오는 경우가 많음)
- * @param {{ timeoutMs?: number, sinceMs?: number, headless?: boolean }} options
+ * 인증요청(sinceMs) 이후 도착한 메일만 연다. 이전 메일은 쓰지 않는다.
  */
 async function waitForCoupangOtp(options = {}) {
-  const timeoutMs = Math.max(15000, Number(options.timeoutMs || 120000));
-  const sinceMs = Number(options.sinceMs || Date.now() - 2 * 60 * 1000);
+  const timeoutMs = Math.max(30000, Number(options.timeoutMs || 180000));
+  const sinceMs = Number(options.sinceMs || Date.now());
   const excludeOtp = String(options.excludeOtp || '').trim();
+  const initialDelayMs = Math.max(0, Number(options.initialDelayMs || 45000));
+  const pollMs = Math.max(5000, Number(options.pollMs || 10000));
   recovering = true;
   try {
-    const context = await ensureNaverContext({ headless: options.headless === true });
-    const page = context.pages()[0] || await context.newPage();
-
-    const login = await ensureNaverLoggedIn(page, { manualWaitMs: 20000 });
-    if (!login.ok) {
+    const ready = await resolveNaverMailPage(options);
+    if (!ready.ok) {
       return {
         ok: false,
-        error: login.error || 'NAVER_LOGIN_FAILED',
-        message: login.message || '네이버 메일 로그인이 필요합니다.'
+        error: ready.error || 'NAVER_NOT_LOGGED_IN',
+        message: ready.message || '네이버 메일 로그인이 필요합니다.'
       };
     }
+    const page = ready.page;
+    if (initialDelayMs > 0) {
+      console.log(`[NAVER] 인증메일이 늦게 오므로 ${Math.round(initialDelayMs / 1000)}초 대기 후 검색`);
+      await page.waitForTimeout(initialDelayMs);
+    }
 
-    console.log('[NAVER] 전체메일에서 쿠팡 인증번호 메일 검색…');
+    console.log('[NAVER] 전체메일에서 인증요청 이후 쿠팡 메일만 검색…');
+    await openNaverAllMailFolder(page);
     const deadline = Date.now() + timeoutMs;
     let lastError = '';
-    let staleOtp = excludeOtp;
+    let rounds = 0;
     while (Date.now() < deadline) {
       try {
-        await openNaverAllMailFolder(page);
-        const opened = await openLatestCoupangVerifyMail(page);
-        await page.waitForTimeout(800);
-
-        const text = await page.evaluate(() => document.body?.innerText || '');
-        const looksRelevant = /쿠팡|coupang|인증번호|인증\s*번호|판매자\s*2단계|이메일\s*인증\s*코드/i.test(text);
-        if (looksRelevant || opened) {
-          const otp = extractOtpFromText(text);
-          if (otp) {
-            const age = Date.now() - sinceMs;
-            if (staleOtp && otp === staleOtp) {
-              lastError = '이전 인증메일';
-            } else if (!staleOtp && age < 10000) {
-              staleOtp = otp;
-              console.log('[NAVER] 이전 인증메일로 보여 새 메일 대기…');
-            } else {
-              console.log(`[NAVER] 전체메일에서 OTP 추출 성공 (${String(otp).length}자리)`);
-              return { ok: true, otp, source: 'naver_all_mail', sinceMs };
-            }
-          }
+        rounds += 1;
+        if (rounds === 1) {
+          await openNaverAllMailFolder(page);
+        } else {
+          await refreshNaverMailList(page);
         }
-
-        const search = page.locator('input[placeholder*="메일검색"], input[placeholder*="검색"], input[type="search"]').first();
-        if (await search.isVisible().catch(() => false)) {
-          await search.fill('').catch(() => {});
-          await search.fill('쿠팡 인증번호').catch(() => {});
-          await page.keyboard.press('Enter').catch(() => {});
-          await page.waitForTimeout(1500);
-          await openLatestCoupangVerifyMail(page);
-          const searchedText = await page.evaluate(() => document.body?.innerText || '');
-          const otp = extractOtpFromText(searchedText);
-          if (otp && otp !== staleOtp && Date.now() - sinceMs >= 8000) {
-            console.log(`[NAVER] 검색에서 OTP 추출 성공 (${String(otp).length}자리)`);
-            return { ok: true, otp, source: 'naver_all_mail_search', sinceMs };
+        const allowUnreadFallback = Date.now() >= sinceMs + 20000;
+        const opened = await openCoupangVerifyMailAfter(page, sinceMs, { allowUnreadFallback });
+        console.log(`[NAVER] mail-scan opened=${Boolean(opened?.opened)} cand=${opened?.candidates || 0} loc=${opened?.locatorCount || 0} ${opened?.text || ''}`);
+        if (!opened?.opened) {
+          lastError = opened?.candidates
+            ? '인증요청 이후 새 쿠팡 메일이 아직 없음'
+            : '쿠팡 인증메일 행을 아직 못 찾음';
+          await new Promise((resolve) => setTimeout(resolve, pollMs));
+          continue;
+        }
+        let text = '';
+        for (let wait = 0; wait < 8; wait += 1) {
+          await page.waitForTimeout(wait === 0 ? 1200 : 700);
+          text = await readAllFramesText(page);
+          if (/인증\s*번호\s*[:\s]*[0-9]{4,8}/i.test(text)) break;
+        }
+        const looksRelevant = /쿠팡|coupang|인증번호|인증\s*번호|판매자\s*2단계|이메일\s*인증\s*코드/i.test(text);
+        if (!looksRelevant) {
+          lastError = '연 메일이 쿠팡 인증이 아님';
+          await new Promise((resolve) => setTimeout(resolve, pollMs));
+          continue;
+        }
+        const otp = extractOtpFromText(text);
+        if (otp && otp !== excludeOtp) {
+          const mailAt = Number(opened.ms || 0);
+          if (mailAt && mailAt < sinceMs - 20000) {
+            lastError = '이전 시각 메일이라 버림';
+          } else {
+            console.log(`[NAVER] 인증요청 이후 메일에서 OTP 추출 (${String(otp).length}자리)`);
+            try {
+              fs.writeFileSync(path.join(process.cwd(), 'logs', 'last-coupang-otp.txt'), `${otp}\n${new Date().toISOString()}\n`, 'utf8');
+            } catch { /* ignore */ }
+            return { ok: true, otp, source: 'naver_all_mail_after_send', sinceMs, mailAt };
           }
+        } else if (otp && otp === excludeOtp) {
+          lastError = '이전 인증번호와 동일 — 새 메일 대기';
         }
       } catch (error) {
         lastError = error?.message || String(error);
       }
-      await new Promise(resolve => setTimeout(resolve, 4000));
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
     }
     return {
       ok: false,
       error: 'OTP_TIMEOUT',
       message: lastError
-        ? `전체메일에서 쿠팡 인증번호를 찾지 못했습니다. (${lastError})`
-        : '전체메일([프로모션] 쿠팡 인증번호)에서 OTP를 찾지 못했습니다. 받은메일함이 아니라 전체메일을 확인하세요.'
+        ? `인증요청 이후 쿠팡 메일을 찾지 못했습니다. (${lastError})`
+        : '인증요청 이후 도착한 쿠팡 인증메일이 없습니다. 재전송하지 않고 멈춥니다.'
     };
   } finally {
     recovering = false;
@@ -893,15 +1176,11 @@ async function fillCoupangOtpOnPage(page, otp) {
       await page.keyboard.type(code, { delay: 30 }).catch(() => {});
     });
 
-    const submit = page.locator(
-      'button[type="submit"]:not([disabled]), button:has-text("확인"), button:has-text("인증"), button:has-text("다음"), button:has-text("로그인")'
-    ).first();
-    if (await submit.count().catch(() => 0) && await submit.isEnabled().catch(() => false)) {
-      await submit.click({ force: true }).catch(() => {});
-    } else {
+    const confirmed = await clickCoupangOtpConfirm(page);
+    if (!confirmed.clicked) {
       await locator.press('Enter').catch(() => {});
     }
-    return { ok: true, selector, placeholder };
+    return { ok: true, selector, placeholder, confirm: confirmed.text || (confirmed.clicked ? 'clicked' : 'enter') };
   }
 
   for (const selector of preferred) {
@@ -944,15 +1223,16 @@ async function fillCoupangOtpOnPage(page, otp) {
   }, code).catch(() => ({ ok: false }));
 
   if (picked?.ok) {
-    const submit = page.locator(
-      'button[type="submit"]:not([disabled]), button:has-text("확인"), button:has-text("인증"), button:has-text("다음")'
-    ).first();
-    if (await submit.count().catch(() => 0)) {
-      await submit.click({ force: true }).catch(() => {});
-    } else {
+    const confirmed = await clickCoupangOtpConfirm(page);
+    if (!confirmed.clicked) {
       await page.keyboard.press('Enter').catch(() => {});
     }
-    return { ok: true, selector: 'evaluate-best-input', placeholder: picked.placeholder };
+    return {
+      ok: true,
+      selector: 'evaluate-best-input',
+      placeholder: picked.placeholder,
+      confirm: confirmed.text || (confirmed.clicked ? 'clicked' : 'enter')
+    };
   }
 
   return { ok: false, message: '활성 인증번호 입력칸을 찾지 못했습니다. (아이디 칸은 제외)' };
@@ -965,10 +1245,16 @@ module.exports = {
   isNaverCdpReady,
   getNaverDebugPort,
   waitForCoupangOtp,
+  peekLatestCoupangOtp,
   fillCoupangOtpOnPage,
   extractOtpFromText,
   isRecovering,
   getProfileDir,
   getNaverCredentials,
-  ensureNaverLoggedIn
+  ensureNaverLoggedIn,
+  pageLooksLoggedIntoNaver,
+  bindSharedBrowserContext,
+  ensureNaverTabInContext,
+  isBoundNaverLoggedIn,
+  isNaverUrl
 };

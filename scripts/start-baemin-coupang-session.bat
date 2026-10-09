@@ -48,23 +48,16 @@ echo.
 echo [3/3] opening Baemin + Coupang windows ...
 start "BREM-baemin-3939" /D "%BREM_DIR%" cmd /k "set PLAYWRIGHT_BROWSERS_PATH=%PLAYWRIGHT_BROWSERS_PATH%&& set BAEMIN_PLAYWRIGHT_PROFILE=%BAEMIN_PLAYWRIGHT_PROFILE%&& set BAEMIN_AUTO_OPEN_BROWSER=1&& set BAEMIN_AUTO_RESUME_STATUS_LOOP=1&& npm.cmd run baemin:session-server"
 timeout /t 2 /nobreak >nul
-start "BREM-coupang-3940" /D "%BREM_DIR%" cmd /k "set PLAYWRIGHT_BROWSERS_PATH=%PLAYWRIGHT_BROWSERS_PATH%&& set COUPANG_PLAYWRIGHT_PROFILE=%COUPANG_PLAYWRIGHT_PROFILE%&& set NAVER_PLAYWRIGHT_PROFILE=%NAVER_PLAYWRIGHT_PROFILE%&& set COUPANG_AUTO_RESUME_STATUS_LOOP=1&& npm.cmd run coupang:session-server"
+start "BREM-coupang-3940" /D "%BREM_DIR%" cmd /k "set PLAYWRIGHT_BROWSERS_PATH=%PLAYWRIGHT_BROWSERS_PATH%&& set COUPANG_PLAYWRIGHT_PROFILE=%COUPANG_PLAYWRIGHT_PROFILE%&& set NAVER_MANUAL_LOGIN=1&& set COUPANG_AUTO_RESUME_STATUS_LOOP=1&& npm.cmd run coupang:session-server"
 timeout /t 2 /nobreak >nul
-start "BREM-coupang-3941" /D "%BREM_DIR%" cmd /k "set PLAYWRIGHT_BROWSERS_PATH=%PLAYWRIGHT_BROWSERS_PATH%&& set COUPANG_ACCOUNT_ID=cmp119&& set COUPANG_AUTO_RESUME_STATUS_LOOP=1&& npm.cmd run coupang:session-server-2"
+start "BREM-coupang-3941" /D "%BREM_DIR%" cmd /k "set PLAYWRIGHT_BROWSERS_PATH=%PLAYWRIGHT_BROWSERS_PATH%&& set COUPANG_ACCOUNT_ID=cmp119&& set NAVER_MANUAL_LOGIN=1&& set COUPANG_AUTO_RESUME_STATUS_LOOP=1&& npm.cmd run coupang:session-server-2"
 
 echo waiting for session servers ...
 ping -n 12 127.0.0.1 >nul
 curl -s -o nul -X POST "http://127.0.0.1:3939/browser/open" >nul 2>&1
 curl -s -o nul -X POST "http://127.0.0.1:3940/browser/open" >nul 2>&1
 curl -s -o nul -X POST "http://127.0.0.1:3941/browser/open" >nul 2>&1
-echo [eagles] opening Naver login window (manual, no auto-type) ...
-curl -s -X POST "http://127.0.0.1:3940/naver/open" -H "Content-Type: application/json" -d "{\"manual\":true}"
-echo [119] opening Naver login window (manual, no auto-type) ...
-curl -s -X POST "http://127.0.0.1:3941/naver/open" -H "Content-Type: application/json" -d "{\"manual\":true}"
-echo [coupang] after Naver login, vendor portal OTP recover ...
-ping -n 20 127.0.0.1 >nul
-curl -s -X POST "http://127.0.0.1:3940/auth/recover" -H "Content-Type: application/json" -d "{\"force\":true}"
-curl -s -X POST "http://127.0.0.1:3941/auth/recover" -H "Content-Type: application/json" -d "{\"force\":true}"
+echo [coupang] same window: Coupang tab + Naver tab. Login Naver by hand. Coupang auto only after Naver is in.
 
 echo.
 echo ========================================
@@ -73,8 +66,9 @@ echo   - BREM-baemin-3939
 echo   - BREM-coupang-3940
 echo   - BREM-coupang-3941 (119cmpp)
 echo  If Baemin shows login, type ID/password in that window.
-echo  119: Naver Chrome window opens automatically — log in manually once.
-echo       (119cmpp / .env password) Do NOT close Naver after login.
+echo  Eagles + 119: one Playwright window each, Coupang tab + Naver tab.
+echo  Log in to Naver by hand in that tab and keep it. Do not close the window.
+echo  Coupang auto-login after Naver is in. Stop after 2 failures, not a daily cap.
 echo  Then check brem.kr top bar crawl status.
 echo ========================================
 echo.

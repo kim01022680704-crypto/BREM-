@@ -2,6 +2,7 @@
  * 쿠팡 파트너 포털 계정 레지스트리.
  * 크롤 구조는 동일하고, 로그인/OTP/브라우저 프로필/세션키/포트만 계정별로 분리한다.
  */
+const fs = require('fs');
 const path = require('path');
 try {
   require('dotenv').config({ path: path.join(process.cwd(), '.env') });
@@ -18,14 +19,47 @@ function firstEnv(...keys) {
   return '';
 }
 
+/** 아이디/비밀번호 앞뒤 공백은 로그인 오류가 난다. */
+function envSecret(...keys) {
+  return firstEnv(...keys);
+}
+
+let localOverridesCache = undefined;
+function loadLocalOverrides() {
+  if (localOverridesCache !== undefined) return localOverridesCache;
+  localOverridesCache = {};
+  try {
+    const file = path.join(process.cwd(), '.coupang-local-accounts.json');
+    if (!fs.existsSync(file)) return localOverridesCache;
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    localOverridesCache = {
+      loginId: String(raw.loginId || '').trim(),
+      loginPassword: String(raw.loginPassword || '').trim(),
+      secondId: String(raw.secondId || '').trim(),
+      secondLoginId: String(raw.secondLoginId || '').trim(),
+      secondLoginPassword: String(raw.secondLoginPassword || '').trim()
+    };
+  } catch { /* ignore */ }
+  return localOverridesCache;
+}
+
 function parseArgAccountId() {
   const flag = (process.argv || []).find(arg => String(arg).startsWith('--account='));
   return flag ? String(flag.split('=').slice(1).join('=') || '').trim() : '';
 }
 
+function pickSecret(...values) {
+  for (const value of values) {
+    const trimmed = String(value || '').trim();
+    if (trimmed) return trimmed;
+  }
+  return '';
+}
+
 function defaultAccount() {
-  const loginId = firstEnv('COUPANG_LOGIN_ID', 'COUPANG_USER_ID');
-  const loginPassword = String(process.env.COUPANG_LOGIN_PASSWORD || process.env.COUPANG_PASSWORD || '');
+  const local = loadLocalOverrides();
+  const loginId = pickSecret(local.loginId, firstEnv('COUPANG_LOGIN_ID', 'COUPANG_USER_ID'));
+  const loginPassword = pickSecret(local.loginPassword, envSecret('COUPANG_LOGIN_PASSWORD', 'COUPANG_PASSWORD'));
   return {
     id: DEFAULT_ID,
     label: loginId || '기본',
@@ -44,9 +78,10 @@ function defaultAccount() {
 }
 
 function secondAccount() {
-  const id = firstEnv('COUPANG_2_ACCOUNT_ID') || 'cmp119';
-  const loginId = firstEnv('COUPANG_2_LOGIN_ID');
-  const loginPassword = String(process.env.COUPANG_2_LOGIN_PASSWORD || '');
+  const local = loadLocalOverrides();
+  const id = firstEnv('COUPANG_2_ACCOUNT_ID') || local.secondId || 'cmp119';
+  const loginId = pickSecret(local.secondLoginId, firstEnv('COUPANG_2_LOGIN_ID'));
+  const loginPassword = pickSecret(local.secondLoginPassword, envSecret('COUPANG_2_LOGIN_PASSWORD'));
   if (!loginId || !loginPassword) return null;
   return {
     id,
@@ -88,15 +123,17 @@ function applyCoupangAccountEnv(accountId = resolveRequestedAccountId()) {
     throw new Error(`쿠팡 계정 '${accountId}' 설정이 없습니다. COUPANG_2_LOGIN_ID 를 확인하세요.`);
   }
   process.env.COUPANG_ACCOUNT_ID = account.id;
+  if (account.loginId) process.env.COUPANG_LOGIN_ID = account.loginId;
+  if (account.loginPassword) process.env.COUPANG_LOGIN_PASSWORD = account.loginPassword;
   if (account.id === DEFAULT_ID) return account;
-
-  process.env.COUPANG_LOGIN_ID = account.loginId;
-  process.env.COUPANG_LOGIN_PASSWORD = account.loginPassword;
   process.env.NAVER_LOGIN_ID = account.naverId;
   process.env.NAVER_LOGIN_PASSWORD = account.naverPassword;
   process.env.COUPANG_SESSION_LOCAL_PORT = String(account.port);
   process.env.COUPANG_PLAYWRIGHT_PROFILE = account.profileDir;
   process.env.NAVER_PLAYWRIGHT_PROFILE = account.naverProfileDir;
+  if (String(process.env.COUPANG_2_MANUAL_LOGIN || '').trim() === '1') {
+    process.env.COUPANG_MANUAL_LOGIN = '1';
+  }
   if (String(process.env.COUPANG_2_NAVER_MANUAL_LOGIN || '').trim() === '1') {
     process.env.NAVER_MANUAL_LOGIN = '1';
   }

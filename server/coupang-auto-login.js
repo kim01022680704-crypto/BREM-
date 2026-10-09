@@ -4,11 +4,12 @@
  *      NAVER_LOGIN_ID, NAVER_LOGIN_PASSWORD
  */
 const naverOtp = require('./coupang-naver-otp');
+const loginBudget = require('./coupang-login-budget');
 const { isCoupangLoginLikeUrl } = require('./crawl-session-auth');
 
 function getCoupangCredentials() {
   const id = String(process.env.COUPANG_LOGIN_ID || process.env.COUPANG_USER_ID || '').trim();
-  const password = String(process.env.COUPANG_LOGIN_PASSWORD || process.env.COUPANG_PASSWORD || '');
+  const password = String(process.env.COUPANG_LOGIN_PASSWORD || process.env.COUPANG_PASSWORD || '').trim();
   return { id, password, configured: Boolean(id && password) };
 }
 
@@ -28,25 +29,27 @@ async function pageLooksLoggedIn(page) {
 
 async function fillLoginForm(page, id, password) {
   const idSelectors = [
-    'input[name="email"]',
+    'input#username',
     'input[name="username"]',
+    'input[id="username"]',
+    'input[autocomplete="username"]',
+    'input[placeholder*="아이디"]',
     'input[name="login"]',
     'input[name="id"]',
-    'input#username',
     'input#email',
+    'input[name="email"]',
     'input[type="email"]',
-    'input[type="text"]',
-    'input[placeholder*="아이디"]',
     'input[placeholder*="이메일"]',
     'input[placeholder*="ID"]',
-    'input[autocomplete="username"]'
+    'input[type="text"]'
   ];
   const pwSelectors = [
-    'input[name="password"]',
     'input#password',
+    'input[name="password"]',
+    'input[id="password"]',
+    'input[autocomplete="current-password"]',
     'input[type="password"]',
-    'input[placeholder*="비밀번호"]',
-    'input[autocomplete="current-password"]'
+    'input[placeholder*="비밀번호"]'
   ];
 
   // xauth 폼 렌더 대기 (iframe 포함)
@@ -194,42 +197,49 @@ async function readTwoFactorMode(page) {
 }
 
 async function clickEmailAuthTab(page) {
-  // 1) Playwright getByText
-  try {
-    const byText = page.getByText('이메일로 인증', { exact: true }).first();
-    if (await byText.count().catch(() => 0)) {
-      await byText.click({ timeout: 5000, force: true });
-      await page.waitForTimeout(1000);
-      return true;
-    }
-  } catch { /* continue */ }
+  const labels = ['이메일로 인증', '이메일로인증', '이메일로  인증'];
+  for (const label of labels) {
+    try {
+      const byText = page.getByText(label, { exact: false }).first();
+      if (await byText.count().catch(() => 0) && await byText.isVisible().catch(() => false)) {
+        await byText.click({ timeout: 5000, force: true });
+        await page.waitForTimeout(800);
+        return true;
+      }
+    } catch { /* continue */ }
+  }
 
   const emailTabCandidates = [
     'text=이메일로 인증',
+    'text=이메일로인증',
     'button:has-text("이메일로 인증")',
+    'button:has-text("이메일로인증")',
     'a:has-text("이메일로 인증")',
-    '[role="tab"]:has-text("이메일로 인증")',
+    'a:has-text("이메일로인증")',
     '[role="tab"]:has-text("이메일")',
-    'label:has-text("이메일로 인증")',
-    'li:has-text("이메일로 인증")',
-    'span:has-text("이메일로 인증")',
-    'div:has-text("이메일로 인증")'
+    'span:has-text("이메일로인증")',
+    'span:has-text("이메일로 인증")'
   ];
   for (const selector of emailTabCandidates) {
     const loc = page.locator(selector).first();
     if (!(await loc.count().catch(() => 0))) continue;
     if (!(await loc.isVisible().catch(() => false))) continue;
     await loc.click({ timeout: 5000, force: true }).catch(() => {});
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(800);
     return true;
   }
 
-  // 2) DOM 탐색: 텍스트가 정확히 "이메일로 인증" 인 가장 안쪽 요소 클릭
   return page.evaluate(() => {
     const all = Array.from(document.querySelectorAll('button, a, li, span, div, label, p, [role="tab"]'));
-    const exact = all.find(el => (el.textContent || '').replace(/\s+/g, ' ').trim() === '이메일로 인증');
-    const loose = all.find(el => /^이메일로\s*인증$/.test((el.textContent || '').replace(/\s+/g, ' ').trim()));
-    const target = exact || loose;
+    const norm = (el) => (el.textContent || '').replace(/\s+/g, '').trim();
+    const ranked = all
+      .filter((el) => {
+        const t = norm(el);
+        return (t === '이메일로인증' || /^이메일로인증$/.test(t)) && !/휴대전화/.test(t);
+      })
+      .concat(all.filter((el) => /이메일로인증/.test(norm(el)) && !/휴대전화/.test(norm(el))))
+      .sort((a, b) => norm(a).length - norm(b).length);
+    const target = ranked[0];
     if (!target) return false;
     target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
@@ -277,12 +287,11 @@ async function switchToEmailAuthAndSendCode(page) {
     }
   }
 
-  // 이메일 탭에서 전송/재요청
+  // 이메일 탭에서 전송 — 재요청은 2회 제한을 깨므로 기본 경로에서 제외
   const sendCandidates = [
     'button:has-text("인증코드 전송")',
+    'button:has-text("인증코드전송")',
     'button:has-text("인증 코드 전송")',
-    'button:has-text("인증 재요청")',
-    'button:has-text("재요청")',
     'button:has-text("코드 전송")'
   ];
   let sent = false;
@@ -303,7 +312,8 @@ async function switchToEmailAuthAndSendCode(page) {
       const buttons = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
       const target = buttons.find((el) => {
         const label = (el.textContent || el.value || '').replace(/\s+/g, ' ').trim();
-        return /인증\s*코드\s*전송|인증\s*재요청|코드\s*전송|재요청/.test(label)
+        return /인증\s*코드\s*전송|코드\s*전송/.test(label)
+          && !/재요청/.test(label)
           && !el.disabled
           && el.offsetParent !== null;
       });
@@ -361,41 +371,48 @@ async function autoLoginCoupang(page, options = {}) {
     return { ok: false, message: '쿠팡 브라우저 페이지가 없습니다.' };
   }
 
+  const naverReady = await naverOtp.isBoundNaverLoggedIn();
+  if (!naverReady) {
+    console.log('[COUPANG] 네이버 탭 확인 안 됨 — 쿠팡 아이디/비번부터 입력하고 OTP는 열린 메일에서 읽습니다');
+  }
+
   const origin = options.origin || 'https://partner.coupangeats.com';
   try {
     if (await pageLooksLoggedIn(page)) {
+      loginBudget.recordSuccess();
       if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
       return { ok: true, alreadyLoggedIn: true };
     }
 
-    // 이미 2FA 화면이면 비밀번호 로그인 생략
-    let needPasswordLogin = !(await isTwoFactorPage(page));
+    // 2FA(이메일/휴대폰 인증) 화면만 비밀번호를 생략. login-actions URL만으로 생략하면
+    // 로그아웃 직후 아이디/비번 폼을 건너뛰어 재로그인이 영구히 멈춘다.
+    const needPasswordLogin = !(await isTwoFactorPage(page));
 
     if (needPasswordLogin) {
-      await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-      await page.waitForTimeout(1500);
+      const loginGate = loginBudget.canAttemptLogin();
+      if (!loginGate.ok) {
+        loginBudget.markError(loginGate.message);
+        return loginGate;
+      }
+      if (!isCoupangLoginLikeUrl(page.url())) {
+        await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+        await page.waitForTimeout(2000);
+      }
 
       if (await pageLooksLoggedIn(page)) {
+        loginBudget.recordSuccess();
         if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
         return { ok: true, alreadyLoggedIn: true };
       }
 
       if (!(await isTwoFactorPage(page))) {
-        if (!isCoupangLoginLikeUrl(page.url())) {
-          await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-          await page.waitForTimeout(1500);
-        }
-        // 로그인 화면으로 튕긴 뒤 폼이 늦게 뜨는 경우 대비
-        await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-        await page.waitForTimeout(1000);
+        await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+        await page.waitForTimeout(1200);
         if (!(await isTwoFactorPage(page))) {
           const filled = await fillLoginForm(page, creds.id, creds.password);
           if (!filled.ok) {
-            // 한 번 더: SSO URL 직접 진입 후 재시도
-            await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-            await page.waitForTimeout(2500);
-            const retry = await fillLoginForm(page, creds.id, creds.password);
-            if (!retry.ok) return filled;
+            loginBudget.recordFailure(filled.message || '쿠팡 로그인 폼 입력 실패');
+            return filled;
           }
         }
       }
@@ -403,76 +420,97 @@ async function autoLoginCoupang(page, options = {}) {
 
     const afterLogin = await waitForOtpOrLoggedIn(page, 25000);
     if (afterLogin.state === 'logged_in') {
+      loginBudget.recordSuccess();
       if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
       await page.goto(`${origin}/page/rider-performance`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
       if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
       return { ok: true, via: 'password' };
     }
 
-    // 2FA: 이메일 인증으로 전환 + 코드 전송 (119·이글스 공통 — 네이버만 수동)
-    const sentAt = Date.now();
-    console.log('[COUPANG] 2FA 화면 — 「이메일로 인증」 탭 + 인증코드 전송 시도…');
-    const emailAuth = await switchToEmailAuthAndSendCode(page);
-    if (!emailAuth.ok) {
-      return {
-        ok: false,
-        error: 'EMAIL_AUTH_SWITCH_FAILED',
-        message: emailAuth.message || '이메일 인증으로 전환하지 못했습니다.'
-      };
+    const lastSent = loginBudget.lastEmailSentAt();
+    const sentRecently = lastSent && (Date.now() - lastSent < 20 * 60 * 1000);
+    let sentAt = sentRecently ? lastSent : 0;
+    const knownOtp = String(options.knownOtp || '').trim();
+    let excludeOtp = '';
+    if (!sentRecently && !/^\d{4,8}$/.test(knownOtp)) {
+      const excludePeek = await naverOtp.peekLatestCoupangOtp({ timeoutMs: 20000 }).catch(() => null);
+      excludeOtp = String(excludePeek?.otp || '').trim();
     }
-    console.log(`[COUPANG] 이메일 인증 ${emailAuth.sent ? '코드 전송 완료' : '화면 준비'} — 네이버 메일에서 OTP 대기`);
+    const alreadyWaiting = await isTwoFactorPage(page);
+    const emailGate = loginBudget.canAttemptEmailSend();
 
-    const otpResult = await naverOtp.waitForCoupangOtp({
-      timeoutMs: 150000,
-      sinceMs: sentAt,
-      headless: false
-    });
-    if (!otpResult.ok) {
+    if (!alreadyWaiting) {
+      loginBudget.recordFailure('이메일 인증 화면이 아직 아닙니다');
       return {
         ok: false,
-        error: otpResult.error || 'OTP_TIMEOUT',
-        message: otpResult.message || '네이버 메일에서 쿠팡 인증번호를 찾지 못했습니다.'
+        error: 'TWO_FACTOR_NOT_READY',
+        message: '이메일 인증 화면이 아직 아닙니다. 추가 로그인은 하지 않습니다.'
       };
     }
 
-    if (page.isClosed()) {
-      return { ok: false, message: '쿠팡 창이 닫혀 OTP를 넣을 수 없습니다. 쿠팡 창을 닫지 마세요.', otpFound: true };
-    }
-    if (!(await isTwoFactorPage(page))) {
-      return {
-        ok: false,
-        message: '네이버에서 번호는 읽었지만 쿠팡이 인증번호 화면이 아닙니다. 창을 확인하세요.',
-        otpFound: true
-      };
+    console.log('[COUPANG] 휴대전화 탭이 아니라 「이메일로 인증」부터 전환');
+    for (let i = 0; i < 4; i += 1) {
+      const mode = await readTwoFactorMode(page);
+      if (mode.emailMode && !/핸드폰|휴대폰/.test(mode.placeholder || '')) break;
+      await clickEmailAuthTab(page);
+      await page.waitForTimeout(800);
     }
 
-    const otpFilled = await naverOtp.fillCoupangOtpOnPage(page, otpResult.otp);
-    if (!otpFilled.ok) {
-      return { ok: false, message: otpFilled.message || 'OTP 입력 실패', otpFound: true };
-    }
-    console.log(`[COUPANG] 인증번호 입력 ${otpFilled.selector || 'ok'} — 로그인 전환 대기`);
+    const hasOtpInput = await page.locator(
+      'input[placeholder*="인증번호"], input[placeholder*="인증 번호"], input[placeholder*="인증코드"], input[autocomplete="one-time-code"]'
+    ).first().isVisible().catch(() => false);
 
-    const afterOtp = await waitForOtpOrLoggedIn(page, 20000);
-    if (afterOtp.state === 'logged_in') {
-      if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
-      await page.goto(`${origin}/page/rider-performance`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-      if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
-      return { ok: true, via: 'password+email-otp', otp: true };
-    }
-
-    await page.goto(`${origin}/page/rider-performance`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-    if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
-    for (let i = 0; i < 8; i += 1) {
-      if (await pageLooksLoggedIn(page)) {
-        if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
-        return { ok: true, via: 'password+email-otp', otp: true };
+    if (!hasOtpInput) {
+      if (emailGate.ok) {
+        console.log('[COUPANG] 이메일 탭에서 인증코드 전송 → 그다음 네이버 메일을 엽니다');
+        sentAt = Date.now();
+        loginBudget.recordEmailSend(sentAt);
+        const emailAuth = await switchToEmailAuthAndSendCode(page);
+        if (!emailAuth.ok) {
+          loginBudget.recordEmailFailure(emailAuth.message || '이메일 인증 전환 실패');
+          loginBudget.recordFailure(emailAuth.message || '이메일 인증 전환 실패');
+          return {
+            ok: false,
+            error: 'EMAIL_AUTH_SWITCH_FAILED',
+            message: emailAuth.message || '이메일 인증으로 전환하지 못했습니다.'
+          };
+        }
+      } else if (!sentRecently) {
+        loginBudget.markError(emailGate.message);
+        return emailGate;
       }
-      await page.waitForTimeout(1500).catch(() => {});
     }
+
+    console.log('[COUPANG] 이메일 탭 확인 — 이제 네이버 메일을 열어서 인증번호를 읽습니다');
+    const mailOtp = await naverOtp.waitForCoupangOtp({
+      timeoutMs: /^\d{4,8}$/.test(knownOtp) ? 45000 : 150000,
+      sinceMs: sentAt || (Date.now() - 20 * 60 * 1000),
+      excludeOtp,
+      initialDelayMs: hasOtpInput && sentRecently ? 1500 : 8000,
+      pollMs: 4000,
+      headless: false
+    }).catch(() => null);
+    const otpToUse = String(mailOtp?.otp || knownOtp || '').trim();
+    if (/^\d{4,8}$/.test(otpToUse)) {
+      try { await page.bringToFront(); } catch { /* ignore */ }
+      console.log(`[COUPANG] 메일에서 읽은 인증번호 ${otpToUse.length}자리 입력 (확인만, 전송 금지) source=${mailOtp?.ok ? 'mail' : 'known'}`);
+      const otpFilled = await naverOtp.fillCoupangOtpOnPage(page, otpToUse);
+      if (!otpFilled.ok) return { ok: false, otpFound: true, message: otpFilled.message || 'OTP 입력 실패' };
+      const afterKnown = await waitForOtpOrLoggedIn(page, 20000);
+      if (afterKnown.state === 'logged_in' || await pageLooksLoggedIn(page)) {
+        loginBudget.recordSuccess();
+        if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
+        return { ok: true, via: mailOtp?.ok ? 'email-tab+mail-otp' : 'email-tab+known-otp', otp: true };
+      }
+      loginBudget.recordFailure('OTP 입력 후에도 로그인 확인 실패');
+      return { ok: false, otpFound: true, message: 'OTP 입력 후에도 로그인 확인 실패 — 2FA 화면 유지' };
+    }
+
+    loginBudget.recordFailure('네이버 메일에서 인증번호를 읽지 못함');
     return {
       ok: false,
-      message: 'OTP 입력 후에도 로그인 상태를 확인하지 못했습니다. 브라우저를 확인하세요.',
-      otpFound: true
+      error: 'OTP_NOT_FOUND',
+      message: '이메일 탭에서 메일을 열었지만 인증번호를 읽지 못했습니다. 재전송하지 않습니다.'
     };
   } catch (error) {
     return { ok: false, message: error?.message || String(error) };
@@ -484,5 +522,7 @@ module.exports = {
   autoLoginCoupang,
   pageLooksLoggedIn,
   switchToEmailAuthAndSendCode,
-  isTwoFactorPage
+  clickEmailAuthTab,
+  isTwoFactorPage,
+  readTwoFactorMode
 };
