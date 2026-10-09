@@ -1023,7 +1023,8 @@
       morningCount: totals.morningTotal,
       afternoonCount: totals.afternoonTotal,
       eveningCount: totals.eveningTotal,
-      midnightCount: totals.midnightTotal
+      midnightCount: totals.midnightTotal,
+      slaOutComplete: totals.slaOutComplete || totals.slaOutTotal || 0
     };
   }
 
@@ -2063,6 +2064,16 @@
     </div>`;
   }
 
+  function renderCompleteMetricCard(total, slaOut) {
+    const extra = Number(slaOut || 0) > 0
+      ? ` <span class="baemin-sla-out" title="시간외 ${formatNumber(slaOut)}건">(${formatNumber(slaOut)})</span>`
+      : '';
+    return `<div class="baemin-grand-totals__card">
+      <span class="baemin-grand-totals__label">완료 (시간외)</span>
+      <span class="baemin-grand-totals__value baemin-grand-totals__value--accent">${formatNumber(total)}${extra}</span>
+    </div>`;
+  }
+
   function renderQuotaCell(actual, target) {
     const prog = formatProgress(actual, target);
     const achieved = prog.percent >= 100;
@@ -2207,7 +2218,7 @@
       renderViewAppliedBanner(state.config?.applied || null);
     }
     if (!items.length) {
-      rowsEl.innerHTML = `<tr><td colspan="${showPartner ? 13 : 12}" class="form-help">운행중 기사가 없습니다.</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="${getBaeminTableColspan('delivery_status', { showPartner, includeCollected: false })}" class="form-help">운행중 기사가 없습니다.</td></tr>`;
       return;
     }
     rowsEl.innerHTML = items.map(row => {
@@ -2222,12 +2233,9 @@
         <td>${escapeHtml(p.statusDesc || '-')}</td>
         <td>${escapeHtml(row.rider_user_id || '-')}</td>
         <td>${escapeHtml(row.phone_number || '-')}</td>
-        <td>${formatNumber(p.totalComplete || 0)}</td>
+        <td>${formatCompleteWithSlaOut(p, row)}</td>
         ${formatServiceBreakdownCells(p)}
-        <td>${formatNumber(p.morningCount || 0)}</td>
-        <td>${formatNumber(p.afternoonCount || 0)}</td>
-        <td>${formatNumber(p.eveningCount || 0)}</td>
-        <td>${formatNumber(p.midnightCount || 0)}</td>
+        ${formatPeakSlotCells(p, row)}
       </tr>`;
     }).join('');
   }
@@ -2276,7 +2284,8 @@
       morningTotal: 0,
       afternoonTotal: 0,
       eveningTotal: 0,
-      midnightTotal: 0
+      midnightTotal: 0,
+      slaOutComplete: 0
     };
     let setCountSum = 0;
     ids.forEach(pid => {
@@ -2294,6 +2303,7 @@
       aggregate.afternoonTotal += Number(totals.afternoonTotal || 0);
       aggregate.eveningTotal += Number(totals.eveningTotal || 0);
       aggregate.midnightTotal += Number(totals.midnightTotal || 0);
+      aggregate.slaOutComplete += Number(totals.slaOutComplete || 0);
       setCountSum += getPartnerSetCount(pid);
     });
 
@@ -2310,7 +2320,7 @@
     panel.innerHTML = `
       <p class="baemin-grand-totals__title">${escapeHtml(labels)} · 기사 전체 ${formatNumber(aggregate.rowCount)}명 · 운행중 ${formatNumber(aggregate.drivingCount)}명 · 지역 ${ids.length}곳</p>
       ${renderMetricCard('운행중', aggregate.drivingCount, true)}
-      ${renderMetricCard('완료', aggregate.completeTotal, true)}
+      ${renderCompleteMetricCard(aggregate.completeTotal, aggregate.slaOutComplete)}
       ${renderMetricCard('거절 합계', aggregate.totalReject)}
       ${renderMetricCard('배차취소 합계', aggregate.cancelTotal)}
       ${renderMetricCard('배달취소(라이더귀책) 합계', aggregate.riderFault)}
@@ -2318,6 +2328,7 @@
       ${renderProgressCard('오후 합계', aggregate.afternoonTotal, todayTargets.afternoon)}
       ${renderProgressCard('저녁 합계', aggregate.eveningTotal, todayTargets.evening)}
       ${renderProgressCard('심야 합계', aggregate.midnightTotal, todayTargets.midnight)}
+      ${renderMetricCard('SLA시간외', aggregate.slaOutComplete)}
     `;
   }
 
@@ -2430,7 +2441,7 @@
     panel.innerHTML = `
       <p class="baemin-grand-totals__title">${escapeHtml(partnerLabel)} · 기사 전체 ${formatNumber(totals.rowCount)}명 · 운행중 ${formatNumber(drivingCount)}명 · ${setCount}세트</p>
       ${renderMetricCard('운행중', drivingCount, true)}
-      ${renderMetricCard('완료', totals.completeTotal, true)}
+      ${renderCompleteMetricCard(totals.completeTotal, totals.slaOutComplete)}
       ${renderMetricCard('거절 합계', totals.totalReject)}
       ${renderMetricCard('배차취소 합계', totals.cancelTotal)}
       ${renderMetricCard('배달취소(라이더귀책) 합계', totals.riderFault)}
@@ -2438,6 +2449,7 @@
       ${renderProgressCard('오후 합계', totals.afternoonTotal, todayTargets.afternoon)}
       ${renderProgressCard('저녁 합계', totals.eveningTotal, todayTargets.evening)}
       ${renderProgressCard('심야 합계', totals.midnightTotal, todayTargets.midnight)}
+      ${renderMetricCard('SLA시간외', totals.slaOutComplete)}
     `;
   }
 
@@ -3425,6 +3437,47 @@
     return Number(value || 0).toLocaleString('ko-KR');
   }
 
+  function readSlaOutComplete(parsed, row) {
+    const p = parsed || {};
+    const acc = row?.raw_json?.deliveryAcceptanceCount || row?.raw_json?.acceptanceCount || {};
+    return Number(
+      p.slaOutComplete
+      ?? acc.slaOutComplete
+      ?? p.slaOutsideComplete
+      ?? acc.slaOutsideComplete
+      ?? 0
+    ) || 0;
+  }
+
+  function readCompleteTotal(parsed, row) {
+    const p = parsed || {};
+    const acc = row?.raw_json?.deliveryAcceptanceCount || row?.raw_json?.acceptanceCount || {};
+    return Number(
+      p.allDayComplete
+      ?? acc.allDayComplete
+      ?? p.totalComplete
+      ?? p.completeTotal
+      ?? row?.raw_json?.deliveryCount
+      ?? 0
+    ) || 0;
+  }
+
+  function formatCompleteWithSlaOut(parsed, row) {
+    const total = readCompleteTotal(parsed, row);
+    const slaOut = readSlaOutComplete(parsed, row);
+    if (slaOut <= 0) return formatNumber(total);
+    return `${formatNumber(total)} <span class="baemin-sla-out" title="시간외 ${formatNumber(slaOut)}건">(${formatNumber(slaOut)})</span>`;
+  }
+
+  function formatPeakSlotCells(parsed, row) {
+    const p = parsed || {};
+    return `<td>${formatNumber(p.morningCount || 0)}</td>
+          <td>${formatNumber(p.afternoonCount || 0)}</td>
+          <td>${formatNumber(p.eveningCount || 0)}</td>
+          <td>${formatNumber(p.midnightCount || 0)}</td>
+          <td>${formatNumber(readSlaOutComplete(p, row))}</td>`;
+  }
+
   const BAEMIN_SERVICE_METRICS = [
     {
       fields: ['foodReject', 'bmartReject', 'storeReject', 'totalReject'],
@@ -3443,15 +3496,15 @@
   const BAEMIN_TABLE_LAYOUTS = {
     delivery_status: {
       leading: ['협력사', '라이더', '운행상태', '배민ID', '연락처'],
-      trailing: ['아침점심', '오후', '저녁', '심야']
+      trailing: ['아침점심', '오후', '저녁', '심야', 'SLA시간외']
     },
     daily_history: {
       leading: ['협력사', '배달일'],
-      trailing: ['아침점심', '오후', '저녁', '심야']
+      trailing: ['아침점심', '오후', '저녁', '심야', 'SLA시간외']
     },
     rider_history: {
       leading: ['협력사', '라이더', '배민ID', '연락처'],
-      trailing: ['아침점심', '오후', '저녁', '심야']
+      trailing: ['아침점심', '오후', '저녁', '심야', 'SLA시간외']
     }
   };
 
@@ -3492,7 +3545,7 @@
     const leading = showPartner ? layout.leading : layout.leading.slice(1);
     const row1 = [
       ...leading.map(label => `<th rowspan="2">${label}</th>`),
-      '<th rowspan="2">완료</th>',
+      '<th rowspan="2" title="총 배달완료 (시간외완료)">완료 (시간외)</th>',
       ...BAEMIN_METRIC_GROUP_LABELS.map(label => `<th colspan="4" class="baemin-metric-group">${label}</th>`),
       ...layout.trailing.map(label => `<th rowspan="2">${label}</th>`)
     ];
@@ -5120,12 +5173,9 @@
           <td>${p.statusDesc || '-'}</td>
           <td>${row.rider_user_id || '-'}</td>
           <td>${row.phone_number || '-'}</td>
-          <td>${formatNumber(p.totalComplete || 0)}</td>
+          <td>${formatCompleteWithSlaOut(p, row)}</td>
           ${formatServiceBreakdownCells(p)}
-          <td>${formatNumber(p.morningCount || 0)}</td>
-          <td>${formatNumber(p.afternoonCount || 0)}</td>
-          <td>${formatNumber(p.eveningCount || 0)}</td>
-          <td>${formatNumber(p.midnightCount || 0)}</td>
+          ${formatPeakSlotCells(p, row)}
           ${collectedCell}
         </tr>`;
       }).join('');
@@ -5141,12 +5191,9 @@
         return `<tr>
           ${partnerCell(p, row)}
           <td>${escapeHtml(formatDeliveryDateWithWeekday(p.deliveryDate || row.collect_date || '-'))}</td>
-          <td>${formatNumber(p.totalComplete || 0)}</td>
+          <td>${formatCompleteWithSlaOut(p, row)}</td>
           ${formatServiceBreakdownCells(p)}
-          <td>${formatNumber(p.morningCount || 0)}</td>
-          <td>${formatNumber(p.afternoonCount || 0)}</td>
-          <td>${formatNumber(p.eveningCount || 0)}</td>
-          <td>${formatNumber(p.midnightCount || 0)}</td>
+          ${formatPeakSlotCells(p, row)}
           ${collectedCell}
         </tr>`;
       }).join('');
@@ -5163,14 +5210,6 @@
 
     rowsEl.innerHTML = riderRows.map(row => {
       const p = row.parsed_json || {};
-      const acc = row.raw_json?.deliveryAcceptanceCount || {};
-      const deliveryCount = Number(
-        p.allDayComplete
-        ?? acc.allDayComplete
-        ?? row.raw_json?.deliveryCount
-        ?? p.totalComplete
-        ?? 0
-      );
       const collectedCell = isViewSection()
         ? ''
         : `<td>${formatDateTime(row.collected_at)}</td>`;
@@ -5179,12 +5218,9 @@
         <td>${row.rider_name || '-'}</td>
         <td>${row.rider_user_id || '-'}</td>
         <td>${row.phone_number || '-'}</td>
-        <td>${formatNumber(deliveryCount)}</td>
+        <td>${formatCompleteWithSlaOut(p, row)}</td>
         ${formatServiceBreakdownCells(p)}
-        <td>${formatNumber(p.morningCount || 0)}</td>
-        <td>${formatNumber(p.afternoonCount || 0)}</td>
-        <td>${formatNumber(p.eveningCount || 0)}</td>
-        <td>${formatNumber(p.midnightCount || 0)}</td>
+        ${formatPeakSlotCells(p, row)}
         ${collectedCell}
       </tr>`;
     }).join('');
@@ -6272,6 +6308,7 @@
       acc.afternoonTotal += Number(p.afternoonCount || 0);
       acc.eveningTotal += Number(p.eveningCount || 0);
       acc.midnightTotal += Number(p.midnightCount || 0);
+      acc.slaOutComplete += readSlaOutComplete(p, row);
       return acc;
     }, {
       rowCount: 0,
@@ -6283,7 +6320,8 @@
       morningTotal: 0,
       afternoonTotal: 0,
       eveningTotal: 0,
-      midnightTotal: 0
+      midnightTotal: 0,
+      slaOutComplete: 0
     });
   }
 

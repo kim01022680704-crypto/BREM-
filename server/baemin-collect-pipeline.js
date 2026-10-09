@@ -195,6 +195,8 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
         phoneNumber: item?.phoneNumber || item?.phone || '',
         deliveryAcceptanceCount: {},
         deliveryPeakTimeCount: { morning: 0, afternoon: 0, evening: 0, midnight: 0 },
+        slaOutComplete: 0,
+        allDayComplete: 0,
         deliveryCount: 0,
         sourceUrl,
         businessDate
@@ -205,6 +207,11 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
     const acceptance = pickAcceptance(item);
     const peak = item?.deliveryPeakTimeCount || {};
     row.deliveryAcceptanceCount.totalComplete = num(row.deliveryAcceptanceCount.totalComplete) + acceptance.completeTotal;
+    row.deliveryAcceptanceCount.allDayComplete = num(row.deliveryAcceptanceCount.allDayComplete) + acceptance.allDayComplete;
+    row.deliveryAcceptanceCount.slaComplete = num(row.deliveryAcceptanceCount.slaComplete) + acceptance.slaComplete;
+    row.deliveryAcceptanceCount.slaOutComplete = num(row.deliveryAcceptanceCount.slaOutComplete) + acceptance.slaOutComplete;
+    row.slaOutComplete = num(row.slaOutComplete) + acceptance.slaOutComplete;
+    row.allDayComplete = num(row.allDayComplete) + acceptance.allDayComplete;
     row.deliveryAcceptanceCount.foodComplete = num(row.deliveryAcceptanceCount.foodComplete) + acceptance.foodComplete;
     row.deliveryAcceptanceCount.bmartComplete = num(row.deliveryAcceptanceCount.bmartComplete) + acceptance.bmartComplete;
     row.deliveryAcceptanceCount.storeComplete = num(row.deliveryAcceptanceCount.storeComplete) + acceptance.storeComplete;
@@ -4570,7 +4577,10 @@ function mergeRiderParsedMetrics(target, source = {}) {
     cancelTotal: source.cancelCount,
     totalRiderFault: source.riderFault
   });
-  target.totalComplete = num(target.totalComplete) + num(source.totalComplete);
+  target.totalComplete = num(target.totalComplete) + num(source.totalComplete ?? source.allDayComplete);
+  target.allDayComplete = num(target.allDayComplete) + num(source.allDayComplete ?? source.totalComplete);
+  target.slaComplete = num(target.slaComplete) + num(source.slaComplete);
+  target.slaOutComplete = num(target.slaOutComplete) + num(source.slaOutComplete);
   target.totalReject = num(target.totalReject) + num(breakdown.totalReject);
   target.cancelCount = num(target.cancelCount) + num(breakdown.cancelCount);
   target.riderFault = num(target.riderFault) + num(breakdown.riderFault);
@@ -4613,6 +4623,9 @@ function aggregateRiderHistoryByRider(items) {
           regionName: row.parsed_json?.regionName || '',
           displayName: row.parsed_json?.displayName || '',
           totalComplete: 0,
+          allDayComplete: 0,
+          slaComplete: 0,
+          slaOutComplete: 0,
           totalReject: 0,
           cancelCount: 0,
           riderFault: 0,
@@ -5209,6 +5222,9 @@ function aggregateDailyHistoryByDate(items = []) {
           regionName: row.parsed_json?.regionName || '',
           displayName: row.parsed_json?.displayName || '',
           totalComplete: 0,
+          allDayComplete: 0,
+          slaComplete: 0,
+          slaOutComplete: 0,
           totalReject: 0,
           cancelCount: 0,
           riderFault: 0,

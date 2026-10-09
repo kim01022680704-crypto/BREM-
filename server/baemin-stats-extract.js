@@ -94,8 +94,14 @@ function pickAcceptance(item) {
   const totalReject = num(acc.totalReject) || (foodReject + bmartReject + storeReject);
 
   // 화면 「총 배달완료」= allDayComplete (SLA외 포함). SLA 합계(totalComplete)와 다를 수 있음.
-  const slaComplete = num(acc.totalComplete);
-  const slaOutComplete = num(acc.slaOutComplete);
+  const slaComplete = num(acc.totalComplete ?? acc.slaComplete);
+  const slaOutComplete = num(
+    acc.slaOutComplete
+    ?? acc.slaOutsideComplete
+    ?? acc.outOfSlaComplete
+    ?? acc.slaTimeoutComplete
+    ?? item?.slaOutComplete
+  );
   const allDayComplete = num(
     acc.allDayComplete
     ?? item?.allDayComplete
@@ -130,8 +136,14 @@ function pickAcceptance(item) {
 /** raw deliveryAcceptanceCount 에서 완료콜(총 배달완료)만 읽을 때 */
 function readAllDayComplete(accOrItem) {
   const acc = accOrItem?.deliveryAcceptanceCount || accOrItem?.acceptanceCount || accOrItem || {};
-  const slaComplete = num(acc.totalComplete);
-  const slaOutComplete = num(acc.slaOutComplete);
+  const slaComplete = num(acc.totalComplete ?? acc.slaComplete);
+  const slaOutComplete = num(
+    acc.slaOutComplete
+    ?? acc.slaOutsideComplete
+    ?? acc.outOfSlaComplete
+    ?? acc.slaTimeoutComplete
+    ?? accOrItem?.slaOutComplete
+  );
   return num(
     acc.allDayComplete
     ?? accOrItem?.allDayComplete
@@ -174,6 +186,7 @@ function extractStatsFromItem(item, collectDate = '') {
 function sumStats(rows) {
   const totals = {
     completeTotal: 0,
+    slaOutComplete: 0,
     rejectTotal: 0,
     cancelTotal: 0,
     riderFaultTotal: 0,
@@ -198,6 +211,7 @@ function sumStats(rows) {
 
   rows.forEach(row => {
     totals.completeTotal += num(row.completeTotal);
+    totals.slaOutComplete += num(row.slaOutComplete);
     totals.rejectTotal += num(row.rejectTotal);
     totals.cancelTotal += num(row.cancelTotal);
     totals.riderFaultTotal += num(row.riderFault);
@@ -280,6 +294,7 @@ function computeItemsMetricTotals(items) {
     rowCount: 0,
     drivingCount: 0,
     completeTotal: 0,
+    slaOutComplete: 0,
     foodReject: 0,
     bmartReject: 0,
     storeReject: 0,
@@ -308,7 +323,8 @@ function computeItemsMetricTotals(items) {
     });
     totals.rowCount += 1;
     if (isDrivingStatus(p.statusDesc)) totals.drivingCount += 1;
-    totals.completeTotal += num(p.totalComplete);
+    totals.completeTotal += num(p.totalComplete ?? p.allDayComplete);
+    totals.slaOutComplete += num(p.slaOutComplete);
     totals.foodReject += breakdown.foodReject;
     totals.bmartReject += breakdown.bmartReject;
     totals.storeReject += breakdown.storeReject;

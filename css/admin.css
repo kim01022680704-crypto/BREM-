@@ -3494,6 +3494,12 @@ textarea {
   font-weight: 700;
 }
 
+.baemin-sla-out {
+  color: var(--muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .baemin-applied-status,
 .baemin-applied-banner {
   margin: 0 0 12px;
