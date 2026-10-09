@@ -1430,7 +1430,11 @@
       return;
     }
 
-    const mission = assignedMission || BremStorage.missions?.getById?.(id) || null;
+    const mission = assignedMission
+      || window.BremMissionPromotionCatalog?.getById?.(id)
+      || BremStorage.missions?.getById?.(id)
+      || null;
+    if (mission && !mission.title && mission.name) mission.title = mission.name;
 
     if (!mission) {
       if (titleEl) titleEl.textContent = '미설정';
@@ -1476,14 +1480,19 @@
       }
     }
 
-    const combinedMission = assigned?.combined || (combinedMissionId
-      ? BremStorage.missions?.getById?.(combinedMissionId)
+    const resolvedBaeminId = String(baeminMissionId || assigned?.baemin?.id || '').trim();
+    const resolvedCoupangId = String(coupangMissionId || assigned?.coupang?.id || '').trim();
+    const resolvedCombinedId = String(combinedMissionId || assigned?.combined?.id || '').trim();
+
+    const combinedMission = assigned?.combined || (resolvedCombinedId
+      ? (window.BremMissionPromotionCatalog?.getById?.(resolvedCombinedId)
+        || BremStorage.missions?.getById?.(resolvedCombinedId))
       : null);
-    if (combinedMissionId || combinedMission) {
+    if (resolvedCombinedId || combinedMission) {
       await renderPlatformMission(
         driver,
         'combined',
-        combinedMissionId,
+        resolvedCombinedId,
         combinedMission,
         weekStats.total
       );
@@ -1491,13 +1500,15 @@
       const coupangWrap = document.getElementById('riderMissionCoupangWrap');
       if (baeminWrap) baeminWrap.hidden = true;
       if (coupangWrap) coupangWrap.hidden = true;
+      document.dispatchEvent(new CustomEvent('brem-rider-mission-rendered'));
       return;
     }
 
     const combinedWrap = document.getElementById('riderMissionCombinedWrap');
     if (combinedWrap) combinedWrap.hidden = true;
-    await renderPlatformMission(driver, 'baemin', baeminMissionId, assigned?.baemin || null, weekStats.baemin);
-    await renderPlatformMission(driver, 'coupang', coupangMissionId, assigned?.coupang || null, weekStats.coupang);
+    await renderPlatformMission(driver, 'baemin', resolvedBaeminId, assigned?.baemin || null, weekStats.baemin);
+    await renderPlatformMission(driver, 'coupang', resolvedCoupangId, assigned?.coupang || null, weekStats.coupang);
+    document.dispatchEvent(new CustomEvent('brem-rider-mission-rendered'));
   }
 
   function formatLiveOpsUpdatedAt(value) {

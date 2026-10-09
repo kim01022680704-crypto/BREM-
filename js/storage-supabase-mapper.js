@@ -636,7 +636,7 @@ window.BremSupabaseMapper = (function () {
     return {
       ...(row.raw_data || {}),
       id: row.id,
-      title: row.raw_data?.title ?? row.title ?? '',
+      title: row.raw_data?.title || row.raw_data?.name || row.title || '',
       description: row.raw_data?.description ?? row.description ?? '',
       type: row.raw_data?.type ?? row.type ?? '',
       conditions: row.raw_data?.conditions ?? row.conditions ?? '',

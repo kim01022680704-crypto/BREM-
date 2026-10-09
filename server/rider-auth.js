@@ -112,14 +112,22 @@ function riderAppBlockedResult(rider) {
 function promotionRowToMissionShape(row) {
   if (!row) return null;
   const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
+  const title = String(payload.name || row.name || payload.title || '').trim();
   return {
     id: row.id,
-    title: row.name || '',
+    title,
     description: payload.description || '',
-    type: row.type || '',
+    type: payload.type || row.type || '',
     conditions: payload.conditions || '',
     is_active: row.enabled !== false,
-    raw_data: payload,
+    raw_data: {
+      ...payload,
+      title,
+      name: payload.name || row.name || title,
+      type: payload.type || row.type || '',
+      payStartCallCount: payload.payStartCallCount ?? payload.base?.payStartCallCount,
+      payPerCall: payload.payPerCall ?? payload.base?.payPerCall
+    },
     created_at: row.created_at,
     updated_at: row.updated_at
   };
@@ -198,24 +206,29 @@ function getRiderEmailDomain() {
 }
 
 function resolveRiderPlatformMissionId(row, platform) {
+  const raw = row?.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
   const isBaemin = platform === 'baemin';
   if (isBaemin) {
     const direct = String(
       row.selected_mission_id_baemin
       || row.promotion_rule_id_baemin
+      || raw.selectedMissionIdBaemin
+      || raw.promotionRuleIdBaemin
       || ''
     ).trim();
     if (direct) return direct;
-    const legacy = String(row.selected_mission_id || '').trim();
+    const legacy = String(row.selected_mission_id || raw.selectedMissionId || '').trim();
     return row.platform_baemin !== false && legacy ? legacy : '';
   }
   const direct = String(
     row.selected_mission_id_coupang
     || row.promotion_rule_id_coupang
+    || raw.selectedMissionIdCoupang
+    || raw.promotionRuleIdCoupang
     || ''
   ).trim();
   if (direct) return direct;
-  const legacy = String(row.selected_mission_id || '').trim();
+  const legacy = String(row.selected_mission_id || raw.selectedMissionId || '').trim();
   return row.platform_coupang !== false && !row.platform_baemin && legacy ? legacy : '';
 }
 

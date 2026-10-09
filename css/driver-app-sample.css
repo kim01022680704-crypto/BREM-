@@ -1509,6 +1509,7 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .ds-plat-chip { flex-shrink: 0; min-width: 40px; text-align: center; padding: 4px 8px; border-radius: 999px; font-size: var(--rd-fs-100); font-weight: 700; }
 .rider-ds .ds-plat-chip--baemin { color: var(--rd-teal); background: var(--rd-teal-soft); }
 .rider-ds .ds-plat-chip--coupang { color: var(--rd-warning); background: var(--rd-warning-soft); }
+.rider-ds .ds-plat-chip--combined { color: #111111; background: var(--yellow, #f5d76e); }
 
 /* statcard */
 .rider-ds .ds-statcard { overflow: hidden; }
@@ -1692,9 +1693,47 @@ html.rider-ds.brem-app-nav[data-driver-tab]:not([data-driver-tab="home"]) .drive
 
 /* 미션 + 장기근속 */
 .rider-ds .ds-mission { padding: 13px 15px; }
-.rider-ds .ds-mission__hd { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.rider-ds .ds-mission__hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .rider-ds .ds-mission__hd b { color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 700; }
+.rider-ds .ds-mission__sub { margin: 3px 0 0; color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+.rider-ds .ds-mission__total { text-align: right; }
+.rider-ds .ds-mission__total span { display: block; color: var(--rd-text-muted); font-size: var(--rd-fs-100); }
+.rider-ds .ds-mission__total strong,
 .rider-ds .ds-mission__hd .amt { color: var(--rd-accent-strong); font-size: var(--rd-fs-500); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rider-ds .ds-mission-list { display: grid; gap: 8px; margin-top: 12px; }
+.rider-ds .ds-mission-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  background: var(--rd-card-2);
+}
+.rider-ds .ds-mission-item[hidden] { display: none !important; }
+.rider-ds .ds-mission-item--baemin { box-shadow: inset 3px 0 0 var(--rd-teal); }
+.rider-ds .ds-mission-item--coupang { box-shadow: inset 3px 0 0 var(--rd-warning); }
+.rider-ds .ds-mission-item--combined { box-shadow: inset 3px 0 0 var(--rd-accent); }
+.rider-ds .ds-mission-item.is-empty { opacity: 0.72; }
+.rider-ds .ds-mission-item__body { min-width: 0; display: grid; gap: 2px; }
+.rider-ds .ds-mission-item__body strong {
+  color: var(--rd-text);
+  font-size: var(--rd-fs-300);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rider-ds .ds-mission-item__body span { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+.rider-ds .ds-mission-item em {
+  font-style: normal;
+  color: var(--rd-text);
+  font-size: var(--rd-fs-300);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .rider-ds .ds-mrow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--rd-border); margin-top: 6px; }
 .rider-ds .ds-mrow[hidden] { display: none !important; }
 .rider-ds .ds-mrow:first-of-type { border-top: 0; margin-top: 8px; }

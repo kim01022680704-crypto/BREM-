@@ -29,19 +29,29 @@
   }
   function comma(n) { return Number(n || 0).toLocaleString('ko-KR'); }
 
-  // 미션 sim 텍스트에서 "약 392,000원" 형태의 금액을 추출 (driver.js가 계산한 값)
-  function parseMissionAmount(wrapId) {
+  function isAssignedTitle(title) {
+    const t = String(title || '').trim();
+    return Boolean(t && t !== '-' && t !== '미선택' && t !== '미설정');
+  }
+
+  // 미션관리에서 배정된 이름 + driver.js가 계산한 예상 금액
+  function parseMissionBlock(wrapId, titleId) {
     const wrap = $(wrapId);
     if (!wrap || wrap.hidden) return null;
+    const title = txt(titleId);
+    const assigned = wrap.classList.contains('is-mission-assigned') || isAssignedTitle(title);
+    if (!assigned) return null;
     const now = wrap.querySelector('.mission-sim__now');
-    if (!now) return null;
-    const t = now.textContent || '';
-    // "이번 주 512콜 → 약 392,000원 (..." 또는 "... 아직 지급 시작 ..."
+    const t = now ? (now.textContent || '') : '';
     const won = t.match(/약\s*([\d,]+)\s*원/);
     const calls = t.match(/이번\s*주\s*([\d,]+)\s*콜/);
+    const remain = t.match(/([\d,]+)\s*콜 남음/);
     return {
+      title,
       amount: won ? toInt(won[1]) : 0,
-      amountText: won ? (comma(toInt(won[1])) + '원') : '0원',
+      amountText: won
+        ? (comma(toInt(won[1])) + '원')
+        : (remain ? ('시작까지 ' + comma(toInt(remain[1])) + '콜') : '배정됨'),
       callsText: calls ? (comma(toInt(calls[1])) + '콜') : '',
       started: !!won
     };
@@ -160,29 +170,43 @@
         setTxt('hv2WeekTargetAch', weekAch && weekAch !== '-' ? ('달성 ' + comma(weekCalls) + '콜 · ' + weekAch) : ('달성 ' + comma(weekCalls) + '콜'));
         setTxt('hv2MonthTargetAch', monthAch && monthAch !== '-' ? ('달성 ' + comma(monthCalls) + '콜 · ' + monthAch) : ('달성 ' + comma(monthCalls) + '콜'));
 
-        // 미션 (예상 프로모션 금액) — driver.js가 계산해 렌더한 값을 그대로 읽음
-        const bm = parseMissionAmount('riderMissionBaeminWrap');
-        const cp = parseMissionAmount('riderMissionCoupangWrap');
+        const combined = parseMissionBlock('riderMissionCombinedWrap', 'riderMissionCombinedTitle');
+        const bm = parseMissionBlock('riderMissionBaeminWrap', 'riderMissionBaeminTitle');
+        const cp = parseMissionBlock('riderMissionCoupangWrap', 'riderMissionCoupangTitle');
+        const hasBmPlat = platform.includes('배민') || Boolean(bm);
+        const hasCpPlat = platform.includes('쿠팡') || Boolean(cp);
+
+        function fillMissionRow(prefix, data, show) {
+          const row = $('hv2Mission' + prefix);
+          if (!row) return 0;
+          if (!show) {
+            row.hidden = true;
+            return 0;
+          }
+          row.hidden = false;
+          row.classList.toggle('is-empty', !data);
+          setTxt('hv2Mission' + prefix + 'Name', data ? data.title : '미배정');
+          setTxt('hv2Mission' + prefix + 'Meta', data
+            ? (data.callsText ? ('이번 주 ' + data.callsText) : '콜수 집계 전')
+            : '미션관리에서 배정되면 표시됩니다');
+          setTxt('hv2Mission' + prefix + 'Amt', data ? data.amountText : '-');
+          return data ? Number(data.amount || 0) : 0;
+        }
+
         let total = 0;
-        const bmRow = $('hv2MissionBaemin');
-        if (bmRow) {
-          if (bm && bm.started) {
-            bmRow.hidden = false;
-            setTxt('hv2MissionBaeminCalls', [bm.callsText, txt('riderMissionBaeminTitle')].filter(Boolean).join(' · '));
-            setTxt('hv2MissionBaeminAmt', bm.amountText);
-            total += bm.amount;
-          } else { bmRow.hidden = true; }
+        if (combined) {
+          total += fillMissionRow('Combined', combined, true);
+          fillMissionRow('Baemin', null, false);
+          fillMissionRow('Coupang', null, false);
+        } else {
+          fillMissionRow('Combined', null, false);
+          total += fillMissionRow('Baemin', bm, hasBmPlat);
+          total += fillMissionRow('Coupang', cp, hasCpPlat);
         }
-        const cpRow = $('hv2MissionCoupang');
-        if (cpRow) {
-          if (cp && cp.started) {
-            cpRow.hidden = false;
-            setTxt('hv2MissionCoupangCalls', [cp.callsText, txt('riderMissionCoupangTitle')].filter(Boolean).join(' · '));
-            setTxt('hv2MissionCoupangAmt', cp.amountText);
-            total += cp.amount;
-          } else { cpRow.hidden = true; }
-        }
-        setTxt('hv2MissionTotal', total > 0 ? ('약 ' + comma(total) + '원') : '예정 없음');
+        setTxt(
+          'hv2MissionTotal',
+          total > 0 ? ('약 ' + comma(total) + '원') : (combined || bm || cp ? '배정됨' : '미배정')
+        );
 
         // 장기근속
         const eventItem = txt('eventItem');
@@ -238,6 +262,8 @@
       observer = new MutationObserver(schedule);
       observer.observe(resultEl, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
     }
+
+    document.addEventListener('brem-rider-mission-rendered', schedule);
 
     // 초기 동기화 (로그인 전이면 값이 없다가, 렌더되면 observer가 다시 호출)
     sync();
