@@ -679,7 +679,7 @@ const BremPromotionApplyAdmin = (function () {
     container.innerHTML = rules.map(rule => `
       <label class="promotion-checkbox-field">
         <input type="checkbox" value="${escapeHtml(rule.id)}" data-promotion-apply-rule="${platform}">
-        <span>${escapeHtml(rule.name)}</span>
+        <span>${escapeHtml(rule.name)}${rule.slaApply ? ' <span class="promotion-sla-tag">SLA시간</span>' : ''}</span>
       </label>
     `).join('');
   }
@@ -807,7 +807,7 @@ const BremPromotionApplyAdmin = (function () {
           <td>${escapeHtml(BremPlatforms.label(rowPlatform))}</td>
           <td>${escapeHtml(row.assignmentSource || '-')}</td>
         ` : ''}
-        <td>${formatNumber(row.callCount)}${result.slaApply && Number(row.slaOutComplete || 0) > 0 ? ` <span class="form-help">(시간외 ${formatNumber(row.slaOutComplete)})</span>` : ''}</td>
+        <td>${formatNumber(row.callCount)}${row.slaApply && Number(row.slaOutComplete || 0) > 0 ? ` <span class="form-help">(시간외 ${formatNumber(row.slaOutComplete)})</span>` : ''}${row.slaApply ? ' <span class="promotion-sla-tag">SLA시간</span>' : ''}</td>
         <td>${formatRate(row.platformRate, rowPlatform, { highlightMissing: rateMissing })}</td>
         <td>${escapeHtml(row.ruleName || '-')}</td>
         ${showDeliveryFee ? `
@@ -980,7 +980,7 @@ const BremPromotionApplyAdmin = (function () {
           }
           : { ignoreMissingRates, rainApply, assignmentMode, ...combinedMeta };
 
-        if (BremStorage.promotionSettings.get()?.slaApplyEnabled === true) {
+        if (BremPromotionApply.calculationNeedsSlaOutMap?.(platform, ruleIds, assignmentMode)) {
           const slaOutMap = await BremPromotionApply.loadBaeminSlaOutMap(
             baeminSettlement.startDate || baeminSettlement.baseSettlementDate
           );
@@ -988,7 +988,6 @@ const BremPromotionApplyAdmin = (function () {
             showToast('SLA 시간외완료를 불러오지 못했습니다. 배민현황 저장 후 다시 계산하세요.');
             return;
           }
-          applyOptions.slaApply = true;
           applyOptions.slaOutMap = slaOutMap;
         }
 
@@ -1031,7 +1030,7 @@ const BremPromotionApplyAdmin = (function () {
         await BremStorage.ensurePromotionCalculationCalls?.(settlement.startDate, settlement.endDate);
 
         let applyOptions = { assignmentMode, channel: state.channel, ignoreMissingRates, rainApply };
-        if (platform === 'baemin' && BremStorage.promotionSettings.get()?.slaApplyEnabled === true) {
+        if (BremPromotionApply.calculationNeedsSlaOutMap?.(platform, ruleIds, assignmentMode)) {
           const slaOutMap = await BremPromotionApply.loadBaeminSlaOutMap(
             settlement.startDate || settlement.baseSettlementDate
           );
@@ -1039,7 +1038,6 @@ const BremPromotionApplyAdmin = (function () {
             showToast('SLA 시간외완료를 불러오지 못했습니다. 배민현황 저장 후 다시 계산하세요.');
             return;
           }
-          applyOptions.slaApply = true;
           applyOptions.slaOutMap = slaOutMap;
         }
         if (platform === 'baemin') {
@@ -1271,7 +1269,6 @@ const BremPromotionApplyAdmin = (function () {
     }
 
     updateRainButtonVisibility(p);
-    renderSlaApplyTag();
 
     if (!options.keepResult) {
       const card = $('#promotionApplyResultCard');
@@ -1381,19 +1378,9 @@ const BremPromotionApplyAdmin = (function () {
     });
   }
 
-  function renderSlaApplyTag() {
-    const tag = $('#promotionApplySlaTag');
-    if (!tag) return;
-    const platform = getActivePlatform();
-    const on = BremStorage.promotionSettings.get()?.slaApplyEnabled === true
-      && (platform === 'baemin' || platform === 'combined');
-    tag.hidden = !on;
-  }
-
   function refresh() {
     if (!applyRoot()) return;
     BremPromotionApply.invalidateSettlementOptionsCache?.();
-    renderSlaApplyTag();
     bindLegacyWeekInputs();
     initializeAllSettlementWeeks();
     const platform = getActivePlatform();

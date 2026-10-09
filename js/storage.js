@@ -11140,6 +11140,7 @@ const BremStorage = (function () {
       selectorKey: String(rule.selectorKey || '').trim(),
       platform,
       enabled: rule.enabled !== false,
+      slaApply: rule.slaApply === true,
       startDate: String(rule.startDate || '').slice(0, 10),
       endDate: String(rule.endDate || '').slice(0, 10),
       base,

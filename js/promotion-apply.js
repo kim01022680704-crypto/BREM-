@@ -100,6 +100,28 @@ const BremPromotionApply = (function () {
     return 0;
   }
 
+  function ruleUsesSlaApply(rule) {
+    if (!rule || rule.slaApply !== true) return false;
+    const p = normalizePlatform(rule.platform);
+    return p === 'baemin' || p === 'combined';
+  }
+
+  function calculationNeedsSlaOutMap(platform, selectedRuleIds, assignmentMode) {
+    const p = normalizePlatform(platform);
+    if (p === 'coupang') return false;
+    const list = BremStorage.getUserPromotionRules?.() || BremStorage.promotionRules.getAll?.() || [];
+    if (assignmentMode === 'selected_rules' && Array.isArray(selectedRuleIds) && selectedRuleIds.length) {
+      return selectedRuleIds.some(id => (
+        ruleUsesSlaApply(list.find(rule => rule.id === id) || BremStorage.promotionRules.getById?.(id))
+      ));
+    }
+    return list.some(rule => {
+      if (!ruleUsesSlaApply(rule)) return false;
+      const rulePlatform = normalizePlatform(rule.platform);
+      return p === 'combined' || rulePlatform === p || rulePlatform === 'combined';
+    });
+  }
+
   function applySlaToBaeminCallCount(callCount, slaOutComplete, slaApply) {
     const before = Math.max(0, Number(callCount || 0) || 0);
     const slaOut = slaApply ? Math.max(0, Number(slaOutComplete || 0) || 0) : 0;
@@ -665,7 +687,7 @@ const BremPromotionApply = (function () {
       })
       : { stats: { callCount: 0, deliveryAmount: 0, byDay: {}, uploadDays: 0 }, feeData: null };
 
-    const slaOn = slaApply === true && statsPlatform === 'baemin';
+    const slaOn = ruleUsesSlaApply(rule) && statsPlatform === 'baemin';
     const slaAdjusted = applySlaToBaeminCallCount(
       stats.callCount,
       slaOn ? lookupSlaOutComplete(slaOutMap, collectBaeminLookupIds(riderForLookup, driver)) : 0,
@@ -744,6 +766,7 @@ const BremPromotionApply = (function () {
       appliedPlatform: statsPlatform,
       assignmentSource,
       callCount: stats.callCount,
+      slaApply: slaOn,
       slaOutComplete: slaAdjusted.slaOutComplete,
       callCountBeforeSla: slaAdjusted.callCountBeforeSla,
       platformRate: riderData.platformRate,
@@ -794,7 +817,6 @@ const BremPromotionApply = (function () {
         deliveryFeeIndex: platform === 'baemin' ? deliveryFeeIndex : null,
         ignoreMissingRates: options.ignoreMissingRates === true,
         rainApply: options.rainApply === true,
-        slaApply: options.slaApply === true,
         slaOutMap: options.slaOutMap || null
       });
     });
@@ -831,7 +853,7 @@ const BremPromotionApply = (function () {
         ? BremBaeminDeliveryFee.formatMetaLabel(options.deliveryFeeMeta)
         : '',
       rainApply: options.rainApply === true,
-      slaApply: options.slaApply === true,
+      slaApply: results.some(row => row.slaApply === true),
       results,
       summary: {
         riderCount: results.length,
@@ -1374,7 +1396,7 @@ const BremPromotionApply = (function () {
     }
 
     const coupangCallCount = Number(coupangStats.callCount || 0);
-    const slaOn = slaApply === true;
+    const slaOn = ruleUsesSlaApply(rule);
     const slaAdjusted = applySlaToBaeminCallCount(
       Number(baeminStats.callCount || 0),
       slaOn ? lookupSlaOutComplete(slaOutMap, collectBaeminLookupIds(baeminRiderForLookup, driver)) : 0,
@@ -1468,6 +1490,7 @@ const BremPromotionApply = (function () {
       callCount: totalOrders,
       coupangCallCount,
       baeminCallCount,
+      slaApply: slaOn,
       slaOutComplete: slaAdjusted.slaOutComplete,
       callCountBeforeSla: slaAdjusted.callCountBeforeSla + coupangCallCount,
       platformRate: riderData.platformRate,
@@ -1527,7 +1550,6 @@ const BremPromotionApply = (function () {
         ignoreMissingRates: options.ignoreMissingRates === true,
         rainApply: options.rainApply === true,
         assignmentMode,
-        slaApply: options.slaApply === true,
         slaOutMap: options.slaOutMap || null
       }));
     });
@@ -1571,7 +1593,7 @@ const BremPromotionApply = (function () {
       deliveryFeeFileName: feeFiles.join(' / '),
       deliveryFeeLabel: feeLabels.join(' / '),
       rainApply: options.rainApply === true,
-      slaApply: options.slaApply === true,
+      slaApply: results.some(row => row.slaApply === true),
       results,
       summary: {
         ...assignmentSummary,
@@ -2064,6 +2086,8 @@ const BremPromotionApply = (function () {
     applyPromotionToSettlement,
     applyPromotionToCombinedSettlements,
     loadBaeminSlaOutMap,
+    calculationNeedsSlaOutMap,
+    ruleUsesSlaApply,
     mergeRegionPartSettlements,
     mergePartSettlementsList,
     selectedRulesNeedDeliveryFee,
