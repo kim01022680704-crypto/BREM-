@@ -37,9 +37,8 @@ const BremPromotionEngine = (function () {
     return keys;
   }
 
-  function weekOverlapsPromotion(weekStart, weekEnd, promoStart, promoEnd) {
-    if (!promoStart || !promoEnd) return false;
-    return weekStart <= promoEnd && weekEnd >= promoStart;
+  function weekOverlapsPromotion() {
+    return true;
   }
 
   function getApplicableTier(tiers, callCount) {
@@ -360,10 +359,7 @@ const BremPromotionEngine = (function () {
     };
   }
 
-  function checkPeriodCondition(rule, riderData) {
-    if (!weekOverlapsPromotion(riderData.weekStart, riderData.weekEnd, rule.startDate, rule.endDate)) {
-      return { passed: false, reasons: ['프로모션 기간 아님'] };
-    }
+  function checkPeriodCondition() {
     return { passed: true, reasons: [] };
   }
 

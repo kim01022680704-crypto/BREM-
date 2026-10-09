@@ -414,16 +414,13 @@ const BremPromotionAdmin = (function () {
   }
 
   function emptyRuleDraft() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
     return {
       name: '',
       type: 'count_per_order',
       platform: 'baemin',
       enabled: true,
-      startDate: `${year}-${month}-01`,
-      endDate: `${year}-${month}-${String(new Date(year, now.getMonth() + 1, 0).getDate()).padStart(2, '0')}`,
+      startDate: '',
+      endDate: '',
       base: {
         baseCallCount: 0,
         payStartCallCount: 0,
@@ -547,8 +544,6 @@ const BremPromotionAdmin = (function () {
     $('#promotionRuleName').value = draft.name;
     $('#promotionRuleType').value = draft.type || 'count_per_order';
     $('#promotionRuleEnabled').checked = draft.enabled !== false;
-    $('#promotionRuleStartDate').value = draft.startDate;
-    $('#promotionRuleEndDate').value = draft.endDate;
     $('#promotionRuleBaseCallCount').value = base.baseCallCount ?? 0;
     $('#promotionRulePayStartCallCount').value = base.payStartCallCount ?? 0;
     $('#promotionRulePayPerCall').value = base.payPerCall ?? 0;
@@ -599,8 +594,8 @@ const BremPromotionAdmin = (function () {
       type: $('#promotionRuleType').value,
       platform,
       enabled: $('#promotionRuleEnabled').checked,
-      startDate: $('#promotionRuleStartDate').value,
-      endDate: $('#promotionRuleEndDate').value,
+      startDate: '',
+      endDate: '',
       base,
       blockConditions: normalizeConditionsForPlatform(namedConditions(readConditionsFromForm('block'), platform), platform),
       bonusConditions: normalizeConditionsForPlatform(namedConditions(readConditionsFromForm('bonus'), platform), platform),
@@ -614,8 +609,6 @@ const BremPromotionAdmin = (function () {
 
   function validateRuleForm(payload) {
     if (!payload.name) return '프로모션명을 입력하세요.';
-    if (!payload.startDate || !payload.endDate) return '시작일과 종료일을 입력하세요.';
-    if (payload.startDate > payload.endDate) return '종료일은 시작일 이후여야 합니다.';
 
     if (payload.type !== 'guaranteed_unit_price' && payload.base.payPerCall > 0 && payload.base.payStartCallCount <= 0) {
       return '건당 지급을 사용하려면 지급 시작 콜수를 입력하세요.';

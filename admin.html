@@ -3687,7 +3687,7 @@
             <h2>프로모션 조건 관리</h2>
             <button type="button" class="primary-btn" id="promotionRuleAddBtn">조건 추가</button>
           </div>
-          <p class="form-help">프로모션명은 관리자가 직접 입력합니다. 조건 저장 후 프로모션 적용 메뉴에서 주간정산서별로 선택해 계산하세요.</p>
+          <p class="form-help">프로모션명은 관리자가 직접 입력합니다. 만든 조건은 날짜와 상관없이, 프로모션 적용에서 사용 중이면 계산됩니다.</p>
           <div class="promotion-platform-tabs promotion-rules-tabs" role="tablist">
             <button type="button" class="promotion-tab active" data-promotion-rules-platform="coupang">쿠팡</button>
             <button type="button" class="promotion-tab" data-promotion-rules-platform="baemin">배민</button>
@@ -3721,14 +3721,6 @@
                   <option value="baemin">배민</option>
                   <option value="combined">합산</option>
                 </select>
-              </label>
-              <label>
-                시작일
-                <input type="date" id="promotionRuleStartDate" class="admin-period-input" required>
-              </label>
-              <label>
-                종료일
-                <input type="date" id="promotionRuleEndDate" class="admin-period-input" required>
               </label>
               <label class="promotion-checkbox-field">
                 <input type="checkbox" id="promotionRuleEnabled" checked>
@@ -9411,8 +9403,8 @@
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
   <script src="js/promotion-conditions.js?v=20260928step1"></script>
-  <script src="js/promotion-engine.js?v=20260928step1"></script>
-  <script src="js/promotion-admin.js?v=20260928step1"></script>
+  <script src="js/promotion-engine.js?v=20261009nopperiod1"></script>
+  <script src="js/promotion-admin.js?v=20261009nopperiod1"></script>
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
   <script src="js/weekly-settlement.js?v=20260922part4"></script>
   <script src="js/weekly-settlement-admin.js?v=20260922part5"></script>
