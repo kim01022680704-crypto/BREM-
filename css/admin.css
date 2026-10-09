@@ -6709,6 +6709,11 @@ textarea {
   gap: 10px;
 }
 
+.promotion-sla-btn.is-active {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
 .promotion-sla-tag {
   display: inline-flex;
   align-items: center;

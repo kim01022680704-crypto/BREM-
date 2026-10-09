@@ -799,6 +799,7 @@ const BremPromotionAdmin = (function () {
               <th>기본 건당</th>
               <th>구간</th>
               <th>사용</th>
+              <th>SLA시간</th>
               <th>관리</th>
             </tr>
           </thead>
@@ -809,6 +810,7 @@ const BremPromotionAdmin = (function () {
                 : '-';
               const active = state.previewRuleId === rule.id ? ' row-selected' : '';
               const condText = `미지급 ${(rule.blockConditions || []).length} · 추가 ${(rule.bonusConditions || []).length}`;
+              const canSla = tabPlatform === 'baemin' || tabPlatform === 'combined';
               return `
                 <tr class="${active}">
                   <td><strong>${escapeHtml(rule.name)}</strong>${rule.slaApply ? ' <span class="promotion-sla-tag">SLA시간</span>' : ''}</td>
@@ -821,6 +823,12 @@ const BremPromotionAdmin = (function () {
                     <button type="button" class="small-btn promotion-enabled-btn" data-toggle-promotion="${rule.id}">
                       ${rule.enabled ? '사용' : '중지'}
                     </button>
+                  </td>
+                  <td>
+                    ${canSla ? `
+                    <button type="button" class="small-btn promotion-sla-btn${rule.slaApply ? ' is-active' : ''}" data-toggle-sla="${rule.id}">
+                      ${rule.slaApply ? '적용' : '적용안함'}
+                    </button>` : '-'}
                   </td>
                   <td class="promotion-rule-actions">
                     <button type="button" class="small-btn" data-edit-promotion="${rule.id}">수정</button>
@@ -1162,6 +1170,24 @@ const BremPromotionAdmin = (function () {
       if (toggleBtn) {
         BremStorage.promotionRules.toggleEnabled(toggleBtn.dataset.togglePromotion);
         showToast('사용 여부가 변경되었습니다.');
+        refresh();
+        return;
+      }
+
+      const slaBtn = event.target.closest('[data-toggle-sla]');
+      if (slaBtn) {
+        const rule = BremStorage.promotionRules.getById(slaBtn.dataset.toggleSla);
+        if (!rule) return;
+        const platform = normalizePlatform(rule.platform);
+        if (platform !== 'baemin' && platform !== 'combined') {
+          showToast('SLA시간은 배민·합산 미션만 적용됩니다.');
+          return;
+        }
+        const next = rule.slaApply !== true;
+        BremStorage.promotionRules.update(rule.id, { slaApply: next });
+        showToast(next
+          ? '이 미션에 SLA시간을 적용합니다. 프로모션 적용 때 총완료 − 시간외완료로 계산합니다.'
+          : '이 미션의 SLA시간적용을 껐습니다.');
         refresh();
         return;
       }
