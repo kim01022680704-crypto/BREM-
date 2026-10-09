@@ -697,6 +697,7 @@ function dbRowToDriver(row) {
     selectedMissionIdCombined: row.selected_mission_id_combined
       || raw.selectedMissionIdCombined
       || '',
+    missionAssignmentLocked: Boolean(raw.missionAssignmentLocked),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -736,6 +737,11 @@ function mergeIncomingRiderWithExisting(incoming, existingRow) {
   keep('longEventItem', 'long_event_item');
   keep('longEventStartDate', 'long_event_start_date');
   keep('longEventPlatform', 'long_event_platform');
+
+  if (merged.missionAssignmentLocked === undefined) {
+    const raw = existingRow.raw_data && typeof existingRow.raw_data === 'object' ? existingRow.raw_data : {};
+    merged.missionAssignmentLocked = Boolean(raw.missionAssignmentLocked);
+  }
 
   return merged;
 }

@@ -136,6 +136,7 @@ window.BremSupabaseMapper = (function () {
       selectedMissionIdBaemin: resolvePlatformMissionIdFromRow(row, 'baemin'),
       selectedMissionIdCoupang: resolvePlatformMissionIdFromRow(row, 'coupang'),
       selectedMissionIdCombined: String(row.selected_mission_id_combined || raw.selectedMissionIdCombined || '').trim(),
+      missionAssignmentLocked: Boolean(raw.missionAssignmentLocked),
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };

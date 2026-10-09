@@ -1573,6 +1573,7 @@ const BremStorage = (function () {
     dashboard: [KEYS.drivers, KEYS.notices, KEYS.calls, KEYS.rejections, KEYS.leaseVehicles],
     notices: [KEYS.notices],
     'mission-management': [KEYS.promotionRules, KEYS.drivers],
+    'mission-assignment': [KEYS.promotionRules, KEYS.drivers],
     'rider-inquiries': [KEYS.riderInquiries],
     promotions: [KEYS.promotionRules],
     'promotion-apply': [KEYS.promotionRules, KEYS.drivers, KEYS.weeklySettlements, KEYS.weeklySettlementsDirect, KEYS.promotionApplyResults, KEYS.settlements, KEYS.rejections],
@@ -1964,6 +1965,7 @@ const BremStorage = (function () {
         || sectionId === 'driver-management'
         || sectionId === 'inactive-drivers'
         || sectionId === 'mission-management'
+        || sectionId === 'mission-assignment'
         || sectionId === 'lease-management'
         || sectionId === 'coupang-rider-status'
         || sectionId === 'rejections'
@@ -1999,7 +2001,7 @@ const BremStorage = (function () {
         );
         // 기사관리·미션관리는 전원 로드를 기다리면 화면이 수 분 멈춘다.
         // 있는 목록으로 먼저 열고, 나머지는 백그라운드 페이지로 이어 받는다.
-        if (sectionId === 'driver-management' || sectionId === 'mission-management') {
+        if (sectionId === 'driver-management' || sectionId === 'mission-management' || sectionId === 'mission-assignment') {
           tasks.push(reload);
         } else {
           tasks.push(reload.then(() => awaitDriversFullyLoaded(
@@ -2312,6 +2314,9 @@ const BremStorage = (function () {
         const prevVal = String(prev[key] || '').trim();
         if (prevVal) merged[key] = prev[key];
       });
+    }
+    if (incoming.missionAssignmentLocked === undefined && prev.missionAssignmentLocked) {
+      merged.missionAssignmentLocked = true;
     }
     return merged;
   }
@@ -6068,6 +6073,7 @@ const BremStorage = (function () {
         selectedMissionIdBaemin: String(next.selectedMissionIdBaemin || '').trim(),
         selectedMissionIdCoupang: String(next.selectedMissionIdCoupang || '').trim(),
         selectedMissionIdCombined: String(next.selectedMissionIdCombined || '').trim(),
+        missionAssignmentLocked: Boolean(next.missionAssignmentLocked),
         promotionRuleIdCombined: String(
           next.promotionRuleIdCombined || next.promotionSelectorCombined || next.selectedMissionIdCombined || ''
         ).trim(),
@@ -13991,6 +13997,7 @@ const BremStorage = (function () {
     'mission-results',
     'missions',
     'mission-management',
+    'mission-assignment',
     'lease-management',
     'rider-maintenance',
     'calls',
@@ -14086,6 +14093,10 @@ const BremStorage = (function () {
       } else {
         normalized.push('mission-management');
       }
+    }
+
+    if (normalized.includes('mission-management') && !normalized.includes('mission-assignment')) {
+      normalized.splice(normalized.indexOf('mission-management') + 1, 0, 'mission-assignment');
     }
 
     const legacyBaeminIndex = normalized.indexOf('baemin-delivery-status');
@@ -14272,6 +14283,9 @@ const BremStorage = (function () {
     }
     if (next.includes('driver-management') && allowed.has('inactive-drivers') && !next.includes('inactive-drivers')) {
       next.splice(next.indexOf('driver-management') + 1, 0, 'inactive-drivers');
+    }
+    if (next.includes('mission-management') && allowed.has('mission-assignment') && !next.includes('mission-assignment')) {
+      next.splice(next.indexOf('mission-management') + 1, 0, 'mission-assignment');
     }
     if (allowed.has('work-requests') && !next.includes('work-requests')) {
       const scheduleIndex = next.indexOf('admin-schedule');

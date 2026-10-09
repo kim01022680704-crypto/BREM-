@@ -11520,6 +11520,81 @@ body.driver-popup-open {
   gap: 6px;
 }
 
+.mission-subnav {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.mission-subnav-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: #e8e8e8;
+  background: #1a1a1a;
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.mission-subnav-link.is-active {
+  color: #111111;
+  background: var(--yellow);
+  border-color: var(--yellow);
+  font-weight: 700;
+}
+
+.mission-bulk-source-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.mission-bulk-source-btn.is-active {
+  color: #111111;
+  background: var(--yellow);
+  border-color: var(--yellow);
+}
+
+.mission-bulk-paste-box {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.mission-bulk-paste-label {
+  font-size: 0.875rem;
+}
+
+.mission-bulk-paste-box textarea {
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+}
+
+.mission-bulk-apply-bar {
+  margin-top: 8px;
+}
+
+.mission-bulk-unmatched {
+  margin-top: 16px;
+}
+
+.mission-lock-tag,
+.is-mission-locked .mission-driver-name {
+  color: var(--yellow);
+}
+
+.mission-lock-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--yellow);
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
 .mission-assignment-toolbar {
   display: flex;
   flex-wrap: wrap;

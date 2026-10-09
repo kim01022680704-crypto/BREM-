@@ -206,6 +206,10 @@ window.BremMissionPromotionCatalog = (function () {
     return changes;
   }
 
+  function isAssignmentLocked(driver) {
+    return Boolean(driver?.missionAssignmentLocked);
+  }
+
   return {
     getAll,
     getById,
@@ -216,6 +220,7 @@ window.BremMissionPromotionCatalog = (function () {
     resolveStoredMissionId,
     normalizeAssignmentDraft,
     buildAssignmentPatch,
+    isAssignmentLocked,
     promotionToMissionItem
   };
 })();

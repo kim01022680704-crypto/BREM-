@@ -206,6 +206,7 @@
     { id: 'mission-results', label: '장기근속이벤트 결과' },
     { id: 'missions', label: '장기근속이벤트' },
     { id: 'mission-management', label: '미션 관리' },
+    { id: 'mission-assignment', label: '미션 배정' },
     { id: 'lease-management', label: '리스 및 대여관리' },
     { id: 'rider-maintenance', label: '기사들 정비기록' },
     { id: 'calls', label: '콜수 입력' },
@@ -7539,6 +7540,9 @@
       case 'mission-management':
         window.BremAdminMissions?.render?.();
         break;
+      case 'mission-assignment':
+        window.BremAdminMissionAssignment?.render?.();
+        break;
       case 'settlements':
         renderSettlements();
         break;
@@ -7717,6 +7721,9 @@
     if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
       void window.BremAdminMissions.refresh({ force: false });
     }
+    if (sectionId === 'mission-assignment' && window.BremAdminMissionAssignment?.refresh) {
+      void window.BremAdminMissionAssignment.refresh();
+    }
     if (sectionId === 'baemin-biz-status' || sectionId === 'baemin-status') {
       void window.BremBaeminDeliveryStatusAdmin.refresh(sectionId);
     }
@@ -7869,6 +7876,11 @@
       }
       if (state.currentSection === 'mission-management') {
         window.BremAdminMissions?.render?.();
+        updateDriverSearchStatus();
+        return;
+      }
+      if (state.currentSection === 'mission-assignment') {
+        window.BremAdminMissionAssignment?.render?.();
         updateDriverSearchStatus();
         return;
       }

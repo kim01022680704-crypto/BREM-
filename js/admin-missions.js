@@ -8,6 +8,7 @@
     assignmentSearch: '',
     assignmentPlatform: 'all',
     assignmentMissionFilter: 'all',
+    assignmentLockFilter: 'all',
     drafts: new Map(),
     dirty: new Set(),
     renderLimit: PAGE_SIZE,
@@ -281,6 +282,10 @@
       if (!matchBaemin && !matchCoupang && !matchCombined) return false;
     }
 
+    const locked = catalog().isAssignmentLocked?.(driver) || Boolean(driver.missionAssignmentLocked);
+    if (state.assignmentLockFilter === 'locked' && !locked) return false;
+    if (state.assignmentLockFilter === 'unlocked' && locked) return false;
+
     return true;
   }
 
@@ -298,7 +303,8 @@
     if (clearBtn) {
       clearBtn.hidden = !state.assignmentSearch
         && state.assignmentPlatform === 'all'
-        && state.assignmentMissionFilter === 'all';
+        && state.assignmentMissionFilter === 'all'
+        && state.assignmentLockFilter === 'all';
     }
     if (resultEl) {
       resultEl.textContent = total > count
@@ -482,7 +488,7 @@
     const allCount = BremStorage.drivers.getAll().length;
     state.lastRenderedCount = allCount;
     if (!allCount) {
-      rowsEl.innerHTML = '<tr><td colspan="8" class="empty">등록된 기사가 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">등록된 기사가 없습니다.</td></tr>';
       updateAssignmentSearchStatus(0, 0);
       updateLoadMore(0);
       return;
@@ -497,7 +503,7 @@
     const visible = drivers.slice(0, state.renderLimit);
 
     if (!visible.length) {
-      rowsEl.innerHTML = '<tr class="mission-assignment-empty"><td colspan="8" class="empty">조건에 맞는 기사가 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr class="mission-assignment-empty"><td colspan="9" class="empty">조건에 맞는 기사가 없습니다.</td></tr>';
       updateAssignmentSearchStatus(0, drivers.length);
       updateLoadMore(drivers.length);
       return;
@@ -510,9 +516,10 @@
       const coupangDisabled = driver.platformCoupang === false ? ' disabled' : '';
       const combinedDisabled = (!driver.platformBaemin || driver.platformCoupang === false) ? ' disabled' : '';
       const coupangLoginId = getCoupangLoginId(driver);
+      const locked = catalog().isAssignmentLocked?.(driver) || Boolean(driver.missionAssignmentLocked);
 
       return `
-        <tr class="${isDirty ? 'mission-row-dirty' : ''}" data-driver-id="${escapeHtml(driver.id)}">
+        <tr class="${isDirty ? 'mission-row-dirty' : ''}${locked ? ' is-mission-locked' : ''}" data-driver-id="${escapeHtml(driver.id)}">
           <td class="mission-driver-cell">
             <div class="mission-driver-line">
               <strong class="mission-driver-name">${escapeHtml(driver.name)}</strong>
@@ -536,6 +543,9 @@
             <select data-driver-mission-combined="${escapeHtml(driver.id)}" data-mission-platform="combined" data-options-loaded="0" class="inline-select"${combinedDisabled}>
               ${missionSelectInitialHtml('combined', draft.combined)}
             </select>
+          </td>
+          <td>
+            <button type="button" class="small-btn ${locked ? 'primary-btn' : ''}" data-lock-driver-mission="${escapeHtml(driver.id)}">${locked ? '잠금 해제' : '잠금'}</button>
           </td>
           <td>
             <button type="button" class="small-btn primary-btn" data-save-driver-mission="${escapeHtml(driver.id)}"${isDirty ? '' : ' disabled'}>저장</button>
@@ -645,16 +655,24 @@
       applyAssignmentRowVisibility();
     });
 
+    $('missionAssignmentLockFilter')?.addEventListener('change', event => {
+      state.assignmentLockFilter = event.target.value || 'all';
+      applyAssignmentRowVisibility();
+    });
+
     $('missionAssignmentSearchClear')?.addEventListener('click', () => {
       state.assignmentSearch = '';
       state.assignmentPlatform = 'all';
       state.assignmentMissionFilter = 'all';
+      state.assignmentLockFilter = 'all';
       const searchInput = $('missionAssignmentSearch');
       const platformSelect = $('missionAssignmentPlatformFilter');
       const missionSelect = $('missionAssignmentMissionFilter');
+      const lockSelect = $('missionAssignmentLockFilter');
       if (searchInput) searchInput.value = '';
       if (platformSelect) platformSelect.value = 'all';
       if (missionSelect) missionSelect.value = 'all';
+      if (lockSelect) lockSelect.value = 'all';
       applyAssignmentRowVisibility();
     });
 
@@ -689,6 +707,25 @@
     });
 
     $('missionDriverRows')?.addEventListener('click', event => {
+      const lockBtn = event.target.closest('[data-lock-driver-mission]');
+      if (lockBtn) {
+        const driverId = lockBtn.dataset.lockDriverMission;
+        const driver = BremStorage.drivers.getById(driverId);
+        if (!driver) return;
+        const next = !(catalog().isAssignmentLocked?.(driver) || Boolean(driver.missionAssignmentLocked));
+        lockBtn.disabled = true;
+        void BremStorage.drivers.batchPatch([{ id: driverId, changes: { missionAssignmentLocked: next } }])
+          .then(() => {
+            invalidateDriverSearchIndex();
+            renderDriverMissionAssignmentRows();
+            showToast(next ? `${driver.name} 미션을 잠갔습니다.` : `${driver.name} 잠금을 해제했습니다.`);
+          })
+          .catch(error => {
+            showToast(error.message || '잠금 저장에 실패했습니다.');
+          });
+        return;
+      }
+
       const saveBtn = event.target.closest('[data-save-driver-mission]');
       if (!saveBtn) return;
 
