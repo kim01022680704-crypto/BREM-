@@ -1997,9 +1997,9 @@ const BremStorage = (function () {
           Boolean(forceMissionDrivers || options.forceDrivers || options.force),
           needsInactiveDrivers ? { includeInactive: true } : {}
         );
-        // 기사관리는 전원 로드를 기다리면 "데이터 불러오는 중"이 수 분~수시간 남는다.
+        // 기사관리·미션관리는 전원 로드를 기다리면 화면이 수 분 멈춘다.
         // 있는 목록으로 먼저 열고, 나머지는 백그라운드 페이지로 이어 받는다.
-        if (sectionId === 'driver-management') {
+        if (sectionId === 'driver-management' || sectionId === 'mission-management') {
           tasks.push(reload);
         } else {
           tasks.push(reload.then(() => awaitDriversFullyLoaded(

@@ -7715,7 +7715,7 @@
       void window.BremAdminPayrollDailySettlement.refresh();
     }
     if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
-      void window.BremAdminMissions.refresh({ force: true });
+      void window.BremAdminMissions.refresh({ force: false });
     }
     if (sectionId === 'baemin-biz-status' || sectionId === 'baemin-status') {
       void window.BremBaeminDeliveryStatusAdmin.refresh(sectionId);
@@ -7867,9 +7867,13 @@
         updateDriverSearchStatus();
         return;
       }
+      if (state.currentSection === 'mission-management') {
+        window.BremAdminMissions?.render?.();
+        updateDriverSearchStatus();
+        return;
+      }
       if (state.currentSection === 'missions'
-        || state.currentSection === 'mission-results'
-        || state.currentSection === 'mission-management') {
+        || state.currentSection === 'mission-results') {
         renderActiveSection(state.currentSection, { force: true });
       }
       updateDriverSearchStatus();

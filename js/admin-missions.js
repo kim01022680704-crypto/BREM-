@@ -2,12 +2,16 @@
   const catalog = () => window.BremMissionPromotionCatalog;
   if (!catalog()) return;
 
+  const PAGE_SIZE = 80;
+
   const state = {
     assignmentSearch: '',
     assignmentPlatform: 'all',
     assignmentMissionFilter: 'all',
     drafts: new Map(),
-    dirty: new Set()
+    dirty: new Set(),
+    renderLimit: PAGE_SIZE,
+    lastRenderedCount: 0
   };
 
   const MISSION_PLACEHOLDER = {
@@ -285,10 +289,11 @@
     return driverSearchIndex.filter(matchesAssignmentFilter).length;
   }
 
-  function updateAssignmentSearchStatus(visibleCount) {
+  function updateAssignmentSearchStatus(visibleCount, filteredCount) {
     const resultEl = $('missionAssignmentSearchResult');
     const clearBtn = $('missionAssignmentSearchClear');
-    const count = Number.isFinite(visibleCount) ? visibleCount : countFilteredDrivers();
+    const total = Number.isFinite(filteredCount) ? filteredCount : countFilteredDrivers();
+    const count = Number.isFinite(visibleCount) ? visibleCount : Math.min(state.renderLimit, total);
 
     if (clearBtn) {
       clearBtn.hidden = !state.assignmentSearch
@@ -296,7 +301,9 @@
         && state.assignmentMissionFilter === 'all';
     }
     if (resultEl) {
-      resultEl.textContent = `표시 ${count}명 · 아래 목록 스크롤`;
+      resultEl.textContent = total > count
+        ? `표시 ${count} / ${total}명 · 스크롤하면 더 불러옵니다`
+        : `표시 ${total}명 · 아래 목록 스크롤`;
     }
 
     const saveAllBtn = $('missionAssignmentSaveAllBtn');
@@ -308,40 +315,31 @@
   }
 
   function applyAssignmentRowVisibility() {
-    const rowsEl = $('missionDriverRows');
-    if (!rowsEl) return;
+    state.renderLimit = PAGE_SIZE;
+    renderDriverMissionAssignmentRows();
+  }
 
-    const rows = rowsEl.querySelectorAll('tr[data-driver-id]');
-    if (!rows.length) {
-      updateAssignmentSearchStatus(0);
+  function updateLoadMore(filteredCount) {
+    const bar = $('missionAssignmentLoadMore');
+    if (!bar) return;
+    const remaining = Math.max(0, Number(filteredCount || 0) - state.renderLimit);
+    if (remaining <= 0) {
+      bar.hidden = true;
+      bar.textContent = '';
       return;
     }
+    bar.hidden = false;
+    bar.textContent = `더 보기 ${Math.min(PAGE_SIZE, remaining)}명 · ${state.renderLimit} / ${filteredCount}명`;
+  }
 
-    if (!driverSearchIndex) buildDriverSearchIndex();
-    const entryById = new Map(driverSearchIndex.map(entry => [String(entry.driver.id), entry]));
-
-    let visible = 0;
-    rows.forEach(row => {
-      const entry = entryById.get(String(row.dataset.driverId || ''));
-      const show = Boolean(entry && matchesAssignmentFilter(entry));
-      row.hidden = !show;
-      if (show) visible += 1;
-    });
-
-    let emptyRow = rowsEl.querySelector('tr.mission-assignment-empty');
-    if (!visible) {
-      if (!emptyRow) {
-        emptyRow = document.createElement('tr');
-        emptyRow.className = 'mission-assignment-empty';
-        emptyRow.innerHTML = '<td colspan="8" class="empty">조건에 맞는 기사가 없습니다.</td>';
-        rowsEl.appendChild(emptyRow);
-      }
-      emptyRow.hidden = false;
-    } else if (emptyRow) {
-      emptyRow.hidden = true;
-    }
-
-    updateAssignmentSearchStatus(visible);
+  function loadMoreAssignments() {
+    const filteredCount = countFilteredDrivers();
+    if (state.renderLimit >= filteredCount) return;
+    const wrap = document.querySelector('#mission-management .mission-assignment-table-wrap');
+    const scrollTop = wrap?.scrollTop || 0;
+    state.renderLimit += PAGE_SIZE;
+    renderDriverMissionAssignmentRows();
+    if (wrap) wrap.scrollTop = scrollTop;
   }
 
   async function saveDriverAssignment(driverId) {
@@ -359,7 +357,6 @@
     const saveBtn = row.querySelector('[data-save-driver-mission]');
     if (saveBtn) saveBtn.disabled = true;
     row.classList.remove('mission-row-dirty');
-    applyAssignmentRowVisibility();
     updateAssignmentSearchStatus();
   }
 
@@ -482,19 +479,31 @@
     const rowsEl = $('missionDriverRows');
     if (!rowsEl) return;
 
-    if (!BremStorage.drivers.getAll().length) {
+    const allCount = BremStorage.drivers.getAll().length;
+    state.lastRenderedCount = allCount;
+    if (!allCount) {
       rowsEl.innerHTML = '<tr><td colspan="8" class="empty">등록된 기사가 없습니다.</td></tr>';
-      updateAssignmentSearchStatus(0);
+      updateAssignmentSearchStatus(0, 0);
+      updateLoadMore(0);
       return;
     }
 
     if (!driverSearchIndex) buildDriverSearchIndex();
     const drivers = driverSearchIndex
+      .filter(matchesAssignmentFilter)
       .map(entry => resolveDriver(entry.driver))
       .filter(Boolean)
       .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+    const visible = drivers.slice(0, state.renderLimit);
 
-    rowsEl.innerHTML = drivers.map(driver => {
+    if (!visible.length) {
+      rowsEl.innerHTML = '<tr class="mission-assignment-empty"><td colspan="8" class="empty">조건에 맞는 기사가 없습니다.</td></tr>';
+      updateAssignmentSearchStatus(0, drivers.length);
+      updateLoadMore(drivers.length);
+      return;
+    }
+
+    rowsEl.innerHTML = visible.map(driver => {
       const draft = getDriverDraft(driver);
       const isDirty = isDriverAssignmentDirty(driver.id);
       const baeminDisabled = !driver.platformBaemin ? ' disabled' : '';
@@ -535,7 +544,8 @@
       `;
     }).join('');
 
-    applyAssignmentRowVisibility();
+    updateAssignmentSearchStatus(visible.length, drivers.length);
+    updateLoadMore(drivers.length);
   }
 
   function renderDriverMissionAssignments() {
@@ -546,6 +556,12 @@
     if (!window.XLSX) {
       showToast('엑셀 라이브러리를 불러오지 못했습니다.');
       return;
+    }
+
+    try {
+      await BremStorage.awaitDriversFullyLoaded?.();
+    } catch (error) {
+      console.warn('[BREM] Mission assignment export waited for riders:', error?.message || error);
     }
 
     const rows = BremStorage.drivers.getAll().map(driver => {
@@ -581,13 +597,16 @@
   }
 
   async function refresh(options = {}) {
-    const force = options.force !== false;
-    state.drafts.clear();
-    state.dirty.clear();
+    const force = options.force === true;
+    if (force) {
+      state.drafts.clear();
+      state.dirty.clear();
+    }
+    state.renderLimit = PAGE_SIZE;
     invalidateDriverSearchIndex();
 
     try {
-      await BremStorage.ensureSectionLoaded?.('mission-management', { force, forceDrivers: force });
+      await BremStorage.ensureSectionLoaded?.('mission-management', { force: false, forceDrivers: force });
     } catch (error) {
       showToast(error.message || '데이터를 불러오지 못했습니다.');
     }
@@ -664,7 +683,6 @@
 
       const row = event.target.closest('tr[data-driver-id]');
       applyDraftToRow(row, next);
-      applyAssignmentRowVisibility();
       const saveBtn = row?.querySelector('[data-save-driver-mission]');
       if (saveBtn) saveBtn.disabled = !state.dirty.has(driverId);
       row?.classList.toggle('mission-row-dirty', state.dirty.has(driverId));
@@ -701,14 +719,34 @@
     });
 
     document.addEventListener('brem-cache-status-changed', () => {
-      if (!document.getElementById('mission-management')?.classList.contains('active')) return;
+      const section = document.getElementById('mission-management');
+      if (!section?.classList.contains('active') && !section?.classList.contains('is-active')) return;
+      if (state.dirty.size) return;
       if (Date.now() < missionSaveCooldownUntil) return;
+      const count = BremStorage.drivers.getAll().length;
+      if (count === state.lastRenderedCount && $('missionDriverRows')?.querySelector('tr[data-driver-id]')) {
+        return;
+      }
       clearTimeout(missionSectionRenderTimer);
       missionSectionRenderTimer = setTimeout(() => {
+        if (state.dirty.size) return;
         if (Date.now() < missionSaveCooldownUntil) return;
         invalidateDriverSearchIndex();
         renderMissionSection();
-      }, 400);
+      }, 800);
+    });
+
+    const tableWrap = document.querySelector('#mission-management .mission-assignment-table-wrap');
+    if (tableWrap && !tableWrap.dataset.missionScrollBound) {
+      tableWrap.dataset.missionScrollBound = '1';
+      tableWrap.addEventListener('scroll', () => {
+        if (tableWrap.scrollTop + tableWrap.clientHeight < tableWrap.scrollHeight - 120) return;
+        loadMoreAssignments();
+      }, { passive: true });
+    }
+
+    $('missionAssignmentLoadMore')?.addEventListener('click', () => {
+      loadMoreAssignments();
     });
 
     window.addEventListener('beforeunload', event => {
