@@ -18,7 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20261009slaout2">
+  <link rel="stylesheet" href="css/admin.css?v=20261009slatag1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
@@ -3640,6 +3640,17 @@
           <p class="form-help">프로모션 <strong>조건만</strong> 등록·수정합니다. 실제 적용은 <a href="#" data-section-link="promotion-apply">프로모션 적용</a> 메뉴에서 저장된 주간정산서별로 계산하세요.</p>
         </article>
 
+        <article class="card" id="promotionSlaApplyCard">
+          <div class="card-header">
+            <h2>SLA 적용</h2>
+          </div>
+          <p class="form-help" id="promotionSlaApplyHint">켜면 배민·합산 프로모션을 <strong>총완료 − 시간외완료</strong>로 계산합니다. 쿠팡은 그대로입니다.</p>
+          <div class="promotion-sla-apply-row">
+            <button type="button" class="primary-btn" id="promotionSlaApplyBtn" aria-pressed="false">SLA적용</button>
+            <span class="promotion-sla-tag" id="promotionSlaApplyTag" hidden>SLA시간</span>
+          </div>
+        </article>
+
         <article class="card" id="promotionGlobalSettingsCard">
           <div class="card-header">
             <h2>전역 미지급 조건</h2>
@@ -5981,13 +5992,14 @@
             <div class="promotion-form-actions">
               <button type="submit" class="primary-btn">프로모션 계산</button>
               <button type="button" class="small-btn" id="promotionApplyRainBtn" hidden>우천적용</button>
+              <span class="promotion-sla-tag" id="promotionApplySlaTag" hidden>SLA시간</span>
             </div>
           </form>
         </article>
 
         <article class="card" id="promotionApplyResultCard" hidden>
           <div class="card-header">
-            <h2>프로모션 계산 결과</h2>
+            <h2>프로모션 계산 결과 <span class="promotion-sla-tag" id="promotionApplyResultSlaTag" hidden>SLA시간</span></h2>
             <div class="settlement-preview-actions">
               <button type="button" class="primary-btn" id="promotionApplySaveBtn">결과 저장</button>
               <button type="button" class="small-btn" id="promotionApplyDownloadBtn">엑셀 다운로드</button>
@@ -9404,7 +9416,7 @@
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
   <script src="js/promotion-conditions.js?v=20260928step1"></script>
   <script src="js/promotion-engine.js?v=20261009nopperiod1"></script>
-  <script src="js/promotion-admin.js?v=20261009nopperiod1"></script>
+  <script src="js/promotion-admin.js?v=20261009slatag1"></script>
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
   <script src="js/weekly-settlement.js?v=20260922part4"></script>
   <script src="js/weekly-settlement-admin.js?v=20260922part5"></script>
@@ -9416,8 +9428,8 @@
     <script src="js/contribution-admin.js?v=20260924peak20"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
-  <script src="js/promotion-apply.js?v=20261001parts3"></script>
-  <script src="js/promotion-apply-admin.js?v=20260928parts2"></script>
+  <script src="js/promotion-apply.js?v=20261009slatag1"></script>
+  <script src="js/promotion-apply-admin.js?v=20261009slatag1"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>

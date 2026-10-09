@@ -765,6 +765,18 @@ async function getHistoryCollectCoverage(accessToken, options = {}) {
   });
 }
 
+async function getSlaOutRange(accessToken, options = {}) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { getSlaOutRangeForAdmin } = require('./baemin-collect-pipeline');
+  return getSlaOutRangeForAdmin({
+    fromDate: options.fromDate,
+    toDate: options.toDate,
+    actorScope: scopeForView(actor.scope)
+  });
+}
+
 async function getRiderHistoryRange(accessToken, options = {}) {
   const actor = await resolveBaeminActorScope(accessToken);
   if (!actor.ok) return actor;
@@ -987,6 +999,7 @@ module.exports = {
   getViewBundle,
   getViewFullBundle,
   getRiderHistoryRange,
+  getSlaOutRange,
   getDailyHistoryRange,
   getHistoryCollectCoverage,
   replaceLiveAcceptRates,

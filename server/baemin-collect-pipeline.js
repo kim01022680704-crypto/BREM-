@@ -5539,6 +5539,163 @@ async function getHistoryCollectCoverageForAdmin(options = {}) {
   };
 }
 
+function slaOutFromCollectRow(row) {
+  const parsed = row?.parsed_json && typeof row.parsed_json === 'object' ? row.parsed_json : {};
+  const acc = pickAcceptance(parsed) || {};
+  return Math.max(0, Number(acc.slaOutComplete || 0) || 0);
+}
+
+function deliveryDayFromCollectRow(row) {
+  const parsed = row?.parsed_json && typeof row.parsed_json === 'object' ? row.parsed_json : {};
+  return String(parsed.deliveryDate || parsed.businessDate || parsed.workDate || row.collect_date || '').slice(0, 10);
+}
+
+function riderDayKeyFromCollectRow(row, day) {
+  const rider = String(row.rider_user_id || row.parsed_json?.riderUserId || '').trim().toLowerCase();
+  return rider && day ? `${rider}|${day}` : '';
+}
+
+async function fetchCollectRiderItemsByDays(fromDate, toDate) {
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const dates = buildDateList(fromDate, toDate);
+  const rows = [];
+  let nextIndex = 0;
+  const workerCount = Math.min(4, dates.length);
+
+  async function loadDay(day) {
+    let offset = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('baemin_biz_collect_items')
+        .select('rider_user_id, rider_name, collect_date, collected_at, parsed_json, dedupe_key')
+        .eq('source_menu', 'rider_history')
+        .like('dedupe_key', `%:${day}:%`)
+        .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+      if (error) {
+        throw new Error(error.message || `${day} 시간외완료 조회 실패`);
+      }
+      if (!data?.length) break;
+      rows.push(...data);
+      if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
+      offset += BIZ_COLLECT_PAGE_SIZE;
+    }
+  }
+
+  async function worker() {
+    while (nextIndex < dates.length) {
+      const day = dates[nextIndex];
+      nextIndex += 1;
+      await loadDay(day);
+    }
+  }
+
+  try {
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  } catch (error) {
+    return { ok: false, error: error.message || '선택 기간 시간외완료 조회 실패' };
+  }
+
+  return { ok: true, rows };
+}
+
+async function getSlaOutRangeForAdmin(options = {}) {
+  const fromDate = String(options.fromDate || '').slice(0, 10);
+  const toDate = String(options.toDate || '').slice(0, 10);
+  const scope = options.actorScope;
+  const allowed = new Set((scope?.allowedPartnerIds || []).map(id => String(id).toUpperCase()));
+
+  if (!fromDate || !toDate || toDate < fromDate) {
+    return { ok: false, status: 400, error: 'INVALID_RANGE', message: '조회 시작일과 종료일을 확인하세요.' };
+  }
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const batchId = await resolveAppliedBatchId(true);
+  const appliedFetched = batchId
+    ? await fetchAppliedRiderItemsByDays(
+      batchId,
+      fromDate,
+      toDate,
+      '',
+      'rider_user_id, rider_name, collect_date, collected_at, parsed_json, dedupe_key'
+    )
+    : { ok: true, rows: [] };
+  if (appliedFetched.ok === false) return appliedFetched;
+
+  const collectFetched = await fetchCollectRiderItemsByDays(fromDate, toDate);
+  const collectRows = collectFetched.ok ? (collectFetched.rows || []) : [];
+
+  const picked = new Map();
+  function consider(row, sourceRank) {
+    const day = deliveryDayFromCollectRow(row);
+    if (!day || day < fromDate || day > toDate) return;
+    if (allowed.size && !options.skipScopeCheck) {
+      const partnerId = partnerIdFromCollectRow(row);
+      if (partnerId && !allowed.has(partnerId)) return;
+    }
+    const key = riderDayKeyFromCollectRow(row, day);
+    if (!key) return;
+    const prev = picked.get(key);
+    const at = String(row.collected_at || '');
+    if (!prev || sourceRank < prev.sourceRank || (sourceRank === prev.sourceRank && at > prev.collectedAt)) {
+      picked.set(key, {
+        row,
+        sourceRank,
+        collectedAt: at,
+        slaOut: slaOutFromCollectRow(row)
+      });
+    }
+  }
+
+  (appliedFetched.rows || []).forEach(row => consider(row, 0));
+  collectRows.forEach(row => consider(row, 1));
+
+  const byRider = {};
+  picked.forEach(item => {
+    const slaOut = item.slaOut;
+    if (!slaOut) return;
+    const parsed = item.row.parsed_json && typeof item.row.parsed_json === 'object'
+      ? item.row.parsed_json
+      : {};
+    const ids = [
+      item.row.rider_user_id,
+      parsed.riderUserId,
+      parsed.riderId,
+      parsed.userId,
+      parsed.baeminUserId
+    ];
+    const keys = new Set();
+    ids.forEach(id => {
+      const raw = String(id || '').trim();
+      if (!raw) return;
+      keys.add(raw.toLowerCase());
+      const digits = raw.replace(/\D/g, '');
+      if (digits) {
+        keys.add(digits);
+        keys.add(digits.replace(/^0+/, '') || '0');
+      }
+    });
+    keys.forEach(key => {
+      byRider[key] = (byRider[key] || 0) + slaOut;
+    });
+  });
+
+  return {
+    ok: true,
+    fromDate,
+    toDate,
+    byRider,
+    riderDayCount: picked.size
+  };
+}
+
 module.exports = {
   getBizCollectTableStatus,
   getApiRegistry,
@@ -5552,6 +5709,7 @@ module.exports = {
   getViewBundleForAdmin,
   getViewFullBundleForAdmin,
   getRiderHistoryRangeForAdmin,
+  getSlaOutRangeForAdmin,
   getDailyHistoryRangeForAdmin,
   getHistoryCollectCoverageForAdmin,
   analyzePartnerContamination,

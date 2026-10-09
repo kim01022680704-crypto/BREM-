@@ -71,6 +71,66 @@ const BremPromotionApply = (function () {
     return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
   }
 
+  function collectBaeminLookupIds(rider, driver) {
+    return [
+      getBaeminUserId(rider, driver),
+      rider?.baeminUserId,
+      rider?.baeminId,
+      rider?.riderId,
+      rider?.userId,
+      driver?.baeminId,
+      driver?.baeminUserId
+    ];
+  }
+
+  function lookupSlaOutComplete(slaOutMap, ids) {
+    if (!slaOutMap || typeof slaOutMap !== 'object') return 0;
+    const seen = new Set();
+    for (const raw of (Array.isArray(ids) ? ids : [ids])) {
+      const text = String(raw || '').trim();
+      const keys = [matchKeyBaemin(text), text.toLowerCase()].filter(Boolean);
+      for (const key of keys) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (slaOutMap[key] == null) continue;
+        const n = Number(slaOutMap[key] || 0);
+        if (Number.isFinite(n) && n > 0) return Math.max(0, Math.round(n));
+      }
+    }
+    return 0;
+  }
+
+  function applySlaToBaeminCallCount(callCount, slaOutComplete, slaApply) {
+    const before = Math.max(0, Number(callCount || 0) || 0);
+    const slaOut = slaApply ? Math.max(0, Number(slaOutComplete || 0) || 0) : 0;
+    return {
+      callCount: slaApply ? Math.max(0, before - slaOut) : before,
+      slaOutComplete: slaOut,
+      callCountBeforeSla: before
+    };
+  }
+
+  async function loadBaeminSlaOutMap(weekStart) {
+    const fromDate = applyWeekWednesday(weekStart);
+    const toDate = weekEndKey(fromDate);
+    if (!fromDate || !toDate) return null;
+    const token = await BremStorage.resolveAdminAccessToken?.();
+    if (!token) return null;
+    try {
+      const qs = new URLSearchParams({ fromDate, toDate });
+      const response = await fetch(`/api/admin/baemin-delivery/sla-out-range?${qs}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) return null;
+      return payload.byRider && typeof payload.byRider === 'object' ? payload.byRider : {};
+    } catch (_error) {
+      return null;
+    }
+  }
+
   // 엑셀 ID(104…)로 기사 등록 ID(010…)를 찾아낸다.
   function findDriverByBaeminIdLoose(baeminId) {
     const key = matchKeyBaemin(baeminId);
@@ -540,7 +600,9 @@ const BremPromotionApply = (function () {
     deliveryFeeIndex = null,
     requireDeliveryFee = false,
     ignoreMissingRates = false,
-    rainApply = false
+    rainApply = false,
+    slaApply = false,
+    slaOutMap = null
   }) {
     const statsPlatform = normalizePlatform(appliedPlatform);
     const ruleP = normalizePlatform(rulePlatform);
@@ -597,11 +659,21 @@ const BremPromotionApply = (function () {
       ? { ...rider, baeminUserId: getBaeminUserId(rider, driver) }
       : rider;
 
-    const { stats, feeData } = driver
+    let { stats, feeData } = driver
       ? resolveBaeminStats(riderForLookup, driver, settlement, statsPlatform, deliveryFeeIndex, {
         useDeliveryFee: needsDeliveryFee
       })
       : { stats: { callCount: 0, deliveryAmount: 0, byDay: {}, uploadDays: 0 }, feeData: null };
+
+    const slaOn = slaApply === true && statsPlatform === 'baemin';
+    const slaAdjusted = applySlaToBaeminCallCount(
+      stats.callCount,
+      slaOn ? lookupSlaOutComplete(slaOutMap, collectBaeminLookupIds(riderForLookup, driver)) : 0,
+      slaOn
+    );
+    if (slaOn) {
+      stats = { ...stats, callCount: slaAdjusted.callCount };
+    }
 
     if (needsDeliveryFee && !hasValidDeliveryFeeData(feeData)) {
       return {
@@ -672,6 +744,8 @@ const BremPromotionApply = (function () {
       appliedPlatform: statsPlatform,
       assignmentSource,
       callCount: stats.callCount,
+      slaOutComplete: slaAdjusted.slaOutComplete,
+      callCountBeforeSla: slaAdjusted.callCountBeforeSla,
       platformRate: riderData.platformRate,
       deliveryAmountTotal: Number(feeData?.deliveryAmount ?? stats.deliveryAmount ?? 0),
       avgDeliveryUnitPrice: Number(feeData?.avgUnitPrice || 0),
@@ -719,7 +793,9 @@ const BremPromotionApply = (function () {
         assignmentMode,
         deliveryFeeIndex: platform === 'baemin' ? deliveryFeeIndex : null,
         ignoreMissingRates: options.ignoreMissingRates === true,
-        rainApply: options.rainApply === true
+        rainApply: options.rainApply === true,
+        slaApply: options.slaApply === true,
+        slaOutMap: options.slaOutMap || null
       });
     });
 
@@ -755,6 +831,7 @@ const BremPromotionApply = (function () {
         ? BremBaeminDeliveryFee.formatMetaLabel(options.deliveryFeeMeta)
         : '',
       rainApply: options.rainApply === true,
+      slaApply: options.slaApply === true,
       results,
       summary: {
         riderCount: results.length,
@@ -1058,7 +1135,9 @@ const BremPromotionApply = (function () {
     coupangDeliveryFeeIndex = null,
     ignoreMissingRates = false,
     rainApply = false,
-    assignmentMode = 'selected_rules'
+    assignmentMode = 'selected_rules',
+    slaApply = false,
+    slaOutMap = null
   }) {
     const ratePlatform = normalizePlatform(assignment.ratePlatform || 'coupang');
     const displayRider = assignment.baeminRider || assignment.coupangRider || assignment.rider;
@@ -1100,7 +1179,9 @@ const BremPromotionApply = (function () {
         assignmentMode: 'selected_rules',
         deliveryFeeIndex,
         ignoreMissingRates,
-        rainApply
+        rainApply,
+        slaApply,
+        slaOutMap
       }), 'baemin');
     }
 
@@ -1141,7 +1222,9 @@ const BremPromotionApply = (function () {
           assignmentMode: 'selected_rules',
           deliveryFeeIndex,
           ignoreMissingRates,
-          rainApply
+          rainApply,
+          slaApply,
+          slaOutMap
         }), 'baemin')
       ];
     }
@@ -1291,8 +1374,14 @@ const BremPromotionApply = (function () {
     }
 
     const coupangCallCount = Number(coupangStats.callCount || 0);
-    const baeminCallCount = Number(baeminStats.callCount || 0);
-    // 단가보장 구간·건당 지급 모두 쿠팡+배민 합산 콜수로 적용한다.
+    const slaOn = slaApply === true;
+    const slaAdjusted = applySlaToBaeminCallCount(
+      Number(baeminStats.callCount || 0),
+      slaOn ? lookupSlaOutComplete(slaOutMap, collectBaeminLookupIds(baeminRiderForLookup, driver)) : 0,
+      slaOn
+    );
+    const baeminCallCount = slaAdjusted.callCount;
+    // 단가보장 구간·건당 지급 모두 쿠팡+배민 합산 콜수로 적용한다. 배민만 SLA 시간외를 뺀다.
     const totalOrders = coupangCallCount + baeminCallCount;
     const weekStart = coupangSettlement?.startDate || baeminSettlement?.startDate || '';
     const weekEnd = coupangSettlement?.endDate || baeminSettlement?.endDate || '';
@@ -1379,6 +1468,8 @@ const BremPromotionApply = (function () {
       callCount: totalOrders,
       coupangCallCount,
       baeminCallCount,
+      slaOutComplete: slaAdjusted.slaOutComplete,
+      callCountBeforeSla: slaAdjusted.callCountBeforeSla + coupangCallCount,
       platformRate: riderData.platformRate,
       deliveryAmountTotal,
       avgDeliveryUnitPrice,
@@ -1435,7 +1526,9 @@ const BremPromotionApply = (function () {
         coupangDeliveryFeeIndex,
         ignoreMissingRates: options.ignoreMissingRates === true,
         rainApply: options.rainApply === true,
-        assignmentMode
+        assignmentMode,
+        slaApply: options.slaApply === true,
+        slaOutMap: options.slaOutMap || null
       }));
     });
 
@@ -1478,6 +1571,7 @@ const BremPromotionApply = (function () {
       deliveryFeeFileName: feeFiles.join(' / '),
       deliveryFeeLabel: feeLabels.join(' / '),
       rainApply: options.rainApply === true,
+      slaApply: options.slaApply === true,
       results,
       summary: {
         ...assignmentSummary,
@@ -1569,6 +1663,7 @@ const BremPromotionApply = (function () {
       unassignedRiderCount: Number(calculationResult.unassignedRiderCount || 0),
       deliveryFeeFileName: String(calculationResult.deliveryFeeFileName || ''),
       deliveryFeeLabel: String(calculationResult.deliveryFeeLabel || ''),
+      slaApply: calculationResult.slaApply === true,
       savedAt: new Date().toISOString(),
       coupangSettlementId: calculationResult.coupangSettlementId || '',
       baeminSettlementId: calculationResult.baeminSettlementId || '',
@@ -1703,7 +1798,8 @@ const BremPromotionApply = (function () {
       .trim()
       .replace(/[\\/:*?"<>|]/g, '_');
     const date = String(record.savedAt || record.startDate || new Date().toISOString()).slice(0, 10);
-    return `${region}_프로모션계산결과_${date}.xlsx`;
+    const slaTag = record.slaApply === true ? '_SLA시간' : '';
+    return `${region}_프로모션계산결과${slaTag}_${date}.xlsx`;
   }
 
   function buildSimpleExportRows(record) {
@@ -1722,7 +1818,10 @@ const BremPromotionApply = (function () {
         region: record.region || '',
         missionName: row.ruleName || '',
         weekLabel: `${record.startDate || ''} ~ ${record.endDate || ''}`,
-        basis: (row.appliedConditions || []).join(', ') || (row.failureReasons || []).join(', ') || '-'
+        basis: [
+          record.slaApply === true ? 'SLA시간' : '',
+          (row.appliedConditions || []).join(', ') || (row.failureReasons || []).join(', ') || '-'
+        ].filter(Boolean).join(' · ')
       };
     });
     return rows;
@@ -1964,6 +2063,7 @@ const BremPromotionApply = (function () {
   return {
     applyPromotionToSettlement,
     applyPromotionToCombinedSettlements,
+    loadBaeminSlaOutMap,
     mergeRegionPartSettlements,
     mergePartSettlementsList,
     selectedRulesNeedDeliveryFee,

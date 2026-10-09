@@ -707,6 +707,8 @@ const BremPromotionApplyAdmin = (function () {
     if (!card || !rowsEl || !result) return;
 
     card.hidden = false;
+    const resultSlaTag = $('#promotionApplyResultSlaTag');
+    if (resultSlaTag) resultSlaTag.hidden = result.slaApply !== true;
     const savedBadge = options.savedAt
       ? `<p>저장일: <strong>${escapeHtml(String(options.savedAt).slice(0, 19).replace('T', ' '))}</strong></p>`
       : '';
@@ -735,6 +737,7 @@ const BremPromotionApplyAdmin = (function () {
       <p>기사 <strong>${formatNumber(result.summary.riderCount)}</strong>명 · 총 프로모션 <strong>${formatMoney(result.summary.totalPromotionAmount)}</strong>${rateMissingSummary}</p>
       ${deliveryFeeSummary}
       ${result.rainApply ? '<p>우천적용: <strong>기상할증(AC) 건은 AH-500원 후 단가보장</strong></p>' : ''}
+      ${result.slaApply ? '<p><span class="promotion-sla-tag">SLA시간</span> 배민 총완료 − 시간외완료 (쿠팡은 그대로)</p>' : ''}
       ${combinedSummary}
       ${savedBadge}
     `;
@@ -804,7 +807,7 @@ const BremPromotionApplyAdmin = (function () {
           <td>${escapeHtml(BremPlatforms.label(rowPlatform))}</td>
           <td>${escapeHtml(row.assignmentSource || '-')}</td>
         ` : ''}
-        <td>${formatNumber(row.callCount)}</td>
+        <td>${formatNumber(row.callCount)}${result.slaApply && Number(row.slaOutComplete || 0) > 0 ? ` <span class="form-help">(시간외 ${formatNumber(row.slaOutComplete)})</span>` : ''}</td>
         <td>${formatRate(row.platformRate, rowPlatform, { highlightMissing: rateMissing })}</td>
         <td>${escapeHtml(row.ruleName || '-')}</td>
         ${showDeliveryFee ? `
@@ -866,7 +869,7 @@ const BremPromotionApplyAdmin = (function () {
       const weekLabel = itemWeekStart ? formatWeekRangeLabel(itemWeekStart) : '-';
       return `
       <tr>
-        <td>${escapeHtml(BremPlatforms.label(item.platform))}<span class="promotion-channel-badge ${item.channel === 'direct' ? 'is-direct' : 'is-bro'}">${escapeHtml(channelLabel(item.channel))}</span></td>
+        <td>${escapeHtml(BremPlatforms.label(item.platform))}<span class="promotion-channel-badge ${item.channel === 'direct' ? 'is-direct' : 'is-bro'}">${escapeHtml(channelLabel(item.channel))}</span>${item.slaApply ? '<span class="promotion-sla-tag">SLA시간</span>' : ''}</td>
         <td>${escapeHtml(weekLabel)}</td>
         <td>${escapeHtml(item.region || '-')}</td>
         <td>${escapeHtml(item.startDate)} ~ ${escapeHtml(item.endDate)}</td>
@@ -977,6 +980,18 @@ const BremPromotionApplyAdmin = (function () {
           }
           : { ignoreMissingRates, rainApply, assignmentMode, ...combinedMeta };
 
+        if (BremStorage.promotionSettings.get()?.slaApplyEnabled === true) {
+          const slaOutMap = await BremPromotionApply.loadBaeminSlaOutMap(
+            baeminSettlement.startDate || baeminSettlement.baseSettlementDate
+          );
+          if (!slaOutMap) {
+            showToast('SLA 시간외완료를 불러오지 못했습니다. 배민현황 저장 후 다시 계산하세요.');
+            return;
+          }
+          applyOptions.slaApply = true;
+          applyOptions.slaOutMap = slaOutMap;
+        }
+
         // 배민 부분1·2 합산: 두 번째로 고른 배민 정산서를 사람별로 합쳐 계산한다.
         let baeminForCalc = baeminSettlement;
         if ($('#promotionApplyCombineParts-combined-baemin')?.checked) {
@@ -1016,6 +1031,17 @@ const BremPromotionApplyAdmin = (function () {
         await BremStorage.ensurePromotionCalculationCalls?.(settlement.startDate, settlement.endDate);
 
         let applyOptions = { assignmentMode, channel: state.channel, ignoreMissingRates, rainApply };
+        if (platform === 'baemin' && BremStorage.promotionSettings.get()?.slaApplyEnabled === true) {
+          const slaOutMap = await BremPromotionApply.loadBaeminSlaOutMap(
+            settlement.startDate || settlement.baseSettlementDate
+          );
+          if (!slaOutMap) {
+            showToast('SLA 시간외완료를 불러오지 못했습니다. 배민현황 저장 후 다시 계산하세요.');
+            return;
+          }
+          applyOptions.slaApply = true;
+          applyOptions.slaOutMap = slaOutMap;
+        }
         if (platform === 'baemin') {
           const deliveryFeeParsed = await resolveDeliveryFeeForCalculation('baemin', settlement);
           if (deliveryFeeParsed) {
@@ -1057,6 +1083,8 @@ const BremPromotionApplyAdmin = (function () {
         ? '수락/거절율 미등록을 무시하고 프로모션을 다시 계산했습니다.'
         : rainApply
           ? '우천적용으로 프로모션을 계산했습니다. (기상할증 건 AH-500원 후 단가보장)'
+          : state.lastResult?.slaApply
+            ? 'SLA적용: 배민 총완료 − 시간외완료로 프로모션을 계산했습니다.'
           : feeSkip
             ? `프로모션 계산 완료. 단가보장 ${feeSkip}명은 배달처리비가 없어 제외했습니다.`
             : '프로모션 계산이 완료되었습니다.');
@@ -1243,6 +1271,7 @@ const BremPromotionApplyAdmin = (function () {
     }
 
     updateRainButtonVisibility(p);
+    renderSlaApplyTag();
 
     if (!options.keepResult) {
       const card = $('#promotionApplyResultCard');
@@ -1352,9 +1381,19 @@ const BremPromotionApplyAdmin = (function () {
     });
   }
 
+  function renderSlaApplyTag() {
+    const tag = $('#promotionApplySlaTag');
+    if (!tag) return;
+    const platform = getActivePlatform();
+    const on = BremStorage.promotionSettings.get()?.slaApplyEnabled === true
+      && (platform === 'baemin' || platform === 'combined');
+    tag.hidden = !on;
+  }
+
   function refresh() {
     if (!applyRoot()) return;
     BremPromotionApply.invalidateSettlementOptionsCache?.();
+    renderSlaApplyTag();
     bindLegacyWeekInputs();
     initializeAllSettlementWeeks();
     const platform = getActivePlatform();

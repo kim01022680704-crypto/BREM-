@@ -11196,6 +11196,7 @@ const BremStorage = (function () {
     const settings = raw || {};
     return {
       globalBlockEnabled: settings.globalBlockEnabled !== false,
+      slaApplyEnabled: settings.slaApplyEnabled === true,
       globalMinAcceptRate: Number(settings.globalMinAcceptRate ?? 85),
       globalMaxRejectRate: Number(settings.globalMaxRejectRate ?? 15),
       globalBlockPlatform: settings.globalBlockPlatform || 'all',
@@ -11437,6 +11438,7 @@ const BremStorage = (function () {
   function buildDefaultPromotionSettings() {
     return normalizePromotionSettings({
       globalBlockEnabled: true,
+      slaApplyEnabled: false,
       globalMinAcceptRate: 85,
       globalMaxRejectRate: 15,
       globalBlockPlatform: 'all',

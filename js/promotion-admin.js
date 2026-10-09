@@ -706,6 +706,36 @@ const BremPromotionAdmin = (function () {
     refresh();
   }
 
+  function renderSlaApplyButton() {
+    const btn = $('#promotionSlaApplyBtn');
+    const hint = $('#promotionSlaApplyHint');
+    const tag = $('#promotionSlaApplyTag');
+    if (!btn) return;
+    const on = BremStorage.promotionSettings.get()?.slaApplyEnabled === true;
+    btn.classList.toggle('is-active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.textContent = on ? 'SLA적용 켜짐' : 'SLA적용';
+    if (tag) tag.hidden = !on;
+    if (hint) {
+      hint.innerHTML = on
+        ? '켜짐: 배민·합산 프로모션을 <strong>총완료 − 시간외완료</strong>로 계산합니다. 쿠팡은 그대로입니다.'
+        : '켜면 배민·합산 프로모션을 <strong>총완료 − 시간외완료</strong>로 계산합니다. 쿠팡은 그대로입니다.';
+    }
+  }
+
+  function toggleSlaApply() {
+    const current = BremStorage.promotionSettings.get();
+    const next = current.slaApplyEnabled !== true;
+    BremStorage.promotionSettings.update({ slaApplyEnabled: next });
+    showToast(next
+      ? 'SLA적용이 켜졌습니다. 배민·합산은 총완료 − 시간외완료로 계산합니다.'
+      : 'SLA적용이 꺼졌습니다.');
+    renderSlaApplyButton();
+    if (typeof BremPromotionApplyAdmin !== 'undefined') {
+      BremPromotionApplyAdmin.refresh?.();
+    }
+  }
+
   function renderGlobalSettingsForm() {
     const settings = BremStorage.promotionSettings.get();
     $('#promotionGlobalBlockEnabled').checked = settings.globalBlockEnabled !== false;
@@ -979,6 +1009,7 @@ const BremPromotionAdmin = (function () {
   }
 
   function refresh() {
+    renderSlaApplyButton();
     renderGlobalSettingsForm();
     renderRulesList();
     if (typeof BremPromotionApplyAdmin !== 'undefined') {
@@ -999,6 +1030,7 @@ const BremPromotionAdmin = (function () {
     $('#promotionRuleFormCancel')?.addEventListener('click', hideRuleForm);
     $('#promotionRuleForm')?.addEventListener('submit', saveRuleForm);
     $('#promotionGlobalSettingsForm')?.addEventListener('submit', saveGlobalSettings);
+    $('#promotionSlaApplyBtn')?.addEventListener('click', toggleSlaApply);
     $('#promotionPayTierMode')?.addEventListener('change', () => {
       renderPayTierRows(readPayTierRowsFromForm({ includeEmpty: true }));
     });
