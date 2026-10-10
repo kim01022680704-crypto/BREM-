@@ -82,6 +82,12 @@
   }
 
   /** 검색 인덱스는 기사 스냅샷을 들고 있어 미션 저장 후 stale 될 수 있다. */
+  function isWorkingDriver(driver) {
+    if (window.BremDriverUtils?.isRiderAppAccessBlocked?.(driver)) return false;
+    const status = String(driver?.status || driver?.raw_data?.status || '').trim();
+    return !status || status === '근무중';
+  }
+
   function resolveDriver(driverOrId) {
     if (!driverOrId) return null;
     const id = typeof driverOrId === 'object' ? driverOrId.id : driverOrId;
@@ -90,7 +96,7 @@
   }
 
   function buildDriverSearchIndex() {
-    driverSearchIndex = BremStorage.drivers.getAll().map(driver => {
+    driverSearchIndex = BremStorage.drivers.getAll().filter(isWorkingDriver).map(driver => {
       const coupangId = getCoupangLoginId(driver);
       return {
         driver,
@@ -264,7 +270,7 @@
 
   function matchesAssignmentFilter(entry) {
     const driver = resolveDriver(entry.driver);
-    if (!driver) return false;
+    if (!driver || !isWorkingDriver(driver)) return false;
     const query = state.assignmentSearch.trim().toLowerCase();
     if (query) {
       const phoneQuery = query.replace(/\D/g, '');
@@ -506,7 +512,7 @@
     const allCount = BremStorage.drivers.getAll().length;
     state.lastRenderedCount = allCount;
     if (!allCount) {
-      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">등록된 기사가 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">근무중 기사가 없습니다.</td></tr>';
       updateAssignmentSearchStatus(0, 0);
       updateLoadMore(0);
       return;
@@ -592,7 +598,7 @@
       console.warn('[BREM] Mission assignment export waited for riders:', error?.message || error);
     }
 
-    const rows = BremStorage.drivers.getAll().map(driver => {
+    const rows = BremStorage.drivers.getAll().filter(isWorkingDriver).map(driver => {
       const assignment = catalog().normalizeAssignmentDraft(getSavedAssignment(driver));
       return [
         driver.name || '',

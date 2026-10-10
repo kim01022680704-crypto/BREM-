@@ -33,11 +33,17 @@
       .replace(/"/g, '&quot;');
   }
 
+  function isWorkingDriver(driver) {
+    if (window.BremDriverUtils?.isRiderAppAccessBlocked?.(driver)) return false;
+    const status = String(driver?.status || driver?.raw_data?.status || '').trim();
+    return !status || status === '근무중';
+  }
+
   function allDrivers() {
-    if (typeof BremStorage.drivers.getAllKnownById === 'function') {
-      return BremStorage.drivers.getAllKnownById() || [];
-    }
-    return BremStorage.drivers.getAll() || [];
+    const list = typeof BremStorage.drivers.getAllKnownById === 'function'
+      ? BremStorage.drivers.getAllKnownById() || []
+      : BremStorage.drivers.getAll() || [];
+    return list.filter(isWorkingDriver);
   }
 
   function erpIdOf(driver) {
