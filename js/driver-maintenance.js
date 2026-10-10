@@ -71,6 +71,7 @@
     let cells = DOW.map(name => `<div class="mt-cal__h">${name}</div>`).join('');
     for (let i = 0; i < first; i += 1) cells += '<div class="mt-cal__cell mt-cal__cell--empty"></div>';
     for (let d = 1; d <= days; d += 1) {
+      const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const mrows = logsOnDay(y, m, d);
       const erows = expensesOnDay(y, m, d);
       const mCost = mrows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
@@ -79,7 +80,7 @@
       let body = `<span class="mt-cal__d">${d}</span>`;
       if (mrows.length) body += `<b class="mt-cal__m">${shortWon(mCost)}</b>`;
       if (erows.length) body += `<b class="mt-cal__e">${shortWon(eCost)}</b>`;
-      cells += `<div class="mt-cal__cell${on ? ' mt-cal__cell--on' : ''}">${body}</div>`;
+      cells += `<button type="button" class="mt-cal__cell${on ? ' mt-cal__cell--on' : ''}" data-cal-day="${key}">${body}</button>`;
     }
     return cells;
   }
@@ -198,16 +199,16 @@
             <button type="button" class="mt-sum__nav" id="mtSumNext" aria-label="다음달">›</button>
           </div>
           <div class="mt-twin">
-            <div class="mt-card mt-twin__box mt-twin__box--maint">
+            <button type="button" class="mt-card mt-twin__box mt-twin__box--maint" id="mtTwinMaint">
               <span>정비 사용금액</span>
               <strong>${won(monthSum)}<i>원</i></strong>
-              <em>${monthLogs.length}건</em>
-            </div>
-            <div class="mt-card mt-twin__box mt-twin__box--exp">
+              <em>${monthLogs.length}건 · 클릭시 상세내역</em>
+            </button>
+            <button type="button" class="mt-card mt-twin__box mt-twin__box--exp" id="mtTwinExp">
               <span>기타 지출금액</span>
               <strong>${won(exp.total)}<i>원</i></strong>
-              <em>${exp.count}건</em>
-            </div>
+              <em>${exp.count}건 · 클릭시 상세내역</em>
+            </button>
           </div>
           <button type="button" class="mt-aside-peek" id="mtAsidePeek">
             <span>날짜별 내역 · 클릭시 상세내역</span>
@@ -248,7 +249,7 @@
             <div class="mt-save-row"><button type="submit" class="mt-save mt-save--exp">저장</button></div>
           </form>
 
-          <div class="mt-card">
+          <div class="mt-card mt-cal-card" id="mtCalCard">
             <div class="mt-cal__nav">
               <button type="button" id="mtCalPrev" aria-label="이전달">‹</button>
               <strong>${ym} 달력</strong>
@@ -291,11 +292,34 @@
     panel.querySelector('.mt-shell')?.classList.toggle('is-aside-open', state.asideOpen);
   }
 
+  function openAside(options = {}) {
+    const dateKey = String(options.date || '').trim();
+    if (dateKey) {
+      if (options.kind !== 'exp') state.openDays.add(`maint:${dateKey}`);
+      if (options.kind !== 'maint') state.openDays.add(`exp:${dateKey}`);
+    }
+    state.asideOpen = true;
+    if (dateKey) render();
+    else setAsideOpen(true);
+  }
+
   function bindCommon() {
-    ['mtSumPrev', 'mtCalPrev', 'mtExpPrev'].forEach(id => document.getElementById(id)?.addEventListener('click', () => shiftMonth(-1)));
-    ['mtSumNext', 'mtCalNext', 'mtExpNext'].forEach(id => document.getElementById(id)?.addEventListener('click', () => shiftMonth(1)));
-    ['mtAsideOpen', 'mtAsidePeek'].forEach(id => {
-      document.getElementById(id)?.addEventListener('click', () => setAsideOpen(true));
+    ['mtSumPrev', 'mtCalPrev', 'mtExpPrev'].forEach(id => document.getElementById(id)?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      shiftMonth(-1);
+    }));
+    ['mtSumNext', 'mtCalNext', 'mtExpNext'].forEach(id => document.getElementById(id)?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      shiftMonth(1);
+    }));
+    ['mtAsideOpen', 'mtAsidePeek', 'mtTwinMaint', 'mtTwinExp'].forEach(id => {
+      document.getElementById(id)?.addEventListener('click', () => openAside({
+        kind: id === 'mtTwinMaint' ? 'maint' : id === 'mtTwinExp' ? 'exp' : ''
+      }));
+    });
+    document.getElementById('mtCalCard')?.addEventListener('click', (event) => {
+      if (event.target.closest('#mtCalPrev, #mtCalNext')) return;
+      openAside({ date: event.target.closest('[data-cal-day]')?.dataset.calDay || '' });
     });
     ['mtAsideClose', 'mtAsideBg'].forEach(id => {
       document.getElementById(id)?.addEventListener('click', () => setAsideOpen(false));
