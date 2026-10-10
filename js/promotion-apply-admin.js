@@ -242,22 +242,102 @@ const BremPromotionApplyAdmin = (function () {
       : [platform === 'coupang' ? 'coupang' : 'baemin'];
   }
 
+  function majorityExpectedMissions(result) {
+    const expected = { baemin: '', coupang: '', combined: '' };
+    const counts = { baemin: new Map(), coupang: new Map(), combined: new Map() };
+    (Array.isArray(result?.results) ? result.results : []).forEach(row => {
+      const id = String(row?.ruleId || '').trim();
+      if (!id) return;
+      const slot = BremPlatforms.normalize(row.appliedPlatform || result.platform);
+      const map = counts[slot] || counts.baemin;
+      map.set(id, (map.get(id) || 0) + 1);
+    });
+    const pick = map => {
+      let best = '';
+      let bestCount = 0;
+      map.forEach((count, id) => {
+        if (count > bestCount) {
+          best = id;
+          bestCount = count;
+        }
+      });
+      return best;
+    };
+    expected.baemin = pick(counts.baemin);
+    expected.coupang = pick(counts.coupang);
+    expected.combined = pick(counts.combined);
+    return expected;
+  }
+
+  function scanSavedDefaultsByAlias(platform, hint) {
+    const empty = { baemin: '', coupang: '', combined: '' };
+    if (!hint) return empty;
+    const list = state.gapRegions[platform === 'coupang' ? 'coupang' : 'baemin'] || [];
+    let best = empty;
+    let bestScore = 0;
+    list.forEach(region => {
+      const score = Math.max(
+        BremPromotionApply.scoreRegionAliasMatch?.(hint, region.label) || 0,
+        BremPromotionApply.scoreRegionAliasMatch?.(hint, region.vendorName) || 0
+      );
+      if (score <= bestScore) return;
+      const saved = readSavedRegionDefaults(platform, region);
+      if (saved.baemin || saved.coupang || saved.combined) {
+        best = saved;
+        bestScore = score;
+      }
+    });
+    const meta = window.BremStorage?.missionDefaults?.getMeta?.() || {};
+    Object.entries(meta.byRegion || {}).forEach(([key, saved]) => {
+      const label = String(key || '').replace(/^(baemin|coupang):/i, '');
+      const score = BremPromotionApply.scoreRegionAliasMatch?.(hint, label) || 0;
+      if (score <= bestScore) return;
+      if (saved?.baemin || saved?.coupang || saved?.combined) {
+        best = saved;
+        bestScore = score;
+      }
+    });
+    return best;
+  }
+
   function settlementExpectedMissions(result) {
     const expected = { baemin: '', coupang: '', combined: '' };
     settlementSides(result).forEach(side => {
-      const region = resolveCatalogRegion(side, settlementRegionHint(result, side));
+      const hint = settlementRegionHint(result, side);
+      const region = resolveCatalogRegion(side, hint);
       const saved = region ? readSavedRegionDefaults(side, region) : {};
-      if (saved.baemin) expected.baemin = saved.baemin;
-      if (saved.coupang) expected.coupang = saved.coupang;
-      if (saved.combined) expected.combined = saved.combined;
+      const scanned = scanSavedDefaultsByAlias(side, hint);
+      const pick = (saved.baemin || saved.coupang || saved.combined) ? saved : scanned;
+      if (pick.baemin) expected.baemin = pick.baemin;
+      if (pick.coupang) expected.coupang = pick.coupang;
+      if (pick.combined) expected.combined = pick.combined;
     });
+    const majority = majorityExpectedMissions(result);
+    if (!expected.baemin) expected.baemin = majority.baemin;
+    if (!expected.coupang) expected.coupang = majority.coupang;
+    if (!expected.combined) expected.combined = majority.combined;
     return expected;
   }
 
   function settlementExpectedRegions(result) {
     const expected = { baemin: '', coupang: '' };
     settlementSides(result).forEach(side => {
-      const region = resolveCatalogRegion(side, settlementRegionHint(result, side));
+      const hint = settlementRegionHint(result, side);
+      let region = resolveCatalogRegion(side, hint);
+      if (!region && hint) {
+        const list = state.gapRegions[side] || [];
+        const scored = list
+          .map(item => ({
+            item,
+            score: Math.max(
+              BremPromotionApply.scoreRegionAliasMatch?.(hint, item.label) || 0,
+              BremPromotionApply.scoreRegionAliasMatch?.(hint, item.vendorName) || 0
+            )
+          }))
+          .filter(row => row.score > 0)
+          .sort((a, b) => b.score - a.score);
+        region = scored[0]?.item || null;
+      }
       if (region?.key) expected[side] = region.key;
     });
     return expected;
@@ -591,7 +671,7 @@ const BremPromotionApplyAdmin = (function () {
                     <td>${can ? `<select data-gap-mission="baemin">${missionOptionsHtml('baemin', assignedOf(gap.driver, 'baemin'), '변경 안 함')}</select>` : '-'}</td>
                     <td>${can ? `<select data-gap-mission="coupang">${missionOptionsHtml('coupang', assignedOf(gap.driver, 'coupang'), '변경 안 함')}</select>` : '-'}</td>
                     <td>${can ? `<select data-gap-mission="combined">${missionOptionsHtml('combined', assignedOf(gap.driver, 'combined'), '변경 안 함')}</select>` : '-'}</td>
-                    <td>${can && (expected.baemin || expected.coupang || expected.combined) ? '<button type="button" class="small-btn" data-gap-apply-one>기본으로</button>' : ''}</td>
+                    <td>${can ? '<button type="button" class="small-btn" data-gap-apply-one>기본으로</button>' : ''}</td>
                   </tr>
                 `;
               }).join('')}
@@ -771,19 +851,26 @@ const BremPromotionApplyAdmin = (function () {
   }
 
   function applyExpectedMissionsToSelects(scope) {
+    const fallbackMissions = settlementExpectedMissions(state.gapResult || state.lastResult);
+    const fallbackRegions = settlementExpectedRegions(state.gapResult || state.lastResult);
     const root = scope || ensureGapPopup().querySelector('[data-gap-panel="mission"]');
     const rows = scope?.matches?.('tr')
       ? [scope]
       : [...(root?.querySelectorAll('tr[data-gap-driver]') || [])];
     let filled = 0;
     rows.forEach(tr => {
-      const baemin = tr.dataset.gapExpectedBaemin || '';
-      const coupang = tr.dataset.gapExpectedCoupang || '';
-      const combined = tr.dataset.gapExpectedCombined || '';
+      const baemin = tr.dataset.gapExpectedBaemin || fallbackMissions.baemin || '';
+      const coupang = tr.dataset.gapExpectedCoupang || fallbackMissions.coupang || '';
+      const combined = tr.dataset.gapExpectedCombined || fallbackMissions.combined || '';
       const expectedRegions = {
-        baemin: tr.dataset.gapExpectedRegionBaemin || '',
-        coupang: tr.dataset.gapExpectedRegionCoupang || ''
+        baemin: tr.dataset.gapExpectedRegionBaemin || fallbackRegions.baemin || '',
+        coupang: tr.dataset.gapExpectedRegionCoupang || fallbackRegions.coupang || ''
       };
+      tr.dataset.gapExpectedBaemin = baemin;
+      tr.dataset.gapExpectedCoupang = coupang;
+      tr.dataset.gapExpectedCombined = combined;
+      tr.dataset.gapExpectedRegionBaemin = expectedRegions.baemin;
+      tr.dataset.gapExpectedRegionCoupang = expectedRegions.coupang;
       if (!baemin && !coupang && !combined && !expectedRegions.baemin && !expectedRegions.coupang) return;
       let changed = false;
       if (combined) {
