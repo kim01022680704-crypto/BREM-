@@ -11671,6 +11671,42 @@ body.driver-popup-open {
   box-shadow: 0 1px 0 var(--line);
 }
 
+.mission-assignment-table .mission-now-cell {
+  max-width: 220px;
+  vertical-align: top;
+}
+
+.mission-now-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.mission-now-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #1f2937;
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: keep-all;
+}
+
+.mission-now-chip--missing {
+  background: #3f1d1d;
+  color: #fca5a5;
+}
+
+.mission-now-chip--empty {
+  background: transparent;
+  color: #9ca3af;
+  padding: 0;
+}
+
 .mission-driver-cell {
   min-width: 200px;
   white-space: nowrap;

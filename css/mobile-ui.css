@@ -1127,16 +1127,17 @@
     overflow: visible;
   }
 
-  .admin-app .mission-assignment-table-wrap.brem-mobile-cards tbody td:nth-child(5),
-  .admin-app .mission-assignment-table-wrap.brem-mobile-cards tbody td:nth-child(6) {
+  .admin-app .mission-assignment-table-wrap.brem-mobile-cards tbody td:nth-child(6),
+  .admin-app .mission-assignment-table-wrap.brem-mobile-cards tbody td:nth-child(7),
+  .admin-app .mission-assignment-table-wrap.brem-mobile-cards tbody td:nth-child(8) {
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   }
 
-  .admin-app .mission-assignment-table-wrap.brem-mobile-cards tbody td:nth-child(7) {
+  .admin-app .mission-assignment-table-wrap.brem-mobile-cards tbody td:nth-child(10) {
     padding-top: 4px !important;
   }
 
-  .admin-app .mission-assignment-table-wrap.brem-mobile-cards tbody td:nth-child(7) .small-btn {
+  .admin-app .mission-assignment-table-wrap.brem-mobile-cards tbody td:nth-child(10) .small-btn {
     width: 100%;
     min-height: 40px;
   }

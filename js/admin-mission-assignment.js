@@ -65,17 +65,30 @@
 
   function missionTitle(id) {
     const key = String(id || '').trim();
-    if (!key) return '미배정';
-    return catalog().getById(key)?.title || key;
+    if (!key) return '';
+    return String(catalog().getById(key)?.title || '').trim();
   }
 
-  function assignmentLabel(driver) {
-    const assigned = catalog().getDriverAssignment(driver) || {};
-    if (assigned.combined) return `합산 ${missionTitle(assigned.combined)}`;
-    const parts = [];
-    if (assigned.baemin) parts.push(`배민 ${missionTitle(assigned.baemin)}`);
-    if (assigned.coupang) parts.push(`쿠팡 ${missionTitle(assigned.coupang)}`);
-    return parts.join(' · ') || '미배정';
+  function rawMissionId(driver, platform) {
+    if (platform === 'baemin') {
+      return String(driver?.selectedMissionIdBaemin || driver?.promotionRuleIdBaemin || '').trim();
+    }
+    if (platform === 'coupang') {
+      return String(driver?.selectedMissionIdCoupang || driver?.promotionRuleIdCoupang || '').trim();
+    }
+    return String(driver?.selectedMissionIdCombined || driver?.promotionRuleIdCombined || '').trim();
+  }
+
+  function missionChip(kind, label, id) {
+    if (!id) return { kind: 'empty', text: `${label} 미배정` };
+    const title = missionTitle(id);
+    if (title) return { kind, text: `${label} ${title}` };
+    return { kind: 'missing', text: `${label} 미션 삭제됨` };
+  }
+
+  function missionChipHtml(kind, label, id) {
+    const chip = missionChip(kind, label, id);
+    return `<span class="mission-now-chip mission-now-chip--${chip.kind}">${escapeHtml(chip.text)}</span>`;
   }
 
   function shortCoupangRegion(name) {
@@ -344,7 +357,7 @@
     const rowsEl = $('missionBulkRows');
     if (!rowsEl) return;
     if (!state.preview.length) {
-      rowsEl.innerHTML = '<tr><td colspan="8" class="empty">검색된 기사가 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="10" class="empty">검색된 기사가 없습니다.</td></tr>';
       updateSummary();
       renderUnmatched();
       return;
@@ -362,7 +375,9 @@
         <td><code>${escapeHtml(erpIdOf(driver) || '-')}</code></td>
         <td><code>${escapeHtml(driver.baeminId || '-')}</code></td>
         <td><code>${escapeHtml(coupangIdOf(driver) || '-')}</code></td>
-        <td>${escapeHtml(assignmentLabel(driver))}</td>
+        <td class="mission-now-cell">${missionChipHtml('baemin', '배민', rawMissionId(driver, 'baemin'))}</td>
+        <td class="mission-now-cell">${missionChipHtml('coupang', '쿠팡', rawMissionId(driver, 'coupang'))}</td>
+        <td class="mission-now-cell">${missionChipHtml('combined', '합산', rawMissionId(driver, 'combined'))}</td>
         <td>${escapeHtml(row.rawId || selectedRegion()?.label || '-')}</td>
         <td>
           <button type="button" class="small-btn ${locked ? 'primary-btn' : ''}" data-bulk-lock="${escapeHtml(driver.id)}">
@@ -435,17 +450,39 @@
   }
 
   function nextAssignment(driver, picks) {
-    const current = catalog().getDriverAssignment(driver);
-    const pick = (value, fallback) => {
-      if (value === CLEAR) return '';
-      if (value) return value;
-      return fallback;
+    const current = {
+      baemin: rawMissionId(driver, 'baemin'),
+      coupang: rawMissionId(driver, 'coupang'),
+      combined: rawMissionId(driver, 'combined')
     };
-    return catalog().normalizeAssignmentDraft({
-      baemin: pick(picks.baemin, current.baemin),
-      coupang: pick(picks.coupang, current.coupang),
-      combined: pick(picks.combined, current.combined)
-    });
+    const pickedBaemin = Boolean(picks.baemin) && picks.baemin !== CLEAR;
+    const pickedCoupang = Boolean(picks.coupang) && picks.coupang !== CLEAR;
+    const pickedCombined = Boolean(picks.combined) && picks.combined !== CLEAR;
+    let baemin = picks.baemin === CLEAR ? '' : (picks.baemin || current.baemin);
+    let coupang = picks.coupang === CLEAR ? '' : (picks.coupang || current.coupang);
+    let combined = picks.combined === CLEAR ? '' : (picks.combined || current.combined);
+    // 배민·쿠팡을 바꾸면 옛 합산 ID가 선택을 덮지 않게 합산을 비운다.
+    if (pickedCombined) {
+      baemin = '';
+      coupang = '';
+    } else if (pickedBaemin || pickedCoupang || picks.baemin === CLEAR || picks.coupang === CLEAR) {
+      combined = '';
+    }
+    return catalog().normalizeAssignmentDraft({ baemin, coupang, combined });
+  }
+
+  function syncPreviewDrivers(extraById = new Map()) {
+    const merge = (driver) => {
+      const fresh = BremStorage.drivers.getById(driver.id) || driver;
+      const extra = extraById.get(driver.id);
+      return extra ? { ...fresh, ...extra } : fresh;
+    };
+    state.pool = state.pool.map((driver) => merge(driver));
+    state.preview = state.preview.map((row) => ({
+      ...row,
+      driver: merge(row.driver)
+    }));
+    renderPreview();
   }
 
   async function applyBulk() {
@@ -477,18 +514,16 @@
         id: driver.id,
         changes: catalog().buildAssignmentPatch(nextAssignment(driver, picks))
       }));
+      syncPreviewDrivers(new Map(patches.map((item) => [item.id, item.changes])));
       const result = await BremStorage.drivers.batchPatch(patches);
       if (result?.warning) showToast(result.warning);
       else {
         showToast(`${patches.length}명 미션을 일괄 배정했습니다.`
           + (locked.length ? ` 잠금 ${locked.length}명은 건너뛰었습니다.` : ''));
       }
-      state.preview = state.preview.map((row) => ({
-        ...row,
-        driver: BremStorage.drivers.getById(row.driver.id) || row.driver
-      }));
-      renderPreview();
+      syncPreviewDrivers();
     } catch (error) {
+      syncPreviewDrivers();
       showToast(error.message || '일괄 배정에 실패했습니다.');
     } finally {
       state.busy = false;
