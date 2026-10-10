@@ -775,14 +775,65 @@ const BremPromotionAdmin = (function () {
     refresh();
   }
 
+  function assignedPromotionStats() {
+    const driverCounts = new Map();
+    const regionIds = new Set();
+    const addCount = (map, id) => {
+      const key = String(id || '').trim();
+      if (!key) return;
+      map.set(key, (map.get(key) || 0) + 1);
+    };
+    const addId = (set, id) => {
+      const key = String(id || '').trim();
+      if (key) set.add(key);
+    };
+    const drivers = (typeof BremStorage.drivers.getAllKnownById === 'function'
+      ? BremStorage.drivers.getAllKnownById()
+      : BremStorage.drivers.getAll?.()) || [];
+    drivers.forEach(driver => {
+      const assigned = window.BremMissionPromotionCatalog?.getDriverAssignment?.(driver, { strict: false });
+      if (assigned) {
+        addCount(driverCounts, assigned.baemin);
+        addCount(driverCounts, assigned.coupang);
+        addCount(driverCounts, assigned.combined);
+        return;
+      }
+      addCount(driverCounts, driver.selectedMissionIdBaemin || driver.promotionRuleIdBaemin);
+      addCount(driverCounts, driver.selectedMissionIdCoupang || driver.promotionRuleIdCoupang);
+      addCount(driverCounts, driver.selectedMissionIdCombined || driver.promotionRuleIdCombined);
+    });
+    const defaults = BremStorage.missionDefaults?.getMeta?.()?.byRegion || {};
+    Object.values(defaults).forEach(item => {
+      addId(regionIds, item?.baemin);
+      addId(regionIds, item?.coupang);
+      addId(regionIds, item?.combined);
+    });
+    return { driverCounts, regionIds };
+  }
+
+  function isPromotionAssigned(ruleId, stats) {
+    const id = String(ruleId || '').trim();
+    return Boolean((stats.driverCounts.get(id) || 0) > 0 || stats.regionIds.has(id));
+  }
+
+  function assignedPromotionTag(ruleId, stats) {
+    const id = String(ruleId || '').trim();
+    const count = stats.driverCounts.get(id) || 0;
+    if (!count && !stats.regionIds.has(id)) return '';
+    const text = count > 0 ? `배정됨 ${formatNumber(count)}명` : '배정됨';
+    return ` <span class="promotion-assigned-tag">${text}</span>`;
+  }
+
   function renderRulesList() {
     const listEl = $('#promotionRulesList');
     if (!listEl) return;
 
     const tabPlatform = getActiveRulesPlatformTab();
+    const assigned = assignedPromotionStats();
     const rules = getPromotionRulesForPlatform(tabPlatform, { includeDisabled: true })
       .slice()
       .sort((a, b) => Number(Boolean(b.locked)) - Number(Boolean(a.locked))
+        || Number(isPromotionAssigned(b.id, assigned)) - Number(isPromotionAssigned(a.id, assigned))
         || String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
     if (!rules.length) {
       const emptyLabel = tabPlatform === 'combined' ? '합산' : platformLabel(tabPlatform);
@@ -792,12 +843,13 @@ const BremPromotionAdmin = (function () {
 
     const unlockedCount = rules.filter(rule => !rule.locked).length;
     const lockedCount = rules.length - unlockedCount;
+    const assignedCount = rules.filter(rule => isPromotionAssigned(rule.id, assigned)).length;
     const emptyLabel = tabPlatform === 'combined' ? '합산' : platformLabel(tabPlatform);
 
     listEl.innerHTML = `
       <div class="promotion-rules-toolbar">
         <button type="button" class="small-btn danger-btn" id="promotionRulesDeleteUnlockedBtn">잠금 제외 삭제</button>
-        <p>${emptyLabel} ${formatNumber(rules.length)}개 · 잠금 ${formatNumber(lockedCount)}개 · 잠금 제외 ${formatNumber(unlockedCount)}개. 쓰는 조건은 잠그고, 나머지는 한 번에 지우세요.</p>
+        <p>${emptyLabel} ${formatNumber(rules.length)}개 · 배정됨 ${formatNumber(assignedCount)}개 · 잠금 ${formatNumber(lockedCount)}개 · 잠금 제외 ${formatNumber(unlockedCount)}개. 쓰는 조건은 잠그고, 나머지는 한 번에 지우세요.</p>
       </div>
       <div class="table-wrap">
         <table class="promotion-rules-table">
@@ -826,7 +878,7 @@ const BremPromotionAdmin = (function () {
               const canSla = tabPlatform === 'baemin' || tabPlatform === 'combined';
               return `
                 <tr class="${active}${locked ? ' is-promotion-locked' : ''}">
-                  <td><strong>${escapeHtml(rule.name)}</strong>${locked ? ' <span class="mission-lock-tag">잠금</span>' : ''}${rule.slaApply ? ' <span class="promotion-sla-tag">SLA시간</span>' : ''}</td>
+                  <td><strong>${escapeHtml(rule.name)}</strong>${assignedPromotionTag(rule.id, assigned)}${locked ? ' <span class="mission-lock-tag">잠금</span>' : ''}${rule.slaApply ? ' <span class="promotion-sla-tag">SLA시간</span>' : ''}</td>
                   <td>${escapeHtml(promotionTypeLabel(rule.type))}</td>
                   <td>${escapeHtml(platformLabel(rule.platform))}</td>
                   <td>${escapeHtml(condText)}</td>
@@ -1037,12 +1089,21 @@ const BremPromotionAdmin = (function () {
     renderPreview();
   }
 
+  async function ensureAssignmentData() {
+    try {
+      await BremStorage.ensureSectionLoaded?.('promotions', { force: false, forceDrivers: false });
+    } catch (error) {
+      console.warn('[BREM] promotion assigned tags:', error?.message || error);
+    }
+  }
+
   function refresh() {
     renderGlobalSettingsForm();
     renderRulesList();
     if (typeof BremPromotionApplyAdmin !== 'undefined') {
       BremPromotionApplyAdmin.refresh();
     }
+    void ensureAssignmentData().then(() => renderRulesList());
   }
 
   function bindEvents() {

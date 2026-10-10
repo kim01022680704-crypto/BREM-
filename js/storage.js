@@ -1575,7 +1575,7 @@ const BremStorage = (function () {
     'mission-management': [KEYS.promotionRules, KEYS.drivers],
     'mission-assignment': [KEYS.promotionRules, KEYS.drivers, KEYS.missionDefaults],
     'rider-inquiries': [KEYS.riderInquiries],
-    promotions: [KEYS.promotionRules],
+    promotions: [KEYS.promotionRules, KEYS.drivers, KEYS.missionDefaults],
     'promotion-apply': [KEYS.promotionRules, KEYS.drivers, KEYS.weeklySettlements, KEYS.weeklySettlementsDirect, KEYS.promotionApplyResults, KEYS.settlements, KEYS.rejections],
     calls: [KEYS.drivers, KEYS.calls, KEYS.callEditLogs],
     rejections: [KEYS.drivers, KEYS.rejections],

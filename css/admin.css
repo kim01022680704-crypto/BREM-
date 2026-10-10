@@ -6769,19 +6769,30 @@ textarea {
   background: var(--yellow);
 }
 
-.promotion-sla-tag {
+.promotion-sla-tag,
+.promotion-assigned-tag {
   display: inline-flex;
   align-items: center;
   padding: 3px 9px;
   border-radius: 999px;
-  border: 1px solid rgba(56, 189, 248, 0.55);
-  background: rgba(14, 165, 233, 0.18);
-  color: #7dd3fc;
   font-size: 0.74rem;
   font-weight: 800;
   letter-spacing: -0.02em;
   white-space: nowrap;
   vertical-align: middle;
+}
+
+.promotion-sla-tag {
+  border: 1px solid rgba(56, 189, 248, 0.55);
+  background: rgba(14, 165, 233, 0.18);
+  color: #7dd3fc;
+}
+
+.promotion-assigned-tag {
+  margin-left: 6px;
+  border: 1px solid rgba(74, 222, 128, 0.55);
+  background: rgba(34, 197, 94, 0.18);
+  color: #86efac;
 }
 
 .promotion-global-settings-form,
