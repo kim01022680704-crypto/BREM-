@@ -14470,6 +14470,63 @@ tr.is-week-first td {
   white-space: nowrap;
 }
 
+#driver-management [data-driver-mgmt-tab] {
+  white-space: nowrap;
+}
+
+.driver-unassigned-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: flex-end;
+  margin: 8px 0 12px;
+}
+
+.driver-unassigned-toolbar .field {
+  min-width: 160px;
+}
+
+.driver-unassigned-search {
+  flex: 1;
+  min-width: 220px;
+}
+
+.driver-unassigned-table {
+  min-width: 960px;
+}
+
+.driver-unassigned-table th,
+.driver-unassigned-table td {
+  vertical-align: middle;
+  word-break: keep-all;
+}
+
+.driver-unassigned-empty {
+  color: #fbbf24;
+  font-weight: 800;
+}
+
+.driver-unassigned-stale {
+  color: #fb7185;
+  font-weight: 700;
+}
+
+.driver-unassigned-na {
+  color: #71717a;
+}
+
+.driver-unassigned-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.driver-unassigned-assign {
+  min-width: 140px;
+  max-width: 200px;
+}
+
 /* 기사 추가 — 별도 검색칸 없이 선택칸에 바로 입력해 찾는다. */
 .driver-region-combo {
   position: relative;

@@ -1,4 +1,4 @@
-// 기사관리 — 조직도 / 기사지역관리 / 지역 일괄등록
+// 기사관리 — 조직도 / 기사지역관리 / 지역별 미배정기사 / 지역 일괄등록
 const BremDriverManagementAdmin = (function () {
   const $ = selector => document.querySelector(selector);
   const $$ = selector => [...document.querySelectorAll(selector)];
@@ -40,6 +40,10 @@ const BremDriverManagementAdmin = (function () {
     regionDetailDriverCount: -1,
     regionListFilter: '',
     regionListFilterTimer: null,
+    unassignedFilter: 'any',
+    unassignedStatus: 'working',
+    unassignedSearch: '',
+    unassignedSearchTimer: null,
     orgListModalNodeId: '',
     orgListModalRows: []
   };
@@ -202,6 +206,7 @@ const BremDriverManagementAdmin = (function () {
     renderWeekControls();
     if (state.tab === 'org') void refreshOrgMemberPanel({ force: false });
     else if (state.tab === 'org-list') void refreshOrgList({ force: false });
+    else if (state.tab === 'unassigned') renderUnassignedList();
     else {
       void ensureDriverMgmtStatsLoaded({ force: false });
       renderRegionDetail();
@@ -315,7 +320,7 @@ const BremDriverManagementAdmin = (function () {
 
   function setTab(tab, options = {}) {
     const next = String(tab || 'org');
-    state.tab = next === 'region' || next === 'org-list' ? next : 'org';
+    state.tab = next === 'region' || next === 'org-list' || next === 'unassigned' ? next : 'org';
     $$('[data-driver-mgmt-tab]').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.driverMgmtTab === state.tab);
     });
@@ -335,6 +340,11 @@ const BremDriverManagementAdmin = (function () {
     if (state.tab === 'org-list') {
       stopRegionRankingPoll();
       void refreshOrgList({ force: false });
+      return;
+    }
+    if (state.tab === 'unassigned') {
+      stopRegionRankingPoll();
+      void refreshUnassigned();
       return;
     }
     // refresh() 경로에서는 skipRegionLoad 로 이중 refreshRegions 를 막는다.
@@ -2155,6 +2165,44 @@ const BremDriverManagementAdmin = (function () {
       : String(driver?.regionBaemin || '').trim();
   }
 
+  function usesPlatform(driver, platform) {
+    if (platform === 'baemin') return Boolean(driver?.platformBaemin);
+    return driver?.platformCoupang !== false;
+  }
+
+  function regionMatchesDriverValue(region, value, platform) {
+    const raw = String(value || '').trim();
+    if (!region || !raw) return false;
+    if (platform === 'baemin') {
+      return raw === region.label
+        || raw === region.partnerId
+        || raw === region.key
+        || (region.partnerId && region.partnerId.length >= 6 && raw.includes(region.partnerId));
+    }
+    return raw === region.vendorId
+      || raw === region.key
+      || raw === region.vendorName
+      || shortCoupangRegion(raw) === region.label
+      || shortCoupangRegion(raw) === shortCoupangRegion(region.vendorName);
+  }
+
+  function findCatalogRegion(value, platform) {
+    const catalog = platform === 'coupang' ? state.coupangRegions : state.baeminRegions;
+    return catalog.find(region => regionMatchesDriverValue(region, value, platform)) || null;
+  }
+
+  function hasValidRegion(driver, platform) {
+    const value = driverRegionValue(driver, platform);
+    if (!value) return false;
+    const catalog = platform === 'coupang' ? state.coupangRegions : state.baeminRegions;
+    if (!catalog.length) return true;
+    return Boolean(findCatalogRegion(value, platform));
+  }
+
+  function isRegionUnassigned(driver, platform) {
+    return usesPlatform(driver, platform) && !hasValidRegion(driver, platform);
+  }
+
   function driversInRegion(region) {
     if (!region) return [];
     const platform = state.regionPlatform;
@@ -2170,18 +2218,7 @@ const BremDriverManagementAdmin = (function () {
 
     const matched = list.filter(driver => {
       const value = driverRegionValue(driver, platform);
-      if (!value) return false;
-      if (platform === 'baemin') {
-        return value === region.label
-          || value === region.partnerId
-          || value === region.key
-          || (region.partnerId && region.partnerId.length >= 6 && value.includes(region.partnerId));
-      }
-      return value === region.vendorId
-        || value === region.key
-        || value === region.vendorName
-        || shortCoupangRegion(value) === region.label
-        || shortCoupangRegion(value) === shortCoupangRegion(region.vendorName);
+      return regionMatchesDriverValue(region, value, platform);
     });
     state.regionMemberCache.byKey.set(region.key, matched);
     return matched;
@@ -2916,10 +2953,173 @@ const BremDriverManagementAdmin = (function () {
     });
   }
 
-  async function assignDriverToRegion(driverId, region = selectedRegion()) {
+  function isWorkingDriver(driver) {
+    const status = String(driver?.status || '').trim();
+    return !status || status === '근무중';
+  }
+
+  function formatUnassignedPhone(driver) {
+    const raw = driver?.phone || '';
+    return window.BremDriverUtils?.formatPhoneDisplay?.(raw) || String(raw || '').trim() || '-';
+  }
+
+  function unassignedRegionLabel(driver, platform) {
+    if (!usesPlatform(driver, platform)) {
+      return '<span class="driver-unassigned-na">해당없음</span>';
+    }
+    const value = driverRegionValue(driver, platform);
+    const matched = findCatalogRegion(value, platform);
+    if (matched) return escapeHtml(matched.label);
+    if (value) {
+      return `<span class="driver-unassigned-stale" title="등록 지역 목록에 없음">${escapeHtml(value)} · 목록없음</span>`;
+    }
+    return '<span class="driver-unassigned-empty">미배정</span>';
+  }
+
+  function unassignedAssignSelectHtml(driver, platform) {
+    if (!isRegionUnassigned(driver, platform)) return '';
+    const catalog = platform === 'coupang' ? state.coupangRegions : state.baeminRegions;
+    const label = platform === 'coupang' ? '쿠팡 지역' : '배민 지역';
+    const options = catalog.map(region => (
+      `<option value="${escapeHtml(region.key)}">${escapeHtml(region.label)}</option>`
+    )).join('');
+    return `<select class="driver-unassigned-assign" data-unassigned-assign="${escapeHtml(driver.id)}" data-unassigned-platform="${platform}" aria-label="${label} 배정">
+      <option value="">${label} 선택</option>
+      ${options || '<option value="" disabled>지역 목록 없음</option>'}
+    </select>`;
+  }
+
+  function collectUnassignedDrivers() {
+    const list = (typeof window.BremStorage?.drivers?.getAllKnownById === 'function'
+      ? window.BremStorage.drivers.getAllKnownById()
+      : window.BremStorage?.drivers?.getAll?.()) || [];
+    const missingBaemin = [];
+    const missingCoupang = [];
+    const missingAny = [];
+    const missingBoth = [];
+    list.forEach(driver => {
+      if (state.unassignedStatus === 'working' && !isWorkingDriver(driver)) return;
+      const baemin = isRegionUnassigned(driver, 'baemin');
+      const coupang = isRegionUnassigned(driver, 'coupang');
+      if (baemin) missingBaemin.push(driver);
+      if (coupang) missingCoupang.push(driver);
+      if (baemin || coupang) missingAny.push(driver);
+      if (baemin && coupang) missingBoth.push(driver);
+    });
+    const filter = state.unassignedFilter || 'any';
+    let rows = missingAny;
+    if (filter === 'baemin') rows = missingBaemin;
+    else if (filter === 'coupang') rows = missingCoupang;
+    else if (filter === 'both') rows = missingBoth;
+    const query = String(state.unassignedSearch || '').trim().toLowerCase();
+    if (query) {
+      rows = rows.filter(driver => {
+        const blob = [
+          driver.name,
+          makeDriverLoginId(driver),
+          driver.phone,
+          driver.baeminId,
+          driver.coupangId,
+          driver.regionBaemin,
+          driver.regionCoupang
+        ].join(' ').toLowerCase();
+        return blob.includes(query);
+      });
+    }
+    rows.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'ko'));
+    return {
+      rows,
+      missingBaemin: missingBaemin.length,
+      missingCoupang: missingCoupang.length,
+      missingAny: missingAny.length,
+      missingBoth: missingBoth.length
+    };
+  }
+
+  function updateUnassignedTabLabel(count) {
+    const btn = document.querySelector('[data-driver-mgmt-tab="unassigned"]');
+    if (!btn) return;
+    btn.textContent = Number.isFinite(count)
+      ? `지역별 미배정기사 (${count})`
+      : '지역별 미배정기사';
+  }
+
+  function renderUnassignedList() {
+    const body = $('#driverUnassignedRows');
+    const summary = $('#driverUnassignedSummary');
+    const stats = collectUnassignedDrivers();
+    updateUnassignedTabLabel(stats.missingAny);
+    const loadNote = driversLoadComplete() ? '' : ' · 기사 목록 동기화 중…';
+    if (summary) {
+      summary.innerHTML = [
+        `배민 미배정 <strong>${stats.missingBaemin}</strong>명`,
+        `쿠팡 미배정 <strong>${stats.missingCoupang}</strong>명`,
+        `양쪽 <strong>${stats.missingBoth}</strong>명`,
+        `표시 <strong>${stats.rows.length}</strong>명`
+      ].join(' · ') + loadNote;
+    }
+    if (!body) return;
+    if (!stats.rows.length) {
+      body.innerHTML = `<tr><td colspan="7" class="empty">${
+        driversLoadComplete()
+          ? '조건에 맞는 미배정 기사가 없습니다.'
+          : '기사 목록을 불러오는 중…'
+      }</td></tr>`;
+      return;
+    }
+    body.innerHTML = stats.rows.map(driver => {
+      const assign = [
+        unassignedAssignSelectHtml(driver, 'baemin'),
+        unassignedAssignSelectHtml(driver, 'coupang')
+      ].filter(Boolean).join('');
+      const status = String(driver.status || '근무중').trim() || '근무중';
+      return `<tr data-unassigned-driver="${escapeHtml(driver.id)}">
+        <td>${regionAssignedNameHtml(driver)}</td>
+        <td>${window.BremDriverUtils?.renderPlatformBadges?.(driver) || '-'}</td>
+        <td>${unassignedRegionLabel(driver, 'baemin')}</td>
+        <td>${unassignedRegionLabel(driver, 'coupang')}</td>
+        <td>${escapeHtml(formatUnassignedPhone(driver))}</td>
+        <td>${escapeHtml(status)}</td>
+        <td class="driver-unassigned-actions">${assign || '<span class="driver-unassigned-na">-</span>'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function refreshUnassigned(options = {}) {
+    const force = options.force === true;
+    const summary = $('#driverUnassignedSummary');
+    if (summary && (force || (!state.baeminRegions.length && !state.coupangRegions.length))) {
+      summary.textContent = '지역 목록을 불러오는 중…';
+    }
+    await Promise.all([
+      !force && state.baeminRegions.length ? Promise.resolve() : fetchBaeminRegions(),
+      !force && state.coupangRegions.length ? Promise.resolve() : fetchCoupangRegions()
+    ]);
+    try {
+      await window.BremStorage?.ensureSectionLoaded?.('driver-management');
+    } catch (error) {
+      console.warn('[driver-mgmt] unassigned drivers load failed:', error);
+    }
+    renderUnassignedList();
+  }
+
+  async function assignUnassignedDriver(driverId, platform, regionKey) {
+    const region = (platform === 'coupang' ? state.coupangRegions : state.baeminRegions)
+      .find(item => item.key === regionKey);
+    if (!driverId || !region) {
+      showToast('지역을 다시 선택하세요.');
+      return;
+    }
+    await assignDriverToRegion(driverId, region, platform);
+    renderUnassignedList();
+    showToast(`${region.label}에 배정했습니다.`);
+  }
+
+  async function assignDriverToRegion(driverId, region = selectedRegion(), platform = '') {
     if (!driverId || !region) return;
     // 기사등록프로그램과 동일 필드(regionBaemin/regionCoupang)에 저장한다.
-    const patch = state.regionPlatform === 'coupang'
+    const side = platform || region.platform || state.regionPlatform;
+    const patch = side === 'coupang'
       ? { regionCoupang: region.label, platformCoupang: true }
       : { regionBaemin: region.label, platformBaemin: true };
     await window.BremStorage.drivers.update(driverId, patch);
@@ -4028,6 +4228,10 @@ const BremDriverManagementAdmin = (function () {
         void refreshOrgList({ force: false });
         return;
       }
+      if (state.tab === 'unassigned') {
+        renderUnassignedList();
+        return;
+      }
       if (state.tab !== 'region') return;
       updateRegionCatalogCounts();
       const region = selectedRegion();
@@ -4441,6 +4645,40 @@ const BremDriverManagementAdmin = (function () {
     });
     bindOrgChartExcelDrop();
 
+    $('#driverUnassignedReloadBtn')?.addEventListener('click', () => {
+      void refreshUnassigned({ force: true }).then(() => showToast('미배정 기사를 새로고침했습니다.'));
+    });
+    $('#driverUnassignedFilter')?.addEventListener('change', event => {
+      state.unassignedFilter = event.target.value || 'any';
+      renderUnassignedList();
+    });
+    $('#driverUnassignedStatusFilter')?.addEventListener('change', event => {
+      state.unassignedStatus = event.target.value === 'all' ? 'all' : 'working';
+      renderUnassignedList();
+    });
+    $('#driverUnassignedSearch')?.addEventListener('input', event => {
+      const value = String(event.target.value || '');
+      if (state.unassignedSearchTimer) clearTimeout(state.unassignedSearchTimer);
+      state.unassignedSearchTimer = setTimeout(() => {
+        state.unassignedSearch = value;
+        renderUnassignedList();
+      }, 160);
+    });
+    $('#driverUnassignedRows')?.addEventListener('change', event => {
+      const select = event.target.closest('[data-unassigned-assign]');
+      if (!select) return;
+      const driverId = select.dataset.unassignedAssign;
+      const platform = select.dataset.unassignedPlatform === 'coupang' ? 'coupang' : 'baemin';
+      const regionKey = String(select.value || '').trim();
+      if (!driverId || !regionKey) return;
+      select.disabled = true;
+      void assignUnassignedDriver(driverId, platform, regionKey)
+        .catch(error => {
+          select.disabled = false;
+          select.value = '';
+          showToast(error.message || '지역 배정 실패');
+        });
+    });
     $('#driverRegionReloadBtn')?.addEventListener('click', () => { void refreshRegions(); });
     $('#driverRegionClusterAssignBtn')?.addEventListener('click', () => { void openClusterAssignModal(); });
     $('#driverRegionClusterAssignApplyBtn')?.addEventListener('click', () => { void applyClusterAssignSelection(); });

@@ -8,6 +8,7 @@
     assignmentSearch: '',
     assignmentPlatform: 'all',
     assignmentMissionFilter: 'all',
+    assignmentStatusFilter: 'all',
     assignmentLockFilter: 'all',
     drafts: new Map(),
     dirty: new Set(),
@@ -103,6 +104,21 @@
 
   function getSavedAssignment(driver) {
     return catalog().getDriverAssignment(resolveDriver(driver));
+  }
+
+  function hasValidMissionId(id) {
+    const key = String(id || '').trim();
+    if (!key) return false;
+    return Boolean(String(catalog().getById(key)?.title || '').trim());
+  }
+
+  function hasAnyValidAssignment(driver) {
+    const assignment = getSavedAssignment(driver);
+    const draft = getDriverDraft(driver);
+    const baemin = draft.baemin || assignment.baemin;
+    const coupang = draft.coupang || assignment.coupang;
+    const combined = draft.combined || assignment.combined;
+    return hasValidMissionId(baemin) || hasValidMissionId(coupang) || hasValidMissionId(combined);
   }
 
   function getDriverDraft(driver) {
@@ -269,12 +285,13 @@
 
     const assignment = getSavedAssignment(driver);
     const draft = getDriverDraft(driver);
+    const statusFilter = state.assignmentStatusFilter || 'all';
+    if (statusFilter === 'unset' && hasAnyValidAssignment(driver)) return false;
+    if (statusFilter === 'assigned' && !hasAnyValidAssignment(driver)) return false;
+
     const missionFilter = state.assignmentMissionFilter || 'all';
     if (missionFilter === 'unset') {
-      const hasBaemin = driver.platformBaemin && (draft.baemin || assignment.baemin);
-      const hasCoupang = driver.platformCoupang !== false && (draft.coupang || assignment.coupang);
-      const hasCombined = (draft.combined || assignment.combined);
-      if (hasBaemin || hasCoupang || hasCombined) return false;
+      if (hasAnyValidAssignment(driver)) return false;
     } else if (missionFilter !== 'all') {
       const matchBaemin = draft.baemin === missionFilter || assignment.baemin === missionFilter;
       const matchCoupang = draft.coupang === missionFilter || assignment.coupang === missionFilter;
@@ -304,6 +321,7 @@
       clearBtn.hidden = !state.assignmentSearch
         && state.assignmentPlatform === 'all'
         && state.assignmentMissionFilter === 'all'
+        && state.assignmentStatusFilter === 'all'
         && state.assignmentLockFilter === 'all';
     }
     if (resultEl) {
@@ -655,6 +673,11 @@
       applyAssignmentRowVisibility();
     });
 
+    $('missionAssignmentStatusFilter')?.addEventListener('change', event => {
+      state.assignmentStatusFilter = event.target.value || 'all';
+      applyAssignmentRowVisibility();
+    });
+
     $('missionAssignmentLockFilter')?.addEventListener('change', event => {
       state.assignmentLockFilter = event.target.value || 'all';
       applyAssignmentRowVisibility();
@@ -664,14 +687,17 @@
       state.assignmentSearch = '';
       state.assignmentPlatform = 'all';
       state.assignmentMissionFilter = 'all';
+      state.assignmentStatusFilter = 'all';
       state.assignmentLockFilter = 'all';
       const searchInput = $('missionAssignmentSearch');
       const platformSelect = $('missionAssignmentPlatformFilter');
       const missionSelect = $('missionAssignmentMissionFilter');
+      const statusSelect = $('missionAssignmentStatusFilter');
       const lockSelect = $('missionAssignmentLockFilter');
       if (searchInput) searchInput.value = '';
       if (platformSelect) platformSelect.value = 'all';
       if (missionSelect) missionSelect.value = 'all';
+      if (statusSelect) statusSelect.value = 'all';
       if (lockSelect) lockSelect.value = 'all';
       applyAssignmentRowVisibility();
     });
