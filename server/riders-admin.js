@@ -1240,81 +1240,176 @@ function mergeMissionFieldsIntoRaw(raw, fields = {}, normalized = {}) {
   return next;
 }
 
-async function patchRiderMissionFields(supabase, riderId, fields = {}) {
-  const normalized = normalizeMissionPatchFields(fields);
-  const updatePayload = {
-    ...normalized,
-    updated_at: new Date().toISOString()
-  };
-  if (Object.keys(updatePayload).length <= 1) {
-    return { ok: false, status: 400, error: '저장할 미션 정보가 없습니다.' };
-  }
+const MISSION_OPTIONAL_COLUMNS = [
+  'selected_mission_id',
+  'selected_mission_id_baemin',
+  'selected_mission_id_coupang',
+  'selected_mission_id_combined',
+  'promotion_rule_id_baemin',
+  'promotion_rule_id_coupang',
+  'promotion_rule_id_combined',
+  'promotion_selector_baemin',
+  'promotion_selector_coupang',
+  'promotion_selector_combined'
+];
 
-  let { data, error } = await supabase
-    .from('riders')
-    .update(updatePayload)
-    .eq('id', riderId)
-    .select(RIDER_PATCH_RETURN_SELECT)
-    .maybeSingle();
+function hasMissionPatchFields(normalized = {}) {
+  return Boolean(
+    normalized.selected_mission_id !== undefined
+    || normalized.selected_mission_id_baemin !== undefined
+    || normalized.selected_mission_id_coupang !== undefined
+    || normalized.selected_mission_id_combined !== undefined
+    || normalized.promotion_rule_id_baemin !== undefined
+    || normalized.promotion_rule_id_coupang !== undefined
+    || normalized.promotion_selector_baemin !== undefined
+    || normalized.promotion_selector_coupang !== undefined
+  );
+}
 
-  if (error && isMissingColumnError(error)) {
-    const missingColumn = parseMissingRiderColumn(error);
-    const retryPayload = { ...updatePayload };
-    let usedRawFallback = false;
+function asRawObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+}
 
-    if (missingColumn === 'selected_mission_id_combined') {
-      delete retryPayload.selected_mission_id_combined;
-      const raw = await readRiderRawData(supabase, riderId);
-      retryPayload.raw_data = mergeMissionFieldsIntoRaw(raw, fields, normalized);
-      usedRawFallback = true;
-    } else {
-      stripOptionalRiderColumns(retryPayload);
-      if (normalized.selected_mission_id_combined !== undefined) {
-        const raw = await readRiderRawData(supabase, riderId);
-        retryPayload.raw_data = mergeMissionFieldsIntoRaw(raw, fields, normalized);
-        usedRawFallback = true;
-      }
-    }
-
-    ({ data, error } = await supabase
+async function fetchRiderRawDataByIds(supabase, ids) {
+  const rawById = new Map();
+  const unique = [...new Set((ids || []).map((id) => String(id || '').trim()).filter(Boolean))];
+  const chunkSize = 80;
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize);
+    const { data, error } = await supabase
       .from('riders')
-      .update(retryPayload)
-      .eq('id', riderId)
-      .select(RIDER_PATCH_RETURN_SELECT)
-      .maybeSingle());
+      .select('id, raw_data')
+      .in('id', chunk);
+    if (error) {
+      return { ok: false, error: error.message || '기사 정보를 불러오지 못했습니다.' };
+    }
+    (data || []).forEach((row) => {
+      if (row?.id) rawById.set(String(row.id), asRawObject(row.raw_data));
+    });
+  }
+  return { ok: true, rawById };
+}
 
+async function updateRiderMissionRow(supabase, riderId, payload) {
+  let next = { ...payload };
+  let lastError = null;
+  let usedCombinedRawFallback = false;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { error } = await supabase
+      .from('riders')
+      .update(next)
+      .eq('id', riderId);
     if (!error) {
       return {
         ok: true,
-        rider: data,
-        warning: usedRawFallback
+        warning: usedCombinedRawFallback
           ? '합산 미션 컬럼이 DB에 없어 raw_data에 임시 저장했습니다. Supabase SQL Editor에서 supabase/riders_mission_combined_migration.sql 을 실행하세요.'
           : undefined
       };
     }
-  }
-
-  if (error) {
-    if (isMissingColumnError(error)) {
-      return {
-        ok: false,
-        status: 400,
-        error: '미션 컬럼이 없습니다. Supabase SQL Editor에서 supabase/riders_schema_sync_migration.sql 과 supabase/riders_mission_combined_migration.sql 을 실행하세요.'
-      };
+    lastError = error;
+    if (!isMissingColumnError(error)) {
+      return { ok: false, error: error.message || '미션 저장에 실패했습니다.' };
     }
-    return { ok: false, status: 400, error: error.message || '미션 저장에 실패했습니다.' };
+    const missing = parseMissingRiderColumn(error);
+    if (missing === 'selected_mission_id_combined') usedCombinedRawFallback = true;
+    if (missing && Object.prototype.hasOwnProperty.call(next, missing)) {
+      delete next[missing];
+      continue;
+    }
+    let stripped = false;
+    for (const col of MISSION_OPTIONAL_COLUMNS) {
+      if (Object.prototype.hasOwnProperty.call(next, col)) {
+        delete next[col];
+        stripped = true;
+      }
+    }
+    if (!stripped) break;
+  }
+  return {
+    ok: false,
+    error: lastError && isMissingColumnError(lastError)
+      ? '미션 컬럼이 없습니다. Supabase SQL Editor에서 supabase/riders_schema_sync_migration.sql 과 supabase/riders_mission_combined_migration.sql 을 실행하세요.'
+      : (lastError?.message || '미션 저장에 실패했습니다.')
+  };
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  async function pump() {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(items[index], index);
+    }
+  }
+  const pool = Math.min(Math.max(Number(limit) || 1, 1), Math.max(items.length, 1));
+  await Promise.all(Array.from({ length: pool }, () => pump()));
+  return results;
+}
+
+async function applyMissionPatches(supabase, patches, options = {}) {
+  const list = Array.isArray(patches) ? patches : [];
+  const ids = list.map((item) => String(item.id || '').trim());
+  const rawResult = await fetchRiderRawDataByIds(supabase, ids);
+  const rawById = rawResult.ok ? rawResult.rawById : new Map();
+  const includeRaw = rawResult.ok;
+
+  const failed = [];
+  let updated = 0;
+  let warning = '';
+  const concurrency = Math.min(Math.max(Number(options.concurrency) || 8, 1), 20);
+
+  await mapWithConcurrency(list, concurrency, async (patch) => {
+    const riderId = String(patch.id || '').trim();
+    const fields = resolvePatchFields(patch);
+    const normalized = normalizeMissionPatchFields(fields);
+    if (!hasMissionPatchFields(normalized)) {
+      failed.push({ id: riderId, error: '저장할 미션 정보가 없습니다.' });
+      return;
+    }
+    const updatePayload = {
+      ...normalized,
+      updated_at: new Date().toISOString()
+    };
+    if (includeRaw) {
+      updatePayload.raw_data = mergeMissionFieldsIntoRaw(rawById.get(riderId) || {}, fields, normalized);
+    }
+    const result = await updateRiderMissionRow(supabase, riderId, updatePayload);
+    if (!result.ok) {
+      failed.push({ id: riderId, error: result.error || '저장 실패' });
+      return;
+    }
+    updated += 1;
+    if (result.warning && !warning) warning = result.warning;
+  });
+
+  if (failed.length && failed.length === list.length) {
+    return {
+      ok: false,
+      status: 400,
+      error: failed[0].error || '미션 일괄 저장에 실패했습니다.',
+      failed,
+      updated: 0
+    };
   }
 
-  // raw_data 미션 필드도 컬럼과 맞춰 둔다 (목록 동기화 시 쿠팡/배민 배정이 사라지지 않게).
-  try {
-    const raw = await readRiderRawData(supabase, riderId);
-    const rawPatch = mergeMissionFieldsIntoRaw(raw, fields, normalized);
-    await supabase.from('riders').update({ raw_data: rawPatch }).eq('id', riderId);
-  } catch (_) {
-    // raw_data 동기화 실패는 본 저장 성공을 막지 않는다.
-  }
+  return {
+    ok: true,
+    updated,
+    failed,
+    total: list.length,
+    warning: warning || undefined
+  };
+}
 
-  return { ok: true, rider: data };
+async function patchRiderMissionFields(supabase, riderId, fields = {}) {
+  const result = await applyMissionPatches(supabase, [{ id: riderId, ...fields }]);
+  if (!result.ok) {
+    return { ok: false, status: result.status || 400, error: result.error };
+  }
+  return { ok: true, warning: result.warning };
 }
 
 function normalizeLongEventPatchFields(fields = {}) {
@@ -1520,19 +1615,9 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
   if (!caller.ok) return caller;
 
   const list = Array.isArray(patches)
-    ? patches.filter(item => {
+    ? patches.filter((item) => {
       if (!item?.id) return false;
-      const normalized = normalizeMissionPatchFields(resolvePatchFields(item));
-      return Boolean(
-        normalized.selected_mission_id !== undefined
-        || normalized.selected_mission_id_baemin !== undefined
-        || normalized.selected_mission_id_coupang !== undefined
-        || normalized.selected_mission_id_combined !== undefined
-        || normalized.promotion_rule_id_baemin !== undefined
-        || normalized.promotion_rule_id_coupang !== undefined
-        || normalized.promotion_selector_baemin !== undefined
-        || normalized.promotion_selector_coupang !== undefined
-      );
+      return hasMissionPatchFields(normalizeMissionPatchFields(resolvePatchFields(item)));
     })
     : [];
   if (!list.length) {
@@ -1548,39 +1633,7 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
     };
   }
 
-  const supabase = getServiceClient();
-  const failed = [];
-  let updated = 0;
-  let warning = '';
-
-  for (const patch of list) {
-    const riderId = String(patch.id || '').trim();
-    const result = await patchRiderMissionFields(supabase, riderId, resolvePatchFields(patch));
-    if (!result.ok) {
-      failed.push({ id: riderId, error: result.error || '저장 실패' });
-      continue;
-    }
-    if (result.warning && !warning) warning = result.warning;
-    updated += 1;
-  }
-
-  if (failed.length && failed.length === list.length) {
-    return {
-      ok: false,
-      status: 400,
-      error: failed[0].error || '미션 일괄 저장에 실패했습니다.',
-      failed,
-      updated: 0
-    };
-  }
-
-  return {
-    ok: true,
-    updated,
-    failed,
-    total: list.length,
-    warning: warning || undefined
-  };
+  return applyMissionPatches(getServiceClient(), list, options);
 }
 
 async function countRiders(accessToken, options = {}) {
@@ -1768,6 +1821,11 @@ module.exports = {
     expandBulkFillPatches,
     preserveProtectedFieldsOnBulkUpsert,
     mergeIncomingRiderWithExisting,
-    stripOptionalRiderColumns
+    stripOptionalRiderColumns,
+    normalizeMissionPatchFields,
+    mergeMissionFieldsIntoRaw,
+    hasMissionPatchFields,
+    applyMissionPatches,
+    updateRiderMissionRow
   }
 };

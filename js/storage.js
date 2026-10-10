@@ -3192,8 +3192,10 @@ const BremStorage = (function () {
       || patch.selectedMissionIdCombined !== undefined
       || patch.promotionRuleIdBaemin !== undefined
       || patch.promotionRuleIdCoupang !== undefined
+      || patch.promotionRuleIdCombined !== undefined
       || patch.promotionSelectorBaemin !== undefined
       || patch.promotionSelectorCoupang !== undefined
+      || patch.promotionSelectorCombined !== undefined
       ? patch
       : null;
   }
@@ -3206,27 +3208,59 @@ const BremStorage = (function () {
       return { ok: true, updated: 0 };
     }
 
-    const postBulk = () => adminRidersApi('/api/admin/riders/missions/bulk', {
+    const postChunk = (chunk) => adminRidersApi('/api/admin/riders/missions/bulk', {
       method: 'POST',
       body: JSON.stringify({
-        patches: payload,
+        patches: chunk,
         maxBatch: options.maxBatch || 300
       })
     });
 
-    let result = await postBulk();
-    if (!result.ok && result.status === 401) {
-      const client = getSupabaseClient();
-      if (client) {
-        await client.auth.refreshSession();
-        rememberAdminAccessToken('');
+    async function postChunkWithAuthRetry(chunk) {
+      let result = await postChunk(chunk);
+      if (!result.ok && result.status === 401) {
+        const client = getSupabaseClient();
+        if (client) {
+          await client.auth.refreshSession();
+          rememberAdminAccessToken('');
+        }
+        result = await postChunk(chunk);
       }
-      result = await postBulk();
+      return result;
     }
-    if (!result.ok) {
+
+    function mergeBulkResults(left, right) {
+      return {
+        ok: true,
+        updated: (Number(left.updated) || 0) + (Number(right.updated) || 0),
+        failed: [...(left.failed || []), ...(right.failed || [])],
+        total: (Number(left.total) || 0) + (Number(right.total) || 0),
+        warning: left.warning || right.warning
+      };
+    }
+
+    async function postChunkAdaptive(chunk) {
+      const result = await postChunkWithAuthRetry(chunk);
+      if (result.ok) return result;
+      if (result.status === 500 && chunk.length > 1) {
+        const mid = Math.ceil(chunk.length / 2);
+        const left = await postChunkAdaptive(chunk.slice(0, mid));
+        const right = await postChunkAdaptive(chunk.slice(mid));
+        return mergeBulkResults(left, right);
+      }
       throw new Error(result.message || result.error || 'Supabase에 기사 미션을 저장하지 못했습니다.');
     }
-    return result;
+
+    const chunkSize = Math.min(Math.max(Number(options.chunkSize) || 20, 1), 80);
+    let aggregated = { ok: true, updated: 0, failed: [], total: 0, warning: '' };
+    for (let i = 0; i < payload.length; i += chunkSize) {
+      aggregated = mergeBulkResults(aggregated, await postChunkAdaptive(payload.slice(i, i + chunkSize)));
+    }
+    return {
+      ...aggregated,
+      total: payload.length,
+      warning: aggregated.warning || undefined
+    };
   }
 
   function flattenLongEventPatch(item) {

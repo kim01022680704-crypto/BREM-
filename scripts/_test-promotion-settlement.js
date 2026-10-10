@@ -617,6 +617,75 @@ function check(label, actual, expected) {
   check('표 BREM프로모션 150,000', cell(kimAfter, 'promo'), '150,000');
   check('표 프로모션원천세 5,610', cell(kimAfter, 'promotionWithholdingTax'), '5,610');
 
+  console.log('\n[27] 배민 두 권역에 겹친 기사는 콜이 많은 정산서에만 붙인다');
+  DRIVERS.push(
+    { id: 'dDual', name: '박겹침', baeminId: 'BC000099', coupangId: '' },
+    { id: 'dNorth', name: '북전기사', baeminId: 'BC000098', coupangId: '' },
+    { id: 'dSouth', name: '남전기사', baeminId: 'BC000097', coupangId: '' }
+  );
+  SETTLEMENTS.push(
+    {
+      id: 'weekly_direct_baemin_pohang_north_20260930',
+      platform: 'baemin', channel: 'direct', region: '포항북A',
+      fileName: '북.xlsx', startDate: '2026-09-30', endDate: '2026-10-06',
+      riders: [
+        { matchedRiderId: 'dDual', baeminUserId: 'BC000099', weeklyOrderCount: 11, amounts: {} },
+        { matchedRiderId: 'dNorth', baeminUserId: 'BC000098', weeklyOrderCount: 100, amounts: {} }
+      ]
+    },
+    {
+      id: 'weekly_direct_baemin_pohang_south_20260930',
+      platform: 'baemin', channel: 'direct', region: '포항남B',
+      fileName: '남.xlsx', startDate: '2026-09-30', endDate: '2026-10-06',
+      riders: [
+        { matchedRiderId: 'dDual', baeminUserId: 'BC000099', weeklyOrderCount: 60, amounts: {} },
+        { matchedRiderId: 'dSouth', baeminUserId: 'BC000097', weeklyOrderCount: 80, amounts: {} }
+      ]
+    }
+  );
+  ERP_RESULTS.push({
+    id: 'erpPohangCombined',
+    platform: 'combined',
+    startDate: '2026-09-30',
+    region: '포항중앙(Z) / 포항북A + 포항남B',
+    settlementId: 'combined-pohang',
+    settlementLabel: '쿠팡 포항중앙(Z) + 배민 포항북A + 포항남B',
+    savedAt: '2026-10-10T12:00:00',
+    selectedPromotionRuleNames: ['합산'],
+    summary: { riderCount: 3, totalPromotionAmount: 1500000, baeminAttachTotal: 1500000, coupangAttachTotal: 0 },
+    results: [
+      { matchedRiderId: 'dDual', totalPromotionAmount: 500000, assignmentSource: '쿠팡+배민', baeminAttachAmount: 500000, coupangAttachAmount: 0, driverName: '박겹침' },
+      { matchedRiderId: 'dNorth', totalPromotionAmount: 600000, assignmentSource: '배민', baeminAttachAmount: 600000, coupangAttachAmount: 0, driverName: '북전기사' },
+      { matchedRiderId: 'dSouth', totalPromotionAmount: 400000, assignmentSource: '배민', baeminAttachAmount: 400000, coupangAttachAmount: 0, driverName: '남전기사' }
+    ]
+  });
+  window.confirm = () => true;
+  Adj.state.week = '2026-09-30';
+  Adj.state.settlementId = 'weekly_direct_baemin_pohang_north_20260930';
+  Adj.state.erpSelected.clear();
+  Adj.state.erpSelected.add('erpPohangCombined');
+  Adj.renderErpList();
+  const planNorth = Adj.buildErpPlan();
+  check('북A에서 겹친 기사는 남B로 보낸다', planNorth.applicable.has('dDual'), 'false');
+  check('북A에는 북전기사만 적용', planNorth.applicable.has('dNorth'), 'true');
+  check('남전기사는 북A에 없음', planNorth.notInSettlement.some(item => item.driverId === 'dSouth'), 'true');
+  check('미리보기에 이중등록 방지 안내', /다른 정산서에 붙일/.test(window.document.getElementById('directErpPreview').textContent), 'true');
+  await Adj.commitErp(planNorth.settlement, planNorth, []);
+  check('북A 박겹침 미등록', adjustments.promotion['weekly_direct_baemin_pohang_north_20260930']?.dDual, undefined);
+  check('북A 북전기사 600000', adjustments.promotion['weekly_direct_baemin_pohang_north_20260930']?.dNorth?.amount, 600000);
+
+  Adj.state.settlementId = 'weekly_direct_baemin_pohang_south_20260930';
+  Adj.renderErpList();
+  const planSouth = Adj.buildErpPlan();
+  check('남B에서 박겹침 적용', planSouth.applicable.has('dDual'), 'true');
+  check('남B에서 북전기사는 제외', planSouth.applicable.has('dNorth'), 'false');
+  await Adj.commitErp(planSouth.settlement, planSouth, []);
+  check('남B 박겹침 500000 한 번만', adjustments.promotion['weekly_direct_baemin_pohang_south_20260930']?.dDual?.amount, 500000);
+  check('남B 남전기사 400000', adjustments.promotion['weekly_direct_baemin_pohang_south_20260930']?.dSouth?.amount, 400000);
+  const pohangSum = ['weekly_direct_baemin_pohang_north_20260930', 'weekly_direct_baemin_pohang_south_20260930']
+    .reduce((sum, id) => sum + Object.values(adjustments.promotion[id] || {}).reduce((acc, row) => acc + Number(row.amount || 0), 0), 0);
+  check('두 정산서 합 = ERP 1,500,000', pohangSum, 1500000);
+
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);
 })().catch(e => { console.error('\n예외:', e.stack || e.message); process.exit(2); });
