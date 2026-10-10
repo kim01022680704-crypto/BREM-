@@ -13999,6 +13999,20 @@ button.driver-org-node small,
   font-weight: 700;
   font-size: 13px;
   white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.driver-region-item-default {
+  font-size: 10px;
+  font-weight: 800;
+  color: #71717a;
+}
+
+.driver-region-item-default.is-full {
+  color: #fbbf24;
 }
 
 .driver-region-expose {
@@ -14436,6 +14450,27 @@ tr.is-week-first td {
 .driver-region-list-filter .field {
   flex: 1;
   min-width: 220px;
+}
+
+.driver-region-default-mode {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.driver-region-default-mode__label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #a1a1aa;
+  white-space: nowrap;
+}
+
+.driver-region-default-mode .small-btn.is-on {
+  background: var(--yellow);
+  color: #111 !important;
+  border: 0;
+  font-weight: 900;
 }
 
 .driver-region-bulk-mode {

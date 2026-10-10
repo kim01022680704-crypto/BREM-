@@ -136,11 +136,14 @@ check('클라이언트 normalize 에 rank 분기 있음',
   /mode === 'rank' \|\| mode === 'rank_only'/.test(src), 'true');
 check('클라이언트 getDriverRegionMode 가 상수를 반환',
   /return DEFAULT_DRIVER_REGION_MODE;/.test(src), 'true');
+check('클라이언트 지역 기본 헬퍼', /function getRegionDefaultRiderMode\(/.test(src), 'true');
+check('클라이언트 이 지역 기본 저장', src.includes('setRegionDefaultRiderMode'), 'true');
 
-console.log('\n[6] 저장 압축 규칙 — 올노출을 지우면 안 된다');
+console.log('\n[6] 저장 압축 규칙 — 지역 기본과 같으면 지운다');
 const saveSrc = fs.readFileSync(path.join(root, 'server', 'rider-region-dashboard.js'), 'utf8');
-check('DEFAULT 모드일 때만 delete', /if \(mode === DEFAULT_RIDER_REGION_MODE\) \{[\s\S]{0,200}delete riders\[id\]/.test(saveSrc), 'true');
+check('지역 기본일 때 delete', /if \(mode === regionDefault\) \{[\s\S]{0,160}delete riders\[id\]/.test(saveSrc), 'true');
 check("더 이상 mode === 'full' 로 delete 하지 않음", /if \(mode === 'full'\)\s*\{\s*\n\s*\/\/[^\n]*\n\s*delete riders/.test(saveSrc), 'false');
+check('defaultRiderMode 저장', saveSrc.includes('defaultRiderMode'), 'true');
 
 console.log('\n[7] 배정 기사 이름 옆에 ERP ID');
 check('이름 셀 헬퍼', /function regionAssignedNameHtml\(driver\)/.test(src), 'true');
@@ -148,6 +151,38 @@ check('ERP ID 클래스', src.includes('driver-region-erp-id'), 'true');
 check('이름 셀에서 헬퍼 사용', src.includes('regionAssignedNameHtml(row.driver)'), 'true');
 const adminHtml = fs.readFileSync(path.join(root, 'admin.html'), 'utf8');
 check('표 헤더에 ERP ID', adminHtml.includes('이름 · ERP ID'), 'true');
+check('이 지역 기본 UI', adminHtml.includes('driverRegionDefaultFullBtn'), 'true');
+check('이 지역 기본 라벨', adminHtml.includes('이 지역 기본'), 'true');
+
+console.log('\n[8] 지역 기본 올노출/미노출');
+const defaultFull = {
+  baemin: {
+    r1: {
+      defaultRiderMode: 'full',
+      riders: { C: { mode: 'hidden' }, B: { mode: 'leader' } }
+    }
+  }
+};
+check('지역 기본 full + 설정없음 → full', S.getRiderRegionModeForRegion(defaultFull, REGION, 'newRider'), 'full');
+check('지역 기본 full + 명시 hidden → hidden', S.getRiderRegionModeForRegion(defaultFull, REGION, 'C'), 'hidden');
+check('지역 기본 full + 명시 leader → leader', S.getRiderRegionModeForRegion(defaultFull, REGION, 'B'), 'leader');
+check('getRegionDefaultRiderMode full', S.getRegionDefaultRiderMode(defaultFull, 'baemin', 'r1', REGION), 'full');
+check('설정 없으면 hidden', S.getRegionDefaultRiderMode({}, 'baemin', 'r1', REGION), 'hidden');
+check('normalizeRegionDefaultRiderMode 올노출', S.normalizeRegionDefaultRiderMode('올노출'), 'full');
+const fullDefaultRegions = S.filterViewerRegions(
+  defaultFull,
+  'baemin',
+  { id: 'newRider', regionBaemin: '남구e' },
+  REGION_LIST
+).map(r => r.key);
+check('지역 기본 올노출이면 신규 기사 대시보드 보임', fullDefaultRegions.includes('r1'), 'true');
+const stillHidden = S.filterViewerRegions(
+  defaultFull,
+  'baemin',
+  { id: 'C', regionBaemin: '남구e' },
+  REGION_LIST
+).map(r => r.key);
+check('명시 미노출은 지역 기본 올노출이어도 숨김', stillHidden.includes('r1'), 'false');
 
 console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
 process.exit(failed ? 1 : 0);

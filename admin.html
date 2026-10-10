@@ -18,7 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20261010unassigned1">
+  <link rel="stylesheet" href="css/admin.css?v=20261010regiondefault1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
@@ -6778,9 +6778,14 @@
                     <span class="field-label">배정 기사 검색</span>
                     <input type="search" id="driverRegionListFilter" class="driver-region-list-filter__input" placeholder="이름·ERP ID·배민ID·연락처로 표에서 찾기" autocomplete="off">
                   </label>
+                  <div class="driver-region-default-mode" role="group" aria-label="이 지역 기본 노출">
+                    <span class="driver-region-default-mode__label">이 지역 기본</span>
+                    <button type="button" class="small-btn" id="driverRegionDefaultFullBtn" title="개별 설정이 없는 기사는 올노출">올노출</button>
+                    <button type="button" class="small-btn" id="driverRegionDefaultHiddenBtn" title="개별 설정이 없는 기사는 미노출">미노출</button>
+                  </div>
                   <div class="driver-region-bulk-mode" role="group" aria-label="배정 기사 일괄 노출">
-                    <button type="button" class="small-btn" id="driverRegionBulkFullBtn" title="이 지역 배정 기사 전원 올노출">전체 올노출</button>
-                    <button type="button" class="small-btn" id="driverRegionBulkHiddenBtn" title="이 지역 배정 기사 전원 미노출(앱 대시보드만 숨김 · 집계·순위 유지)">전체 미노출</button>
+                    <button type="button" class="small-btn" id="driverRegionBulkFullBtn" title="이 지역 배정 기사 전원 올노출 · 이 지역 기본도 올노출">전체 올노출</button>
+                    <button type="button" class="small-btn" id="driverRegionBulkHiddenBtn" title="이 지역 배정 기사 전원 미노출 · 이 지역 기본도 미노출">전체 미노출</button>
                   </div>
                   <span class="driver-region-list-filter__meta" id="driverRegionListFilterMeta" aria-live="polite"></span>
                 </div>
@@ -9632,7 +9637,7 @@
   <script src="js/final-deposit.js?v=20261004freshadj1"></script>
   <script src="js/withdrawal-management-admin.js?v=20261003wd2"></script>
   <script src="js/tax-management-admin.js?v=20261001tax1"></script>
-  <script src="js/driver-management-admin.js?v=20261010baeminassign1"></script>
+  <script src="js/driver-management-admin.js?v=20261010regiondefault1"></script>
   <script src="js/inactive-drivers-admin.js?v=20260922active1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260922pay1"></script>

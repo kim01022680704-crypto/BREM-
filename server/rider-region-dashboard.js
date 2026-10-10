@@ -283,6 +283,44 @@ function listBranchManagerRegions(exposure, platform, driverId) {
  */
 const DEFAULT_RIDER_REGION_MODE = 'hidden';
 
+function normalizeRegionDefaultRiderMode(value) {
+  const mode = String(value || '').toLowerCase();
+  if (mode === 'full' || mode === 'all' || mode === '올노출') return 'full';
+  if (mode === 'hidden' || mode === 'off' || mode === 'none' || mode === '미노출') return 'hidden';
+  return DEFAULT_RIDER_REGION_MODE;
+}
+
+function readRegionEntryDefault(entry) {
+  if (!entry || typeof entry !== 'object') return DEFAULT_RIDER_REGION_MODE;
+  if (entry.defaultRiderMode == null || String(entry.defaultRiderMode).trim() === '') {
+    return DEFAULT_RIDER_REGION_MODE;
+  }
+  return normalizeRegionDefaultRiderMode(entry.defaultRiderMode);
+}
+
+function getRegionDefaultRiderMode(exposure, platform, regionKey, region = null) {
+  const side = exposure?.[normalizePlatform(platform || region?.platform || 'baemin')] || {};
+  const keys = region
+    ? regionLookupKeys({ ...region, key: regionKey || region.key })
+    : [regionKey, region?.partnerId, region?.label]
+      .map(value => String(value || '').trim())
+      .filter(Boolean);
+  for (const key of keys) {
+    if (!side[key]) continue;
+    if (side[key].defaultRiderMode == null || String(side[key].defaultRiderMode).trim() === '') continue;
+    return normalizeRegionDefaultRiderMode(side[key].defaultRiderMode);
+  }
+  return DEFAULT_RIDER_REGION_MODE;
+}
+
+function regionEntryIsEmpty(entry) {
+  if (!entry || typeof entry !== 'object') return true;
+  const hasRiders = Object.keys(entry.riders || {}).length > 0;
+  const hasManagers = Object.keys(entry.branchManagers || {}).length > 0;
+  const customDefault = readRegionEntryDefault(entry) !== DEFAULT_RIDER_REGION_MODE;
+  return !entry.exposed && !hasRiders && !hasManagers && !customDefault;
+}
+
 function normalizeRiderRegionMode(value) {
   const mode = String(value || '').toLowerCase();
   if (mode === 'dashboard' || mode === 'view' || mode === '전체열람') return 'dashboard';
@@ -296,16 +334,21 @@ function normalizeRiderRegionMode(value) {
 }
 
 function getRiderRegionMode(exposure, platform, regionKey, driverId) {
+  const fallback = getRegionDefaultRiderMode(exposure, platform, regionKey);
   const id = String(driverId || '').trim();
-  if (!id) return DEFAULT_RIDER_REGION_MODE;
+  if (!id) return fallback;
   const entry = exposure?.[platform]?.[String(regionKey || '').trim()]?.riders?.[id];
-  return normalizeRiderRegionMode(entry?.mode);
+  if (entry && entry.mode != null && String(entry.mode).trim() !== '') {
+    return normalizeRiderRegionMode(entry.mode);
+  }
+  return fallback;
 }
 
 /** region 객체 기준으로 모드 조회 (key / partnerId / label 모두 시도) */
 function getRiderRegionModeForRegion(exposure, region, driverId) {
+  const fallback = getRegionDefaultRiderMode(exposure, region?.platform, region?.key, region);
   const id = String(driverId || '').trim();
-  if (!id || !region) return DEFAULT_RIDER_REGION_MODE;
+  if (!id || !region) return fallback;
   const platform = normalizePlatform(region.platform || 'baemin');
   const side = exposure?.[platform] || {};
   const keys = [region.key, region.partnerId, region.label]
@@ -318,7 +361,7 @@ function getRiderRegionModeForRegion(exposure, region, driverId) {
       return normalizeRiderRegionMode(entry.mode);
     }
   }
-  return DEFAULT_RIDER_REGION_MODE;
+  return fallback;
 }
 
 /** 일반 순위에 올릴 기사 — 올노출·할당만·미노출 (전체열람·순위만열람·팀장만 제외)
@@ -2409,16 +2452,18 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
       const prev = side[key] && typeof side[key] === 'object' ? side[key] : {};
       const riders = { ...(prev.riders && typeof prev.riders === 'object' ? prev.riders : {}) };
       const mode = normalizeRiderRegionMode(body.mode);
+      const regionDefault = body.defaultRiderMode != null
+        ? normalizeRegionDefaultRiderMode(body.defaultRiderMode)
+        : readRegionEntryDefault(prev);
       const targets = driverIdsBulk.length ? driverIdsBulk : [driverId];
       const now = new Date().toISOString();
       targets.forEach(id => {
-        if (mode === DEFAULT_RIDER_REGION_MODE) {
-          // 기본값(미노출)은 맵에서 지워 용량을 줄인다. 조회 시 기본값으로 되돌아온다.
-          // ※ 올노출은 반드시 명시 저장해야 한다. 지우면 기본값인 미노출이 되어버린다.
+        if (mode === regionDefault) {
+          // 이 지역 기본값과 같으면 맵에서 지운다. 조회 시 지역 기본으로 되돌아온다.
           delete riders[id];
         } else {
           riders[id] = {
-            mode, // dashboard | rank | metrics | leader | hidden
+            mode, // dashboard | rank | metrics | leader | hidden | full
             updatedAt: now
           };
         }
@@ -2435,12 +2480,11 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
         riders,
         updatedAt: now
       };
-      // 지역 미노출인데 기사 옵션만 저장해도 riders 는 유지 (나중에 지역 ON 해도 유지)
-      if (
-        !side[key].exposed
-        && !Object.keys(riders).length
-        && !Object.keys(side[key].branchManagers || {}).length
-      ) {
+      if (body.defaultRiderMode != null) {
+        if (regionDefault === DEFAULT_RIDER_REGION_MODE) delete side[key].defaultRiderMode;
+        else side[key].defaultRiderMode = regionDefault;
+      }
+      if (regionEntryIsEmpty(side[key])) {
         delete side[key];
       }
       const next = await upsertExposureMap(supabase, {
@@ -2463,30 +2507,25 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
     const branchManagers = prev.branchManagers && typeof prev.branchManagers === 'object'
       ? prev.branchManagers
       : {};
-    if (!exposed) {
-      // 지역 OFF 해도 기사별 옵션(전체열람 등)은 유지
-      if (Object.keys(riders).length || Object.keys(branchManagers).length) {
-        side[key] = {
-          ...prev,
-          exposed: false,
-          riders,
-          branchManagers,
-          updatedAt: new Date().toISOString()
-        };
-      } else {
-        delete side[key];
-      }
+    const defaultRiderMode = body.defaultRiderMode != null
+      ? normalizeRegionDefaultRiderMode(body.defaultRiderMode)
+      : readRegionEntryDefault(prev);
+    const nextEntry = {
+      ...prev,
+      exposed,
+      label: String(body.label || prev.label || key).trim() || key,
+      partnerId: String(body.partnerId || prev.partnerId || '').trim(),
+      vendorId: String(body.vendorId || prev.vendorId || '').trim(),
+      riders,
+      branchManagers,
+      updatedAt: new Date().toISOString()
+    };
+    if (defaultRiderMode === DEFAULT_RIDER_REGION_MODE) delete nextEntry.defaultRiderMode;
+    else nextEntry.defaultRiderMode = defaultRiderMode;
+    if (!exposed && regionEntryIsEmpty({ ...nextEntry, exposed: false })) {
+      delete side[key];
     } else {
-      side[key] = {
-        ...prev,
-        exposed: true,
-        label: String(body.label || prev.label || key).trim() || key,
-        partnerId: String(body.partnerId || prev.partnerId || '').trim(),
-        vendorId: String(body.vendorId || prev.vendorId || '').trim(),
-        riders,
-        branchManagers,
-        updatedAt: new Date().toISOString()
-      };
+      side[key] = nextEntry;
     }
     const next = await upsertExposureMap(supabase, {
       ...exposure,
@@ -2515,6 +2554,8 @@ module.exports = {
     normalizeRiderRegionMode,
     getRiderRegionMode,
     getRiderRegionModeForRegion,
+    getRegionDefaultRiderMode,
+    normalizeRegionDefaultRiderMode,
     filterRankingRiders,
     filterLeaderViewRankingRiders,
     filterViewerRegions,

@@ -1957,11 +1957,35 @@ const BremDriverManagementAdmin = (function () {
   }
 
   /**
-   * 설정이 없을 때의 기본 모드 = 미노출. (server/rider-region-dashboard.js 와 같아야 한다)
-   * 신규 등록 기사가 자동으로 기사앱 대시보드에 노출되지 않게 한다.
+   * 지역 설정이 없을 때의 전역 기본 모드 = 미노출. (server/rider-region-dashboard.js 와 같아야 한다)
+   * 지역마다 defaultRiderMode 로 올노출/미노출을 바꿀 수 있다.
    * 미노출은 앱 대시보드만 숨기고 집계·순위에는 그대로 포함된다.
    */
   const DEFAULT_DRIVER_REGION_MODE = 'hidden';
+
+  function normalizeRegionDefaultMode(value) {
+    const mode = String(value || '').toLowerCase();
+    if (mode === 'full' || mode === 'all' || mode === '올노출') return 'full';
+    if (mode === 'hidden' || mode === 'off' || mode === 'none' || mode === '미노출') return 'hidden';
+    return DEFAULT_DRIVER_REGION_MODE;
+  }
+
+  function getRegionDefaultRiderMode(regionOrKey) {
+    const region = typeof regionOrKey === 'object' && regionOrKey
+      ? regionOrKey
+      : regionCatalog().find(item => item.key === regionOrKey) || { key: regionOrKey };
+    const platform = region.platform || state.regionPlatform;
+    const side = state.regionExposure?.[platform] || {};
+    const keys = [region.key, region.partnerId, region.label, regionOrKey]
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+      .filter((value, index, list) => list.indexOf(value) === index);
+    for (const key of keys) {
+      const raw = side[key]?.defaultRiderMode;
+      if (raw != null && String(raw).trim() !== '') return normalizeRegionDefaultMode(raw);
+    }
+    return DEFAULT_DRIVER_REGION_MODE;
+  }
 
   /** 기사별 옵션: full=올노출, dashboard=전체열람, rank=순위만열람, metrics=할당만, leader=팀장, hidden=미노출 */
   function normalizeDriverRegionMode(value) {
@@ -1977,8 +2001,9 @@ const BremDriverManagementAdmin = (function () {
   }
 
   function getDriverRegionMode(platform, regionKey, driverId) {
+    const fallback = getRegionDefaultRiderMode(regionKey);
     const id = String(driverId || '').trim();
-    if (!id) return DEFAULT_DRIVER_REGION_MODE;
+    if (!id) return fallback;
     const side = state.regionExposure?.[platform] || {};
     const region = regionCatalog().find(item => item.key === regionKey) || null;
     const keys = [regionKey, region?.partnerId, region?.label]
@@ -1991,7 +2016,7 @@ const BremDriverManagementAdmin = (function () {
         return normalizeDriverRegionMode(raw);
       }
     }
-    return DEFAULT_DRIVER_REGION_MODE;
+    return fallback;
   }
 
   function isDriverBranchManager(platform, regionKey, driverId) {
@@ -2137,6 +2162,7 @@ const BremDriverManagementAdmin = (function () {
         key: region.key,
         driverIds: targets.map(driver => driver.id).filter(Boolean),
         mode: next,
+        defaultRiderMode: next,
         exposed: isRegionExposed(region.platform, region.key),
         label: region.label,
         partnerId: region.partnerId || '',
@@ -2145,10 +2171,57 @@ const BremDriverManagementAdmin = (function () {
       invalidateRegionRankingCache(region);
       renderRegionDetail();
       showToast(leaders.length
-        ? `${label} — ${targets.length}명 적용 · 팀장 ${leaders.length}명 유지`
-        : `${label} — ${targets.length}명 적용`);
+        ? `${label} — ${targets.length}명 적용 · 이 지역 기본 저장 · 팀장 ${leaders.length}명 유지`
+        : `${label} — ${targets.length}명 적용 · 이 지역 기본도 저장`);
     } catch (error) {
       showToast(error.message || `${label} 저장 실패`);
+    } finally {
+      if (fullBtn) fullBtn.disabled = false;
+      if (hiddenBtn) hiddenBtn.disabled = false;
+    }
+  }
+
+  function syncRegionDefaultModeButtons(region) {
+    const mode = region ? getRegionDefaultRiderMode(region) : '';
+    const fullBtn = $('#driverRegionDefaultFullBtn');
+    const hiddenBtn = $('#driverRegionDefaultHiddenBtn');
+    [fullBtn, hiddenBtn].forEach(btn => {
+      if (btn) btn.disabled = !region;
+    });
+    if (fullBtn) fullBtn.classList.toggle('is-on', mode === 'full');
+    if (hiddenBtn) hiddenBtn.classList.toggle('is-on', mode === 'hidden');
+  }
+
+  async function setRegionDefaultRiderMode(mode) {
+    const region = selectedRegion();
+    if (!region) {
+      showToast('지역을 선택하세요.');
+      return;
+    }
+    const next = normalizeRegionDefaultMode(mode);
+    const fullBtn = $('#driverRegionDefaultFullBtn');
+    const hiddenBtn = $('#driverRegionDefaultHiddenBtn');
+    if (fullBtn) fullBtn.disabled = true;
+    if (hiddenBtn) hiddenBtn.disabled = true;
+    try {
+      await postRegionExposure({
+        platform: region.platform,
+        key: region.key,
+        defaultRiderMode: next,
+        exposed: isRegionExposed(region.platform, region.key),
+        label: region.label,
+        partnerId: region.partnerId || '',
+        vendorId: region.vendorId || ''
+      });
+      invalidateRegionRankingCache(region);
+      renderRegionCatalog();
+      renderRegionDetail();
+      showToast(next === 'full'
+        ? '이 지역 기본을 올노출로 저장했습니다. 개별 설정이 없는 기사에게 바로 적용됩니다.'
+        : '이 지역 기본을 미노출로 저장했습니다. 개별 설정이 없는 기사에게 바로 적용됩니다.');
+    } catch (error) {
+      showToast(error.message || '이 지역 기본 저장 실패');
+      syncRegionDefaultModeButtons(region);
     } finally {
       if (fullBtn) fullBtn.disabled = false;
       if (hiddenBtn) hiddenBtn.disabled = false;
@@ -2264,13 +2337,14 @@ const BremDriverManagementAdmin = (function () {
       const count = driversInRegion(region).length;
       const active = state.selectedRegionKey === region.key;
       const exposed = isRegionExposed(region.platform, region.key);
+      const defaultMode = getRegionDefaultRiderMode(region);
       const sub = region.platform === 'baemin' ? region.partnerId : (region.vendorName || '');
       const name = region.label || region.key || '이름 없음';
       return `<div class="driver-region-item${active ? ' is-active' : ''}${exposed ? ' is-exposed' : ''}" data-region-key="${escapeHtml(region.key)}">
         <button type="button" class="driver-region-item-main" data-region-select="${escapeHtml(region.key)}" title="${escapeHtml(sub || name)}">
           <span class="driver-region-item-name">${escapeHtml(name)}</span>
           <span class="driver-region-item-meta">${escapeHtml(sub && sub !== name ? sub : '')}</span>
-          <span class="driver-region-item-count">${formatRegionHeadcount(count)}</span>
+          <span class="driver-region-item-count">${formatRegionHeadcount(count)}<small class="driver-region-item-default${defaultMode === 'full' ? ' is-full' : ''}">${defaultMode === 'full' ? '기본 올노출' : '기본 미노출'}</small></span>
         </button>
         <label class="driver-region-expose" title="기사앱 기사대시보드 노출">
           <input type="checkbox" data-region-expose="${escapeHtml(region.key)}" ${exposed ? 'checked' : ''}>
@@ -2674,6 +2748,7 @@ const BremDriverManagementAdmin = (function () {
         const btn = $(`#${id}`);
         if (btn) btn.disabled = true;
       });
+      syncRegionDefaultModeButtons(null);
       if (totalsEl) totalsEl.textContent = '';
       clearRegionRankingUi();
       return;
@@ -2685,6 +2760,7 @@ const BremDriverManagementAdmin = (function () {
       const btn = $(`#${id}`);
       if (btn) btn.disabled = inRegion.length === 0;
     });
+    syncRegionDefaultModeButtons(region);
     // 주간 콜수 기준 로컬 1등 표시(표 상단 합계와 함께)
     const ranked = inRegion.map(driver => {
       const stats = driverCallAndFee(driver.id, week, platform);
@@ -3139,8 +3215,8 @@ const BremDriverManagementAdmin = (function () {
     const hint = $('#driverRegionHint');
     if (hint) {
       hint.textContent = state.regionPlatform === 'coupang'
-        ? '쿠팡: rider_daily 크롤의 vendor(클러스터)로 「클러스터 크롤 배정」 일괄 배정. 「라이더 노출」켜면 기사앱 대시보드 표시. 올노출/전체열람/순위만열람/할당만/미노출/팀장임명.'
-        : '배민: 오늘 배달현황 크롤의 DP(지역)로 「배달현황 크롤 배정」 일괄 배정. 「라이더 노출」켜면 기사앱 대시보드 표시. 올노출/전체열람/순위만열람/할당만/미노출/팀장임명.';
+        ? '쿠팡: rider_daily 크롤의 vendor(클러스터)로 「클러스터 크롤 배정」 일괄 배정. 「이 지역 기본」으로 올노출/미노출 기본값을 정합니다. 「라이더 노출」켜면 기사앱 대시보드 표시.'
+        : '배민: 오늘 배달현황 크롤의 DP(지역)로 「배달현황 크롤 배정」 일괄 배정. 「이 지역 기본」으로 올노출/미노출 기본값을 정합니다. 「라이더 노출」켜면 기사앱 대시보드 표시.';
     }
 
     // 지역 목록·노출은 기사 전체 로드를 기다리지 않고 먼저 그린다.
@@ -4749,6 +4825,12 @@ const BremDriverManagementAdmin = (function () {
     });
     $('#driverRegionBulkHiddenBtn')?.addEventListener('click', () => {
       void setAllDriversRegionMode('hidden');
+    });
+    $('#driverRegionDefaultFullBtn')?.addEventListener('click', () => {
+      void setRegionDefaultRiderMode('full');
+    });
+    $('#driverRegionDefaultHiddenBtn')?.addEventListener('click', () => {
+      void setRegionDefaultRiderMode('hidden');
     });
     $('#driverRegionAddBtn')?.addEventListener('click', () => {
       const id = $('#driverRegionAddSelect')?.value;
