@@ -477,6 +477,35 @@ const BremPromotionApply = (function () {
     );
   }
 
+  function normalizeSettlementRegionAlias(value) {
+    let raw = String(value || '').replace(/\s+/g, '').replace(/[_-]/g, '');
+    if (!raw) return '';
+    raw = raw.replace(/^울산/, '');
+    const split = raw.match(/^([가-힣]+?)([A-Za-z])$/);
+    let base = raw;
+    let suffix = '';
+    if (split) {
+      base = split[1];
+      suffix = split[2].toUpperCase();
+    }
+    const shorts = { 중: '중구', 남: '남구', 동: '동구', 북: '북구' };
+    if (shorts[base]) base = shorts[base];
+    return suffix ? `${base}${suffix}` : base;
+  }
+
+  function scoreRegionAliasMatch(hint, label) {
+    const a = normalizeSettlementRegionAlias(hint);
+    const b = normalizeSettlementRegionAlias(label);
+    if (!a || !b) return 0;
+    if (a === b) return 100;
+    const aBase = a.replace(/[A-Z]$/, '');
+    const bBase = b.replace(/[A-Z]$/, '');
+    if (a === bBase || b === aBase) return 60;
+    if (aBase && aBase === bBase) return 40;
+    if (a.includes(b) || b.includes(a)) return 20;
+    return 0;
+  }
+
   function assignmentDiffersFromRegionDefault(assigned = {}, defaults = {}) {
     const expected = {
       baemin: String(defaults.baemin || '').trim(),
@@ -502,6 +531,141 @@ const BremPromotionApply = (function () {
       diffs.push({ slot: 'coupang', currentId: current.coupang || current.combined, expectedId: expected.coupang });
     }
     return diffs;
+  }
+
+  function pickBestRegion(list, hint) {
+    const raw = String(hint || '').trim();
+    if (!raw) return null;
+    const rows = Array.isArray(list) ? list : [];
+    const exact = rows.find(region =>
+      region.key === raw
+      || region.label === raw
+      || region.partnerId === raw
+      || region.vendorId === raw
+      || region.vendorName === raw
+    );
+    if (exact) return exact;
+    const scored = rows
+      .map(region => ({
+        region,
+        score: Math.max(
+          scoreRegionAliasMatch(raw, region.label),
+          scoreRegionAliasMatch(raw, region.vendorName)
+        )
+      }))
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score || String(b.region.label || '').length - String(a.region.label || '').length);
+    return scored[0]?.region || null;
+  }
+
+  function majorityRuleId(rows = []) {
+    const counts = new Map();
+    rows.forEach(row => {
+      const id = String(row?.ruleId || '').trim();
+      if (!id) return;
+      counts.set(id, (counts.get(id) || 0) + 1);
+    });
+    let best = '';
+    let bestCount = 0;
+    counts.forEach((count, id) => {
+      if (count > bestCount) {
+        best = id;
+        bestCount = count;
+      }
+    });
+    return counts.size > 1 ? best : '';
+  }
+
+  function collectRegionMissionMismatches(result, context = {}) {
+    if (!result || result.assignmentMode === 'selected_rules') return [];
+    const rows = Array.isArray(result.results) ? result.results : [];
+    const setupIds = new Set((context.setupDriverIds || []).map(id => String(id || '').trim()).filter(Boolean));
+    const regions = context.regions || { baemin: [], coupang: [] };
+    const getDriver = context.getDriver || (id => BremStorage.drivers.getById?.(id) || null);
+    const getAssignment = context.getAssignment || (() => ({ baemin: '', coupang: '', combined: '' }));
+    const readDefaults = context.readDefaults || (() => ({ baemin: '', coupang: '', combined: '' }));
+    const missionName = context.missionName || (id => String(id || ''));
+    const majorityId = majorityRuleId(rows);
+    const seen = new Set();
+    const items = [];
+
+    const settlementHint = (platform) => {
+      const raw = String(result?.region || '').trim();
+      if (!raw) return '';
+      if (normalizePlatform(result?.platform) === 'combined') {
+        const parts = raw.split('/').map(part => part.trim()).filter(Boolean);
+        return platform === 'coupang' ? (parts[0] || '') : (parts[1] || parts[0] || '');
+      }
+      return raw;
+    };
+
+    rows.forEach((row, index) => {
+      const driverId = String(row?.matchedRiderId || '').trim();
+      if (!driverId || setupIds.has(driverId) || seen.has(driverId)) return;
+      const driver = getDriver(driverId);
+      if (!driver) return;
+      const assigned = { ...(getAssignment(driver) || {}) };
+      const rowPlatform = normalizePlatform(row.appliedPlatform || result.platform);
+      if (row.ruleId) {
+        if (rowPlatform === 'baemin') assigned.baemin = row.ruleId;
+        else if (rowPlatform === 'coupang') assigned.coupang = row.ruleId;
+        else assigned.combined = row.ruleId;
+      }
+      if (!assigned.baemin && !assigned.coupang && !assigned.combined) return;
+
+      const sides = rowPlatform === 'combined'
+        ? ['baemin', 'coupang']
+        : [rowPlatform === 'coupang' ? 'coupang' : 'baemin'];
+      const reasons = [];
+      const expected = { baemin: '', coupang: '', combined: '' };
+
+      sides.forEach(side => {
+        const hint = settlementHint(side);
+        const region = pickBestRegion(regions[side] || [], hint);
+        const defaults = region ? (readDefaults(side, region) || {}) : {};
+        const hasSavedDefault = Boolean(defaults.baemin || defaults.coupang || defaults.combined);
+        const compare = { baemin: '', coupang: '', combined: '' };
+        if (hasSavedDefault) Object.assign(compare, defaults);
+        else if (majorityId) compare[side] = majorityId;
+        else return;
+        assignmentDiffersFromRegionDefault(assigned, compare).forEach(diff => {
+          if (side !== 'combined' && diff.slot !== 'combined' && diff.slot !== side) return;
+          const currentName = missionName(diff.currentId) || row.ruleName || '다른 미션';
+          const expectedName = missionName(diff.expectedId) || '기본미션';
+          const where = region?.label || hint || '이 정산';
+          reasons.push(hasSavedDefault
+            ? `${where} 기본과 다름 · 현재 「${currentName}」 · 기본 「${expectedName}」`
+            : `${where} 다수 미션과 다름 · 현재 「${currentName}」 · 이 정산 기본 「${expectedName}」`);
+          if (compare.baemin) expected.baemin = compare.baemin;
+          if (compare.coupang) expected.coupang = compare.coupang;
+          if (compare.combined) expected.combined = compare.combined;
+        });
+      });
+
+      if (!reasons.length && row.ruleId && majorityId && row.ruleId !== majorityId) {
+        reasons.push(`이 정산 기본과 다름 · 현재 「${row.ruleName || missionName(row.ruleId)}」 · 기본 「${missionName(majorityId)}」`);
+        if (rowPlatform === 'baemin') expected.baemin = majorityId;
+        else if (rowPlatform === 'coupang') expected.coupang = majorityId;
+        else expected.combined = majorityId;
+      }
+
+      if (!reasons.length) return;
+      seen.add(driverId);
+      items.push({
+        key: `${driverId}|region-mission|${rowPlatform}|${index}`,
+        row,
+        driver,
+        driverId,
+        platform: rowPlatform,
+        reasons: [...new Set(reasons)],
+        category: 'region_mission',
+        canEdit: true,
+        reviewOnly: true,
+        expectedMissions: expected
+      });
+    });
+
+    return items;
   }
 
   function classifySetupGapCategory(reasons = []) {
@@ -2286,6 +2450,10 @@ const BremPromotionApply = (function () {
     isUnpaidConditionReason,
     collectPromotionSetupGaps,
     assignmentDiffersFromRegionDefault,
+    collectRegionMissionMismatches,
+    pickBestRegion,
+    normalizeSettlementRegionAlias,
+    scoreRegionAliasMatch,
     buildSaveRecord,
     saveResult,
     getSavedResults,

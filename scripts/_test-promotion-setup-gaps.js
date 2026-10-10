@@ -145,5 +145,48 @@ check('같은 미션은 통과', apply.assignmentDiffersFromRegionDefault(
   { baemin: 'junggu', coupang: '', combined: '' }
 ).length, 0);
 
+check('중A 별칭', apply.normalizeSettlementRegionAlias('중A'), '중구A');
+check('울산중구 별칭', apply.normalizeSettlementRegionAlias('울산중구'), '중구');
+check('중A는 울산중구와 매칭', apply.scoreRegionAliasMatch('중A', '울산중구') >= 60, true);
+check('중A는 남구와 안 맞음', apply.scoreRegionAliasMatch('중A', '울산남구'), 0);
+check('중A는 중구A와 완전일치', apply.scoreRegionAliasMatch('중A', '중구A'), 100);
+
+const leftoverCtx = {
+  regions: { baemin: [{ key: 'P중', partnerId: 'P중', label: '울산중구' }], coupang: [] },
+  setupDriverIds: [],
+  getDriver: id => ({
+    id,
+    selectedMissionIdBaemin: id === 'jorina' ? 'namgu' : 'jung',
+    regionBaemin: id === 'jorina' ? '남구' : '중구'
+  }),
+  getAssignment: driver => ({ baemin: driver.selectedMissionIdBaemin, coupang: '', combined: '' }),
+  readDefaults: (_platform, region) => (
+    region?.label === '울산중구'
+      ? { baemin: 'jung', coupang: '', combined: '' }
+      : { baemin: 'namgu', coupang: '', combined: '' }
+  ),
+  missionName: id => (id === 'namgu' ? '100건 천원(울산남구)' : id === 'jung' ? '100건 1500원' : id)
+};
+const leftoverResult = {
+  platform: 'baemin',
+  region: '중A',
+  assignmentMode: 'per_driver',
+  results: [
+    { matchedRiderId: 'jorina', displayName: '조리나', ruleId: 'namgu', ruleName: '100건 천원(울산남구)', slaApply: true, totalPromotionAmount: 181000 },
+    { matchedRiderId: 'a', displayName: 'A', ruleId: 'jung', ruleName: '100건 1500원', slaApply: false, totalPromotionAmount: 100000 },
+    { matchedRiderId: 'b', displayName: 'B', ruleId: 'jung', ruleName: '100건 1500원', slaApply: false, totalPromotionAmount: 100000 }
+  ]
+};
+const leftover = apply.collectRegionMissionMismatches(leftoverResult, leftoverCtx);
+check('조리나 잔여 미션은 팝업 대상', leftover.map(item => item.driverId), ['jorina']);
+check('조리나는 수정 가능', leftover[0]?.canEdit, true);
+check('기본은 중구 1500원', leftover[0]?.expectedMissions?.baemin, 'jung');
+
+const leftoverByMajority = apply.collectRegionMissionMismatches(leftoverResult, {
+  ...leftoverCtx,
+  readDefaults: () => ({ baemin: '', coupang: '', combined: '' })
+});
+check('기본 없어도 다수 미션과 다르면 잡힘', leftoverByMajority.map(item => item.driverId), ['jorina']);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

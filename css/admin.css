@@ -6873,6 +6873,22 @@ textarea {
   color: #fff3cd;
 }
 
+.promotion-row-region-mismatch {
+  background: rgba(77, 163, 255, 0.1) !important;
+  box-shadow: inset 3px 0 0 #4da3ff;
+}
+
+.promotion-region-mismatch-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #1d4f8a;
+  color: #d7ecff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
 .promotion-gap-summary {
   display: flex;
   flex-wrap: wrap;

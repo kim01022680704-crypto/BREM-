@@ -224,62 +224,14 @@ const BremPromotionApplyAdmin = (function () {
   }
 
   function collectRegionMissionMismatches(result = state.gapResult || state.lastResult) {
-    if (!result || result.assignmentMode === 'selected_rules') return [];
-    const rows = Array.isArray(result.results) ? result.results : [];
-    const setupIds = new Set(currentSetupGaps(result).map(item => item.driverId).filter(Boolean));
-    const seen = new Set();
-    const items = [];
-
-    rows.forEach((row, index) => {
-      const driverId = String(row?.matchedRiderId || '').trim();
-      if (!driverId || setupIds.has(driverId) || seen.has(driverId)) return;
-      const driver = BremStorage.drivers.getById?.(driverId);
-      if (!driver) return;
-      const assigned = window.BremMissionPromotionCatalog?.getDriverAssignment?.(driver, { strict: false }) || {};
-      if (!assigned.baemin && !assigned.coupang && !assigned.combined) return;
-
-      const rowPlatform = BremPlatforms.normalize(row.appliedPlatform || result.platform);
-      const sides = rowPlatform === 'combined'
-        ? ['baemin', 'coupang']
-        : [rowPlatform === 'coupang' ? 'coupang' : 'baemin'];
-      const reasons = [];
-      const expected = { baemin: '', coupang: '', combined: '' };
-
-      sides.forEach(side => {
-        const settleHint = settlementRegionHint(result, side);
-        const region = resolveCatalogRegion(side, settleHint)
-          || resolveCatalogRegion(side, driverRegionValue(driver, side));
-        if (!region) return;
-        const defaults = readSavedRegionDefaults(side, region);
-        const diffs = BremPromotionApply.assignmentDiffersFromRegionDefault?.(assigned, defaults) || [];
-        diffs.forEach(diff => {
-          if (side !== 'combined' && diff.slot !== 'combined' && diff.slot !== side) return;
-          const currentName = missionNameById(diff.currentId) || '미배정';
-          const expectedName = missionNameById(diff.expectedId) || '기본미션';
-          reasons.push(`${region.label} 기본과 다름 · 현재 「${currentName}」 · 기본 「${expectedName}」`);
-          if (defaults.baemin) expected.baemin = defaults.baemin;
-          if (defaults.coupang) expected.coupang = defaults.coupang;
-          if (defaults.combined) expected.combined = defaults.combined;
-        });
-      });
-
-      if (!reasons.length) return;
-      seen.add(driverId);
-      items.push({
-        key: `${driverId}|region-mission|${rowPlatform}|${index}`,
-        row,
-        driver,
-        driverId,
-        platform: rowPlatform,
-        reasons: [...new Set(reasons)],
-        category: 'region_mission',
-        canEdit: true,
-        reviewOnly: true,
-        expectedMissions: expected
-      });
-    });
-
-    return items;
+    return BremPromotionApply.collectRegionMissionMismatches?.(result, {
+      regions: state.gapRegions,
+      setupDriverIds: currentSetupGaps(result).map(item => item.driverId),
+      getDriver: id => BremStorage.drivers.getById?.(id) || null,
+      getAssignment: driver => window.BremMissionPromotionCatalog?.getDriverAssignment?.(driver, { strict: false }) || {},
+      readDefaults: (platform, region) => readSavedRegionDefaults(platform, region),
+      missionName: missionNameById
+    }) || [];
   }
 
   function collectReviewItems(result = state.gapResult || state.lastResult) {
@@ -313,6 +265,17 @@ const BremPromotionApplyAdmin = (function () {
       || shortCoupangRegionName(region.label) === shortCoupangRegionName(raw)
     );
     if (exact) return exact.key;
+    const scored = rows
+      .map(region => ({
+        region,
+        score: Math.max(
+          BremPromotionApply.scoreRegionAliasMatch?.(raw, region.label) || 0,
+          BremPromotionApply.scoreRegionAliasMatch?.(raw, region.vendorName) || 0
+        )
+      }))
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score || String(b.region.label || '').length - String(a.region.label || '').length);
+    if (scored[0]) return scored[0].region.key;
     const fuzzy = rows
       .filter(region => {
         const label = String(region.label || '');
@@ -553,7 +516,7 @@ const BremPromotionApplyAdmin = (function () {
         ${review.mismatches.length ? `
           <div class="promotion-gap-toolbar">
             <button type="button" class="small-btn" id="promotionApplyGapApplyDefaultsBtn">지역 기본미션으로 맞추기</button>
-            <p>이동한 기사만 기본으로 맞춘 뒤 저장하세요. 그대로 둘 사람은 손대지 않으면 됩니다.</p>
+            <p>기본과 다른 사람은 칸을 기본미션으로 맞춰 두었습니다. 일부러 다르게 둘 사람은 칸을 되돌리거나 그대로 진행하세요.</p>
           </div>
         ` : ''}
         <div class="table-wrap">
@@ -626,6 +589,7 @@ const BremPromotionApplyAdmin = (function () {
         </div>
       `;
     }
+    if (review.mismatches.length) applyExpectedMissionsToSelects();
   }
 
   function readSavedRegionDefaults(platform, region) {
@@ -1386,11 +1350,12 @@ const BremPromotionApplyAdmin = (function () {
     PLATFORMS.forEach(renderPromotionRulePickersForPlatform);
   }
 
-  function renderResult(result, options = {}) {
+  async function renderResult(result, options = {}) {
     const card = $('#promotionApplyResultCard');
     const rowsEl = $('#promotionApplyResultRows');
     const summaryEl = $('#promotionApplyResultSummary');
     if (!card || !rowsEl || !result) return;
+    await ensureGapRegions();
 
     card.hidden = false;
     const slaCount = Number(result.slaApplyCount || 0);
@@ -1424,6 +1389,7 @@ const BremPromotionApplyAdmin = (function () {
       ? ` · <span class="promotion-rate-missing-summary">⚠ ${escapeHtml(rateMissingLabel)} 미등록 <strong>${formatNumber(rateMissingRows.length)}</strong>명</span>`
       : '';
     const reviewItems = collectReviewItems(result);
+    const mismatchIds = new Set(reviewItems.mismatches.map(item => String(item.driverId || '')));
     const setupGaps = reviewItems.setup;
     const gapParts = [];
     if (setupGaps.length) gapParts.push(`계산 누락 <strong>${formatNumber(setupGaps.length)}</strong>명`);
@@ -1510,8 +1476,9 @@ const BremPromotionApplyAdmin = (function () {
         <td><strong>${escapeHtml(BremPromotionApply.getResultRowDisplayName(row, platform))}</strong></td>
         <td>${escapeHtml(BremPromotionApply.getResultRowErpName(row))}</td>
         `;
+      const regionMismatch = mismatchIds.has(String(row.matchedRiderId || ''));
       return `
-      <tr class="${row.totalPromotionAmount > 0 ? 'promotion-row-paid' : 'promotion-row-unpaid'}${rateMissing ? ' promotion-row-rate-missing' : ''}">
+      <tr class="${row.totalPromotionAmount > 0 ? 'promotion-row-paid' : 'promotion-row-unpaid'}${rateMissing ? ' promotion-row-rate-missing' : ''}${regionMismatch ? ' promotion-row-region-mismatch' : ''}">
         ${identityCells}
         ${isCombinedResult ? `
           <td>${escapeHtml(BremPlatforms.label(rowPlatform))}</td>
@@ -1519,7 +1486,7 @@ const BremPromotionApplyAdmin = (function () {
         ` : ''}
         <td>${formatNumber(row.callCount)}${row.slaApply && Number(row.slaOutComplete || 0) > 0 ? ` <span class="form-help">(시간외 ${formatNumber(row.slaOutComplete)})</span>` : ''}${row.slaApply ? ' <span class="promotion-sla-tag">SLA시간</span>' : ''}</td>
         <td>${formatRate(row.platformRate, rowPlatform, { highlightMissing: rateMissing })}</td>
-        <td>${escapeHtml(row.ruleName || '-')}</td>
+        <td>${escapeHtml(row.ruleName || '-')}${regionMismatch ? ' <span class="promotion-region-mismatch-tag">기본과 다름</span>' : ''}</td>
         ${showDeliveryFee ? `
         <td>${showFeeAmounts ? formatMoney(row.deliveryAmountTotal) : '-'}</td>
         <td>${showFeeAmounts && row.avgDeliveryUnitPrice ? `${formatNumber(row.avgDeliveryUnitPrice)}원` : (showFeeAmounts ? '0원' : '-')}</td>
