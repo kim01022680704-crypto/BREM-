@@ -6480,9 +6480,16 @@ textarea {
   box-shadow: inset 3px 0 0 var(--yellow);
 }
 
+.promotion-lock-btn {
+  color: #111111;
+  background: var(--yellow);
+  border: 1px solid transparent;
+}
+
 .promotion-lock-btn.is-active {
-  border-color: var(--yellow);
-  color: var(--yellow);
+  color: #111111;
+  background: var(--yellow);
+  border-color: transparent;
 }
 
 .promotion-rule-actions {
@@ -6492,8 +6499,21 @@ textarea {
 }
 
 .promotion-enabled-btn {
-  border-color: rgba(120, 220, 120, 0.35);
-  color: #9be59b;
+  color: #111111;
+  background: var(--yellow);
+  border: 1px solid transparent;
+}
+
+.promotion-enabled-btn:not(.is-active) {
+  color: #f3f3f3;
+  background: #2a2a2a;
+  border-color: var(--line);
+}
+
+.promotion-enabled-btn.is-active {
+  color: #111111;
+  background: var(--yellow);
+  border-color: transparent;
 }
 
 .promotion-rule-form-card {

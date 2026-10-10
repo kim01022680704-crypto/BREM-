@@ -890,7 +890,7 @@ const BremPromotionAdmin = (function () {
                     </button>
                   </td>
                   <td>
-                    <button type="button" class="small-btn promotion-enabled-btn" data-toggle-promotion="${rule.id}">
+                    <button type="button" class="small-btn promotion-enabled-btn${rule.enabled ? ' is-active' : ''}" data-toggle-promotion="${rule.id}">
                       ${rule.enabled ? '사용' : '중지'}
                     </button>
                   </td>
