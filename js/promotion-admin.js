@@ -780,14 +780,25 @@ const BremPromotionAdmin = (function () {
     if (!listEl) return;
 
     const tabPlatform = getActiveRulesPlatformTab();
-    const rules = getPromotionRulesForPlatform(tabPlatform, { includeDisabled: true });
+    const rules = getPromotionRulesForPlatform(tabPlatform, { includeDisabled: true })
+      .slice()
+      .sort((a, b) => Number(Boolean(b.locked)) - Number(Boolean(a.locked))
+        || String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
     if (!rules.length) {
       const emptyLabel = tabPlatform === 'combined' ? '합산' : platformLabel(tabPlatform);
       listEl.innerHTML = `<p class="empty promotion-empty">${emptyLabel} 프로모션 조건이 없습니다. 조건 추가 버튼으로 만들어 주세요.</p>`;
       return;
     }
 
+    const unlockedCount = rules.filter(rule => !rule.locked).length;
+    const lockedCount = rules.length - unlockedCount;
+    const emptyLabel = tabPlatform === 'combined' ? '합산' : platformLabel(tabPlatform);
+
     listEl.innerHTML = `
+      <div class="promotion-rules-toolbar">
+        <button type="button" class="small-btn danger-btn" id="promotionRulesDeleteUnlockedBtn">잠금 제외 삭제</button>
+        <p>${emptyLabel} ${formatNumber(rules.length)}개 · 잠금 ${formatNumber(lockedCount)}개 · 잠금 제외 ${formatNumber(unlockedCount)}개. 쓰는 조건은 잠그고, 나머지는 한 번에 지우세요.</p>
+      </div>
       <div class="table-wrap">
         <table class="promotion-rules-table">
           <thead>
@@ -798,6 +809,7 @@ const BremPromotionAdmin = (function () {
               <th>미지급/추가</th>
               <th>기본 건당</th>
               <th>구간</th>
+              <th>잠금</th>
               <th>사용</th>
               <th>SLA시간</th>
               <th>관리</th>
@@ -809,16 +821,22 @@ const BremPromotionAdmin = (function () {
                 ? `${formatNumber(rule.payStartCallCount)}~ ${formatMoney(rule.payPerCall)}`
                 : '-';
               const active = state.previewRuleId === rule.id ? ' row-selected' : '';
+              const locked = rule.locked === true;
               const condText = `미지급 ${(rule.blockConditions || []).length} · 추가 ${(rule.bonusConditions || []).length}`;
               const canSla = tabPlatform === 'baemin' || tabPlatform === 'combined';
               return `
-                <tr class="${active}">
-                  <td><strong>${escapeHtml(rule.name)}</strong>${rule.slaApply ? ' <span class="promotion-sla-tag">SLA시간</span>' : ''}</td>
+                <tr class="${active}${locked ? ' is-promotion-locked' : ''}">
+                  <td><strong>${escapeHtml(rule.name)}</strong>${locked ? ' <span class="mission-lock-tag">잠금</span>' : ''}${rule.slaApply ? ' <span class="promotion-sla-tag">SLA시간</span>' : ''}</td>
                   <td>${escapeHtml(promotionTypeLabel(rule.type))}</td>
                   <td>${escapeHtml(platformLabel(rule.platform))}</td>
                   <td>${escapeHtml(condText)}</td>
                   <td>${payLabel}</td>
                   <td>${(rule.callTiers || []).length}</td>
+                  <td>
+                    <button type="button" class="small-btn promotion-lock-btn${locked ? ' is-active' : ''}" data-toggle-promotion-lock="${rule.id}">
+                      ${locked ? '잠금 해제' : '잠금'}
+                    </button>
+                  </td>
                   <td>
                     <button type="button" class="small-btn promotion-enabled-btn" data-toggle-promotion="${rule.id}">
                       ${rule.enabled ? '사용' : '중지'}
@@ -833,7 +851,7 @@ const BremPromotionAdmin = (function () {
                   <td class="promotion-rule-actions">
                     <button type="button" class="small-btn" data-edit-promotion="${rule.id}">수정</button>
                     <button type="button" class="small-btn" data-copy-promotion="${rule.id}">복사</button>
-                    <button type="button" class="small-btn danger-btn" data-delete-promotion="${rule.id}">삭제</button>
+                    <button type="button" class="small-btn danger-btn" data-delete-promotion="${rule.id}"${locked ? ' disabled title="잠긴 조건은 삭제할 수 없습니다"' : ''}>삭제</button>
                   </td>
                 </tr>
               `;
@@ -842,6 +860,26 @@ const BremPromotionAdmin = (function () {
         </table>
       </div>
     `;
+  }
+
+  function deleteUnlockedRulesOnTab() {
+    const tabPlatform = getActiveRulesPlatformTab();
+    const rules = getPromotionRulesForPlatform(tabPlatform, { includeDisabled: true });
+    const unlocked = rules.filter(rule => !rule.locked);
+    if (!unlocked.length) {
+      showToast('이 탭에서 지울 잠금 제외 조건이 없습니다.');
+      return;
+    }
+    const label = tabPlatform === 'combined' ? '합산' : platformLabel(tabPlatform);
+    if (!window.confirm(`${label} 탭에서 잠기지 않은 ${unlocked.length}개를 삭제할까요? 잠긴 조건은 그대로 둡니다.`)) {
+      return;
+    }
+    const ids = unlocked.map(rule => rule.id);
+    if (ids.includes(state.previewRuleId)) state.previewRuleId = '';
+    if (ids.includes(state.editingRuleId)) hideRuleForm();
+    BremStorage.promotionRules.removeMany(ids);
+    showToast(`${label} 잠금 제외 ${ids.length}개를 삭제했습니다.`);
+    refresh();
   }
 
   function renderDriverSelectors() {
@@ -1166,6 +1204,19 @@ const BremPromotionAdmin = (function () {
         return;
       }
 
+      const lockBtn = event.target.closest('[data-toggle-promotion-lock]');
+      if (lockBtn) {
+        const rule = BremStorage.promotionRules.toggleLocked(lockBtn.dataset.togglePromotionLock);
+        showToast(rule.locked ? '이 조건을 잠갔습니다. 잠금 제외 삭제에서 빠집니다.' : '잠금을 해제했습니다.');
+        refresh();
+        return;
+      }
+
+      if (event.target.closest('#promotionRulesDeleteUnlockedBtn')) {
+        deleteUnlockedRulesOnTab();
+        return;
+      }
+
       const toggleBtn = event.target.closest('[data-toggle-promotion]');
       if (toggleBtn) {
         BremStorage.promotionRules.toggleEnabled(toggleBtn.dataset.togglePromotion);
@@ -1194,6 +1245,11 @@ const BremPromotionAdmin = (function () {
 
       const deleteBtn = event.target.closest('[data-delete-promotion]');
       if (deleteBtn) {
+        const rule = BremStorage.promotionRules.getById(deleteBtn.dataset.deletePromotion);
+        if (rule?.locked) {
+          showToast('잠긴 조건은 삭제할 수 없습니다. 잠금을 먼저 해제하세요.');
+          return;
+        }
         if (!window.confirm('이 프로모션 조건을 삭제할까요?')) return;
         if (state.previewRuleId === deleteBtn.dataset.deletePromotion) state.previewRuleId = '';
         if (state.editingRuleId === deleteBtn.dataset.deletePromotion) hideRuleForm();

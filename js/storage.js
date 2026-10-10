@@ -11146,6 +11146,7 @@ const BremStorage = (function () {
       selectorKey: String(rule.selectorKey || '').trim(),
       platform,
       enabled: rule.enabled !== false,
+      locked: rule.locked === true,
       slaApply: rule.slaApply === true,
       startDate: String(rule.startDate || '').slice(0, 10),
       endDate: String(rule.endDate || '').slice(0, 10),
@@ -11556,6 +11557,7 @@ const BremStorage = (function () {
         id: createId(),
         name: `${source.name} (복사)`,
         enabled: false,
+        locked: false,
         callTiers: source.callTiers.map(tier => ({ ...tier, id: createId() })),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -11568,6 +11570,32 @@ const BremStorage = (function () {
       const rule = promotionRules.getById(id);
       if (!rule) throw new Error('프로모션 조건을 찾을 수 없습니다.');
       return promotionRules.update(id, { enabled: !rule.enabled });
+    },
+
+    toggleLocked(id) {
+      const rule = promotionRules.getById(id);
+      if (!rule) throw new Error('프로모션 조건을 찾을 수 없습니다.');
+      return promotionRules.update(id, { locked: !rule.locked });
+    },
+
+    removeMany(ids) {
+      const idSet = new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean));
+      if (!idSet.size) return [];
+      if (activeStorageAdapter.deleteTableRow) {
+        idSet.forEach(id => {
+          void activeStorageAdapter.deleteTableRow('promotions', id);
+        });
+      }
+      const filtered = promotionRules.getAll().filter(rule => !idSet.has(String(rule.id)));
+      if (filtered.length) {
+        promotionRules.saveAll(filtered);
+      } else if (activeStorageAdapter.stage) {
+        activeStorageAdapter.stage(KEYS.promotionRules, []);
+        window.BremDataCache?.set?.(KEYS.promotionRules, []);
+      } else {
+        promotionRules.saveAll([]);
+      }
+      return [...idSet];
     }
   };
 

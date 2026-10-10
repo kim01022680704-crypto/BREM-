@@ -6462,6 +6462,29 @@ textarea {
   overflow: auto;
 }
 
+.promotion-rules-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.promotion-rules-toolbar p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.promotion-rules-table tr.is-promotion-locked {
+  box-shadow: inset 3px 0 0 var(--yellow);
+}
+
+.promotion-lock-btn.is-active {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
 .promotion-rule-actions {
   display: flex;
   flex-wrap: wrap;
