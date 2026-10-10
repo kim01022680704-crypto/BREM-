@@ -413,9 +413,102 @@ const BremPromotionApply = (function () {
     return { kind: 'none' };
   }
 
+  function isUnpaidConditionReason(reason) {
+    const text = String(reason || '').trim();
+    if (!text) return false;
+    if (/미등록/.test(text)) return false;
+    if (/미션 미배정|미션 없음|미션 배정 오류|배달처리비|미매칭|기사 데이터 없음/.test(text)) return false;
+    return (
+      /거절율.+(초과|미만)/.test(text)
+      || /수락률.+(미만|초과)/.test(text)
+      || /총 콜수 .+미만/.test(text)
+      || /주\d+일 조건 미달/.test(text)
+      || /하루 .+미달/.test(text)
+      || /달성일 부족/.test(text)
+      || /지급 시작 콜수 미달/.test(text)
+      || /단가보장 대상 아님/.test(text)
+      || /실제 배달수행금액이 보장금액 이상/.test(text)
+      || /건당 지급 0원/.test(text)
+      || /프로모션 불일치/.test(text)
+      || /미지급 조건으로 인해 미적용/.test(text)
+      || /프로모션 미선택/.test(text)
+    );
+  }
+
+  function classifySetupGapCategory(reasons = []) {
+    const text = (reasons || []).map(item => String(item || '')).join(' ');
+    if (/미매칭|기사 데이터 없음/.test(text)) return 'match';
+    if (/배달처리비/.test(text)) return 'delivery_fee';
+    if (/미등록/.test(text)) return 'rate';
+    if (/미션 미배정|미션 없음|미션 배정 오류|비활성화|선택한 프로모션|건당 지급 설정 없음/.test(text)) return 'mission';
+    if (/지역 미배정/.test(text)) return 'region';
+    return 'other';
+  }
+
+  function collectPromotionSetupGaps(result) {
+    const rows = Array.isArray(result?.results) ? result.results : [];
+    const platform = normalizePlatform(result?.platform);
+    const seen = new Set();
+    const gaps = [];
+
+    rows.forEach((row, index) => {
+      if (Number(row?.totalPromotionAmount || 0) > 0) return;
+      const rawReasons = (row?.failureReasons || []).map(item => String(item || '').trim()).filter(Boolean);
+      const setupReasons = rawReasons.filter(reason => !isUnpaidConditionReason(reason));
+      const hasRule = Boolean(row?.ruleName || row?.ruleId);
+      if (!setupReasons.length && hasRule) return;
+      if (!setupReasons.length && !hasRule) {
+        setupReasons.push(platform === 'combined'
+          ? '미션 미배정 (미션 관리에서 합산·쿠팡·배민 미션 배정)'
+          : '미션 미배정 (미션 관리에서 기사별 배정)');
+      }
+
+      const driverId = String(row?.matchedRiderId || '').trim();
+      const driver = driverId ? BremStorage.drivers.getById?.(driverId) || null : null;
+      const rowPlatform = normalizePlatform(row?.appliedPlatform || platform);
+      if (driver) {
+        const needBaemin = rowPlatform === 'baemin' || rowPlatform === 'combined';
+        const needCoupang = rowPlatform === 'coupang' || rowPlatform === 'combined';
+        if (needBaemin && !String(driver.regionBaemin || driver.raw_data?.regionBaemin || '').trim()) {
+          setupReasons.push('배민 지역 미배정');
+        }
+        if (needCoupang && !String(driver.regionCoupang || driver.raw_data?.regionCoupang || '').trim()) {
+          setupReasons.push('쿠팡 지역 미배정');
+        }
+      }
+
+      const uniqueReasons = [...new Set(setupReasons)];
+      if (!uniqueReasons.length) return;
+      const rateOnly = uniqueReasons.every(reason => /미등록/.test(reason) && !/미션|지역|배달처리비|미매칭|기사 데이터/.test(reason));
+      if (rateOnly) return;
+
+      const key = [
+        driverId || row?.baeminUserId || row?.coupangLoginKey || row?.displayName || row?.riderName || index,
+        rowPlatform
+      ].join('|');
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      gaps.push({
+        key,
+        row,
+        driver,
+        driverId,
+        platform: rowPlatform,
+        reasons: uniqueReasons,
+        category: classifySetupGapCategory(uniqueReasons),
+        canEdit: Boolean(driver)
+      });
+    });
+
+    return gaps;
+  }
+
   function collectResultRuleSummary(results = []) {
     const names = [...new Set(results.map(row => row.ruleName).filter(Boolean))];
-    const unassigned = results.filter(row => (row.failureReasons || []).includes('미션 미배정')).length;
+    const unassigned = results.filter(row =>
+      (row.failureReasons || []).some(reason => String(reason || '').includes('미션 미배정'))
+    ).length;
     const label = names.length
       ? names.join(', ')
       : (unassigned ? `미션 미배정 ${unassigned}명` : '기사별 미션 배정');
@@ -2111,6 +2204,8 @@ const BremPromotionApply = (function () {
     getResultRowErpName,
     getResultRowCoupangId,
     getResultRowBaeminId,
+    isUnpaidConditionReason,
+    collectPromotionSetupGaps,
     buildSaveRecord,
     saveResult,
     getSavedResults,

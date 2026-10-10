@@ -14,7 +14,11 @@ const BremPromotionApplyAdmin = (function () {
     savedWeekFilter: '',
     // 수락/거절율 미등록 기사를 막고 계산하지 않도록 기본 false. 패널 버튼으로 켠다.
     ignoreMissingRates: false,
-    rainApply: false
+    rainApply: false,
+    gapTab: 'mission',
+    gapRegions: { baemin: [], coupang: [] },
+    gapBusy: false,
+    gapResult: null
   };
   const $ = selector => document.querySelector(selector);
   const $$ = selector => Array.from(document.querySelectorAll(selector));
@@ -178,6 +182,549 @@ const BremPromotionApplyAdmin = (function () {
 
   function showToast(message) {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
+  }
+
+  function shortCoupangRegionName(name) {
+    let raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '';
+    raw = raw.replace(/\(\d+\)$/g, '');
+    const hangul = raw.replace(/[^가-힣]/g, '');
+    const base = hangul || raw;
+    return !base ? '' : (base.length <= 4 ? base : base.slice(-4));
+  }
+
+  function currentSetupGaps(result = state.gapResult || state.lastResult) {
+    return BremPromotionApply.collectPromotionSetupGaps?.(result) || [];
+  }
+
+  function driverRegionValue(driver, platform) {
+    if (!driver) return '';
+    return platform === 'coupang'
+      ? String(driver.regionCoupang || driver.raw_data?.regionCoupang || '').trim()
+      : String(driver.regionBaemin || driver.raw_data?.regionBaemin || '').trim();
+  }
+
+  function matchRegionKey(list, value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const hit = (list || []).find(region =>
+      region.key === raw
+      || region.label === raw
+      || region.partnerId === raw
+      || region.vendorId === raw
+      || region.vendorName === raw
+      || shortCoupangRegionName(region.vendorName) === raw
+      || shortCoupangRegionName(region.label) === shortCoupangRegionName(raw)
+    );
+    return hit?.key || '';
+  }
+
+  function missionOptionsHtml(platform, selectedId, placeholder) {
+    const items = window.BremMissionPromotionCatalog?.getForPlatform?.(platform) || [];
+    const selected = String(selectedId || '');
+    const options = [
+      `<option value="">${escapeHtml(placeholder)}</option>`,
+      `<option value="__clear__">미배정으로 비우기</option>`,
+      ...items.map(item => {
+        const inactive = item.isActive === false ? ' (중지)' : '';
+        return `<option value="${escapeHtml(item.id)}"${item.id === selected ? ' selected' : ''}>${escapeHtml(item.title)}${inactive}</option>`;
+      })
+    ];
+    return options.join('');
+  }
+
+  function regionOptionsHtml(platform, selectedValue) {
+    const list = state.gapRegions[platform === 'coupang' ? 'coupang' : 'baemin'] || [];
+    const selectedKey = matchRegionKey(list, selectedValue);
+    return [
+      '<option value="">변경 안 함</option>',
+      '<option value="__clear__">미배정으로 비우기</option>',
+      ...list.map(region => {
+        const extra = region.partnerId ? ` (${escapeHtml(region.partnerId)})` : '';
+        return `<option value="${escapeHtml(region.key)}"${region.key === selectedKey ? ' selected' : ''}>${escapeHtml(region.label)}${extra}</option>`;
+      })
+    ].join('');
+  }
+
+  function fallbackRegionsFromDrivers(platform) {
+    const field = platform === 'coupang' ? 'regionCoupang' : 'regionBaemin';
+    const seen = new Set();
+    return (BremStorage.drivers.getAll?.() || [])
+      .map(driver => String(driver?.[field] || driver?.raw_data?.[field] || '').trim())
+      .filter(Boolean)
+      .filter(label => {
+        if (seen.has(label)) return false;
+        seen.add(label);
+        return true;
+      })
+      .sort((a, b) => a.localeCompare(b, 'ko'))
+      .map(label => ({ key: label, label, platform }));
+  }
+
+  async function ensureGapRegions() {
+    const token = await window.BremStorage?.resolveAdminAccessToken?.();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    try {
+      const res = await fetch('/api/admin/baemin-delivery/partner-regions', { headers, credentials: 'same-origin' });
+      const payload = await res.json().catch(() => ({}));
+      if (res.ok) {
+        state.gapRegions.baemin = (payload.allItems || payload.items || []).map(item => ({
+          key: String(item.partnerId || '').trim(),
+          partnerId: String(item.partnerId || '').trim(),
+          label: String(item.regionName || '').trim(),
+          platform: 'baemin'
+        })).filter(item => item.key && item.label);
+      }
+    } catch (error) {
+      console.warn('[BREM] promotion gap baemin regions:', error);
+    }
+    try {
+      const res = await fetch('/api/admin/coupang/vendor-regions', { headers, credentials: 'same-origin' });
+      const payload = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const seen = new Set();
+        state.gapRegions.coupang = (payload.allItems || payload.items || []).map(item => {
+          const vendorId = String(item.vendorId || '').trim();
+          const vendorName = String(item.vendorName || '').trim();
+          if (!vendorId || seen.has(vendorId)) return null;
+          seen.add(vendorId);
+          return {
+            key: vendorId,
+            vendorId,
+            vendorName,
+            label: shortCoupangRegionName(vendorName) || vendorId,
+            platform: 'coupang'
+          };
+        }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+      }
+    } catch (error) {
+      console.warn('[BREM] promotion gap coupang regions:', error);
+    }
+    if (!state.gapRegions.baemin.length) state.gapRegions.baemin = fallbackRegionsFromDrivers('baemin');
+    if (!state.gapRegions.coupang.length) state.gapRegions.coupang = fallbackRegionsFromDrivers('coupang');
+  }
+
+  function findGapRegion(platform, key) {
+    return (state.gapRegions[platform === 'coupang' ? 'coupang' : 'baemin'] || [])
+      .find(item => item.key === key) || null;
+  }
+
+  function ensureGapPopup() {
+    let root = $('#promotionApplyGapPopup');
+    if (root) return root;
+    root = document.createElement('div');
+    root.id = 'promotionApplyGapPopup';
+    root.className = 'promotion-gap-popup';
+    root.hidden = true;
+    root.innerHTML = `
+      <button type="button" class="promotion-gap-popup__backdrop" data-gap-close aria-label="닫기"></button>
+      <div class="promotion-gap-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="promotionApplyGapTitle">
+        <div class="promotion-gap-popup__head">
+          <p class="promotion-gap-popup__eyebrow">프로모션 적용</p>
+          <div class="promotion-gap-popup__title-row">
+            <h2 id="promotionApplyGapTitle">계산 누락</h2>
+            <button type="button" class="small-btn" data-gap-close>닫기</button>
+          </div>
+          <p class="promotion-gap-popup__meta" id="promotionApplyGapMeta">미지급 조건은 제외했습니다. 미션·지역을 여기서 바로 고치면 다시 계산됩니다.</p>
+        </div>
+        <div class="promotion-gap-popup__tabs" role="tablist">
+          <button type="button" class="promotion-gap-popup__tab is-active" data-gap-tab="mission">미션 설정</button>
+          <button type="button" class="promotion-gap-popup__tab" data-gap-tab="region">지역 설정</button>
+        </div>
+        <div class="promotion-gap-popup__body">
+          <div data-gap-panel="mission"></div>
+          <div data-gap-panel="region" hidden></div>
+        </div>
+        <div class="promotion-gap-popup__foot">
+          <div class="promotion-gap-popup__foot-links">
+            <button type="button" class="small-btn" data-gap-goto="mission-management">미션관리</button>
+            <button type="button" class="small-btn" data-gap-goto="mission-assignment">미션배정</button>
+            <button type="button" class="small-btn" data-gap-goto="driver-region">기사지역관리</button>
+          </div>
+          <div class="promotion-gap-popup__foot-actions">
+            <button type="button" class="primary-btn" id="promotionApplyGapSaveBtn">저장 후 다시 계산</button>
+            <button type="button" class="small-btn" data-gap-close>닫기</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(root);
+    root.addEventListener('click', event => {
+      if (event.target.closest('[data-gap-close]')) {
+        hideGapPopup();
+        return;
+      }
+      const tabBtn = event.target.closest('[data-gap-tab]');
+      if (tabBtn) {
+        setGapTab(tabBtn.dataset.gapTab);
+        return;
+      }
+      const gotoBtn = event.target.closest('[data-gap-goto]');
+      if (gotoBtn) {
+        goToGapSection(gotoBtn.dataset.gapGoto);
+        return;
+      }
+      if (event.target.closest('#promotionApplyGapSaveBtn')) {
+        void saveGapFixesAndRecalc();
+        return;
+      }
+      if (event.target.closest('#promotionApplyGapSaveRegionDefaultBtn')) {
+        saveGapRegionDefaults();
+      }
+    });
+    return root;
+  }
+
+  function setGapTab(tab) {
+    state.gapTab = tab === 'region' ? 'region' : 'mission';
+    const root = ensureGapPopup();
+    root.querySelectorAll('[data-gap-tab]').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.gapTab === state.gapTab);
+    });
+    root.querySelectorAll('[data-gap-panel]').forEach(panel => {
+      panel.hidden = panel.dataset.gapPanel !== state.gapTab;
+    });
+  }
+
+  function hideGapPopup() {
+    const root = $('#promotionApplyGapPopup');
+    if (root) root.hidden = true;
+    document.body.classList.remove('promotion-gap-open');
+    state.gapResult = null;
+  }
+
+  function gapRowLabel(gap, result) {
+    const row = gap.row || {};
+    const platform = result?.platform;
+    if (BremPlatforms.normalize(platform) === 'baemin') {
+      const id = BremPromotionApply.getResultRowBaeminRiderId(row);
+      const name = BremPromotionApply.getResultRowMatchedDriverName(row);
+      return name ? `${id} · ${name}` : id;
+    }
+    if (BremPlatforms.normalize(platform) === 'combined') {
+      return BremPromotionApply.getResultRowErpName(row) || BremPromotionApply.getResultRowDisplayName(row, platform);
+    }
+    return BremPromotionApply.getResultRowDisplayName(row, platform);
+  }
+
+  function renderGapPanels(result) {
+    const root = ensureGapPopup();
+    const gaps = currentSetupGaps(result);
+    const title = root.querySelector('#promotionApplyGapTitle');
+    const meta = root.querySelector('#promotionApplyGapMeta');
+    if (title) title.textContent = `계산 누락 ${formatNumber(gaps.length)}명`;
+    const missionCount = gaps.filter(item => item.category === 'mission' || item.reasons.some(reason => String(reason).includes('미션'))).length;
+    const regionCount = gaps.filter(item => item.reasons.some(reason => String(reason).includes('지역 미배정'))).length;
+    const matchCount = gaps.filter(item => item.category === 'match').length;
+    const feeCount = gaps.filter(item => item.category === 'delivery_fee').length;
+    if (meta) {
+      meta.textContent = [
+        '미지급 조건은 제외했습니다.',
+        missionCount ? `미션 ${missionCount}명` : '',
+        regionCount ? `지역 ${regionCount}명` : '',
+        matchCount ? `ERP 미매칭 ${matchCount}명` : '',
+        feeCount ? `배달처리비 ${feeCount}명` : ''
+      ].filter(Boolean).join(' · ') + '. 여기서 바로 수정한 뒤 다시 계산하세요.';
+    }
+
+    const assignedOf = (driver, platform) => {
+      const assigned = window.BremMissionPromotionCatalog?.getDriverAssignment?.(driver, { strict: false }) || {};
+      return assigned[platform] || '';
+    };
+
+    const missionPanel = root.querySelector('[data-gap-panel="mission"]');
+    if (missionPanel) {
+      missionPanel.innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>기사</th>
+                <th>플랫폼</th>
+                <th>사유</th>
+                <th>배민 미션</th>
+                <th>쿠팡 미션</th>
+                <th>합산 미션</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${gaps.map(gap => {
+                const can = gap.canEdit;
+                return `
+                  <tr data-gap-key="${escapeHtml(gap.key)}" data-gap-driver="${escapeHtml(gap.driverId)}">
+                    <td><strong>${escapeHtml(gapRowLabel(gap, result))}</strong></td>
+                    <td>${escapeHtml(platformLabel(gap.platform))}</td>
+                    <td class="promotion-gap-reason">${escapeHtml(gap.reasons.join(' · '))}</td>
+                    <td>${can ? `<select data-gap-mission="baemin">${missionOptionsHtml('baemin', assignedOf(gap.driver, 'baemin'), '변경 안 함')}</select>` : '-'}</td>
+                    <td>${can ? `<select data-gap-mission="coupang">${missionOptionsHtml('coupang', assignedOf(gap.driver, 'coupang'), '변경 안 함')}</select>` : '-'}</td>
+                    <td>${can ? `<select data-gap-mission="combined">${missionOptionsHtml('combined', assignedOf(gap.driver, 'combined'), '변경 안 함')}</select>` : '-'}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    const regionPanel = root.querySelector('[data-gap-panel="region"]');
+    if (regionPanel) {
+      const defaultPlatform = BremPlatforms.normalize(result?.platform) === 'coupang' ? 'coupang' : 'baemin';
+      regionPanel.innerHTML = `
+        <div class="promotion-gap-region-default">
+          <label>기본미션 지역 플랫폼
+            <select id="promotionApplyGapDefaultPlatform">
+              <option value="baemin"${defaultPlatform === 'baemin' ? ' selected' : ''}>배민</option>
+              <option value="coupang"${defaultPlatform === 'coupang' ? ' selected' : ''}>쿠팡</option>
+            </select>
+          </label>
+          <label>지역
+            <select id="promotionApplyGapDefaultRegion">${regionOptionsHtml(defaultPlatform, '')}</select>
+          </label>
+          <label>배민 기본미션
+            <select id="promotionApplyGapDefaultMissionBaemin">${missionOptionsHtml('baemin', '', '미배정')}</select>
+          </label>
+          <label>쿠팡 기본미션
+            <select id="promotionApplyGapDefaultMissionCoupang">${missionOptionsHtml('coupang', '', '미배정')}</select>
+          </label>
+          <label>합산 기본미션
+            <select id="promotionApplyGapDefaultMissionCombined">${missionOptionsHtml('combined', '', '미배정')}</select>
+          </label>
+          <button type="button" class="small-btn" id="promotionApplyGapSaveRegionDefaultBtn">이 지역 기본미션 저장</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>기사</th>
+                <th>현재 배민지역</th>
+                <th>현재 쿠팡지역</th>
+                <th>배민 지역</th>
+                <th>쿠팡 지역</th>
+                <th>사유</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${gaps.map(gap => {
+                const can = gap.canEdit;
+                return `
+                  <tr data-gap-key="${escapeHtml(gap.key)}" data-gap-driver="${escapeHtml(gap.driverId)}">
+                    <td><strong>${escapeHtml(gapRowLabel(gap, result))}</strong></td>
+                    <td>${escapeHtml(driverRegionValue(gap.driver, 'baemin') || '미배정')}</td>
+                    <td>${escapeHtml(driverRegionValue(gap.driver, 'coupang') || '미배정')}</td>
+                    <td>${can ? `<select data-gap-region="baemin">${regionOptionsHtml('baemin', driverRegionValue(gap.driver, 'baemin'))}</select>` : '-'}</td>
+                    <td>${can ? `<select data-gap-region="coupang">${regionOptionsHtml('coupang', driverRegionValue(gap.driver, 'coupang'))}</select>` : '-'}</td>
+                    <td class="promotion-gap-reason">${escapeHtml(gap.reasons.join(' · '))}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+      const platformSelect = $('#promotionApplyGapDefaultPlatform');
+      platformSelect?.addEventListener('change', () => {
+        const regionSelect = $('#promotionApplyGapDefaultRegion');
+        if (regionSelect) regionSelect.innerHTML = regionOptionsHtml(platformSelect.value, '');
+        fillGapRegionDefaultSelects();
+      });
+      $('#promotionApplyGapDefaultRegion')?.addEventListener('change', fillGapRegionDefaultSelects);
+    }
+  }
+
+  function fillGapRegionDefaultSelects() {
+    const platform = $('#promotionApplyGapDefaultPlatform')?.value === 'coupang' ? 'coupang' : 'baemin';
+    const regionKey = $('#promotionApplyGapDefaultRegion')?.value || '';
+    const saved = regionKey
+      ? (window.BremStorage?.missionDefaults?.getRegion?.(platform, regionKey) || {})
+      : { baemin: '', coupang: '', combined: '' };
+    const setVal = (id, value) => {
+      const el = $(id);
+      if (!el) return;
+      if ([...el.options].some(option => option.value === String(value || ''))) el.value = String(value || '');
+      else el.value = '';
+    };
+    setVal('#promotionApplyGapDefaultMissionBaemin', saved.baemin);
+    setVal('#promotionApplyGapDefaultMissionCoupang', saved.coupang);
+    setVal('#promotionApplyGapDefaultMissionCombined', saved.combined);
+  }
+
+  function saveGapRegionDefaults() {
+    const platform = $('#promotionApplyGapDefaultPlatform')?.value === 'coupang' ? 'coupang' : 'baemin';
+    const regionKey = $('#promotionApplyGapDefaultRegion')?.value || '';
+    if (!regionKey) {
+      showToast('기본미션을 저장할 지역을 선택하세요.');
+      return false;
+    }
+    const picks = {
+      baemin: $('#promotionApplyGapDefaultMissionBaemin')?.value || '',
+      coupang: $('#promotionApplyGapDefaultMissionCoupang')?.value || '',
+      combined: $('#promotionApplyGapDefaultMissionCombined')?.value || ''
+    };
+    if (picks.baemin === '__clear__') picks.baemin = '';
+    if (picks.coupang === '__clear__') picks.coupang = '';
+    if (picks.combined === '__clear__') picks.combined = '';
+    if (!picks.baemin && !picks.coupang && !picks.combined) {
+      showToast('저장할 기본미션을 하나 이상 선택하세요.');
+      return false;
+    }
+    window.BremStorage?.missionDefaults?.setRegion?.(platform, regionKey, picks);
+    const region = findGapRegion(platform, regionKey);
+    showToast(`${region?.label || '이 지역'} 기본미션을 저장했습니다.`);
+    return true;
+  }
+
+  async function openGapPopup(result = state.lastResult) {
+    const gaps = currentSetupGaps(result);
+    if (!gaps.length) {
+      hideGapPopup();
+      return false;
+    }
+    await ensureGapRegions();
+    state.gapResult = result || state.lastResult;
+    const root = ensureGapPopup();
+    renderGapPanels(state.gapResult);
+    const preferRegion = gaps.every(item => item.reasons.some(reason => String(reason).includes('지역 미배정')) && item.category !== 'mission');
+    setGapTab(preferRegion ? 'region' : 'mission');
+    root.hidden = false;
+    document.body.classList.add('promotion-gap-open');
+    return true;
+  }
+
+  function goToGapSection(target) {
+    hideGapPopup();
+    if (target === 'driver-region') {
+      document.querySelector('.nav-btn[data-section="driver-management"]')?.click();
+      window.setTimeout(() => {
+        document.querySelector('[data-driver-mgmt-tab="region"]')?.click();
+      }, 80);
+      return;
+    }
+    document.querySelector(`.nav-btn[data-section="${target}"]`)?.click();
+  }
+
+  function readGapMissionPatch(tr, driver) {
+    const catalog = window.BremMissionPromotionCatalog;
+    if (!catalog?.buildAssignmentPatch || !driver) return null;
+    const current = catalog.getDriverAssignment?.(driver, { strict: false }) || {};
+    const read = platform => {
+      const value = tr.querySelector(`[data-gap-mission="${platform}"]`)?.value;
+      if (value == null || value === '') return current[platform] || '';
+      if (value === '__clear__') return '';
+      return value;
+    };
+    const next = {
+      baemin: read('baemin'),
+      coupang: read('coupang'),
+      combined: read('combined')
+    };
+    const patch = catalog.buildAssignmentPatch(next);
+    const changed = Object.keys(patch).some(key => String(patch[key] || '') !== String(driver[key] || ''));
+    return changed ? patch : null;
+  }
+
+  function applyRegionDefaultToPatch(driver, region, platform, existingPatch) {
+    const catalog = window.BremMissionPromotionCatalog;
+    if (!catalog?.buildAssignmentPatch || catalog.isAssignmentLocked?.(driver)) return existingPatch;
+    const assigned = catalog.getDriverAssignment?.(driver, { strict: true }) || {};
+    const defaults = window.BremStorage?.missionDefaults?.getRegion?.(platform, region.key) || {};
+    const next = { ...assigned };
+    let changed = false;
+    if (!assigned.combined) {
+      if (platform === 'baemin' && !assigned.baemin && defaults.baemin) {
+        next.baemin = defaults.baemin;
+        changed = true;
+      }
+      if (platform === 'coupang' && !assigned.coupang && defaults.coupang) {
+        next.coupang = defaults.coupang;
+        changed = true;
+      }
+      if (!assigned.baemin && !assigned.coupang && defaults.combined) {
+        next.combined = defaults.combined;
+        next.baemin = '';
+        next.coupang = '';
+        changed = true;
+      }
+    }
+    if (!changed) return existingPatch;
+    const missionPatch = catalog.buildAssignmentPatch(next);
+    return { ...(existingPatch || {}), ...missionPatch };
+  }
+
+  function readGapRegionPatch(tr, driver) {
+    if (!driver) return null;
+    let patch = {};
+    ['baemin', 'coupang'].forEach(platform => {
+      const value = tr.querySelector(`[data-gap-region="${platform}"]`)?.value;
+      if (value == null || value === '') return;
+      if (value === '__clear__') {
+        if (platform === 'coupang') patch.regionCoupang = '';
+        else patch.regionBaemin = '';
+        return;
+      }
+      const region = findGapRegion(platform, value);
+      if (!region) return;
+      if (platform === 'coupang') {
+        patch.regionCoupang = region.label;
+        patch.platformCoupang = true;
+      } else {
+        patch.regionBaemin = region.label;
+        patch.platformBaemin = true;
+      }
+      const merged = { ...driver, ...patch };
+      const withDefault = applyRegionDefaultToPatch(merged, region, platform, patch);
+      if (withDefault) patch = withDefault;
+    });
+    return Object.keys(patch).length ? patch : null;
+  }
+
+  async function saveGapFixesAndRecalc() {
+    if (state.gapBusy) return;
+    const root = ensureGapPopup();
+    const gaps = currentSetupGaps();
+    const byDriver = new Map();
+    gaps.forEach(gap => {
+      if (!gap.driverId || !gap.driver) return;
+      const safeId = window.CSS?.escape ? CSS.escape(gap.driverId) : gap.driverId;
+      const missionTr = root.querySelector(`[data-gap-panel="mission"] tr[data-gap-driver="${safeId}"]`);
+      const regionTr = root.querySelector(`[data-gap-panel="region"] tr[data-gap-driver="${safeId}"]`);
+      const missionPatch = missionTr ? readGapMissionPatch(missionTr, gap.driver) : null;
+      const regionPatch = regionTr ? readGapRegionPatch(regionTr, gap.driver) : null;
+      const changes = { ...(regionPatch || {}), ...(missionPatch || {}) };
+      if (!Object.keys(changes).length) return;
+      const prev = byDriver.get(gap.driverId) || { id: gap.driverId, changes: {} };
+      prev.changes = { ...prev.changes, ...changes };
+      byDriver.set(gap.driverId, prev);
+    });
+    const patches = [...byDriver.values()];
+    if (!patches.length) {
+      showToast('변경된 미션·지역이 없습니다. 값을 고친 뒤 저장하세요.');
+      return;
+    }
+    state.gapBusy = true;
+    const btn = $('#promotionApplyGapSaveBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '저장 중…';
+    }
+    try {
+      const result = await BremStorage.drivers.batchPatch(patches);
+      if (result?.warning) showToast(result.warning);
+      else showToast(`${patches.length}명 미션·지역을 저장했습니다. 다시 계산합니다.`);
+      hideGapPopup();
+      await runCalculation({
+        ignoreMissingRates: state.lastResult?.ignoreMissingRates === true || state.ignoreMissingRates === true,
+        rainApply: state.lastResult?.rainApply === true || state.rainApply === true
+      });
+    } catch (error) {
+      showToast(error.message || '미션·지역 저장에 실패했습니다.');
+    } finally {
+      state.gapBusy = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '저장 후 다시 계산';
+      }
+    }
   }
 
   function weekStartKey(dateValue) {
@@ -728,6 +1275,10 @@ const BremPromotionApplyAdmin = (function () {
     const rateMissingSummary = rateMissingRows.length
       ? ` · <span class="promotion-rate-missing-summary">⚠ ${escapeHtml(rateMissingLabel)} 미등록 <strong>${formatNumber(rateMissingRows.length)}</strong>명</span>`
       : '';
+    const setupGaps = currentSetupGaps(result);
+    const gapSummary = setupGaps.length
+      ? `<p class="promotion-gap-summary">⚠ 계산 누락 <strong>${formatNumber(setupGaps.length)}</strong>명 (미지급 조건 제외) <button type="button" class="small-btn" id="promotionApplyOpenGapBtn">바로 수정</button></p>`
+      : '';
 
     summaryEl.innerHTML = `
       <p>대상: <strong>${escapeHtml(result.settlementLabel)}</strong></p>
@@ -739,6 +1290,7 @@ const BremPromotionApplyAdmin = (function () {
       ${result.rainApply ? '<p>우천적용: <strong>기상할증(AC) 건은 AH-500원 후 단가보장</strong></p>' : ''}
       ${result.slaApply ? '<p><span class="promotion-sla-tag">SLA시간</span> 배민 총완료 − 시간외완료 (쿠팡은 그대로)</p>' : ''}
       ${combinedSummary}
+      ${gapSummary}
       ${savedBadge}
     `;
 
@@ -779,6 +1331,8 @@ const BremPromotionApplyAdmin = (function () {
       `;
     }
     renderRateMissingPanel(result);
+    if (options.autoGap) void openGapPopup(result);
+    else if (!setupGaps.length) hideGapPopup();
 
     rowsEl.innerHTML = result.results.map(row => {
       const rowPlatform = row.appliedPlatform || platform;
@@ -1073,7 +1627,7 @@ const BremPromotionApplyAdmin = (function () {
       state.savedResultId = '';
       state.ignoreMissingRates = ignoreMissingRates;
       state.rainApply = rainApply;
-      renderResult(state.lastResult);
+      renderResult(state.lastResult, { autoGap: true });
       const feeSkip = (state.lastResult?.results || []).filter(row =>
         (row.failureReasons || []).some(reason => String(reason || '').includes('배달처리비 정산서 업로드'))
       ).length;
@@ -1218,6 +1772,7 @@ const BremPromotionApplyAdmin = (function () {
       panel.hidden = true;
       panel.innerHTML = '';
     }
+    hideGapPopup();
     showToast('계산 결과를 초기화했습니다.');
   }
 
@@ -1351,6 +1906,12 @@ const BremPromotionApplyAdmin = (function () {
       void runCalculationIgnoringMissingRates();
     });
 
+    $('#promotionApplyResultSummary')?.addEventListener('click', event => {
+      const btn = event.target.closest('#promotionApplyOpenGapBtn');
+      if (!btn) return;
+      void openGapPopup(state.lastResult);
+    });
+
     ['promotionApplySavedPlatformFilter', 'promotionApplySavedRegionFilter'].forEach(id => {
       const el = $(`#${id}`);
       if (!el) return;
@@ -1410,7 +1971,7 @@ const BremPromotionApplyAdmin = (function () {
     renderSavedList();
   }
 
-  window.BremPromotionApplyAdmin = { init, refresh, handleWeekSelect, handleSavedWeekSelect };
+  window.BremPromotionApplyAdmin = { init, refresh, handleWeekSelect, handleSavedWeekSelect, openSetupGapPopup: openGapPopup };
   return window.BremPromotionApplyAdmin;
 })();
 
