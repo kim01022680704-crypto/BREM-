@@ -924,6 +924,45 @@
     return callsByPlatform(list);
   }
 
+  function liveOpsWeekComplete(ops) {
+    if (!ops?.available) return null;
+    const n = Number(ops.weekComplete);
+    if (Number.isFinite(n)) return Math.max(0, n);
+    const fallback = Number(ops.complete);
+    return Number.isFinite(fallback) ? Math.max(0, fallback) : null;
+  }
+
+  function liveWeeklyCallCounts(driverId) {
+    const stored = weeklyCallsByPlatform(driverId);
+    const weekStart = state.selectedWeekStart || weekStartKey();
+    if (weekStart !== weekStartKey()) return stored;
+    const baeminLive = liveOpsWeekComplete(BremStorage.getRiderBaeminOps?.());
+    const coupangLive = liveOpsWeekComplete(BremStorage.getRiderCoupangOps?.());
+    const baemin = baeminLive == null ? stored.baemin : baeminLive;
+    const coupang = coupangLive == null ? stored.coupang : coupangLive;
+    return { baemin, coupang, total: baemin + coupang };
+  }
+
+  function refreshRiderMissionLiveCalls() {
+    const driver = state.currentDriver;
+    if (!driver) return;
+    const weekStats = liveWeeklyCallCounts(driver.id);
+    const combinedWrap = document.getElementById('riderMissionCombinedWrap');
+    if (combinedWrap && !combinedWrap.hidden) {
+      renderMissionSim('Combined', combinedWrap.__bremMission, weekStats.total);
+    } else {
+      const baeminWrap = document.getElementById('riderMissionBaeminWrap');
+      const coupangWrap = document.getElementById('riderMissionCoupangWrap');
+      if (baeminWrap && !baeminWrap.hidden) {
+        renderMissionSim('Baemin', baeminWrap.__bremMission, weekStats.baemin);
+      }
+      if (coupangWrap && !coupangWrap.hidden) {
+        renderMissionSim('Coupang', coupangWrap.__bremMission, weekStats.coupang);
+      }
+    }
+    document.dispatchEvent(new CustomEvent('brem-rider-mission-rendered'));
+  }
+
   function longEventPlatformLabel(platform) {
     const value = String(platform || '').trim().toLowerCase();
     if (value === 'baemin') return '배민';
@@ -1360,7 +1399,7 @@
           </li>
         `).join('')}
       </ul>
-      <p class="mission-sim__note">거절율·미지급 조건은 빼고, 콜수 기준으로만 본 예상 금액입니다.${
+      <p class="mission-sim__note">거절율·미지급 조건은 빼고, 실시간 현황 주간 콜수 기준으로만 본 예상 금액입니다.${
         config.type === 'both' ? ' 단가보장은 배달료에 따라 달라서 여기에 넣지 않았습니다.' : ''
       }</p>
     `;
@@ -1470,7 +1509,7 @@
     const baeminMissionId = String(driver?.selectedMissionIdBaemin || '').trim();
     const coupangMissionId = String(driver?.selectedMissionIdCoupang || '').trim();
     const combinedMissionId = String(driver?.selectedMissionIdCombined || '').trim();
-    const weekStats = weeklyCallsByPlatform(driver?.id);
+    const weekStats = liveWeeklyCallCounts(driver?.id);
 
     let assigned = null;
     if (BremStorage.getSupabaseConfig?.().mode === 'production') {
@@ -1595,6 +1634,7 @@
       'driverBaeminLiveOpsUpdated',
       `마지막 업데이트: ${formatLiveOpsUpdatedAt(pickLiveOpsDisplayTime(ops))}`
     );
+    refreshRiderMissionLiveCalls();
     syncBaeminLiveOpsPolling(driver);
   }
 
@@ -1711,6 +1751,7 @@
       'driverCoupangLiveOpsUpdated',
       `마지막 업데이트: ${formatLiveOpsUpdatedAt(pickLiveOpsDisplayTime(ops))}`
     );
+    refreshRiderMissionLiveCalls();
     syncCoupangLiveOpsPolling(driver);
   }
 
