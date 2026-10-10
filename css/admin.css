@@ -7062,6 +7062,32 @@ body.promotion-gap-open {
   gap: 8px;
 }
 
+.promotion-gap-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.promotion-gap-toolbar p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.promotion-gap-default-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  border-radius: 10px;
+  background: rgba(251, 191, 36, 0.06);
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 @media (max-width: 900px) {
   .promotion-gap-region-default {
     grid-template-columns: 1fr 1fr;

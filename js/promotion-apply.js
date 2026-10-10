@@ -122,6 +122,48 @@ const BremPromotionApply = (function () {
     });
   }
 
+  function settlementNeedsSlaOutMap(settlement, platform, selectedRuleIds, assignmentMode) {
+    const p = normalizePlatform(platform);
+    if (p === 'coupang' || !settlement) return false;
+    if (assignmentMode === 'selected_rules') {
+      return calculationNeedsSlaOutMap(p, selectedRuleIds, assignmentMode);
+    }
+    return (settlement.riders || []).some(rider => {
+      const driver = resolveDriverForWeeklyRider(rider, p);
+      if (!driver) return false;
+      return ruleUsesSlaApply(pickPromotionRule(driver, p, [], { assignmentMode: 'per_driver' }));
+    });
+  }
+
+  function combinedSettlementsNeedSlaOutMap(coupangSettlement, baeminSettlement, selectedRuleIds, assignmentMode) {
+    if (assignmentMode === 'selected_rules') {
+      return calculationNeedsSlaOutMap('combined', selectedRuleIds, assignmentMode);
+    }
+    if (!coupangSettlement || !baeminSettlement) return false;
+    return buildDriverAssignments(coupangSettlement, baeminSettlement).some(item => {
+      const driver = BremStorage.drivers.getById(item.driverId);
+      if (!driver) return false;
+      const plan = resolveCombinedTabDriverPlan(driver, item, 'per_driver', []);
+      if (plan.kind === 'baemin' || plan.kind === 'combined') return ruleUsesSlaApply(plan.rule);
+      if (plan.kind === 'split') return ruleUsesSlaApply(plan.baeminRule);
+      return false;
+    });
+  }
+
+  function summarizeSlaApply(results = []) {
+    const rows = Array.isArray(results) ? results : [];
+    const withRule = rows.filter(row => row.ruleId || row.ruleName);
+    const slaRows = rows.filter(row => row.slaApply === true);
+    return {
+      slaApply: slaRows.length > 0,
+      slaApplyAll: withRule.length > 0 && slaRows.length === withRule.length,
+      slaApplyCount: slaRows.length,
+      slaOtherCount: Math.max(0, withRule.length - slaRows.length),
+      slaMissions: [...new Set(slaRows.map(row => row.ruleName).filter(Boolean))],
+      slaOtherMissions: [...new Set(withRule.filter(row => row.slaApply !== true).map(row => row.ruleName).filter(Boolean))]
+    };
+  }
+
   function applySlaToBaeminCallCount(callCount, slaOutComplete, slaApply) {
     const before = Math.max(0, Number(callCount || 0) || 0);
     const slaOut = slaApply ? Math.max(0, Number(slaOutComplete || 0) || 0) : 0;
@@ -433,6 +475,33 @@ const BremPromotionApply = (function () {
       || /미지급 조건으로 인해 미적용/.test(text)
       || /프로모션 미선택/.test(text)
     );
+  }
+
+  function assignmentDiffersFromRegionDefault(assigned = {}, defaults = {}) {
+    const expected = {
+      baemin: String(defaults.baemin || '').trim(),
+      coupang: String(defaults.coupang || '').trim(),
+      combined: String(defaults.combined || '').trim()
+    };
+    const current = {
+      baemin: String(assigned.baemin || '').trim(),
+      coupang: String(assigned.coupang || '').trim(),
+      combined: String(assigned.combined || '').trim()
+    };
+    if (!expected.baemin && !expected.coupang && !expected.combined) return [];
+    if (expected.combined) {
+      return current.combined === expected.combined
+        ? []
+        : [{ slot: 'combined', currentId: current.combined || current.baemin || current.coupang, expectedId: expected.combined }];
+    }
+    const diffs = [];
+    if (expected.baemin && current.baemin !== expected.baemin) {
+      diffs.push({ slot: 'baemin', currentId: current.baemin || current.combined, expectedId: expected.baemin });
+    }
+    if (expected.coupang && current.coupang !== expected.coupang) {
+      diffs.push({ slot: 'coupang', currentId: current.coupang || current.combined, expectedId: expected.coupang });
+    }
+    return diffs;
   }
 
   function classifySetupGapCategory(reasons = []) {
@@ -946,7 +1015,7 @@ const BremPromotionApply = (function () {
         ? BremBaeminDeliveryFee.formatMetaLabel(options.deliveryFeeMeta)
         : '',
       rainApply: options.rainApply === true,
-      slaApply: results.some(row => row.slaApply === true),
+      ...summarizeSlaApply(results),
       results,
       summary: {
         riderCount: results.length,
@@ -1686,7 +1755,7 @@ const BremPromotionApply = (function () {
       deliveryFeeFileName: feeFiles.join(' / '),
       deliveryFeeLabel: feeLabels.join(' / '),
       rainApply: options.rainApply === true,
-      slaApply: results.some(row => row.slaApply === true),
+      ...summarizeSlaApply(results),
       results,
       summary: {
         ...assignmentSummary,
@@ -1779,6 +1848,11 @@ const BremPromotionApply = (function () {
       deliveryFeeFileName: String(calculationResult.deliveryFeeFileName || ''),
       deliveryFeeLabel: String(calculationResult.deliveryFeeLabel || ''),
       slaApply: calculationResult.slaApply === true,
+      slaApplyAll: calculationResult.slaApplyAll === true,
+      slaApplyCount: Number(calculationResult.slaApplyCount || 0),
+      slaOtherCount: Number(calculationResult.slaOtherCount || 0),
+      slaMissions: calculationResult.slaMissions || [],
+      slaOtherMissions: calculationResult.slaOtherMissions || [],
       savedAt: new Date().toISOString(),
       coupangSettlementId: calculationResult.coupangSettlementId || '',
       baeminSettlementId: calculationResult.baeminSettlementId || '',
@@ -1913,7 +1987,9 @@ const BremPromotionApply = (function () {
       .trim()
       .replace(/[\\/:*?"<>|]/g, '_');
     const date = String(record.savedAt || record.startDate || new Date().toISOString()).slice(0, 10);
-    const slaTag = record.slaApply === true ? '_SLA시간' : '';
+    const slaTag = record.slaApplyAll === true
+      ? '_SLA시간'
+      : (Number(record.slaApplyCount || 0) > 0 || record.slaApply === true ? '_SLA일부' : '');
     return `${region}_프로모션계산결과${slaTag}_${date}.xlsx`;
   }
 
@@ -1934,7 +2010,7 @@ const BremPromotionApply = (function () {
         missionName: row.ruleName || '',
         weekLabel: `${record.startDate || ''} ~ ${record.endDate || ''}`,
         basis: [
-          record.slaApply === true ? 'SLA시간' : '',
+          row.slaApply === true ? 'SLA시간' : '',
           (row.appliedConditions || []).join(', ') || (row.failureReasons || []).join(', ') || '-'
         ].filter(Boolean).join(' · ')
       };
@@ -2180,6 +2256,9 @@ const BremPromotionApply = (function () {
     applyPromotionToCombinedSettlements,
     loadBaeminSlaOutMap,
     calculationNeedsSlaOutMap,
+    settlementNeedsSlaOutMap,
+    combinedSettlementsNeedSlaOutMap,
+    summarizeSlaApply,
     ruleUsesSlaApply,
     mergeRegionPartSettlements,
     mergePartSettlementsList,
@@ -2206,6 +2285,7 @@ const BremPromotionApply = (function () {
     getResultRowBaeminId,
     isUnpaidConditionReason,
     collectPromotionSetupGaps,
+    assignmentDiffersFromRegionDefault,
     buildSaveRecord,
     saveResult,
     getSavedResults,

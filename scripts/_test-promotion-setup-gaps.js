@@ -122,5 +122,28 @@ check('첫 누락에 지역 사유', gaps[0].reasons.some(reason => String(reaso
 check('둘째 누락은 미매칭', gaps[1].category, 'match');
 check('미지급/미등록/지급완료는 제외', gaps.every(item => item.row.displayName !== '이지역' || item.category === 'match'), true);
 
+const sla = apply.summarizeSlaApply([
+  { ruleName: '100건 천원(울산남구)', slaApply: true },
+  { ruleName: '중구 100건', slaApply: false },
+  { ruleName: '중구 100건', slaApply: false }
+]);
+check('SLA는 일부만', sla.slaApplyAll, false);
+check('SLA 인원', sla.slaApplyCount, 1);
+check('SLA 아닌 인원', sla.slaOtherCount, 2);
+check('SLA 미션명', sla.slaMissions, ['100건 천원(울산남구)']);
+
+const mismatch = apply.assignmentDiffersFromRegionDefault(
+  { baemin: 'namgu', coupang: '', combined: '' },
+  { baemin: 'junggu', coupang: '', combined: '' }
+);
+check('남구 잔여 미션은 중구 기본과 다름', mismatch.length, 1);
+check('다른 슬롯은 배민', mismatch[0].slot, 'baemin');
+check('현재는 남구 미션', mismatch[0].currentId, 'namgu');
+check('기대는 중구 기본', mismatch[0].expectedId, 'junggu');
+check('같은 미션은 통과', apply.assignmentDiffersFromRegionDefault(
+  { baemin: 'junggu', coupang: '', combined: '' },
+  { baemin: 'junggu', coupang: '', combined: '' }
+).length, 0);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
