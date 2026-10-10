@@ -750,6 +750,20 @@ app.get('/api/admin/rider-dashboard/coupang-cluster-crawl-assign', async (req, r
   }
 });
 
+app.get('/api/admin/rider-dashboard/baemin-region-crawl-assign', async (req, res) => {
+  try {
+    const result = await riderRegionDashboard.getAdminBaeminRegionCrawlAssign(getBearerToken(req), {
+      date: req.query.date
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '배민 배달현황 크롤 배정을 불러오지 못했습니다.' });
+  }
+});
+
 app.get('/api/admin/rider-dashboard/region-crawl-match', async (req, res) => {
   try {
     const result = await riderRegionDashboard.getAdminRegionCrawlMatch(getBearerToken(req), {

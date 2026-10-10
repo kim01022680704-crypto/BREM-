@@ -2106,6 +2106,238 @@ async function getAdminCoupangClusterCrawlAssign(accessToken, query = {}) {
   };
 }
 
+function partnerIdFromDeliveryDedupeKey(dedupeKey) {
+  const head = String(dedupeKey || '').split(':')[0].trim().toUpperCase();
+  return /^DP\d{6,}$/.test(head) ? head : '';
+}
+
+function baeminCrawlCompleteCount(parsed) {
+  const n = Number(
+    parsed?.allDayComplete
+    ?? parsed?.totalComplete
+    ?? parsed?.completeCount
+    ?? parsed?.deliveryCount
+    ?? 0
+  );
+  return Number.isFinite(n) ? n : 0;
+}
+
+function baeminRegionAlreadyAssigned(currentRegion, label, partnerId) {
+  const value = String(currentRegion || '').trim();
+  if (!value) return false;
+  const name = String(label || '').trim();
+  const pid = String(partnerId || '').trim().toUpperCase();
+  return value === name
+    || value === pid
+    || (pid.length >= 6 && value.toUpperCase().includes(pid));
+}
+
+async function resolveBaeminDeliveryStatusDate(supabase, preferredDate = '') {
+  const today = formatKstDateKey(new Date());
+  const want = String(preferredDate || '').slice(0, 10);
+  const candidates = [];
+  if (want) candidates.push(want);
+  if (!candidates.includes(today)) candidates.push(today);
+
+  for (const date of candidates) {
+    const { count, error } = await supabase
+      .from('baemin_biz_collect_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('source_menu', 'delivery_status')
+      .eq('collect_date', date);
+    if (!error && (count || 0) > 0) {
+      return { collectDate: date, requestedDate: want || today, fallback: date !== (want || today) };
+    }
+  }
+
+  const { data } = await supabase
+    .from('baemin_biz_collect_items')
+    .select('collect_date')
+    .eq('source_menu', 'delivery_status')
+    .order('collect_date', { ascending: false })
+    .limit(1);
+  const latest = String(data?.[0]?.collect_date || '').slice(0, 10);
+  if (latest) {
+    return { collectDate: latest, requestedDate: want || today, fallback: true };
+  }
+  return { collectDate: want || today, requestedDate: want || today, fallback: false };
+}
+
+async function loadAllBaeminDeliveryStatus(supabase, collectDate) {
+  const pageSize = 1000;
+  const all = [];
+  for (let from = 0; from < 20000; from += pageSize) {
+    const { data, error } = await supabase
+      .from('baemin_biz_collect_items')
+      .select('dedupe_key,parsed_json,collect_date,rider_user_id,rider_name')
+      .eq('source_menu', 'delivery_status')
+      .eq('collect_date', collectDate)
+      .range(from, from + pageSize - 1);
+    if (error) return { error, rows: [] };
+    all.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+  return { rows: all };
+}
+
+/**
+ * 오늘(없으면 최근) 배달현황 크롤을 등록 DP별로 묶어 ERP 기사 일괄 배정 미리보기.
+ * 쿠팡 「클러스터 크롤 배정」과 같은 화면에서 쓴다.
+ */
+async function getAdminBaeminRegionCrawlAssign(accessToken, query = {}) {
+  const { verifyAdminCaller } = require('./admin-users');
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const { readPartnerRegionMap, resolvePartnerDisplay } = require('./baemin-partner-region');
+  let regionMap = {};
+  try {
+    regionMap = await readPartnerRegionMap();
+  } catch (error) {
+    return { ok: false, status: 500, error: error.message || '배민 지역 목록을 불러오지 못했습니다.' };
+  }
+
+  const dateInfo = await resolveBaeminDeliveryStatusDate(supabase, query.date || '');
+  const collectDate = dateInfo.collectDate;
+  const crawl = await loadAllBaeminDeliveryStatus(supabase, collectDate);
+  if (crawl.error) {
+    return { ok: false, status: 500, error: crawl.error.message || '배민 배달현황 크롤을 불러오지 못했습니다.' };
+  }
+
+  let riderRows;
+  try {
+    riderRows = await fetchAllRidersLite(supabase);
+  } catch (riderError) {
+    return { ok: false, status: 500, error: riderError.message || '기사 목록을 불러오지 못했습니다.' };
+  }
+
+  const lookup = buildBaeminDriverLookup(riderRows);
+  const bestByDriver = new Map();
+  const noVendorRows = [];
+  const unregistered = [];
+  const seenCrawl = new Set();
+
+  (crawl.rows || []).forEach(row => {
+    const parsed = row.parsed_json || {};
+    const partnerId = partnerIdFromDeliveryDedupeKey(row.dedupe_key)
+      || String(parsed.partnerId || parsed.partner_id || '').trim().toUpperCase();
+    const display = resolvePartnerDisplay(
+      partnerId,
+      parsed.partnerName || parsed.partner_name || '',
+      parsed.regionName || parsed.displayName || '',
+      regionMap
+    );
+    const label = String(regionMap[partnerId] || display.regionName || display.displayName || '').trim();
+    const baeminId = String(
+      parsed.userId || parsed.riderId || parsed.rider_user_id || parsed.baeminId || row.rider_user_id || ''
+    ).trim();
+    const crawlName = String(
+      parsed.riderName || parsed.rider_name || parsed.name || row.rider_name || ''
+    ).trim();
+    const phone = String(parsed.phone || parsed.phoneNumber || '').trim();
+    const completeCount = baeminCrawlCompleteCount(parsed);
+    const idKey = `${partnerId}:${baeminIdMatchKey(baeminId) || crawlName || phone}`;
+    if (seenCrawl.has(idKey)) return;
+    seenCrawl.add(idKey);
+
+    if (!/^DP\d{6,}$/.test(partnerId) || !label) {
+      noVendorRows.push({
+        baeminId,
+        crawlName: crawlName || '-',
+        completeCount: Math.round(completeCount * 10) / 10
+      });
+      return;
+    }
+
+    const resolved = resolveBaeminCrawlDriver(lookup, baeminId, crawlName, phone);
+    const driver = resolved.driver;
+    if (!driver) {
+      unregistered.push({
+        cluster: label,
+        partnerId,
+        vendorId: partnerId,
+        baeminId,
+        crawlName: crawlName || '-',
+        completeCount: Math.round(completeCount * 10) / 10
+      });
+      return;
+    }
+
+    const prev = bestByDriver.get(driver.id);
+    if (!prev || completeCount > prev.completeCount) {
+      bestByDriver.set(driver.id, {
+        driverId: driver.id,
+        driverName: driver.name || crawlName || '-',
+        currentRegion: String(driver.regionBaemin || '').trim(),
+        cluster: label,
+        partnerId,
+        vendorId: partnerId,
+        vendorName: label,
+        targetRegion: label,
+        completeCount: Math.round(completeCount * 10) / 10,
+        crawlName: crawlName || '-',
+        matchBy: resolved.matchBy
+      });
+    }
+  });
+
+  const assignments = [];
+  const clusterMap = new Map();
+  bestByDriver.forEach(entry => {
+    const status = baeminRegionAlreadyAssigned(entry.currentRegion, entry.cluster, entry.partnerId)
+      ? 'already'
+      : 'assignable';
+    const row = { ...entry, status };
+    assignments.push(row);
+    if (!clusterMap.has(entry.cluster)) {
+      clusterMap.set(entry.cluster, {
+        key: entry.partnerId,
+        label: entry.cluster,
+        partnerId: entry.partnerId,
+        assignable: 0,
+        already: 0,
+        rows: []
+      });
+    }
+    const bucket = clusterMap.get(entry.cluster);
+    bucket.rows.push(row);
+    if (status === 'assignable') bucket.assignable += 1;
+    else bucket.already += 1;
+  });
+
+  const clusters = [...clusterMap.values()]
+    .sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+  const summary = {
+    crawlTotal: (crawl.rows || []).length,
+    matchedDrivers: assignments.length,
+    assignable: assignments.filter(r => r.status === 'assignable').length,
+    already: assignments.filter(r => r.status === 'already').length,
+    unregistered: unregistered.length,
+    noVendor: noVendorRows.length,
+    clusterCount: clusters.length
+  };
+
+  return {
+    ok: true,
+    platform: 'baemin',
+    today: collectDate,
+    collectDate,
+    dateNote: dateInfo.fallback
+      ? `배달현황 ${collectDate} (요청일 ${dateInfo.requestedDate} 수집분 없음 · 최근 수집일)`
+      : `배달현황 ${collectDate}`,
+    summary,
+    clusters,
+    assignments,
+    unregistered,
+    noVendorRows
+  };
+}
+
 async function upsertExposureMap(supabase, next) {
   const { error } = await supabase.from('settings').upsert({
     key: EXPOSURE_KEY,
@@ -2275,6 +2507,7 @@ module.exports = {
   getAdminRegionRanking,
   getAdminRegionCrawlMatch,
   getAdminCoupangClusterCrawlAssign,
+  getAdminBaeminRegionCrawlAssign,
   getAdminRegionExposure,
   saveAdminRegionExposure,
   // 기본값 변경 검증용 (scripts/_test-region-mode-default.js)

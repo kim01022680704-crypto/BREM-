@@ -6711,7 +6711,7 @@
             <div class="card-header">
               <h2>기사지역관리</h2>
               <div class="promotion-form-actions">
-                <button type="button" class="small-btn primary-btn" id="driverRegionClusterAssignBtn" hidden title="오늘 rider_daily 크롤의 vendor(클러스터)별로 ERP 기사를 일괄 배정">클러스터 크롤 배정</button>
+                <button type="button" class="small-btn primary-btn" id="driverRegionClusterAssignBtn" hidden title="오늘 크롤 기준으로 ERP 기사를 지역에 일괄 배정">배달현황 크롤 배정</button>
                 <button type="button" class="small-btn" id="driverRegionReloadBtn">지역 새로고침</button>
               </div>
             </div>
@@ -9335,9 +9335,9 @@
     <div class="settlement-match-modal__dialog settlement-match-modal__dialog--wide" role="dialog" aria-labelledby="driverRegionClusterAssignTitle" aria-modal="true">
       <div class="settlement-match-modal__head">
         <div class="settlement-match-modal__head-top">
-          <h3 id="driverRegionClusterAssignTitle">클러스터 크롤 배정</h3>
+          <h3 id="driverRegionClusterAssignTitle">배달현황 크롤 배정</h3>
         </div>
-        <p class="form-help">오늘 <strong>rider_daily</strong> 크롤에 붙은 vendor(지역명) 기준으로 4글자 클러스터별 ERP 기사를 자동 배정합니다. 지역별 따로 수집하지 않아도, 크롤 행의 vendorName/vendorId 로 클러스터를 나눕니다.</p>
+        <p class="form-help">오늘 배달현황 크롤을 등록 지역(DP)별로 묶어 ERP 기사에 한 번에 배정합니다. 쿠팡 탭에서는 클러스터 크롤 배정으로 바뀝니다.</p>
         <p class="direct-inline-stats" id="driverRegionClusterAssignSummary"></p>
       </div>
       <div class="table-wrap driver-region-crawl-match-table-wrap">
@@ -9345,7 +9345,7 @@
           <thead>
             <tr>
               <th><input type="checkbox" id="driverRegionClusterAssignCheckAll" title="반영가능 전체"></th>
-              <th>클러스터</th>
+              <th id="driverRegionClusterAssignClusterCol">지역</th>
               <th>크롤 이름</th>
               <th>ERP 기사</th>
               <th>현재 지역</th>
@@ -9632,7 +9632,7 @@
   <script src="js/final-deposit.js?v=20261004freshadj1"></script>
   <script src="js/withdrawal-management-admin.js?v=20261003wd2"></script>
   <script src="js/tax-management-admin.js?v=20261001tax1"></script>
-  <script src="js/driver-management-admin.js?v=20261010unassigned1"></script>
+  <script src="js/driver-management-admin.js?v=20261010baeminassign1"></script>
   <script src="js/inactive-drivers-admin.js?v=20260922active1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260922pay1"></script>

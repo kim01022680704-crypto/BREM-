@@ -3140,7 +3140,7 @@ const BremDriverManagementAdmin = (function () {
     if (hint) {
       hint.textContent = state.regionPlatform === 'coupang'
         ? '쿠팡: rider_daily 크롤의 vendor(클러스터)로 「클러스터 크롤 배정」 일괄 배정. 「라이더 노출」켜면 기사앱 대시보드 표시. 올노출/전체열람/순위만열람/할당만/미노출/팀장임명.'
-        : '배민: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 「올노출」/「전체열람」/「순위만열람」/「할당만」/「미노출」(앱만 숨김·집계유지)/「팀장임명」(전원열람).';
+        : '배민: 오늘 배달현황 크롤의 DP(지역)로 「배달현황 크롤 배정」 일괄 배정. 「라이더 노출」켜면 기사앱 대시보드 표시. 올노출/전체열람/순위만열람/할당만/미노출/팀장임명.';
     }
 
     // 지역 목록·노출은 기사 전체 로드를 기다리지 않고 먼저 그린다.
@@ -3486,6 +3486,23 @@ const BremDriverManagementAdmin = (function () {
     else nameEl?.focus();
   }
 
+  function regionForBaeminAssign(partnerId, label = '') {
+    const pid = String(partnerId || '').trim();
+    const name = String(label || '').trim();
+    const byId = state.baeminRegions.find(item => item.partnerId === pid || item.key === pid);
+    if (byId) return byId;
+    const byLabel = name
+      ? state.baeminRegions.find(item => item.label === name)
+      : null;
+    if (byLabel) return byLabel;
+    return {
+      key: pid || name,
+      partnerId: pid,
+      label: name || pid,
+      platform: 'baemin'
+    };
+  }
+
   function regionForCluster(clusterKey, vendorId = '', vendorName = '') {
     const key = String(clusterKey || '').trim();
     const vid = String(vendorId || '').trim();
@@ -3509,8 +3526,15 @@ const BremDriverManagementAdmin = (function () {
 
   function syncRegionPlatformControls() {
     const clusterBtn = $('#driverRegionClusterAssignBtn');
-    const isCoupang = state.regionPlatform === 'coupang';
-    if (clusterBtn) clusterBtn.hidden = !isCoupang;
+    if (!clusterBtn) return;
+    clusterBtn.hidden = false;
+    if (state.regionPlatform === 'coupang') {
+      clusterBtn.textContent = '클러스터 크롤 배정';
+      clusterBtn.title = '오늘 rider_daily 크롤의 vendor(클러스터)별로 ERP 기사를 일괄 배정';
+    } else {
+      clusterBtn.textContent = '배달현황 크롤 배정';
+      clusterBtn.title = '오늘 배민 배달현황 크롤의 DP(지역)별로 ERP 기사를 일괄 배정';
+    }
   }
 
   function closeClusterAssignModal() {
@@ -3555,7 +3579,11 @@ const BremDriverManagementAdmin = (function () {
     if (footnote) {
       const parts = [];
       if (state.clusterAssign.dateNote) parts.push(state.clusterAssign.dateNote);
-      if (s.noVendor) parts.push(`vendor 정보 없는 크롤 ${s.noVendor}건은 자동 배정에서 제외됩니다.`);
+      if (s.noVendor) {
+        parts.push(state.regionPlatform === 'baemin'
+          ? `DP/지역명 없는 크롤 ${s.noVendor}건은 자동 배정에서 제외됩니다.`
+          : `vendor 정보 없는 크롤 ${s.noVendor}건은 자동 배정에서 제외됩니다.`);
+      }
       if (s.unregistered) parts.push(`ERP 미등록 ${s.unregistered}건 — 개별 지역의 「크롤링으로 지역등록」에서 간이등록하세요.`);
       footnote.textContent = parts.join(' ');
     }
@@ -3571,11 +3599,16 @@ const BremDriverManagementAdmin = (function () {
     });
 
     if (!rows.length) {
+      const isBaemin = state.regionPlatform === 'baemin';
       const emptyMsg = (s.crawlTotal || 0) > 0
-        ? '크롤 기사는 있으나 ERP 매칭·배정 가능 건이 없습니다. 기사등록·쿠팡ID(이름+전화4자리)를 확인하세요.'
+        ? (isBaemin
+          ? '크롤 기사는 있으나 ERP 매칭·배정 가능 건이 없습니다. 기사등록·배민ID를 확인하세요.'
+          : '크롤 기사는 있으나 ERP 매칭·배정 가능 건이 없습니다. 기사등록·쿠팡ID(이름+전화4자리)를 확인하세요.')
         : (state.clusterAssign.dateNote
-          ? `${state.clusterAssign.dateNote} — 해당일 rider_daily 가 없습니다. 쿠팡 수집 후 다시 시도하세요.`
-          : '배정할 기사가 없습니다. 쿠팡 rider_daily 수집 후 다시 시도하세요.');
+          ? `${state.clusterAssign.dateNote} — 해당일 ${isBaemin ? '배달현황' : 'rider_daily'} 가 없습니다. 수집 후 다시 시도하세요.`
+          : (isBaemin
+            ? '배정할 기사가 없습니다. 배민 배달현황 수집 후 다시 시도하세요.'
+            : '배정할 기사가 없습니다. 쿠팡 rider_daily 수집 후 다시 시도하세요.'));
       body.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(emptyMsg)}</td></tr>`;
       if (applyBtn) applyBtn.disabled = true;
       if (checkAll) {
@@ -3610,12 +3643,21 @@ const BremDriverManagementAdmin = (function () {
   }
 
   async function openClusterAssignModal() {
-    if (state.regionPlatform !== 'coupang') {
-      showToast('쿠팡 탭에서만 사용할 수 있습니다.');
-      return;
-    }
+    const platform = state.regionPlatform === 'coupang' ? 'coupang' : 'baemin';
     const modal = $('#driverRegionClusterAssignModal');
     if (!modal) return;
+    const title = $('#driverRegionClusterAssignTitle');
+    const help = modal.querySelector('.form-help');
+    const clusterTh = $('#driverRegionClusterAssignClusterCol');
+    if (title) {
+      title.textContent = platform === 'coupang' ? '클러스터 크롤 배정' : '배달현황 크롤 배정';
+    }
+    if (help) {
+      help.textContent = platform === 'coupang'
+        ? '오늘 rider_daily 크롤에 붙은 vendor(지역명) 기준으로 4글자 클러스터별 ERP 기사를 자동 배정합니다. 지역별 따로 수집하지 않아도, 크롤 행의 vendorName/vendorId 로 클러스터를 나눕니다.'
+        : '오늘 배달현황 크롤을 등록 지역(DP)별로 묶어 ERP 기사에 한 번에 배정합니다. 이미 그 지역인 기사는 제외됩니다.';
+    }
+    if (clusterTh) clusterTh.textContent = platform === 'coupang' ? '클러스터' : '지역';
     modal.hidden = false;
     const body = $('#driverRegionClusterAssignRows');
     if (body) body.innerHTML = '<tr><td colspan="7" class="empty">불러오는 중…</td></tr>';
@@ -3625,12 +3667,15 @@ const BremDriverManagementAdmin = (function () {
     try {
       const token = await window.BremStorage?.resolveAdminAccessToken?.();
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const res = await fetch('/api/admin/rider-dashboard/coupang-cluster-crawl-assign', {
+      const url = platform === 'coupang'
+        ? '/api/admin/rider-dashboard/coupang-cluster-crawl-assign'
+        : '/api/admin/rider-dashboard/baemin-region-crawl-assign';
+      const res = await fetch(url, {
         headers,
         credentials: 'same-origin'
       });
       const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload.error || '클러스터 배정 미리보기를 불러오지 못했습니다.');
+      if (!res.ok) throw new Error(payload.error || '크롤 배정 미리보기를 불러오지 못했습니다.');
       state.clusterAssign = {
         assignments: payload.assignments || [],
         summary: payload.summary || {},
@@ -3647,12 +3692,12 @@ const BremDriverManagementAdmin = (function () {
       if (body) {
         body.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(error.message || '불러오기 실패')}</td></tr>`;
       }
-      showToast(error.message || '클러스터 배정 미리보기를 불러오지 못했습니다.');
+      showToast(error.message || '크롤 배정 미리보기를 불러오지 못했습니다.');
     }
   }
 
   async function applyClusterAssignSelection() {
-    if (state.regionPlatform !== 'coupang') return;
+    const platform = state.regionPlatform === 'coupang' ? 'coupang' : 'baemin';
     const renderRows = state.clusterAssign.renderRows || state.clusterAssign.assignments || [];
     const checks = [...document.querySelectorAll('[data-cluster-assign-check]:checked')];
     const targets = checks
@@ -3668,13 +3713,15 @@ const BremDriverManagementAdmin = (function () {
     let failed = 0;
     try {
       for (const row of targets) {
-        const region = regionForCluster(row.cluster, row.vendorId, row.vendorName);
+        const region = platform === 'coupang'
+          ? regionForCluster(row.cluster, row.vendorId, row.vendorName)
+          : regionForBaeminAssign(row.partnerId || row.vendorId, row.cluster || row.targetRegion);
         if (!region) {
           failed += 1;
           continue;
         }
         try {
-          await assignDriverToRegion(row.driverId, region);
+          await assignDriverToRegion(row.driverId, region, platform);
           saved += 1;
         } catch (error) {
           console.warn('[BREM] cluster assign failed:', row.driverId, error);
@@ -3683,13 +3730,14 @@ const BremDriverManagementAdmin = (function () {
       }
       showToast(failed
         ? `${saved}명 반영 · ${failed}명 실패`
-        : `${saved}명을 클러스터 크롤 기준으로 배정했습니다.`);
+        : `${saved}명을 ${platform === 'coupang' ? '클러스터' : '배달현황'} 크롤 기준으로 배정했습니다.`);
       closeClusterAssignModal();
-      await fetchCoupangRegions();
+      if (platform === 'coupang') await fetchCoupangRegions();
+      else await fetchBaeminRegions();
       renderRegionCatalog();
       renderRegionDetail();
     } catch (error) {
-      showToast(error.message || '클러스터 배정 반영에 실패했습니다.');
+      showToast(error.message || '크롤 배정 반영에 실패했습니다.');
       if (applyBtn) applyBtn.disabled = false;
     }
   }
