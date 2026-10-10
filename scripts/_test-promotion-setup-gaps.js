@@ -144,6 +144,14 @@ check('같은 미션은 통과', apply.assignmentDiffersFromRegionDefault(
   { baemin: 'junggu', coupang: '', combined: '' },
   { baemin: 'junggu', coupang: '', combined: '' }
 ).length, 0);
+check('합산 기본이 있어도 배민 기사는 합산으로 안 봄', apply.assignmentDiffersFromRegionDefault(
+  { baemin: 'nam-baemin', coupang: 'nam-coupang', combined: '' },
+  { baemin: 'nam-baemin', coupang: 'nam-coupang', combined: 'nam-combined' }
+).length, 0);
+check('합산 기사만 합산 기본과 비교', apply.assignmentDiffersFromRegionDefault(
+  { baemin: '', coupang: '', combined: 'other-combined' },
+  { baemin: 'nam-baemin', coupang: 'nam-coupang', combined: 'nam-combined' }
+)[0]?.slot, 'combined');
 
 check('중A 별칭', apply.normalizeSettlementRegionAlias('중A'), '중구A');
 check('울산중구 별칭', apply.normalizeSettlementRegionAlias('울산중구'), '중구');

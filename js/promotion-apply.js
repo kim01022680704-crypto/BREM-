@@ -518,17 +518,29 @@ const BremPromotionApply = (function () {
       combined: String(assigned.combined || '').trim()
     };
     if (!expected.baemin && !expected.coupang && !expected.combined) return [];
-    if (expected.combined) {
-      return current.combined === expected.combined
-        ? []
-        : [{ slot: 'combined', currentId: current.combined || current.baemin || current.coupang, expectedId: expected.combined }];
+
+    // 합산 기본이 있어도, 배민·쿠팡으로 다니는 다수에게 합산을 씌우지 않는다.
+    if (current.combined) {
+      if (expected.combined) {
+        return current.combined === expected.combined
+          ? []
+          : [{ slot: 'combined', currentId: current.combined, expectedId: expected.combined }];
+      }
+      const diffs = [];
+      if (expected.baemin) diffs.push({ slot: 'baemin', currentId: current.combined, expectedId: expected.baemin });
+      if (expected.coupang) diffs.push({ slot: 'coupang', currentId: current.combined, expectedId: expected.coupang });
+      return diffs;
     }
+
     const diffs = [];
     if (expected.baemin && current.baemin !== expected.baemin) {
-      diffs.push({ slot: 'baemin', currentId: current.baemin || current.combined, expectedId: expected.baemin });
+      diffs.push({ slot: 'baemin', currentId: current.baemin, expectedId: expected.baemin });
     }
     if (expected.coupang && current.coupang !== expected.coupang) {
-      diffs.push({ slot: 'coupang', currentId: current.coupang || current.combined, expectedId: expected.coupang });
+      diffs.push({ slot: 'coupang', currentId: current.coupang, expectedId: expected.coupang });
+    }
+    if (!current.baemin && !current.coupang && expected.combined && !expected.baemin && !expected.coupang) {
+      diffs.push({ slot: 'combined', currentId: '', expectedId: expected.combined });
     }
     return diffs;
   }
@@ -558,13 +570,7 @@ const BremPromotionApply = (function () {
     return scored[0]?.region || null;
   }
 
-  function majorityRuleId(rows = []) {
-    const counts = new Map();
-    rows.forEach(row => {
-      const id = String(row?.ruleId || '').trim();
-      if (!id) return;
-      counts.set(id, (counts.get(id) || 0) + 1);
-    });
+  function pickMajorityId(counts = new Map()) {
     let best = '';
     let bestCount = 0;
     counts.forEach((count, id) => {
@@ -574,6 +580,26 @@ const BremPromotionApply = (function () {
       }
     });
     return counts.size > 1 ? best : '';
+  }
+
+  function majorityRuleIdBySlot(rows = [], platformHint = '') {
+    const counts = { baemin: new Map(), coupang: new Map(), combined: new Map() };
+    rows.forEach(row => {
+      const id = String(row?.ruleId || '').trim();
+      if (!id) return;
+      const rawApplied = String(row.appliedPlatform || '').trim();
+      const rawRulePlatform = String(BremStorage.promotionRules?.getById?.(id)?.platform || '').trim();
+      const fromRow = rawApplied ? normalizePlatform(rawApplied) : '';
+      const fromRule = rawRulePlatform ? normalizePlatform(rawRulePlatform) : '';
+      const slot = fromRow || fromRule || normalizePlatform(platformHint);
+      const map = counts[slot] || counts.baemin;
+      map.set(id, (map.get(id) || 0) + 1);
+    });
+    return {
+      baemin: pickMajorityId(counts.baemin),
+      coupang: pickMajorityId(counts.coupang),
+      combined: pickMajorityId(counts.combined)
+    };
   }
 
   function collectRegionMissionMismatches(result, context = {}) {
@@ -593,7 +619,10 @@ const BremPromotionApply = (function () {
       const driver = getDriver(id);
       if (driver && isLocked(driver)) lockedIds.add(id);
     });
-    const majorityId = majorityRuleId(rows.filter(row => !lockedIds.has(String(row?.matchedRiderId || ''))));
+    const majorityBySlot = majorityRuleIdBySlot(
+      rows.filter(row => !lockedIds.has(String(row?.matchedRiderId || ''))),
+      result.platform
+    );
     const seen = new Set();
     const items = [];
 
@@ -634,8 +663,11 @@ const BremPromotionApply = (function () {
         const hasSavedDefault = Boolean(defaults.baemin || defaults.coupang || defaults.combined);
         const compare = { baemin: '', coupang: '', combined: '' };
         if (hasSavedDefault) Object.assign(compare, defaults);
-        else if (majorityId) compare[side] = majorityId;
-        else return;
+        else {
+          if (majorityBySlot[side]) compare[side] = majorityBySlot[side];
+          if (assigned.combined && majorityBySlot.combined) compare.combined = majorityBySlot.combined;
+          if (!compare.baemin && !compare.coupang && !compare.combined) return;
+        }
         assignmentDiffersFromRegionDefault(assigned, compare).forEach(diff => {
           if (side !== 'combined' && diff.slot !== 'combined' && diff.slot !== side) return;
           const currentName = missionName(diff.currentId) || row.ruleName || '다른 미션';
@@ -644,17 +676,22 @@ const BremPromotionApply = (function () {
           reasons.push(hasSavedDefault
             ? `${where} 기본과 다름 · 현재 「${currentName}」 · 기본 「${expectedName}」`
             : `${where} 다수 미션과 다름 · 현재 「${currentName}」 · 이 정산 기본 「${expectedName}」`);
-          if (compare.baemin) expected.baemin = compare.baemin;
-          if (compare.coupang) expected.coupang = compare.coupang;
-          if (compare.combined) expected.combined = compare.combined;
+          if (diff.slot === 'combined') {
+            expected.combined = diff.expectedId;
+          } else {
+            expected[diff.slot] = diff.expectedId;
+            if (compare.baemin) expected.baemin = compare.baemin;
+            if (compare.coupang) expected.coupang = compare.coupang;
+          }
         });
       });
 
-      if (!reasons.length && row.ruleId && majorityId && row.ruleId !== majorityId) {
-        reasons.push(`이 정산 기본과 다름 · 현재 「${row.ruleName || missionName(row.ruleId)}」 · 기본 「${missionName(majorityId)}」`);
-        if (rowPlatform === 'baemin') expected.baemin = majorityId;
-        else if (rowPlatform === 'coupang') expected.coupang = majorityId;
-        else expected.combined = majorityId;
+      const majorityForRow = majorityBySlot[rowPlatform] || '';
+      if (!reasons.length && row.ruleId && majorityForRow && row.ruleId !== majorityForRow) {
+        reasons.push(`이 정산 기본과 다름 · 현재 「${row.ruleName || missionName(row.ruleId)}」 · 기본 「${missionName(majorityForRow)}」`);
+        if (rowPlatform === 'baemin') expected.baemin = majorityForRow;
+        else if (rowPlatform === 'coupang') expected.coupang = majorityForRow;
+        else expected.combined = majorityForRow;
       }
 
       if (!reasons.length) return;

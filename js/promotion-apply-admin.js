@@ -315,7 +315,9 @@ const BremPromotionApplyAdmin = (function () {
     const majority = majorityExpectedMissions(result);
     if (!expected.baemin) expected.baemin = majority.baemin;
     if (!expected.coupang) expected.coupang = majority.coupang;
-    if (!expected.combined) expected.combined = majority.combined;
+    if (!expected.combined && !expected.baemin && !expected.coupang) {
+      expected.combined = majority.combined;
+    }
     return expected;
   }
 
@@ -872,8 +874,14 @@ const BremPromotionApplyAdmin = (function () {
       tr.dataset.gapExpectedRegionBaemin = expectedRegions.baemin;
       tr.dataset.gapExpectedRegionCoupang = expectedRegions.coupang;
       if (!baemin && !coupang && !combined && !expectedRegions.baemin && !expectedRegions.coupang) return;
+      const driver = BremStorage.drivers.getById?.(tr.dataset.gapDriver) || null;
+      const assigned = window.BremMissionPromotionCatalog?.getDriverAssignment?.(driver, { strict: false }) || {};
+      const useCombined = Boolean(combined) && (
+        Boolean(assigned.combined)
+        || (!baemin && !coupang && !assigned.baemin && !assigned.coupang)
+      );
       let changed = false;
-      if (combined) {
+      if (useCombined) {
         changed = fillMissionSelect(tr.querySelector('[data-gap-mission="combined"]'), combined) || changed;
         fillMissionSelect(tr.querySelector('[data-gap-mission="baemin"]'), '__clear__');
         fillMissionSelect(tr.querySelector('[data-gap-mission="coupang"]'), '__clear__');
