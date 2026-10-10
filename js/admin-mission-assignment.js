@@ -191,6 +191,7 @@
   function driversMatchingRegion(region) {
     if (!region) return [];
     const platform = region.platform === 'coupang' ? 'coupang' : 'baemin';
+    const aliasScore = (left, right) => window.BremPromotionApply?.scoreRegionAliasMatch?.(left, right) || 0;
     return allDrivers().filter((driver) => {
       const value = driverRegionValue(driver, platform);
       if (!value) return false;
@@ -198,13 +199,16 @@
         return value === region.label
           || value === region.partnerId
           || value === region.key
-          || (region.partnerId && String(region.partnerId).length >= 6 && value.includes(region.partnerId));
+          || (region.partnerId && String(region.partnerId).length >= 6 && value.includes(region.partnerId))
+          || aliasScore(value, region.label) >= 60;
       }
       return value === region.vendorId
         || value === region.key
         || value === region.vendorName
         || shortCoupangRegion(value) === region.label
-        || shortCoupangRegion(value) === shortCoupangRegion(region.vendorName);
+        || shortCoupangRegion(value) === shortCoupangRegion(region.vendorName)
+        || aliasScore(value, region.label) >= 60
+        || aliasScore(value, region.vendorName) >= 60;
     });
   }
 
@@ -549,6 +553,37 @@
     return catalog().normalizeAssignmentDraft({ baemin, coupang, combined });
   }
 
+  function assignmentChangesForPicks(driver, picks) {
+    const next = nextAssignment(driver, picks);
+    const full = catalog().buildAssignmentPatch(next);
+    const touched = {
+      baemin: Boolean(picks.baemin),
+      coupang: Boolean(picks.coupang),
+      combined: Boolean(picks.combined)
+    };
+    if (touched.baemin || touched.coupang) touched.combined = true;
+    if (touched.combined && picks.combined && picks.combined !== CLEAR) {
+      touched.baemin = true;
+      touched.coupang = true;
+    }
+    const slotKeys = {
+      baemin: ['selectedMissionIdBaemin', 'promotionRuleIdBaemin', 'promotionSelectorBaemin'],
+      coupang: ['selectedMissionIdCoupang', 'promotionRuleIdCoupang', 'promotionSelectorCoupang'],
+      combined: ['selectedMissionIdCombined', 'promotionRuleIdCombined', 'promotionSelectorCombined']
+    };
+    const changes = {};
+    Object.entries(slotKeys).forEach(([slot, keys]) => {
+      if (!touched[slot]) return;
+      keys.forEach((key) => {
+        changes[key] = full[key] ?? '';
+      });
+    });
+    if (touched.baemin || touched.coupang || touched.combined) {
+      changes.selectedMissionId = full.selectedMissionId ?? '';
+    }
+    return changes;
+  }
+
   function syncPreviewDrivers(extraById = new Map()) {
     const merge = (driver) => {
       const fresh = BremStorage.drivers.getById(driver.id) || driver;
@@ -565,24 +600,18 @@
 
   async function applyBulk(options = {}) {
     const picks = options.picks || currentPicks();
-    const replaceAll = options.replaceAll === true;
     if (!picks.baemin && !picks.coupang && !picks.combined) {
       showToast('바꿀 미션을 하나 이상 선택하세요.');
       return false;
     }
-    const appliedPicks = replaceAll
-      ? {
-        baemin: picks.baemin || CLEAR,
-        coupang: picks.coupang || CLEAR,
-        combined: picks.combined || CLEAR
-      }
-      : picks;
-    const targets = options.selectAllUnlocked
-      ? state.preview.map((row) => row.driver).filter((driver) => !isLocked(driver))
-      : selectedDrivers();
-    const locked = options.selectAllUnlocked
-      ? state.preview.filter((row) => isLocked(row.driver)).map((row) => row.driver)
-      : targets.filter(isLocked);
+    const appliedPicks = picks;
+    const pool = state.pool.length ? state.pool : state.preview.map((row) => row.driver);
+    const targets = Array.isArray(options.drivers)
+      ? options.drivers
+      : options.selectAllUnlocked
+        ? pool.filter((driver) => !isLocked(driver))
+        : selectedDrivers();
+    const locked = pool.filter(isLocked);
     const unlocked = targets.filter((driver) => !isLocked(driver));
     if (!unlocked.length) {
       showToast(locked.length ? '잠금되지 않은 기사가 없습니다.' : '적용할 기사를 선택하세요.');
@@ -600,7 +629,7 @@
     try {
       const patches = unlocked.map((driver) => ({
         id: driver.id,
-        changes: catalog().buildAssignmentPatch(nextAssignment(driver, appliedPicks))
+        changes: assignmentChangesForPicks(driver, appliedPicks)
       }));
       syncPreviewDrivers(new Map(patches.map((item) => [item.id, item.changes])));
       const result = await BremStorage.drivers.batchPatch(patches);
@@ -631,7 +660,8 @@
       showToast('지역을 먼저 선택하세요.');
       return;
     }
-    loadRegionPreview();
+    const regionDrivers = driversMatchingRegion(region);
+    setPreview(regionDrivers);
     let picks = currentPicks();
     if (!picks.baemin && !picks.coupang && !picks.combined) {
       picks = readRegionDefaults();
@@ -642,7 +672,10 @@
       return;
     }
     if (!saveRegionDefaults(picks)) return;
-    await applyBulk({ picks, replaceAll: true, selectAllUnlocked: true });
+    await applyBulk({
+      picks,
+      drivers: regionDrivers.filter((driver) => !isLocked(driver))
+    });
   }
 
   async function toggleLock(driverId) {
@@ -690,15 +723,7 @@
     });
 
     $('missionBulkSaveRegionDefaultBtn')?.addEventListener('click', () => {
-      const picks = currentPicks();
-      if (!picks.baemin && !picks.coupang && !picks.combined) {
-        showToast('저장할 기본미션을 하나 이상 선택하세요.');
-        return;
-      }
-      if (saveRegionDefaults(picks)) {
-        const region = selectedRegion();
-        showToast(`${region?.label || '이 지역'} 기본미션을 저장했습니다.`);
-      }
+      void applyRegionDefaults();
     });
 
     $('missionBulkApplyRegionDefaultBtn')?.addEventListener('click', () => {
