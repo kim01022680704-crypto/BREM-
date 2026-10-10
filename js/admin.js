@@ -2619,11 +2619,18 @@
 
   function showAdminDataLoading(loading) {
     const app = $('#adminApp');
-    app?.classList.toggle('is-data-loading', loading);
+    const banner = document.getElementById('bremDataLoading');
+    const section = document.getElementById(state.currentSection);
+    // 사이드바·탑바는 그대로 두고, 배너+현재 화면만 로딩 표시한다.
+    app?.classList.remove('is-data-loading');
+    document.querySelectorAll('.is-section-loading').forEach(el => el.classList.remove('is-section-loading'));
     if (loading) {
-      window.BremLoadingUI?.show(app, '데이터 불러오는 중...');
+      window.BremLoadingUI?.show(banner || section || app, '데이터 불러오는 중...');
+      app?.classList.remove('is-data-loading');
+      section?.classList.add('is-section-loading');
     } else {
-      window.BremLoadingUI?.hide(app);
+      window.BremLoadingUI?.forceHide?.(banner || section || app);
+      app?.classList.remove('is-data-loading');
     }
   }
 
@@ -7475,15 +7482,7 @@
           state.eventSettingsSort.key,
           state.eventSettingsSort.dir
         ].join('\0');
-      case 'promotion-apply':
-        return [
-          'promotion-apply',
-          BremStorage.weeklySettlements?.getAll?.('bro').length || 0,
-          BremStorage.weeklySettlements?.getAll?.('direct').length || 0,
-          BremStorage.promotionApplyResults?.getAll?.().length || 0,
-          BremStorage.promotionRules?.getAll?.().length || 0,
-          BremStorage.drivers?.getAll?.().length || 0
-        ].join('\0');
+      // 프로모션 적용은 개수가 같아도 주차·규칙 내용이 바뀔 수 있어 지문 생략.
       default:
         return '';
     }
@@ -7686,6 +7685,7 @@
   }
 
   function runSectionModuleRefresh(sectionId) {
+    let pendingRefresh = null;
     if (sectionId !== 'baemin-biz-status' && sectionId !== 'baemin-status') {
       window.BremBaeminDeliveryStatusAdmin?.stopPolling?.();
     }
@@ -7719,7 +7719,7 @@
       void window.BremAdminPayrollDailySettlement.refresh();
     }
     if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
-      void window.BremAdminMissions.refresh({ force: false });
+      pendingRefresh = window.BremAdminMissions.refresh({ force: false });
     }
     if (sectionId === 'mission-assignment' && window.BremAdminMissionAssignment?.refresh) {
       void window.BremAdminMissionAssignment.refresh();
@@ -7738,12 +7738,20 @@
     } else {
       window.BremContributionAdmin?.stopLiveWatch?.();
     }
+    return pendingRefresh;
   }
 
   function finishSectionNavigation(sectionId) {
-    runSectionModuleRefresh(sectionId);
+    const pendingRefresh = runSectionModuleRefresh(sectionId);
     if (DRIVER_SEARCH_SECTIONS.has(sectionId)) {
       refreshSelectsForSection(sectionId);
+    }
+    // 미션관리는 refresh()가 표를 그린다. 여기서 render()를 또 호출하면 같은 표를 두 번 그린다.
+    if (sectionId === 'mission-management') {
+      void Promise.resolve(pendingRefresh).finally(() => {
+        if (state.currentSection === 'mission-management') applySectionEditPermissions();
+      });
+      return;
     }
     renderActiveSection(sectionId);
   }
