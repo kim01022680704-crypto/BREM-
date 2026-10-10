@@ -229,6 +229,7 @@ const BremPromotionApplyAdmin = (function () {
       setupDriverIds: currentSetupGaps(result).map(item => item.driverId),
       getDriver: id => BremStorage.drivers.getById?.(id) || null,
       getAssignment: driver => window.BremMissionPromotionCatalog?.getDriverAssignment?.(driver, { strict: false }) || {},
+      isAssignmentLocked: driver => window.BremMissionPromotionCatalog?.isAssignmentLocked?.(driver) || Boolean(driver?.missionAssignmentLocked),
       readDefaults: (platform, region) => readSavedRegionDefaults(platform, region),
       missionName: missionNameById
     }) || [];

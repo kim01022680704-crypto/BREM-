@@ -585,7 +585,15 @@ const BremPromotionApply = (function () {
     const getAssignment = context.getAssignment || (() => ({ baemin: '', coupang: '', combined: '' }));
     const readDefaults = context.readDefaults || (() => ({ baemin: '', coupang: '', combined: '' }));
     const missionName = context.missionName || (id => String(id || ''));
-    const majorityId = majorityRuleId(rows);
+    const isLocked = context.isAssignmentLocked || (driver => Boolean(driver?.missionAssignmentLocked));
+    const lockedIds = new Set();
+    rows.forEach(row => {
+      const id = String(row?.matchedRiderId || '').trim();
+      if (!id) return;
+      const driver = getDriver(id);
+      if (driver && isLocked(driver)) lockedIds.add(id);
+    });
+    const majorityId = majorityRuleId(rows.filter(row => !lockedIds.has(String(row?.matchedRiderId || ''))));
     const seen = new Set();
     const items = [];
 
@@ -601,9 +609,9 @@ const BremPromotionApply = (function () {
 
     rows.forEach((row, index) => {
       const driverId = String(row?.matchedRiderId || '').trim();
-      if (!driverId || setupIds.has(driverId) || seen.has(driverId)) return;
+      if (!driverId || setupIds.has(driverId) || seen.has(driverId) || lockedIds.has(driverId)) return;
       const driver = getDriver(driverId);
-      if (!driver) return;
+      if (!driver || isLocked(driver)) return;
       const assigned = { ...(getAssignment(driver) || {}) };
       const rowPlatform = normalizePlatform(row.appliedPlatform || result.platform);
       if (row.ruleId) {

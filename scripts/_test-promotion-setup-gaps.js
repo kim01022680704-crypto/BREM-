@@ -188,5 +188,14 @@ const leftoverByMajority = apply.collectRegionMissionMismatches(leftoverResult, 
 });
 check('기본 없어도 다수 미션과 다르면 잡힘', leftoverByMajority.map(item => item.driverId), ['jorina']);
 
+const leftoverLocked = apply.collectRegionMissionMismatches(leftoverResult, {
+  ...leftoverCtx,
+  getDriver: id => ({
+    ...leftoverCtx.getDriver(id),
+    missionAssignmentLocked: id === 'jorina'
+  })
+});
+check('미션 잠금은 팝업 제외', leftoverLocked.length, 0);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
