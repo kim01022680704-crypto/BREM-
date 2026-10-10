@@ -235,9 +235,54 @@ const BremPromotionApplyAdmin = (function () {
     }) || [];
   }
 
+  function settlementSides(result) {
+    const platform = BremPlatforms.normalize(result?.platform);
+    return platform === 'combined'
+      ? ['baemin', 'coupang']
+      : [platform === 'coupang' ? 'coupang' : 'baemin'];
+  }
+
+  function settlementExpectedMissions(result) {
+    const expected = { baemin: '', coupang: '', combined: '' };
+    settlementSides(result).forEach(side => {
+      const region = resolveCatalogRegion(side, settlementRegionHint(result, side));
+      const saved = region ? readSavedRegionDefaults(side, region) : {};
+      if (saved.baemin) expected.baemin = saved.baemin;
+      if (saved.coupang) expected.coupang = saved.coupang;
+      if (saved.combined) expected.combined = saved.combined;
+    });
+    return expected;
+  }
+
+  function settlementExpectedRegions(result) {
+    const expected = { baemin: '', coupang: '' };
+    settlementSides(result).forEach(side => {
+      const region = resolveCatalogRegion(side, settlementRegionHint(result, side));
+      if (region?.key) expected[side] = region.key;
+    });
+    return expected;
+  }
+
+  function withExpectedDefaults(item, missions, regions) {
+    let next = item;
+    const currentMissions = next?.expectedMissions || {};
+    if (!(currentMissions.baemin || currentMissions.coupang || currentMissions.combined)
+      && (missions.baemin || missions.coupang || missions.combined)) {
+      next = { ...next, expectedMissions: { ...missions } };
+    }
+    const currentRegions = next?.expectedRegions || {};
+    if (!(currentRegions.baemin || currentRegions.coupang)
+      && (regions.baemin || regions.coupang)) {
+      next = { ...next, expectedRegions: { ...regions } };
+    }
+    return next;
+  }
+
   function collectReviewItems(result = state.gapResult || state.lastResult) {
-    const setup = currentSetupGaps(result);
-    const mismatches = collectRegionMissionMismatches(result);
+    const missions = settlementExpectedMissions(result);
+    const regions = settlementExpectedRegions(result);
+    const setup = currentSetupGaps(result).map(item => withExpectedDefaults(item, missions, regions));
+    const mismatches = collectRegionMissionMismatches(result).map(item => withExpectedDefaults(item, missions, regions));
     return {
       setup,
       mismatches,
@@ -514,10 +559,10 @@ const BremPromotionApplyAdmin = (function () {
     const missionPanel = root.querySelector('[data-gap-panel="mission"]');
     if (missionPanel) {
       missionPanel.innerHTML = `
-        ${review.mismatches.length ? `
+        ${gaps.some(gap => gap.canEdit) ? `
           <div class="promotion-gap-toolbar">
             <button type="button" class="small-btn" id="promotionApplyGapApplyDefaultsBtn">지역 기본미션으로 맞추기</button>
-            <p>기본과 다른 사람은 칸을 기본미션으로 맞춰 두었습니다. 일부러 다르게 둘 사람은 칸을 되돌리거나 그대로 진행하세요.</p>
+            <p>버튼을 누르면 미션과 지역이 이 정산 지역 기본값으로 바뀝니다. 일부러 다르게 둘 사람은 칸을 되돌리거나 그대로 진행하세요.</p>
           </div>
         ` : ''}
         <div class="table-wrap">
@@ -537,15 +582,16 @@ const BremPromotionApplyAdmin = (function () {
               ${gaps.map(gap => {
                 const can = gap.canEdit;
                 const expected = gap.expectedMissions || {};
+                const expectedRegions = gap.expectedRegions || {};
                 return `
-                  <tr data-gap-key="${escapeHtml(gap.key)}" data-gap-driver="${escapeHtml(gap.driverId)}" data-gap-expected-baemin="${escapeHtml(expected.baemin || '')}" data-gap-expected-coupang="${escapeHtml(expected.coupang || '')}" data-gap-expected-combined="${escapeHtml(expected.combined || '')}">
+                  <tr data-gap-key="${escapeHtml(gap.key)}" data-gap-driver="${escapeHtml(gap.driverId)}" data-gap-expected-baemin="${escapeHtml(expected.baemin || '')}" data-gap-expected-coupang="${escapeHtml(expected.coupang || '')}" data-gap-expected-combined="${escapeHtml(expected.combined || '')}" data-gap-expected-region-baemin="${escapeHtml(expectedRegions.baemin || '')}" data-gap-expected-region-coupang="${escapeHtml(expectedRegions.coupang || '')}">
                     <td><strong>${escapeHtml(gapRowLabel(gap, result))}</strong></td>
                     <td>${escapeHtml(platformLabel(gap.platform))}</td>
                     <td class="promotion-gap-reason">${escapeHtml(gap.reasons.join(' · '))}</td>
                     <td>${can ? `<select data-gap-mission="baemin">${missionOptionsHtml('baemin', assignedOf(gap.driver, 'baemin'), '변경 안 함')}</select>` : '-'}</td>
                     <td>${can ? `<select data-gap-mission="coupang">${missionOptionsHtml('coupang', assignedOf(gap.driver, 'coupang'), '변경 안 함')}</select>` : '-'}</td>
                     <td>${can ? `<select data-gap-mission="combined">${missionOptionsHtml('combined', assignedOf(gap.driver, 'combined'), '변경 안 함')}</select>` : '-'}</td>
-                    <td>${can && gap.reviewOnly ? '<button type="button" class="small-btn" data-gap-apply-one>기본으로</button>' : ''}</td>
+                    <td>${can && (expected.baemin || expected.coupang || expected.combined) ? '<button type="button" class="small-btn" data-gap-apply-one>기본으로</button>' : ''}</td>
                   </tr>
                 `;
               }).join('')}
@@ -574,8 +620,9 @@ const BremPromotionApplyAdmin = (function () {
             <tbody>
               ${gaps.map(gap => {
                 const can = gap.canEdit;
+                const expectedRegions = gap.expectedRegions || {};
                 return `
-                  <tr data-gap-key="${escapeHtml(gap.key)}" data-gap-driver="${escapeHtml(gap.driverId)}">
+                  <tr data-gap-key="${escapeHtml(gap.key)}" data-gap-driver="${escapeHtml(gap.driverId)}" data-gap-expected-region-baemin="${escapeHtml(expectedRegions.baemin || '')}" data-gap-expected-region-coupang="${escapeHtml(expectedRegions.coupang || '')}">
                     <td><strong>${escapeHtml(gapRowLabel(gap, result))}</strong></td>
                     <td>${escapeHtml(driverRegionValue(gap.driver, 'baemin') || '미배정')}</td>
                     <td>${escapeHtml(driverRegionValue(gap.driver, 'coupang') || '미배정')}</td>
@@ -590,7 +637,6 @@ const BremPromotionApplyAdmin = (function () {
         </div>
       `;
     }
-    if (review.mismatches.length) applyExpectedMissionsToSelects();
   }
 
   function readSavedRegionDefaults(platform, region) {
@@ -662,37 +708,99 @@ const BremPromotionApplyAdmin = (function () {
     else summaryEl.insertAdjacentHTML('beforeend', html);
   }
 
-  function fillMissionSelect(select, value) {
-    if (!select) return;
+  function fillRegionSelect(select, value) {
+    if (!select) return false;
     const next = String(value || '');
-    if ([...select.options].some(option => option.value === next)) select.value = next;
+    if (!next) return false;
+    const options = [...select.options];
+    let match = options.find(option => option.value === next);
+    if (!match) {
+      const platform = select.dataset.gapRegion === 'coupang' ? 'coupang' : 'baemin';
+      const key = matchRegionKey(state.gapRegions[platform] || [], next);
+      if (key) match = options.find(option => option.value === key);
+    }
+    if (!match) return false;
+    select.value = match.value;
+    options.forEach(option => {
+      option.selected = option === match;
+    });
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }
+
+  function applyExpectedRegionsToDriver(driverId, expectedRegions = {}) {
+    const root = ensureGapPopup();
+    const safeId = window.CSS?.escape ? CSS.escape(String(driverId || '')) : String(driverId || '');
+    if (!safeId) return false;
+    const regionTr = root.querySelector(`[data-gap-panel="region"] tr[data-gap-driver="${safeId}"]`);
+    if (!regionTr) return false;
+    let changed = false;
+    if (expectedRegions.baemin) {
+      changed = fillRegionSelect(regionTr.querySelector('[data-gap-region="baemin"]'), expectedRegions.baemin) || changed;
+      const currentEl = regionTr.children[1];
+      const region = findGapRegion('baemin', expectedRegions.baemin);
+      if (currentEl && region?.label) currentEl.textContent = region.label;
+    }
+    if (expectedRegions.coupang) {
+      changed = fillRegionSelect(regionTr.querySelector('[data-gap-region="coupang"]'), expectedRegions.coupang) || changed;
+      const currentEl = regionTr.children[2];
+      const region = findGapRegion('coupang', expectedRegions.coupang);
+      if (currentEl && region?.label) currentEl.textContent = region.label;
+    }
+    return changed;
+  }
+
+  function fillMissionSelect(select, value) {
+    if (!select) return false;
+    const next = String(value || '');
+    const options = [...select.options];
+    let match = options.find(option => option.value === next);
+    if (!match && next && next !== '__clear__') {
+      const name = missionNameById(next).replace(/\s+/g, '');
+      if (name) {
+        match = options.find(option => String(option.textContent || '').replace(/\s+/g, '').includes(name));
+      }
+    }
+    if (!match) return false;
+    select.value = match.value;
+    options.forEach(option => {
+      option.selected = option === match;
+    });
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
   }
 
   function applyExpectedMissionsToSelects(scope) {
     const root = scope || ensureGapPopup().querySelector('[data-gap-panel="mission"]');
     const rows = scope?.matches?.('tr')
       ? [scope]
-      : [...(root?.querySelectorAll('tr[data-gap-expected-baemin], tr[data-gap-expected-coupang], tr[data-gap-expected-combined]') || [])];
+      : [...(root?.querySelectorAll('tr[data-gap-driver]') || [])];
     let filled = 0;
     rows.forEach(tr => {
       const baemin = tr.dataset.gapExpectedBaemin || '';
       const coupang = tr.dataset.gapExpectedCoupang || '';
       const combined = tr.dataset.gapExpectedCombined || '';
-      if (!baemin && !coupang && !combined) return;
+      const expectedRegions = {
+        baemin: tr.dataset.gapExpectedRegionBaemin || '',
+        coupang: tr.dataset.gapExpectedRegionCoupang || ''
+      };
+      if (!baemin && !coupang && !combined && !expectedRegions.baemin && !expectedRegions.coupang) return;
+      let changed = false;
       if (combined) {
-        fillMissionSelect(tr.querySelector('[data-gap-mission="combined"]'), combined);
+        changed = fillMissionSelect(tr.querySelector('[data-gap-mission="combined"]'), combined) || changed;
         fillMissionSelect(tr.querySelector('[data-gap-mission="baemin"]'), '__clear__');
         fillMissionSelect(tr.querySelector('[data-gap-mission="coupang"]'), '__clear__');
       } else {
-        if (baemin) fillMissionSelect(tr.querySelector('[data-gap-mission="baemin"]'), baemin);
-        if (coupang) fillMissionSelect(tr.querySelector('[data-gap-mission="coupang"]'), coupang);
+        if (baemin) changed = fillMissionSelect(tr.querySelector('[data-gap-mission="baemin"]'), baemin) || changed;
+        if (coupang) changed = fillMissionSelect(tr.querySelector('[data-gap-mission="coupang"]'), coupang) || changed;
         fillMissionSelect(tr.querySelector('[data-gap-mission="combined"]'), '__clear__');
       }
-      filled += 1;
+      changed = applyExpectedRegionsToDriver(tr.dataset.gapDriver, expectedRegions) || changed;
+      if (changed) filled += 1;
     });
     showToast(filled
-      ? `${filled}명 선택칸을 지역 기본미션으로 맞춰 두었습니다. 저장 후 다시 계산하세요.`
-      : '맞출 지역 기본미션이 없습니다.');
+      ? `${filled}명 미션·지역을 이 정산 기본으로 바꿨습니다. 저장 후 다시 계산하세요.`
+      : '맞출 지역 기본값이 없습니다.');
   }
 
   function goToGapSection(target) {
