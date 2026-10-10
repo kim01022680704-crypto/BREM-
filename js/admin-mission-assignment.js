@@ -115,6 +115,73 @@
     return regionList().find((item) => item.key === state.regionKey) || null;
   }
 
+  function currentPicks() {
+    return {
+      baemin: $('missionBulkBaemin')?.value || '',
+      coupang: $('missionBulkCoupang')?.value || '',
+      combined: $('missionBulkCombined')?.value || ''
+    };
+  }
+
+  function setSelectValue(id, value) {
+    const el = $(id);
+    if (!el) return;
+    const next = String(value || '');
+    if ([...el.options].some((option) => option.value === next)) el.value = next;
+    else el.value = '';
+  }
+
+  function regionDefaultStore() {
+    return window.BremStorage?.missionDefaults;
+  }
+
+  function readRegionDefaults() {
+    const region = selectedRegion();
+    if (!region || !regionDefaultStore()?.getRegion) return { baemin: '', coupang: '', combined: '' };
+    return regionDefaultStore().getRegion(region.platform, region.key);
+  }
+
+  function missionPickLabel(id, emptyText) {
+    if (!id) return emptyText;
+    return missionTitle(id) || '삭제된 미션';
+  }
+
+  function updateRegionDefaultHint() {
+    const hint = $('missionBulkRegionDefaultHint');
+    if (!hint) return;
+    if (state.source !== 'region') {
+      hint.textContent = '';
+      return;
+    }
+    const region = selectedRegion();
+    if (!region) {
+      hint.textContent = '지역을 고른 뒤 배민·쿠팡·합산 기본미션을 선택하고 저장하세요.';
+      return;
+    }
+    const saved = readRegionDefaults();
+    hint.textContent = `${region.label} 기본미션 · 배민 ${missionPickLabel(saved.baemin, '미배정')} · 쿠팡 ${missionPickLabel(saved.coupang, '미배정')} · 합산 ${missionPickLabel(saved.combined, '미배정')}`;
+  }
+
+  function fillRegionDefaultSelects() {
+    const saved = readRegionDefaults();
+    setSelectValue('missionBulkBaemin', saved.baemin);
+    setSelectValue('missionBulkCoupang', saved.coupang);
+    setSelectValue('missionBulkCombined', saved.combined);
+    updateRegionDefaultHint();
+  }
+
+  function saveRegionDefaults(picks) {
+    const region = selectedRegion();
+    const store = regionDefaultStore();
+    if (!region || !store?.setRegion) {
+      showToast('지역을 먼저 선택하세요.');
+      return false;
+    }
+    store.setRegion(region.platform, region.key, picks);
+    updateRegionDefaultHint();
+    return true;
+  }
+
   function driversMatchingRegion(region) {
     if (!region) return [];
     const platform = region.platform === 'coupang' ? 'coupang' : 'baemin';
@@ -245,6 +312,7 @@
     fill('missionBulkBaemin', 'baemin', '배민 미션 · 변경 안 함');
     fill('missionBulkCoupang', 'coupang', '쿠팡 미션 · 변경 안 함');
     fill('missionBulkCombined', 'combined', '합산 미션 · 변경 안 함');
+    fillRegionDefaultSelects();
   }
 
   function fillRegionSelect() {
@@ -260,6 +328,7 @@
       select.value = '';
       state.regionKey = '';
     }
+    fillRegionDefaultSelects();
   }
 
   async function fetchRegions() {
@@ -310,9 +379,12 @@
     const pasteBox = $('missionBulkPasteBox');
     if (regionBox) regionBox.hidden = state.source !== 'region';
     if (pasteBox) pasteBox.hidden = state.source !== 'paste';
+    const hint = $('missionBulkRegionDefaultHint');
+    if (hint) hint.hidden = state.source !== 'region';
     $$('.mission-bulk-source-btn').forEach((btn) => {
       btn.classList.toggle('is-active', btn.dataset.missionBulkSource === state.source);
     });
+    updateRegionDefaultHint();
   }
 
   function $$(selector) {
@@ -485,34 +557,44 @@
     renderPreview();
   }
 
-  async function applyBulk() {
-    const picks = {
-      baemin: $('missionBulkBaemin')?.value || '',
-      coupang: $('missionBulkCoupang')?.value || '',
-      combined: $('missionBulkCombined')?.value || ''
-    };
+  async function applyBulk(options = {}) {
+    const picks = options.picks || currentPicks();
+    const replaceAll = options.replaceAll === true;
     if (!picks.baemin && !picks.coupang && !picks.combined) {
       showToast('바꿀 미션을 하나 이상 선택하세요.');
-      return;
+      return false;
     }
-    const targets = selectedDrivers();
-    const locked = targets.filter(isLocked);
+    const appliedPicks = replaceAll
+      ? {
+        baemin: picks.baemin || CLEAR,
+        coupang: picks.coupang || CLEAR,
+        combined: picks.combined || CLEAR
+      }
+      : picks;
+    const targets = options.selectAllUnlocked
+      ? state.preview.map((row) => row.driver).filter((driver) => !isLocked(driver))
+      : selectedDrivers();
+    const locked = options.selectAllUnlocked
+      ? state.preview.filter((row) => isLocked(row.driver)).map((row) => row.driver)
+      : targets.filter(isLocked);
     const unlocked = targets.filter((driver) => !isLocked(driver));
     if (!unlocked.length) {
-      showToast(locked.length ? '선택한 기사가 모두 잠겨 있습니다.' : '적용할 기사를 선택하세요.');
-      return;
+      showToast(locked.length ? '잠금되지 않은 기사가 없습니다.' : '적용할 기사를 선택하세요.');
+      return false;
     }
-    if (state.busy) return;
+    if (state.busy) return false;
     state.busy = true;
     const btn = $('missionBulkApplyBtn');
+    const regionBtn = $('missionBulkApplyRegionDefaultBtn');
     if (btn) {
       btn.disabled = true;
       btn.textContent = '적용 중…';
     }
+    if (regionBtn) regionBtn.disabled = true;
     try {
       const patches = unlocked.map((driver) => ({
         id: driver.id,
-        changes: catalog().buildAssignmentPatch(nextAssignment(driver, picks))
+        changes: catalog().buildAssignmentPatch(nextAssignment(driver, appliedPicks))
       }));
       syncPreviewDrivers(new Map(patches.map((item) => [item.id, item.changes])));
       const result = await BremStorage.drivers.batchPatch(patches);
@@ -522,16 +604,39 @@
           + (locked.length ? ` 잠금 ${locked.length}명은 건너뛰었습니다.` : ''));
       }
       syncPreviewDrivers();
+      return true;
     } catch (error) {
       syncPreviewDrivers();
       showToast(error.message || '일괄 배정에 실패했습니다.');
+      return false;
     } finally {
       state.busy = false;
       if (btn) {
         btn.disabled = false;
         btn.textContent = '선택 기사 일괄 적용';
       }
+      if (regionBtn) regionBtn.disabled = false;
     }
+  }
+
+  async function applyRegionDefaults() {
+    const region = selectedRegion();
+    if (!region) {
+      showToast('지역을 먼저 선택하세요.');
+      return;
+    }
+    loadRegionPreview();
+    let picks = currentPicks();
+    if (!picks.baemin && !picks.coupang && !picks.combined) {
+      picks = readRegionDefaults();
+      fillRegionDefaultSelects();
+    }
+    if (!picks.baemin && !picks.coupang && !picks.combined) {
+      showToast('이 지역 기본미션을 먼저 선택하세요.');
+      return;
+    }
+    if (!saveRegionDefaults(picks)) return;
+    await applyBulk({ picks, replaceAll: true, selectAllUnlocked: true });
   }
 
   async function toggleLock(driverId) {
@@ -575,6 +680,23 @@
 
     $('missionBulkRegion')?.addEventListener('change', (event) => {
       state.regionKey = event.target.value || '';
+      fillRegionDefaultSelects();
+    });
+
+    $('missionBulkSaveRegionDefaultBtn')?.addEventListener('click', () => {
+      const picks = currentPicks();
+      if (!picks.baemin && !picks.coupang && !picks.combined) {
+        showToast('저장할 기본미션을 하나 이상 선택하세요.');
+        return;
+      }
+      if (saveRegionDefaults(picks)) {
+        const region = selectedRegion();
+        showToast(`${region?.label || '이 지역'} 기본미션을 저장했습니다.`);
+      }
+    });
+
+    $('missionBulkApplyRegionDefaultBtn')?.addEventListener('click', () => {
+      void applyRegionDefaults();
     });
 
     $('missionBulkLockFilter')?.addEventListener('change', (event) => {
@@ -624,6 +746,7 @@
     fillMissionSelects();
     fillRegionSelect();
     setSource(state.source);
+    fillRegionDefaultSelects();
     renderPreview();
   }
 

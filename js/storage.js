@@ -1573,7 +1573,7 @@ const BremStorage = (function () {
     dashboard: [KEYS.drivers, KEYS.notices, KEYS.calls, KEYS.rejections, KEYS.leaseVehicles],
     notices: [KEYS.notices],
     'mission-management': [KEYS.promotionRules, KEYS.drivers],
-    'mission-assignment': [KEYS.promotionRules, KEYS.drivers],
+    'mission-assignment': [KEYS.promotionRules, KEYS.drivers, KEYS.missionDefaults],
     'rider-inquiries': [KEYS.riderInquiries],
     promotions: [KEYS.promotionRules],
     'promotion-apply': [KEYS.promotionRules, KEYS.drivers, KEYS.weeklySettlements, KEYS.weeklySettlementsDirect, KEYS.promotionApplyResults, KEYS.settlements, KEYS.rejections],
@@ -13914,8 +13914,24 @@ const BremStorage = (function () {
     }
   };
 
+  function normalizeRegionMissionDefault(value = {}) {
+    const raw = value && typeof value === 'object' ? value : {};
+    return {
+      baemin: String(raw.baemin || '').trim(),
+      coupang: String(raw.coupang || '').trim(),
+      combined: String(raw.combined || '').trim()
+    };
+  }
+
   function normalizeMissionDefaults(meta = {}) {
     const raw = meta && typeof meta === 'object' ? meta : {};
+    const byRegion = {};
+    const source = raw.byRegion && typeof raw.byRegion === 'object' ? raw.byRegion : {};
+    Object.entries(source).forEach(([key, value]) => {
+      const id = String(key || '').trim();
+      if (!id) return;
+      byRegion[id] = normalizeRegionMissionDefault(value);
+    });
     return {
       defaultBaemin: String(raw.defaultBaemin || '').trim(),
       defaultCoupang: String(raw.defaultCoupang || '').trim(),
@@ -13924,7 +13940,8 @@ const BremStorage = (function () {
         : [],
       customCoupang: Array.isArray(raw.customCoupang)
         ? [...new Set(raw.customCoupang.map(id => String(id || '').trim()).filter(Boolean))]
-        : []
+        : [],
+      byRegion
     };
   }
 
@@ -13975,6 +13992,27 @@ const BremStorage = (function () {
       const meta = missionDefaults.getMeta();
       const key = p === 'baemin' ? 'customBaemin' : 'customCoupang';
       meta[key] = meta[key].filter(item => item !== id);
+      return missionDefaults.saveMeta(meta);
+    },
+
+    regionKey(platform, regionId) {
+      const p = normalizePlatform(platform) || 'baemin';
+      const id = String(regionId || '').trim();
+      return id ? `${p}:${id}` : '';
+    },
+
+    getRegion(platform, regionId) {
+      const key = missionDefaults.regionKey(platform, regionId);
+      if (!key) return normalizeRegionMissionDefault();
+      const meta = missionDefaults.getMeta();
+      return normalizeRegionMissionDefault(meta.byRegion[key]);
+    },
+
+    setRegion(platform, regionId, assignment) {
+      const key = missionDefaults.regionKey(platform, regionId);
+      if (!key) return missionDefaults.getMeta();
+      const meta = missionDefaults.getMeta();
+      meta.byRegion[key] = normalizeRegionMissionDefault(assignment);
       return missionDefaults.saveMeta(meta);
     }
   };
