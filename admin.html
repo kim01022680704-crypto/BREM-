@@ -18,7 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20261010promolockvis1">
+  <link rel="stylesheet" href="css/admin.css?v=20261011region3">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
@@ -5248,6 +5248,10 @@
           <button type="button" class="promotion-tab" data-admin-platform-tab="promotion-settlement" data-platform="coupang">쿠팡</button>
           <button type="button" class="promotion-tab active" data-admin-platform-tab="promotion-settlement" data-platform="baemin">배민</button>
         </div>
+        <div class="promotion-platform-tabs promotion-settle-sub-tabs" role="tablist" aria-label="프로모션정산등록 소메뉴">
+          <button type="button" class="promotion-tab active" id="directAdjustRegisterTabBtn" title="기타지급·BREM프로모션을 정산서에 등록">등록</button>
+          <button type="button" class="promotion-tab" id="directAdjustRegionTabBtn" title="정산주별 지역 · 적용 미션 · 정산등록 금액">지역별 현황</button>
+        </div>
 
         <article class="card" id="directAdjustCard">
           <div class="card-header">
@@ -5442,6 +5446,42 @@
               </table>
             </div>
           </article>
+        </article>
+
+        <article class="card" id="directRegionReportCard" hidden>
+          <div class="card-header">
+            <h2>지역별 프로모션 현황</h2>
+            <div class="promotion-form-actions">
+              <label class="settlement-week-filter">
+                <span>정산주 (수요일만 선택)</span>
+                <span class="coupang-week-picker-inline">
+                  <button type="button" class="small-btn" id="directRegionWeekPrevBtn" title="이전 주(수요일)">&lt;&lt;</button>
+                  <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="direct-region-week" id="directRegionWeekBtn">수요일 선택</button>
+                  <button type="button" class="small-btn" id="directRegionWeekNextBtn" title="다음 주(수요일)">&gt;&gt;</button>
+                </span>
+              </label>
+              <button type="button" class="small-btn" id="directRegionWeekAllBtn" title="저장된 주를 모두 보여줍니다">전체 주</button>
+              <button type="button" class="small-btn" id="directRegionReloadBtn">다시 계산</button>
+            </div>
+          </div>
+          <p class="form-help">선택한 <strong>정산주(수~화)</strong>의 직계약 프로모션을 지역별로 보여줍니다. <strong>적용 미션</strong>은 「프로모션 적용」최신 저장본, <strong>정산등록</strong>은 그 지역 정산서에 들어간 BREM프로모션입니다. 브로(팀브로)는 넣지 않습니다.</p>
+          <p class="direct-inline-stats" id="directRegionReportSummary"></p>
+          <div class="table-wrap direct-scroll direct-scroll-wide">
+            <table class="weekly-settlement-saved-table" id="directRegionReportTable">
+              <thead>
+                <tr>
+                  <th>정산주</th>
+                  <th>지역</th>
+                  <th>구분</th>
+                  <th>적용 미션</th>
+                  <th>적용</th>
+                  <th>정산등록</th>
+                  <th>차이</th>
+                </tr>
+              </thead>
+              <tbody id="directRegionReportBody"></tbody>
+            </table>
+          </div>
         </article>
 
         <dialog class="baemin-json-dialog" id="directAdjustPasteDialog">
@@ -9631,7 +9671,7 @@
   <script src="js/payroll-promotion-bulk.js?v=20260822other1"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260807b"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260905a"></script>
-  <script src="js/direct-adjustment-admin.js?v=20261011pohang1"></script>
+  <script src="js/direct-adjustment-admin.js?v=20261011region3"></script>
   <script src="js/direct-settlement-calc.js?v=20260929nopaid1"></script>
   <script src="js/settlement-result-direct.js?v=20261004rebase1"></script>
   <script src="js/final-deposit.js?v=20261004freshadj1"></script>
@@ -9651,7 +9691,7 @@
   <script src="js/admin-mission-assignment.js?v=20261010missionkeep1"></script>
   <script src="js/table-sort.js"></script>
     <script src="js/admin-work-requests.js?v=20260927req8"></script>
-    <script src="js/admin.js?v=20261010nav1"></script>
+    <script src="js/admin.js?v=20261011region3"></script>
   <script src="js/admin-driver-popups.js?v=20260914popup2" defer></script>
   <script src="js/admin-sidebar-groups.js?v=20261009missionassign1" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>

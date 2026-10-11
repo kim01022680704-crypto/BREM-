@@ -49,7 +49,8 @@ const BremDirectAdjustmentAdmin = (function () {
     week: '',
     pending: { other: null, promotion: null },
     erpSelected: new Set(),
-    erpPlatform: ''
+    erpPlatform: '',
+    viewMode: 'register'
   };
 
   function escapeHtml(value) {
@@ -235,13 +236,28 @@ const BremDirectAdjustmentAdmin = (function () {
   }
 
   function renderWeekButton() {
-    const btn = $('#directAdjustWeekBtn');
-    if (!btn) return;
-    btn.textContent = state.week
+    const label = state.week
       ? `${formatDate(state.week)}(수) 주`
       : '전체 주';
+    const btn = $('#directAdjustWeekBtn');
+    if (btn) btn.textContent = label;
+    const regionBtn = $('#directRegionWeekBtn');
+    if (regionBtn) regionBtn.textContent = label;
     const hidden = $('#directAdjustWeek');
     if (hidden) hidden.value = state.week;
+  }
+
+  function setAdjustView(mode) {
+    state.viewMode = mode === 'region' ? 'region' : 'register';
+    const registerCard = $('#directAdjustCard');
+    const regionCard = $('#directRegionReportCard');
+    const registerTab = $('#directAdjustRegisterTabBtn');
+    const regionTab = $('#directAdjustRegionTabBtn');
+    if (registerCard) registerCard.hidden = state.viewMode !== 'register';
+    if (regionCard) regionCard.hidden = state.viewMode !== 'region';
+    if (registerTab) registerTab.classList.toggle('active', state.viewMode === 'register');
+    if (regionTab) regionTab.classList.toggle('active', state.viewMode === 'region');
+    if (state.viewMode === 'region') renderRegionReport();
   }
 
   function setWeek(value) {
@@ -1401,6 +1417,282 @@ const BremDirectAdjustmentAdmin = (function () {
     renderErpNotInHint();
   }
 
+  // --- 지역별 현황 ----------------------------------------------------------
+
+  function weekDirectSettlements(week) {
+    const key = String(week || '').slice(0, 10);
+    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
+      .filter(record => !key || settlementWeek(record) === key);
+  }
+
+  function homeSettlementInWeek(week, platform, driverId) {
+    const list = weekDirectSettlements(week).filter(record => String(record.platform || '') === platform);
+    let best = null;
+    list.forEach(record => {
+      if (!riderOnSettlement(record, driverId)) return;
+      const cand = { record, calls: riderCallsOnSettlement(record, driverId) };
+      if (!best
+        || cand.calls > best.calls
+        || (cand.calls === best.calls && String(record.id) < String(best.record.id))) {
+        best = cand;
+      }
+    });
+    return best?.record || null;
+  }
+
+  function attachAmountForPlatform(row, item, platform) {
+    const total = Math.round(Number(row?.totalPromotionAmount || 0));
+    if (!total) return 0;
+    const itemPlatform = String(item?.platform || '').trim();
+    if (itemPlatform !== 'combined') {
+      return itemPlatform === platform ? total : 0;
+    }
+    const source = String(row.assignmentSource || '').trim();
+    if (platform === 'coupang') {
+      return (source === '배민' || source === '쿠팡+배민') ? 0 : total;
+    }
+    return source === '쿠팡' ? 0 : total;
+  }
+
+  function compactRegionLabel(item) {
+    const raw = String(item?.settlementLabel || item?.region || '').trim();
+    const cleaned = raw
+      .replace(/주식회사\s*119컴퍼니_?/g, '')
+      .replace(/주식회사119컴퍼니_?/g, '')
+      .replace(/_DP\d+.*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const hits = cleaned.match(/포항북A|포항남B|포항중앙(?:\(Z\))?|양산[동서남북중]?[부A-Z]?|울산남A|울산동A|울산북필드[AB]|울산중필드A|울주A|창원|남구서부|남구|북구|동구|서부|포항/g) || [];
+    const uniq = [...new Set(hits)];
+    if (uniq.length > 1) return uniq.join(' · ');
+    if (uniq[0] && cleaned.length > 28) return uniq[0];
+    return cleaned.slice(0, 42) || '지역없음';
+  }
+
+  function missionSlaNames(item) {
+    return new Set((Array.isArray(item?.slaMissions) ? item.slaMissions : []).filter(Boolean));
+  }
+
+  function missionParts(item) {
+    const paid = (Array.isArray(item?.results) ? item.results : [])
+      .filter(row => Math.round(Number(row.totalPromotionAmount || 0)) > 0);
+    const slaNames = missionSlaNames(item);
+    const slaAll = item?.slaApplyAll === true;
+    const byName = new Map();
+    paid.forEach(row => {
+      const name = String(row.ruleName || '').trim() || '미션없음';
+      const cur = byName.get(name) || { count: 0, amount: 0, slaCount: 0 };
+      cur.count += 1;
+      cur.amount += Math.round(Number(row.totalPromotionAmount || 0));
+      if (row.slaApply === true || slaAll || slaNames.has(name)) cur.slaCount += 1;
+      byName.set(name, cur);
+    });
+    if (byName.size) {
+      return [...byName.entries()]
+        .sort((a, b) => b[1].amount - a[1].amount)
+        .map(([name, info]) => ({
+          name,
+          count: info.count,
+          slaCount: info.slaCount,
+          slaAll: info.slaCount > 0 && info.slaCount === info.count
+        }));
+    }
+    const names = Array.isArray(item?.selectedPromotionRuleNames) ? item.selectedPromotionRuleNames.filter(Boolean) : [];
+    return names.map(name => ({
+      name,
+      count: 0,
+      slaCount: slaAll || slaNames.has(name) ? 1 : 0,
+      slaAll: slaAll || slaNames.has(name)
+    }));
+  }
+
+  function formatMissionPart(part) {
+    const label = part.count ? `${part.name} ${part.count}명` : part.name;
+    if (!part.slaCount) return label;
+    return part.slaAll || !part.count ? `${label} SLA시간` : `${label} SLA ${part.slaCount}명`;
+  }
+
+  function missionSummary(item) {
+    const parts = missionParts(item);
+    return parts.length ? parts.map(formatMissionPart).join(' · ') : '-';
+  }
+
+  function missionSummaryHtml(item) {
+    const parts = missionParts(item);
+    if (!parts.length) return '-';
+    return parts.map(part => {
+      const label = escapeHtml(part.count ? `${part.name} ${part.count}명` : part.name);
+      if (!part.slaCount) return label;
+      const tag = part.slaAll || !part.count ? 'SLA시간' : `SLA ${part.slaCount}명`;
+      return `${label} <span class="promotion-sla-tag">${escapeHtml(tag)}</span>`;
+    }).join(' · ');
+  }
+
+  function latestDirectApplyResults(week) {
+    const all = window.BremStorage?.promotionApplyResults?.getAll?.() || [];
+    const matched = all.filter(item => {
+      if (String(item.channel || '') !== 'direct') return false;
+      const itemWeek = weekStartKey(String(item.startDate || '').slice(0, 10));
+      if (week && itemWeek !== week) return false;
+      return true;
+    });
+    const groups = new Map();
+    matched.forEach(item => {
+      const key = `${item.platform}|${item.settlementId || item.region || item.id}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    });
+    const latest = [];
+    groups.forEach(group => {
+      group.sort((a, b) => String(b.savedAt || '').localeCompare(String(a.savedAt || '')));
+      latest.push(group[0]);
+    });
+    return latest.sort((a, b) => compactRegionLabel(a).localeCompare(compactRegionLabel(b), 'ko'));
+  }
+
+  function buildRegionReport(week) {
+    const key = String(week || '').slice(0, 10);
+    const store = window.BremStorage?.directSettlementAdjustments;
+    const applies = latestDirectApplyResults(key);
+    const weekAll = weekDirectSettlements(key);
+    const counted = new Set();
+    const rows = applies.map(item => {
+      const itemWeek = weekStartKey(String(item.startDate || '').slice(0, 10) || key);
+      const paid = (Array.isArray(item.results) ? item.results : [])
+        .filter(row => Math.round(Number(row.totalPromotionAmount || 0)) > 0);
+      const applyAmount = paid.reduce((sum, row) => sum + Math.round(Number(row.totalPromotionAmount || 0)), 0);
+      const applyDrivers = new Set(paid.map(row => String(row.matchedRiderId || '').trim()).filter(Boolean));
+      let registerAmount = 0;
+      const registerDrivers = new Set();
+      paid.forEach(row => {
+        const driverId = String(row.matchedRiderId || '').trim();
+        if (!driverId) return;
+        ['baemin', 'coupang'].forEach(plat => {
+          const expect = attachAmountForPlatform(row, item, plat);
+          if (!expect) return;
+          const home = homeSettlementInWeek(itemWeek, plat, driverId);
+          const targets = home
+            ? [home]
+            : weekDirectSettlements(itemWeek).filter(record => String(record.platform || '') === plat);
+          targets.forEach(target => {
+            const got = Math.round(Number(store?.getSettlement?.('promotion', target.id)?.[driverId]?.amount || 0));
+            if (!got) return;
+            const mark = `${target.id}|${driverId}`;
+            if (counted.has(mark)) return;
+            counted.add(mark);
+            registerAmount += got;
+            registerDrivers.add(driverId);
+          });
+        });
+      });
+      return {
+        week: itemWeek,
+        region: compactRegionLabel(item),
+        platform: item.platform,
+        mission: missionSummary(item),
+        missionHtml: missionSummaryHtml(item),
+        applyCount: applyDrivers.size || paid.length,
+        applyAmount,
+        registerCount: registerDrivers.size,
+        registerAmount,
+        gap: registerAmount - applyAmount
+      };
+    });
+
+    const leftoverByKey = new Map();
+    weekAll.forEach(record => {
+      const map = store?.getSettlement?.('promotion', record.id) || {};
+      Object.entries(map).forEach(([driverId, entry]) => {
+        const mark = `${record.id}|${driverId}`;
+        const amount = Math.round(Number(entry?.amount || 0));
+        if (!amount || counted.has(mark)) return;
+        const region = compactRegionLabel({ region: record.region, settlementLabel: record.region || record.id });
+        const leftoverKey = `${settlementWeek(record)}|${record.platform}|${region}`;
+        const cur = leftoverByKey.get(leftoverKey) || {
+          week: settlementWeek(record),
+          region,
+          platform: record.platform,
+          mission: '수기·엑셀 등록',
+          applyCount: 0,
+          applyAmount: 0,
+          registerCount: 0,
+          registerAmount: 0,
+          leftover: true
+        };
+        cur.registerCount += 1;
+        cur.registerAmount += amount;
+        leftoverByKey.set(leftoverKey, cur);
+      });
+    });
+    leftoverByKey.forEach(row => {
+      row.gap = row.registerAmount - row.applyAmount;
+      rows.push(row);
+    });
+
+    return {
+      week: key,
+      rows,
+      applyAmount: rows.reduce((sum, row) => sum + row.applyAmount, 0),
+      applyCount: rows.reduce((sum, row) => sum + row.applyCount, 0),
+      registerAmount: rows.reduce((sum, row) => sum + row.registerAmount, 0),
+      registerCount: rows.reduce((sum, row) => sum + row.registerCount, 0)
+    };
+  }
+
+  function weeksForRegionReport() {
+    const weeks = new Set();
+    (window.BremStorage?.promotionApplyResults?.getAll?.() || []).forEach(item => {
+      if (String(item.channel || '') !== 'direct') return;
+      const week = weekStartKey(String(item.startDate || '').slice(0, 10));
+      if (week) weeks.add(week);
+    });
+    weekDirectSettlements('').forEach(record => {
+      const week = settlementWeek(record);
+      if (week) weeks.add(week);
+    });
+    return [...weeks].sort((a, b) => b.localeCompare(a));
+  }
+
+  function renderRegionReport() {
+    const body = $('#directRegionReportBody');
+    const summaryEl = $('#directRegionReportSummary');
+    if (!body) return;
+    renderWeekButton();
+    const weeks = state.week ? [state.week] : weeksForRegionReport();
+    const reports = weeks.map(week => buildRegionReport(week)).filter(report => report.rows.length);
+    if (!reports.length) {
+      body.innerHTML = '<tr><td colspan="7" class="empty">이 주에 직계약 프로모션 적용·등록이 없습니다.</td></tr>';
+      if (summaryEl) {
+        summaryEl.textContent = state.week
+          ? `${formatDate(state.week)}(수) 주 · 표시할 지역이 없습니다.`
+          : '표시할 지역이 없습니다.';
+      }
+      return;
+    }
+    const applyAmount = reports.reduce((sum, report) => sum + report.applyAmount, 0);
+    const registerAmount = reports.reduce((sum, report) => sum + report.registerAmount, 0);
+    const rowCount = reports.reduce((sum, report) => sum + report.rows.length, 0);
+    if (summaryEl) {
+      const weekNote = state.week ? `${formatDate(state.week)}(수) 주` : `전체 ${reports.length}주`;
+      summaryEl.innerHTML = `${weekNote} · 지역 <strong>${rowCount}</strong>곳 · 적용 <strong>${formatNumber(applyAmount)}</strong>원 · 정산등록 <strong>${formatNumber(registerAmount)}</strong>원`
+        + (applyAmount === registerAmount
+          ? ' · <span class="direct-region-ok">금액 일치</span>'
+          : ` · <span class="direct-region-gap">차이 ${formatNumber(registerAmount - applyAmount)}원</span>`);
+    }
+    body.innerHTML = reports.flatMap(report => report.rows.map(row => {
+      const gapClass = row.gap ? 'direct-region-gap' : 'direct-region-ok';
+      return `<tr>
+        <td>${escapeHtml(formatDate(row.week))}(수)</td>
+        <td><strong>${escapeHtml(row.region)}</strong></td>
+        <td>${escapeHtml(platformLabel(row.platform))}</td>
+        <td>${row.leftover ? escapeHtml(row.mission) : (row.missionHtml || escapeHtml(row.mission || '-'))}</td>
+        <td class="weekly-amount-cell">${row.applyCount ? `${formatNumber(row.applyCount)}명 · ${formatNumber(row.applyAmount)}원` : '-'}</td>
+        <td class="weekly-amount-cell">${row.registerCount ? `${formatNumber(row.registerCount)}명 · ${formatNumber(row.registerAmount)}원` : '-'}</td>
+        <td class="weekly-amount-cell ${gapClass}">${row.gap ? formatNumber(row.gap) : '0'}</td>
+      </tr>`;
+    })).join('');
+  }
+
   // --- 이벤트 --------------------------------------------------------------
 
   function renderAll() {
@@ -1416,6 +1708,8 @@ const BremDirectAdjustmentAdmin = (function () {
     renderRegistry();
     renderLegacy();
     renderErpList();
+    if (state.viewMode === 'region') renderRegionReport();
+    else setAdjustView(state.viewMode);
   }
 
   function bindEvents() {
@@ -1457,6 +1751,18 @@ const BremDirectAdjustmentAdmin = (function () {
     $('#directAdjustWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
     $('#directAdjustWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     $('#directAdjustWeekAllBtn')?.addEventListener('click', () => setWeek(''));
+    $('#directAdjustRegisterTabBtn')?.addEventListener('click', () => setAdjustView('register'));
+    $('#directAdjustRegionTabBtn')?.addEventListener('click', () => setAdjustView('region'));
+    $('#directRegionWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
+    $('#directRegionWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
+    $('#directRegionWeekAllBtn')?.addEventListener('click', () => setWeek(''));
+    $('#directRegionReloadBtn')?.addEventListener('click', () => {
+      void (async () => {
+        await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
+        renderRegionReport();
+        showToast('지역별 현황을 다시 계산했습니다.');
+      })();
+    });
 
     $('#directErpPlatformFilter')?.addEventListener('change', event => {
       state.erpPlatform = event.target.value || '';
@@ -1526,12 +1832,12 @@ const BremDirectAdjustmentAdmin = (function () {
     if (next !== state.platform) {
       state.platform = next;
       state.settlementId = '';
-      state.week = '';
+      if (state.viewMode !== 'region') state.week = '';
       state.erpSelected.clear();
       state.pending.other = null;
       state.pending.promotion = null;
     }
-    ensureWeek();
+    if (!(state.viewMode === 'region' && !state.week)) ensureWeek();
     driverOptionsCache = '';
     bindEvents();
     await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
@@ -1552,7 +1858,7 @@ const BremDirectAdjustmentAdmin = (function () {
     });
   }
 
-  return { init, refresh, state, renderAll, renderPreview, renderErpList, onWeekPicked: setWeek, buildErpPlan, commitErp };
+  return { init, refresh, state, renderAll, renderPreview, renderErpList, onWeekPicked: setWeek, buildErpPlan, commitErp, buildRegionReport, setAdjustView };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

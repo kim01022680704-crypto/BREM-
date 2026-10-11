@@ -2016,6 +2016,16 @@
           };
         }
 
+        if (triggerId === 'direct-region-week') {
+          return {
+            hiddenInput: $('#directAdjustWeek'),
+            labelEl: $('#directRegionWeekBtn'),
+            onSelect(value) {
+              window.BremDirectAdjustmentAdmin?.onWeekPicked?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'settlement-result-week') {
           return {
             hiddenInput: $('#settlementResultWeek'),

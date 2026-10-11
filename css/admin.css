@@ -7768,6 +7768,23 @@ tr.direct-registry-active > td {
 tr.direct-registry-active > td:first-child {
   color: #34c77b;
 }
+.direct-region-gap {
+  color: #fca5a5;
+  font-weight: 700;
+}
+.direct-region-ok {
+  color: #86efac;
+}
+#directRegionReportCard .direct-scroll-wide {
+  max-height: min(70vh, 720px);
+}
+#directRegionReportTable .promotion-sla-tag {
+  margin-left: 4px;
+}
+.promotion-settle-sub-tabs {
+  margin-top: -8px;
+  margin-bottom: 16px;
+}
 .direct-registry-empty {
   color: #ffb020;
   font-size: 12px;

@@ -646,6 +646,7 @@ function check(label, actual, expected) {
   ERP_RESULTS.push({
     id: 'erpPohangCombined',
     platform: 'combined',
+    channel: 'direct',
     startDate: '2026-09-30',
     region: '포항중앙(Z) / 포항북A + 포항남B',
     settlementId: 'combined-pohang',
@@ -654,9 +655,9 @@ function check(label, actual, expected) {
     selectedPromotionRuleNames: ['합산'],
     summary: { riderCount: 3, totalPromotionAmount: 1500000, baeminAttachTotal: 1500000, coupangAttachTotal: 0 },
     results: [
-      { matchedRiderId: 'dDual', totalPromotionAmount: 500000, assignmentSource: '쿠팡+배민', baeminAttachAmount: 500000, coupangAttachAmount: 0, driverName: '박겹침' },
-      { matchedRiderId: 'dNorth', totalPromotionAmount: 600000, assignmentSource: '배민', baeminAttachAmount: 600000, coupangAttachAmount: 0, driverName: '북전기사' },
-      { matchedRiderId: 'dSouth', totalPromotionAmount: 400000, assignmentSource: '배민', baeminAttachAmount: 400000, coupangAttachAmount: 0, driverName: '남전기사' }
+      { matchedRiderId: 'dDual', totalPromotionAmount: 500000, assignmentSource: '쿠팡+배민', baeminAttachAmount: 500000, coupangAttachAmount: 0, driverName: '박겹침', ruleName: '합산' },
+      { matchedRiderId: 'dNorth', totalPromotionAmount: 600000, assignmentSource: '배민', baeminAttachAmount: 600000, coupangAttachAmount: 0, driverName: '북전기사', ruleName: '합산' },
+      { matchedRiderId: 'dSouth', totalPromotionAmount: 400000, assignmentSource: '배민', baeminAttachAmount: 400000, coupangAttachAmount: 0, driverName: '남전기사', ruleName: '합산' }
     ]
   });
   window.confirm = () => true;
@@ -685,6 +686,51 @@ function check(label, actual, expected) {
   const pohangSum = ['weekly_direct_baemin_pohang_north_20260930', 'weekly_direct_baemin_pohang_south_20260930']
     .reduce((sum, id) => sum + Object.values(adjustments.promotion[id] || {}).reduce((acc, row) => acc + Number(row.amount || 0), 0), 0);
   check('두 정산서 합 = ERP 1,500,000', pohangSum, 1500000);
+
+  console.log('\n[28] 지역별 현황은 적용 미션과 정산등록을 주로 묶는다');
+  const report = Adj.buildRegionReport('2026-09-30');
+  check('포항 적용 1줄', report.rows.filter(row => !row.leftover).length, 1);
+  check('적용 1,500,000', report.applyAmount, 1500000);
+  check('정산등록 1,500,000', report.registerAmount, 1500000);
+  check('차이 0', report.rows[0].gap, 0);
+  check('지역 이름에 포항', /포항/.test(report.rows[0].region), 'true');
+  check('미션에 합산', /합산/.test(report.rows[0].mission), 'true');
+  adjustments.promotion['weekly_direct_baemin_pohang_north_20260930'].d1 = { amount: 10000 };
+  const reportExtra = Adj.buildRegionReport('2026-09-30');
+  const leftover = reportExtra.rows.find(row => row.leftover);
+  check('수기 남은 금액 줄 생김', Boolean(leftover), 'true');
+  check('수기 10,000', leftover?.registerAmount, 10000);
+  check('수기 지역은 포항북A', leftover?.region, '포항북A');
+  const pohangErp = ERP_RESULTS.find(item => item.id === 'erpPohangCombined');
+  pohangErp.slaApplyAll = true;
+  pohangErp.slaMissions = ['합산'];
+  pohangErp.results.forEach(row => { row.slaApply = true; });
+  ERP_RESULTS.push({
+    id: 'erpNamguSla',
+    platform: 'baemin',
+    channel: 'direct',
+    startDate: '2026-09-30',
+    region: '남구',
+    settlementLabel: '남구',
+    savedAt: '2026-10-11T12:00:00',
+    slaMissions: ['110건 1000'],
+    slaApplyCount: 1,
+    slaApplyAll: false,
+    results: [
+      { matchedRiderId: 'd2', totalPromotionAmount: 11000, ruleName: '110건 1000', slaApply: true },
+      { matchedRiderId: 'd1', totalPromotionAmount: 20000, ruleName: '100건 천원 임시', slaApply: false }
+    ]
+  });
+  const slaReport = Adj.buildRegionReport('2026-09-30');
+  const pohangSla = slaReport.rows.find(row => /포항/.test(row.region) && !row.leftover);
+  const namguSla = slaReport.rows.find(row => row.region === '남구');
+  check('포항 미션에 SLA시간', /합산 3명 SLA시간/.test(pohangSla?.mission), 'true');
+  check('남구 SLA는 해당 미션만', /110건 1000 1명 SLA시간/.test(namguSla?.mission), 'true');
+  check('남구 임시 미션은 SLA 없음', /임시 1명(?! SLA)/.test(namguSla?.mission), 'true');
+  check('남구 미션 HTML에 SLA 태그', /promotion-sla-tag/.test(namguSla?.missionHtml), 'true');
+  Adj.setAdjustView('region');
+  check('지역 카드 보임', window.document.getElementById('directRegionReportCard').hidden, false);
+  check('등록 카드 숨김', window.document.getElementById('directAdjustCard').hidden, true);
 
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);
