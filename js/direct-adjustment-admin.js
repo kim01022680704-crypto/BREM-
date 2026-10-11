@@ -57,7 +57,7 @@ const BremDirectAdjustmentAdmin = (function () {
   let regionReportTimer = 0;
 
   function beginRenderPass() {
-    renderPass = { directSettlements: null, applyResults: null, promoKind: null };
+    renderPass = { directSettlements: null, applyResults: null, applyRaw: null, promoKind: null, slaRuleNames: null };
   }
 
   function endRenderPass() {
@@ -84,17 +84,43 @@ const BremDirectAdjustmentAdmin = (function () {
     return window.BremStorage?.promotionApplyResults?.getAll?.() || [];
   }
 
+  function cachedApplyResultsRaw() {
+    if (renderPass?.applyRaw) return renderPass.applyRaw;
+    const raw = window.BremStorage?.promotionApplyResults?.readRaw?.();
+    const list = Array.isArray(raw) ? raw : cachedApplyResults();
+    if (renderPass) renderPass.applyRaw = list;
+    return list;
+  }
+
+  function slaRuleNames() {
+    if (renderPass?.slaRuleNames) return renderPass.slaRuleNames;
+    const names = new Set();
+    (window.BremStorage?.promotionRules?.getAll?.() || []).forEach(rule => {
+      if (rule?.slaApply === true && String(rule.name || '').trim()) {
+        names.add(String(rule.name).trim());
+      }
+    });
+    if (renderPass) renderPass.slaRuleNames = names;
+    return names;
+  }
+
   function cachedPromoKind() {
     const store = window.BremStorage?.directSettlementAdjustments;
-    if (renderPass) {
-      if (!renderPass.promoKind) renderPass.promoKind = store?.getKind?.('promotion') || {};
-      return renderPass.promoKind;
-    }
-    return store?.getKind?.('promotion') || {};
+    if (renderPass?.promoKind) return renderPass.promoKind;
+    const kind = store?.getKind?.('promotion');
+    const value = (kind && typeof kind === 'object') ? kind : {};
+    if (renderPass) renderPass.promoKind = value;
+    return value;
+  }
+
+  function promoMapForSettlement(settlementId) {
+    const fromKind = cachedPromoKind()?.[settlementId];
+    if (fromKind && typeof fromKind === 'object') return fromKind;
+    return window.BremStorage?.directSettlementAdjustments?.getSettlement?.('promotion', settlementId) || {};
   }
 
   function promoAmountOf(settlementId, driverId) {
-    const entry = cachedPromoKind()?.[settlementId]?.[driverId];
+    const entry = promoMapForSettlement(settlementId)?.[driverId];
     return Math.round(Number(entry?.amount || 0));
   }
 
@@ -308,12 +334,21 @@ const BremDirectAdjustmentAdmin = (function () {
     if (body && !body.dataset.filled) {
       body.innerHTML = '<tr><td colspan="7" class="empty">계산 중…</td></tr>';
     }
-    if (regionReportTimer) cancelAnimationFrame(regionReportTimer);
-    regionReportTimer = requestAnimationFrame(() => {
+    if (regionReportTimer) {
+      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(regionReportTimer);
+      else clearTimeout(regionReportTimer);
+      regionReportTimer = 0;
+    }
+    const run = () => {
       regionReportTimer = 0;
       beginRenderPass();
       try { renderRegionReport(); } finally { endRenderPass(); }
-    });
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      regionReportTimer = requestAnimationFrame(run);
+    } else {
+      run();
+    }
   }
 
   function setAdjustView(mode) {
@@ -1562,6 +1597,7 @@ const BremDirectAdjustmentAdmin = (function () {
     const paid = (Array.isArray(item?.results) ? item.results : [])
       .filter(row => Math.round(Number(row.totalPromotionAmount || 0)) > 0);
     const slaNames = missionSlaNames(item);
+    const ruleSla = slaRuleNames();
     const slaAll = item?.slaApplyAll === true;
     const byName = new Map();
     paid.forEach(row => {
@@ -1569,7 +1605,7 @@ const BremDirectAdjustmentAdmin = (function () {
       const cur = byName.get(name) || { count: 0, amount: 0, slaCount: 0 };
       cur.count += 1;
       cur.amount += Math.round(Number(row.totalPromotionAmount || 0));
-      if (row.slaApply === true || slaAll || slaNames.has(name)) cur.slaCount += 1;
+      if (row.slaApply === true || slaAll || slaNames.has(name) || ruleSla.has(name)) cur.slaCount += 1;
       byName.set(name, cur);
     });
     if (byName.size) {
@@ -1586,8 +1622,8 @@ const BremDirectAdjustmentAdmin = (function () {
     return names.map(name => ({
       name,
       count: 0,
-      slaCount: slaAll || slaNames.has(name) ? 1 : 0,
-      slaAll: slaAll || slaNames.has(name)
+      slaCount: slaAll || slaNames.has(name) || ruleSla.has(name) ? 1 : 0,
+      slaAll: slaAll || slaNames.has(name) || ruleSla.has(name)
     }));
   }
 
@@ -1603,13 +1639,13 @@ const BremDirectAdjustmentAdmin = (function () {
   }
 
   function formatMissionHtml(parts) {
-    if (!parts.length) return '-';
-    return parts.map(part => {
-      const label = escapeHtml(part.count ? `${part.name} ${part.count}명` : part.name);
-      if (!part.slaCount) return label;
-      const tag = part.slaAll || !part.count ? 'SLA시간' : `SLA ${part.slaCount}명`;
-      return `${label} <span class="promotion-sla-tag">${escapeHtml(tag)}</span>`;
-    }).join(' · ');
+    if (!parts.length) return '<span class="direct-region-muted">-</span>';
+    return `<div class="direct-region-missions">${parts.map(part => {
+      const tag = part.slaCount
+        ? `<span class="promotion-sla-tag">${escapeHtml(part.slaAll || !part.count ? 'SLA시간' : `SLA ${part.slaCount}명`)}</span>`
+        : '';
+      return `<span class="direct-region-mission"><b>${escapeHtml(part.name)}</b>${part.count ? `<em>${formatNumber(part.count)}명</em>` : ''}${tag}</span>`;
+    }).join('')}</div>`;
   }
 
   function missionSummaryHtml(item) {
@@ -1617,7 +1653,7 @@ const BremDirectAdjustmentAdmin = (function () {
   }
 
   function latestDirectApplyResults(week) {
-    const all = cachedApplyResults();
+    const all = cachedApplyResultsRaw();
     const matched = all.filter(item => {
       if (String(item.channel || '') !== 'direct') return false;
       const itemWeek = weekStartKey(String(item.startDate || '').slice(0, 10));
@@ -1691,9 +1727,8 @@ const BremDirectAdjustmentAdmin = (function () {
     });
 
     const leftoverByKey = new Map();
-    const promoKind = cachedPromoKind();
     weekAll.forEach(record => {
-      const map = promoKind?.[record.id] || {};
+      const map = promoMapForSettlement(record.id);
       Object.entries(map).forEach(([driverId, entry]) => {
         const mark = `${record.id}|${driverId}`;
         const amount = Math.round(Number(entry?.amount || 0));
@@ -1774,14 +1809,20 @@ const BremDirectAdjustmentAdmin = (function () {
     }
     body.innerHTML = reports.flatMap(report => report.rows.map(row => {
       const gapClass = row.gap ? 'direct-region-gap' : 'direct-region-ok';
+      const amountHtml = (count, amount) => (count || amount)
+        ? `<strong>${formatNumber(amount)}원</strong><small>${formatNumber(count)}명</small>`
+        : '-';
+      const missionHtml = row.leftover
+        ? `<span class="direct-region-mission is-extra">${escapeHtml(row.mission)}</span>`
+        : (row.missionHtml || '<span class="direct-region-muted">-</span>');
       return `<tr>
-        <td>${escapeHtml(formatDate(row.week))}(수)</td>
-        <td><strong>${escapeHtml(row.region)}</strong></td>
-        <td>${escapeHtml(platformLabel(row.platform))}</td>
-        <td>${row.leftover ? escapeHtml(row.mission) : (row.missionHtml || escapeHtml(row.mission || '-'))}</td>
-        <td class="weekly-amount-cell">${row.applyCount ? `${formatNumber(row.applyCount)}명 · ${formatNumber(row.applyAmount)}원` : '-'}</td>
-        <td class="weekly-amount-cell">${row.registerCount ? `${formatNumber(row.registerCount)}명 · ${formatNumber(row.registerAmount)}원` : '-'}</td>
-        <td class="weekly-amount-cell ${gapClass}">${row.gap ? formatNumber(row.gap) : '0'}</td>
+        <td class="direct-region-week">${escapeHtml(formatDate(row.week))}<small>수~화</small></td>
+        <td class="direct-region-name"><strong>${escapeHtml(row.region)}</strong></td>
+        <td class="direct-region-plat">${escapeHtml(platformLabel(row.platform))}</td>
+        <td class="direct-region-mission-cell">${missionHtml}</td>
+        <td class="direct-region-num">${amountHtml(row.applyCount, row.applyAmount)}</td>
+        <td class="direct-region-num">${amountHtml(row.registerCount, row.registerAmount)}</td>
+        <td class="direct-region-num ${gapClass}">${row.gap ? formatNumber(row.gap) : '0'}</td>
       </tr>`;
     })).join('');
   }

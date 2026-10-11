@@ -728,6 +728,7 @@ function check(label, actual, expected) {
   check('남구 SLA는 해당 미션만', /110건 1000 1명 SLA시간/.test(namguSla?.mission), 'true');
   check('남구 임시 미션은 SLA 없음', /임시 1명(?! SLA)/.test(namguSla?.mission), 'true');
   check('남구 미션 HTML에 SLA 태그', /promotion-sla-tag/.test(namguSla?.missionHtml), 'true');
+  check('미션이 칩으로 나뉨', /direct-region-mission/.test(namguSla?.missionHtml), 'true');
   Adj.setAdjustView('region');
   check('지역 카드 보임', window.document.getElementById('directRegionReportCard').hidden, false);
   check('등록 카드 숨김', window.document.getElementById('directAdjustCard').hidden, true);

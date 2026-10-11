@@ -7778,8 +7778,116 @@ tr.direct-registry-active > td:first-child {
 #directRegionReportCard .direct-scroll-wide {
   max-height: min(70vh, 720px);
 }
-#directRegionReportTable .promotion-sla-tag {
-  margin-left: 4px;
+#directRegionReportCard .card-header {
+  align-items: flex-start;
+  gap: 16px;
+}
+#directRegionReportTable {
+  width: 100%;
+  min-width: 1080px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+#directRegionReportTable col.direct-region-col-week { width: 108px; }
+#directRegionReportTable col.direct-region-col-area { width: 168px; }
+#directRegionReportTable col.direct-region-col-plat { width: 72px; }
+#directRegionReportTable col.direct-region-col-mission { width: auto; }
+#directRegionReportTable col.direct-region-col-num { width: 128px; }
+#directRegionReportTable col.direct-region-col-gap { width: 88px; }
+#directRegionReportTable th,
+#directRegionReportTable td {
+  padding: 12px 12px;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+#directRegionReportTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #141414;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+#directRegionReportTable thead th:nth-child(3) { text-align: center; }
+#directRegionReportTable thead th:nth-child(5),
+#directRegionReportTable thead th:nth-child(6),
+#directRegionReportTable thead th:nth-child(7) { text-align: right; }
+#directRegionReportTable tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+#directRegionReportTable tbody tr:hover td {
+  background: rgba(255, 212, 0, 0.05);
+}
+#directRegionReportTable .direct-region-week {
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+#directRegionReportTable .direct-region-week small,
+#directRegionReportTable .direct-region-num small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+#directRegionReportTable .direct-region-name strong {
+  display: block;
+  line-height: 1.35;
+  word-break: keep-all;
+}
+#directRegionReportTable .direct-region-plat {
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+#directRegionReportTable .direct-region-missions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#directRegionReportTable .direct-region-mission {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+#directRegionReportTable .direct-region-mission b {
+  font-weight: 800;
+}
+#directRegionReportTable .direct-region-mission em {
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 700;
+}
+#directRegionReportTable .direct-region-mission.is-extra {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.28);
+  background: rgba(251, 191, 36, 0.08);
+}
+#directRegionReportTable .direct-region-mission .promotion-sla-tag {
+  margin-left: 0;
+}
+#directRegionReportTable .direct-region-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#directRegionReportTable .direct-region-num strong {
+  display: block;
+}
+#directRegionReportTable .direct-region-muted {
+  color: var(--muted);
 }
 .promotion-settle-sub-tabs {
   margin-top: -8px;
