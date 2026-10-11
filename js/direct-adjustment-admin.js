@@ -53,6 +53,51 @@ const BremDirectAdjustmentAdmin = (function () {
     viewMode: 'register'
   };
 
+  let renderPass = null;
+  let regionReportTimer = 0;
+
+  function beginRenderPass() {
+    renderPass = { directSettlements: null, applyResults: null, promoKind: null };
+  }
+
+  function endRenderPass() {
+    renderPass = null;
+  }
+
+  function cachedDirectSettlements() {
+    if (renderPass) {
+      if (!renderPass.directSettlements) {
+        renderPass.directSettlements = window.BremStorage?.weeklySettlements?.getAll?.('direct') || [];
+      }
+      return renderPass.directSettlements;
+    }
+    return window.BremStorage?.weeklySettlements?.getAll?.('direct') || [];
+  }
+
+  function cachedApplyResults() {
+    if (renderPass) {
+      if (!renderPass.applyResults) {
+        renderPass.applyResults = window.BremStorage?.promotionApplyResults?.getAll?.() || [];
+      }
+      return renderPass.applyResults;
+    }
+    return window.BremStorage?.promotionApplyResults?.getAll?.() || [];
+  }
+
+  function cachedPromoKind() {
+    const store = window.BremStorage?.directSettlementAdjustments;
+    if (renderPass) {
+      if (!renderPass.promoKind) renderPass.promoKind = store?.getKind?.('promotion') || {};
+      return renderPass.promoKind;
+    }
+    return store?.getKind?.('promotion') || {};
+  }
+
+  function promoAmountOf(settlementId, driverId) {
+    const entry = cachedPromoKind()?.[settlementId]?.[driverId];
+    return Math.round(Number(entry?.amount || 0));
+  }
+
   function escapeHtml(value) {
     return String(value ?? '')
       .replace(/&/g, '&amp;')
@@ -150,7 +195,7 @@ const BremDirectAdjustmentAdmin = (function () {
   // --- 정산서(직계약) 목록 -------------------------------------------------
 
   function platformSettlements() {
-    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
+    return cachedDirectSettlements()
       .filter(record => String(record.platform || '') === state.platform)
       .slice()
       .sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
@@ -192,7 +237,7 @@ const BremDirectAdjustmentAdmin = (function () {
     if (!settlement) return [];
     const week = settlementWeek(settlement);
     const platform = String(settlement.platform || '');
-    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
+    return cachedDirectSettlements()
       .filter(record => String(record.platform || '') === platform && settlementWeek(record) === week);
   }
 
@@ -247,8 +292,7 @@ const BremDirectAdjustmentAdmin = (function () {
     if (hidden) hidden.value = state.week;
   }
 
-  function setAdjustView(mode) {
-    state.viewMode = mode === 'region' ? 'region' : 'register';
+  function syncAdjustView() {
     const registerCard = $('#directAdjustCard');
     const regionCard = $('#directRegionReportCard');
     const registerTab = $('#directAdjustRegisterTabBtn');
@@ -257,7 +301,25 @@ const BremDirectAdjustmentAdmin = (function () {
     if (regionCard) regionCard.hidden = state.viewMode !== 'region';
     if (registerTab) registerTab.classList.toggle('active', state.viewMode === 'register');
     if (regionTab) regionTab.classList.toggle('active', state.viewMode === 'region');
-    if (state.viewMode === 'region') renderRegionReport();
+  }
+
+  function scheduleRegionReport() {
+    const body = $('#directRegionReportBody');
+    if (body && !body.dataset.filled) {
+      body.innerHTML = '<tr><td colspan="7" class="empty">계산 중…</td></tr>';
+    }
+    if (regionReportTimer) cancelAnimationFrame(regionReportTimer);
+    regionReportTimer = requestAnimationFrame(() => {
+      regionReportTimer = 0;
+      beginRenderPass();
+      try { renderRegionReport(); } finally { endRenderPass(); }
+    });
+  }
+
+  function setAdjustView(mode) {
+    state.viewMode = mode === 'region' ? 'region' : 'register';
+    syncAdjustView();
+    if (state.viewMode === 'region') scheduleRegionReport();
   }
 
   function setWeek(value) {
@@ -958,7 +1020,7 @@ const BremDirectAdjustmentAdmin = (function () {
   }
 
   function erpSavedResults() {
-    const all = window.BremStorage?.promotionApplyResults?.getAll?.() || [];
+    const all = cachedApplyResults();
     const settlement = currentSettlement();
     if (!settlement) return [];
     const week = settlementWeek(settlement);
@@ -1421,8 +1483,31 @@ const BremDirectAdjustmentAdmin = (function () {
 
   function weekDirectSettlements(week) {
     const key = String(week || '').slice(0, 10);
-    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
-      .filter(record => !key || settlementWeek(record) === key);
+    return cachedDirectSettlements().filter(record => !key || settlementWeek(record) === key);
+  }
+
+  function buildHomeIndex(settlements) {
+    const index = new Map();
+    settlements.forEach(record => {
+      const week = settlementWeek(record);
+      const plat = String(record.platform || '');
+      const callsByDriver = new Map();
+      (Array.isArray(record.riders) ? record.riders : []).forEach(rider => {
+        const id = String(rider.matchedRiderId || '').trim();
+        if (!id) return;
+        callsByDriver.set(id, (callsByDriver.get(id) || 0) + Math.round(Number(rider.weeklyOrderCount || 0)));
+      });
+      callsByDriver.forEach((calls, driverId) => {
+        const mapKey = `${week}|${plat}|${driverId}`;
+        const prev = index.get(mapKey);
+        if (!prev
+          || calls > prev.calls
+          || (calls === prev.calls && String(record.id) < String(prev.record.id))) {
+          index.set(mapKey, { record, calls });
+        }
+      });
+    });
+    return index;
   }
 
   function homeSettlementInWeek(week, platform, driverId) {
@@ -1517,8 +1602,7 @@ const BremDirectAdjustmentAdmin = (function () {
     return parts.length ? parts.map(formatMissionPart).join(' · ') : '-';
   }
 
-  function missionSummaryHtml(item) {
-    const parts = missionParts(item);
+  function formatMissionHtml(parts) {
     if (!parts.length) return '-';
     return parts.map(part => {
       const label = escapeHtml(part.count ? `${part.name} ${part.count}명` : part.name);
@@ -1528,8 +1612,12 @@ const BremDirectAdjustmentAdmin = (function () {
     }).join(' · ');
   }
 
+  function missionSummaryHtml(item) {
+    return formatMissionHtml(missionParts(item));
+  }
+
   function latestDirectApplyResults(week) {
-    const all = window.BremStorage?.promotionApplyResults?.getAll?.() || [];
+    const all = cachedApplyResults();
     const matched = all.filter(item => {
       if (String(item.channel || '') !== 'direct') return false;
       const itemWeek = weekStartKey(String(item.startDate || '').slice(0, 10));
@@ -1552,9 +1640,13 @@ const BremDirectAdjustmentAdmin = (function () {
 
   function buildRegionReport(week) {
     const key = String(week || '').slice(0, 10);
-    const store = window.BremStorage?.directSettlementAdjustments;
     const applies = latestDirectApplyResults(key);
     const weekAll = weekDirectSettlements(key);
+    const homeIndex = buildHomeIndex(weekAll);
+    const byPlat = {
+      baemin: weekAll.filter(record => String(record.platform || '') === 'baemin'),
+      coupang: weekAll.filter(record => String(record.platform || '') === 'coupang')
+    };
     const counted = new Set();
     const rows = applies.map(item => {
       const itemWeek = weekStartKey(String(item.startDate || '').slice(0, 10) || key);
@@ -1564,18 +1656,17 @@ const BremDirectAdjustmentAdmin = (function () {
       const applyDrivers = new Set(paid.map(row => String(row.matchedRiderId || '').trim()).filter(Boolean));
       let registerAmount = 0;
       const registerDrivers = new Set();
+      const parts = missionParts(item);
       paid.forEach(row => {
         const driverId = String(row.matchedRiderId || '').trim();
         if (!driverId) return;
         ['baemin', 'coupang'].forEach(plat => {
           const expect = attachAmountForPlatform(row, item, plat);
           if (!expect) return;
-          const home = homeSettlementInWeek(itemWeek, plat, driverId);
-          const targets = home
-            ? [home]
-            : weekDirectSettlements(itemWeek).filter(record => String(record.platform || '') === plat);
+          const home = homeIndex.get(`${itemWeek}|${plat}|${driverId}`)?.record || null;
+          const targets = home ? [home] : (byPlat[plat] || []);
           targets.forEach(target => {
-            const got = Math.round(Number(store?.getSettlement?.('promotion', target.id)?.[driverId]?.amount || 0));
+            const got = promoAmountOf(target.id, driverId);
             if (!got) return;
             const mark = `${target.id}|${driverId}`;
             if (counted.has(mark)) return;
@@ -1589,8 +1680,8 @@ const BremDirectAdjustmentAdmin = (function () {
         week: itemWeek,
         region: compactRegionLabel(item),
         platform: item.platform,
-        mission: missionSummary(item),
-        missionHtml: missionSummaryHtml(item),
+        mission: parts.length ? parts.map(formatMissionPart).join(' · ') : '-',
+        missionHtml: formatMissionHtml(parts),
         applyCount: applyDrivers.size || paid.length,
         applyAmount,
         registerCount: registerDrivers.size,
@@ -1600,8 +1691,9 @@ const BremDirectAdjustmentAdmin = (function () {
     });
 
     const leftoverByKey = new Map();
+    const promoKind = cachedPromoKind();
     weekAll.forEach(record => {
-      const map = store?.getSettlement?.('promotion', record.id) || {};
+      const map = promoKind?.[record.id] || {};
       Object.entries(map).forEach(([driverId, entry]) => {
         const mark = `${record.id}|${driverId}`;
         const amount = Math.round(Number(entry?.amount || 0));
@@ -1641,7 +1733,7 @@ const BremDirectAdjustmentAdmin = (function () {
 
   function weeksForRegionReport() {
     const weeks = new Set();
-    (window.BremStorage?.promotionApplyResults?.getAll?.() || []).forEach(item => {
+    cachedApplyResults().forEach(item => {
       if (String(item.channel || '') !== 'direct') return;
       const week = weekStartKey(String(item.startDate || '').slice(0, 10));
       if (week) weeks.add(week);
@@ -1660,6 +1752,7 @@ const BremDirectAdjustmentAdmin = (function () {
     renderWeekButton();
     const weeks = state.week ? [state.week] : weeksForRegionReport();
     const reports = weeks.map(week => buildRegionReport(week)).filter(report => report.rows.length);
+    body.dataset.filled = '1';
     if (!reports.length) {
       body.innerHTML = '<tr><td colspan="7" class="empty">이 주에 직계약 프로모션 적용·등록이 없습니다.</td></tr>';
       if (summaryEl) {
@@ -1696,20 +1789,26 @@ const BremDirectAdjustmentAdmin = (function () {
   // --- 이벤트 --------------------------------------------------------------
 
   function renderAll() {
-    document.querySelectorAll('#promotion-settlement [data-direct-id-label]')
-      .forEach(el => { el.textContent = idLabel(); });
-    renderSettlementPicker();
-    renderPreview('other');
-    renderPreview('promotion');
-    renderApplied('other');
-    renderApplied('promotion');
-    renderPromoTax();
-    renderAppliedSummary();
-    renderRegistry();
-    renderLegacy();
-    renderErpList();
-    if (state.viewMode === 'region') renderRegionReport();
-    else setAdjustView(state.viewMode);
+    const ownsPass = !renderPass;
+    if (ownsPass) beginRenderPass();
+    try {
+      document.querySelectorAll('#promotion-settlement [data-direct-id-label]')
+        .forEach(el => { el.textContent = idLabel(); });
+      renderSettlementPicker();
+      renderPreview('other');
+      renderPreview('promotion');
+      renderApplied('other');
+      renderApplied('promotion');
+      renderPromoTax();
+      renderAppliedSummary();
+      renderRegistry();
+      renderLegacy();
+      renderErpList();
+      syncAdjustView();
+      if (state.viewMode === 'region') scheduleRegionReport();
+    } finally {
+      if (ownsPass) endRenderPass();
+    }
   }
 
   function bindEvents() {
@@ -1759,7 +1858,9 @@ const BremDirectAdjustmentAdmin = (function () {
     $('#directRegionReloadBtn')?.addEventListener('click', () => {
       void (async () => {
         await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
-        renderRegionReport();
+        const body = $('#directRegionReportBody');
+        if (body) delete body.dataset.filled;
+        scheduleRegionReport();
         showToast('지역별 현황을 다시 계산했습니다.');
       })();
     });
@@ -1837,17 +1938,21 @@ const BremDirectAdjustmentAdmin = (function () {
       state.pending.other = null;
       state.pending.promotion = null;
     }
-    if (!(state.viewMode === 'region' && !state.week)) ensureWeek();
-    driverOptionsCache = '';
     bindEvents();
     await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
-    // ERP 목록 기본 필터를 현재 플랫폼에 맞춘다.
-    const erpFilter = $('#directErpPlatformFilter');
-    if (erpFilter && !erpFilter.dataset.userTouched) {
-      erpFilter.value = state.platform;
-      state.erpPlatform = state.platform;
+    beginRenderPass();
+    try {
+      if (!(state.viewMode === 'region' && !state.week)) ensureWeek();
+      driverOptionsCache = '';
+      const erpFilter = $('#directErpPlatformFilter');
+      if (erpFilter && !erpFilter.dataset.userTouched) {
+        erpFilter.value = state.platform;
+        state.erpPlatform = state.platform;
+      }
+      renderAll();
+    } finally {
+      endRenderPass();
     }
-    renderAll();
   }
 
   function init() {
