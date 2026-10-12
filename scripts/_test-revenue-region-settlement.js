@@ -363,6 +363,14 @@ check('배민 부가세 합산', groupedPaste[0]?.vat, 12000);
 check('붙여넣기 권역 매칭', M.matchRegionByLabel(paste[0].source, REGIONS, {}), '남구중앙');
 check('없는 권역은 미매칭', M.matchRegionByLabel('없는권역XYZ', REGIONS, {}), '');
 
+const commaPaste = M.parsePasteRows('울산_남구중앙\t57,685,065\t5,353,208');
+check('탭+쉼표 실지급', commaPaste[0]?.supplyPaid, 57685065);
+check('탭+쉼표 부가세', commaPaste[0]?.vat, 5353208);
+const spacePaste = M.parsePasteRows('울산_남구중앙 57685065 5353208');
+check('띄어쓰기 실지급', spacePaste[0]?.supplyPaid, 57685065);
+check('띄어쓰기 권역', spacePaste[0]?.source, '울산_남구중앙');
+check('쉼표 금액 파싱', M.parseMoneyText('57,685,065'), 57685065);
+
 console.log('\n[7] 남은 금액 공식');
 check('실지급-부가세20%-최종입금-선정산', M.computeRemain({
   supplyPaid: 40179, vat: 3698, taxFeePercent: 20, finalDeposit: 30000, prepaid: 2000
