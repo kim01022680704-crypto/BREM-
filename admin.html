@@ -18,7 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20261011region5">
+  <link rel="stylesheet" href="css/admin.css?v=20261013region1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
@@ -7519,12 +7519,14 @@
             <div class="card-header">
               <div>
                 <h2>지역별 정산</h2>
-                <p class="form-help">선택한 정산주(수~화)의 직계약 정산서를 지역별로 합산합니다. 공급대가·부가세는 직접 입력하고, 입급가액·원천세는 정산서에서 자동 계산됩니다.</p>
+                <p class="form-help">엑셀 A열 권역 · B열 실지급액 · C열 부가세를 붙여넣습니다. 쿠팡·배민 계산은 같고, 배민 정산서가 두 개면 같은 권역은 합산됩니다.</p>
+                <p class="form-help">남은 금액 = 실지급액 − 부가세×세무처리비율 − 최종입금(지역별) − 선정산(지역별)</p>
                 <p class="form-help" id="revenueRegionWeekHint">-</p>
               </div>
               <div class="revenue-action-group">
                 <button type="button" class="small-btn" id="revenueRegionReloadBtn">불러오기</button>
                 <button type="button" class="primary-btn" id="revenueRegionSaveBtn">입력 저장</button>
+                <button type="button" class="small-btn" id="revenueRegionClearAmountsBtn">실지급·부가세 비우기</button>
                 <button type="button" class="small-btn" id="revenueRegionExportBtn">엑셀 다운로드</button>
               </div>
             </div>
@@ -7533,33 +7535,30 @@
 
             <div class="revenue-region-upload">
               <div class="revenue-region-upload-head">
-                <strong>정산서 업로드로 채우기</strong>
-                <span class="form-help">쿠팡은 파일 1개에 전 지역, 배민은 파일마다 1개 지역(여러 개 선택 가능)입니다. 직접 입력도 그대로 됩니다.</span>
+                <strong>엑셀 붙여넣기</strong>
+                <span class="form-help">A열 권역매칭 · B열 쿠팡/배민 실지급액 · C열 부가세. 같은 권역이 두 줄이면 합산합니다. 매칭이 안 되면 아래에서 지역을 고를 수 있습니다.</span>
               </div>
+              <div class="revenue-region-paste-kinds" role="radiogroup" aria-label="붙여넣기 구분">
+                <label><input type="radio" name="revenueRegionPasteKind" value="coupang" checked> 쿠팡</label>
+                <label><input type="radio" name="revenueRegionPasteKind" value="baemin"> 배민</label>
+              </div>
+              <textarea id="revenueRegionPasteInput" class="revenue-region-paste-input" rows="6" placeholder="엑셀에서 A~C열을 복사해 붙여넣으세요.&#10;예) 울산_남구중앙	57685065	5353208"></textarea>
               <div class="revenue-region-upload-controls">
-                <label class="revenue-region-upload-pass">
-                  <span>엑셀 비밀번호 (없으면 비워두기)</span>
-                  <input type="password" id="revenueRegionExcelPassword" autocomplete="off" placeholder="열람 암호">
-                </label>
-                <label class="small-btn file-btn">쿠팡 정산서 업로드
-                  <input type="file" id="revenueRegionCoupangFile" accept=".xlsx,.xls" hidden>
-                </label>
-                <label class="small-btn file-btn">배민 정산서 업로드 (여러 개)
-                  <input type="file" id="revenueRegionBaeminFile" accept=".xlsx,.xls" multiple hidden>
-                </label>
+                <button type="button" class="primary-btn" id="revenueRegionPasteBtn">붙여넣기</button>
                 <button type="button" class="small-btn" id="revenueRegionUploadClearBtn">미리보기 지우기</button>
               </div>
-              <p class="form-help" id="revenueRegionUploadStatus" aria-live="polite">쿠팡: C열 지역구 · G열 부가세 · J열 실지급액 / 배민: 파일명으로 지역 매칭 · C31 부가세액 · D31 공급대가에서 사업주부담 고용(I열)·산재(K열) 보험료 차감</p>
+              <p class="form-help" id="revenueRegionUploadStatus" aria-live="polite">엑셀 A~C열을 붙여넣으면 권역을 맞춰 표에 넣습니다. 미매칭은 노란 줄로 남습니다.</p>
+              <p class="revenue-region-unmatched-banner" id="revenueRegionUnmatchedBanner" hidden></p>
               <div class="table-wrap revenue-region-preview-wrap" id="revenueRegionPreviewWrap" hidden>
                 <table class="data-table revenue-region-preview-table">
                   <thead>
                     <tr>
                       <th>구분</th>
-                      <th>파일 · 원본 지역</th>
+                      <th>원본 권역</th>
                       <th>반영할 지역</th>
-                      <th>공급대가(실지급액)</th>
+                      <th>실지급액</th>
                       <th>부가세</th>
-                      <th>계산 근거</th>
+                      <th>메모</th>
                     </tr>
                   </thead>
                   <tbody id="revenueRegionPreviewBody"></tbody>
@@ -7567,8 +7566,23 @@
               </div>
               <div class="revenue-region-upload-actions" id="revenueRegionPreviewActions" hidden>
                 <button type="button" class="primary-btn" id="revenueRegionApplyUploadBtn">표에 반영</button>
-                <span class="form-help">반영하면 자동 저장되고 이 미리보기는 닫힙니다. 매칭 안 된 줄만 남습니다.</span>
+                <span class="form-help">매칭된 줄은 바로 합산되고, 미매칭만 남습니다. 지역을 고른 뒤 다시 반영하세요.</span>
               </div>
+              <details class="revenue-region-file-details">
+                <summary>정산서 파일로 넣기 (선택)</summary>
+                <div class="revenue-region-upload-controls">
+                  <label class="revenue-region-upload-pass">
+                    <span>엑셀 비밀번호 (없으면 비워두기)</span>
+                    <input type="password" id="revenueRegionExcelPassword" autocomplete="off" placeholder="열람 암호">
+                  </label>
+                  <label class="small-btn file-btn">쿠팡 정산서 업로드
+                    <input type="file" id="revenueRegionCoupangFile" accept=".xlsx,.xls" hidden>
+                  </label>
+                  <label class="small-btn file-btn">배민 정산서 업로드 (여러 개)
+                    <input type="file" id="revenueRegionBaeminFile" accept=".xlsx,.xls" multiple hidden>
+                  </label>
+                </div>
+              </details>
             </div>
             <div class="stats-grid revenue-region-stats" id="revenueRegionSummaryPanel">
               <article class="stat-card">
@@ -7576,28 +7590,28 @@
                 <strong id="revenueRegionCount">0</strong>
               </article>
               <article class="stat-card">
-                <span>지급합계</span>
-                <strong id="revenueRegionGrossTotal">-</strong>
-              </article>
-              <article class="stat-card">
-                <span>입급가액 합계</span>
-                <strong id="revenueRegionPayTotal">-</strong>
-              </article>
-              <article class="stat-card">
-                <span>원천세합 (수익)</span>
-                <strong id="revenueRegionTaxTotal">-</strong>
-              </article>
-              <article class="stat-card">
-                <span>공급대가 합계</span>
+                <span>실지급액 합계</span>
                 <strong id="revenueRegionSupplyTotal">-</strong>
               </article>
               <article class="stat-card">
-                <span>부가세 합계 (수익)</span>
+                <span>부가세 합계</span>
                 <strong id="revenueRegionVatTotal">-</strong>
               </article>
               <article class="stat-card stat-card--warning">
                 <span>세무처리비 합계</span>
                 <strong id="revenueRegionTaxFeeTotal">-</strong>
+              </article>
+              <article class="stat-card">
+                <span>최종입금 합계</span>
+                <strong id="revenueRegionFinalTotal">-</strong>
+              </article>
+              <article class="stat-card">
+                <span>선정산 합계</span>
+                <strong id="revenueRegionPrepaidTotal">-</strong>
+              </article>
+              <article class="stat-card">
+                <span>남은 금액 합계</span>
+                <strong id="revenueRegionRemainTotal">-</strong>
               </article>
             </div>
             <div class="table-wrap">
@@ -7605,15 +7619,12 @@
                 <thead>
                   <tr>
                     <th class="revenue-region-col-region">지역</th>
-                    <th class="revenue-region-col-input">공급대가<br><span class="muted-inline">(실지급액 · 입력)</span></th>
+                    <th class="revenue-region-col-input">실지급액<br><span class="muted-inline">(붙여넣기 · 입력)</span></th>
                     <th class="revenue-region-col-input">부가세<br><span class="muted-inline">(입력)</span></th>
                     <th class="revenue-region-col-money">세무처리비<br><span class="muted-inline">(부가세×비율)</span></th>
-                    <th class="revenue-region-col-money">지급합계<br><span class="muted-inline">(참고)</span></th>
-                    <th class="revenue-region-col-money">입급가액<br><span class="muted-inline">(지급합계-일반공제)</span></th>
-                    <th class="revenue-region-col-money">원천세합</th>
-                    <th class="revenue-region-col-rate">사용률<br><span class="muted-inline">(입급가액÷(공급대가−부가세))</span></th>
-                    <th class="revenue-region-col-rate">원천세 포함 사용률<br><span class="muted-inline">(입급가액÷(공급대가−부가세+원천세))</span></th>
-                    <th class="revenue-region-col-rate">남은 금액<br><span class="muted-inline">(공급대가+원천세−입급가액−세무처리비)</span></th>
+                    <th class="revenue-region-col-money">최종입금<br><span class="muted-inline">(지역별)</span></th>
+                    <th class="revenue-region-col-money">선정산<br><span class="muted-inline">(지역별)</span></th>
+                    <th class="revenue-region-col-rate">남은 금액<br><span class="muted-inline">(실지급액−세무처리비−최종입금−선정산)</span></th>
                   </tr>
                 </thead>
                 <tbody id="revenueRegionBody"></tbody>
@@ -9673,7 +9684,7 @@
   <script src="js/admin-lease-menus.js?v=20260813g"></script>
   <script src="js/admin-rider-maintenance.js?v=20260924mt4"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-revenue-region-settlement.js?v=20260910region1"></script>
+  <script src="js/admin-revenue-region-settlement.js?v=20261013region1"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
   <script src="js/payroll-slip-utils.js?v=20260922payout1"></script>

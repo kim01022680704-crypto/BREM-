@@ -1,11 +1,12 @@
 /**
- * 수익 관리 · 지역별 정산 업로드 파서 검증 (로컬, 서버 접속 없음)
+ * 수익 관리 · 지역별 정산 붙여넣기·합산 검증 (로컬, 서버 접속 없음)
  *
  * 확인 항목
  *  - 쿠팡 정산서: C열 지역구 · G열 부가세 · J열 실지급액을 지역별로 읽는지
  *  - 배민 정산서: C31 부가세액 · D31 공급대가 − (I열 고용보험 + J열 산재보험)
  *  - 지역명 매칭: 울산_/경남_ 접두사와 (Z) 꼬리표를 무시하고 ERP 지역명에 붙는지
- *  - 파일명 매칭(배민)
+ *  - 엑셀 붙여넣기 A/B/C · 배민 같은 권역 합산 · 미매칭
+ *  - 남은 금액 = 실지급액 − 부가세×20% − 최종입금 − 선정산
  */
 const fs = require('fs');
 const path = require('path');
@@ -253,37 +254,24 @@ check('부가세 합산', north?.vat, 12000);
 check('파일명 + 로 연결', String(north?.fileName || '').includes(' + '), 'true');
 check('합산 줄은 2파일', (north?.fileNames || []).length, 2);
 
-// --- 표 렌더링 (열 수 · 사용률 방향) ----------------------------------------
-console.log('\n[5] 표 렌더링 · 열 수와 사용률');
+// --- 표 렌더링 (열 수 · 남은 금액) ------------------------------------------
+console.log('\n[5] 표 렌더링 · 실지급−세무처리비−최종입금−선정산');
 
-const GENERAL_DEDUCT_KEYS = [
-  'employmentInsurance', 'accidentInsurance', 'hourlyInsurance',
-  'withholdingTax', 'promotionWithholdingTax', 'callFee'
-];
-const sum = (src, keys) => keys.reduce((acc, key) => acc + Math.round(Number(src?.[key] || 0)), 0);
-
-// 중구중앙: 지급합계 36,181 · 일반공제 1,470 → 입급가액 34,711 · 원천세합 1,220
 const CALC_ROW = {
   region: '중구중앙',
-  grossPay: 36181,
-  employmentInsurance: 150,
-  accidentInsurance: 100,
-  hourlyInsurance: 0,
-  withholdingTax: 1120,
-  promotionWithholdingTax: 100,
-  callFee: 0
+  netPay: 30000,
+  prepaid: 2000
 };
 
 window.BremDirectSettlementCalc = {
-  GENERAL_DEDUCT_KEYS,
-  generalDeductTotal: src => sum(src, GENERAL_DEDUCT_KEYS),
-  withholdingTaxTotal: src => sum(src, ['withholdingTax', 'promotionWithholdingTax']),
   weekStartKey: value => String(value || '2026-08-19').slice(0, 10),
   settlementWeek: () => '2026-08-19',
   computeRows: () => [CALC_ROW]
 };
 window.BremStorage = {
   weeklySettlements: { getAll: () => [{ id: 's1', region: '중구중앙', startDate: '2026-08-19' }] },
+  payrollWithdrawal: { getAll: () => [] },
+  settlements: { getAll: () => [] },
   revenue: {
     getRegionSettlementByWeek: () => ({
       weekStart: '2026-08-19',
@@ -306,39 +294,40 @@ const footCells = [...window.document.querySelectorAll('#revenueRegionFoot tr td
 
 check('본문 열 수 = 헤더 열 수', bodyCells.length, headCells.length);
 check('합계 열 수 = 헤더 열 수', footCells.length, headCells.length);
+check('열 수는 7개', headCells.length, 7);
 
 const headText = headCells.map(th => th.textContent.replace(/\s+/g, ''));
-check('사용률 기준은 공급대가−부가세', headText.some(t => t.includes('입급가액÷(공급대가−부가세)')), 'true');
+check('최종입금 열', headText.some(t => t.includes('최종입금')), 'true');
+check('선정산 열', headText.some(t => t.includes('선정산')), 'true');
+check('사용률 열은 없다', headText.some(t => t.includes('사용률')), 'false');
 
 const bodyText = bodyCells.map(td => td.textContent.replace(/\s+/g, ''));
-// 공급대가 40,179 · 부가세 3,698 → 기준 36,481 / 입급가액 34,711 · 원천세 1,220
-check('입급가액 34,711원', bodyText.includes('34,711원'), 'true');
-check('사용률 = 34,711÷36,481 = 95.1%', bodyText.includes('95.1%'), 'true');
-check('원천세 포함 = 34,711÷37,701 = 92.1%', bodyText.includes('92.1%'), 'true');
-check('공급대가 기준(86.4%)은 더 이상 없다', bodyText.includes('86.4%'), 'false');
-// 남은 금액 = 40,179 + 1,220 − 34,711 − 740(부가세 3,698×20%) = 5,948
 check('세무처리비 740원', bodyText.includes('740원'), 'true');
-check('남은 금액 5,948원 남음', bodyText.some(t => t.includes('5,948원남음')), 'true');
-check('보조줄(원천세 포함)은 없앴다', bodyText.some(t => t.includes('원천세포함')), 'false');
+check('최종입금 30,000원', bodyText.includes('30,000원'), 'true');
+check('선정산 2,000원', bodyText.includes('2,000원'), 'true');
+// 40,179 − 740 − 30,000 − 2,000 = 7,439
+check('남은 금액 7,439원 남음', bodyText.some(t => t.includes('7,439원남음')), 'true');
 
 console.log('\n[5b] 지역별 정산 표 · 119·이글스 같은 권역 합산');
 window.BremDirectSettlementCalc.computeRows = settlement => [{
-  ...CALC_ROW,
   region: settlement.region,
-  grossPay: Number(settlement.grossPay || CALC_ROW.grossPay)
+  netPay: Number(settlement.netPay || 0),
+  prepaid: Number(settlement.prepaid || 0)
 }];
 window.BremStorage.weeklySettlements.getAll = () => [
   {
     id: 's119',
     region: '주식회사 119컴퍼니_표준울산남A주식회사119컴퍼니_DP1',
     startDate: '2026-08-19',
-    grossPay: 100000
+    netPay: 100000,
+    prepaid: 10000
   },
   {
     id: 'seagles',
     region: '배달 이글스_표준울산남A배달이글스_DP2',
     startDate: '2026-08-19',
-    grossPay: 40000
+    netPay: 40000,
+    prepaid: 4000
   }
 ];
 window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
@@ -346,19 +335,39 @@ window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
   taxFeePercent: 20,
   regions: {}
 });
+M.setWeekStart('2026-08-19');
 const mergedRegions = M.aggregateRegions('2026-08-19').regions;
 check('같은 권역은 1줄', mergedRegions.length, 1);
 check('권역명은 표준울산남A', mergedRegions[0]?.region, '표준울산남A');
-check('지급합계는 두 정산서 합', mergedRegions[0]?.grossPay, 140000);
+check('최종입금은 두 정산서 합', mergedRegions[0]?.finalDeposit, 140000);
+check('선정산은 두 정산서 합', mergedRegions[0]?.prepaid, 14000);
 
 const alreadyMerged = M.canonicalRegionLabel(
   '주식회사 119컴퍼니_표준울산남A주식회사119컴퍼니_DP1 + 배달 이글스_표준울산남A배달이글스_DP2'
 );
 check('이미 합친 주정산도 권역명', alreadyMerged, '표준울산남A');
 
-// 사용자 예시: 공급가액 100만 + 부가세 10만 = 공급대가 110만, 105만 지출 → 105%
-const exampleBase = 1100000 - 100000;
-check('예시 105만 지출 → 105.0%', ((1050000 / exampleBase) * 100).toFixed(1), '105.0');
+console.log('\n[6] 엑셀 붙여넣기 · 배민 2파일 합산 · 미매칭');
+const paste = M.parsePasteRows('권역매칭\t실지급액\t부가세\n울산_남구중앙\t57685065\t5353208\n경남_양산동부(Z)\t10717232\t1001958');
+check('헤더 제외 2줄', paste.length, 2);
+check('첫 권역', paste[0]?.source, '울산_남구중앙');
+check('첫 실지급', paste[0]?.supplyPaid, 57685065);
+check('첫 부가세', paste[0]?.vat, 5353208);
+
+const baeminPaste = M.parsePasteRows('북필드B\t100000\t10000\n북필드B\t20000\t2000', { kind: 'baemin' });
+const groupedPaste = M.groupPasteRows(baeminPaste.map(row => ({ ...row, region: '북필드B' })));
+check('배민 같은 권역 2줄은 1줄', groupedPaste.length, 1);
+check('배민 실지급 합산', groupedPaste[0]?.supplyPaid, 120000);
+check('배민 부가세 합산', groupedPaste[0]?.vat, 12000);
+
+check('붙여넣기 권역 매칭', M.matchRegionByLabel(paste[0].source, REGIONS, {}), '남구중앙');
+check('없는 권역은 미매칭', M.matchRegionByLabel('없는권역XYZ', REGIONS, {}), '');
+
+console.log('\n[7] 남은 금액 공식');
+check('실지급-부가세20%-최종입금-선정산', M.computeRemain({
+  supplyPaid: 40179, vat: 3698, taxFeePercent: 20, finalDeposit: 30000, prepaid: 2000
+}), 7439);
+check('입력 없으면 0', M.computeRemain({ finalDeposit: 30000, prepaid: 2000 }), 0);
 
 console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
 process.exit(failed ? 1 : 0);

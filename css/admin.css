@@ -11393,7 +11393,7 @@ body.driver-popup-open {
 }
 
 .revenue-region-table {
-  min-width: 1320px;
+  min-width: 1080px;
 }
 
 .revenue-region-table th,
@@ -11458,6 +11458,55 @@ body.driver-popup-open {
   display: grid;
   gap: 4px;
   margin-bottom: 10px;
+}
+
+.revenue-region-paste-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 8px;
+  font-size: 0.88rem;
+}
+
+.revenue-region-paste-kinds label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.revenue-region-paste-input {
+  width: 100%;
+  min-height: 8rem;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-family: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.revenue-region-unmatched-banner {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(245, 185, 66, 0.14);
+  color: #f5b942;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.revenue-region-file-details {
+  margin-top: 12px;
+}
+
+.revenue-region-file-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.86rem;
 }
 
 .revenue-region-upload-controls {
