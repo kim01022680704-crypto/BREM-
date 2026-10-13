@@ -231,7 +231,8 @@ function listExposedRegions(exposure, platform) {
       platform,
       label: String(meta.label || key).trim() || key,
       partnerId: String(meta.partnerId || '').trim(),
-      vendorId: String(meta.vendorId || '').trim()
+      vendorId: String(meta.vendorId || '').trim(),
+      vendorName: String(meta.vendorName || meta.label || '').trim()
     }))
     .sort((a, b) => a.label.localeCompare(b.label, 'ko'));
 }
@@ -498,12 +499,35 @@ function filterLeaderViewRankingRiders(exposure, region, riders = []) {
 }
 
 /** 기사앱에 대시보드를 보여줄 지역 — 미노출 기사 제외 */
-function filterViewerRegions(exposure, platform, riderRow, regions = []) {
+function filterViewerRegions(exposure, platform, riderRow, regions = [], zClusters = null) {
   const riderId = riderRow?.id;
   return (regions || []).filter(region => {
-    if (!riderMatchesRegion(riderRow, region)) return false;
+    if (!riderMatchesRegion(riderRow, region, zClusters)) return false;
     return getRiderRegionModeForRegion(exposure, { ...region, platform }, riderId) !== 'hidden';
   });
+}
+
+function zClusterInfo(zClusters) {
+  if (!zClusters) return { shorts: null, vendorIds: null };
+  if (zClusters instanceof Set) return { shorts: zClusters, vendorIds: null };
+  return {
+    shorts: zClusters.shorts || zClusters.set || null,
+    vendorIds: zClusters.vendorIds || null
+  };
+}
+
+function coupangRegionVendorId(region) {
+  const vendorId = String(region?.vendorId || '').trim();
+  if (vendorId) return vendorId;
+  const key = String(region?.key || '').trim();
+  return /^\d+$/.test(key) ? key : '';
+}
+
+function regionIsCoupangZ(region, zClusters) {
+  if (coupangRegionIsZ(`${region?.label || ''} ${region?.vendorName || ''}`)) return true;
+  const info = zClusterInfo(zClusters);
+  const vendorId = coupangRegionVendorId(region);
+  return Boolean(vendorId && info.vendorIds && info.vendorIds.has(vendorId));
 }
 
 function riderMatchesRegion(rider, region, zClusters) {
@@ -523,30 +547,43 @@ function riderMatchesRegion(rider, region, zClusters) {
   const valueShort = shortCoupangRegionLabel(value);
   const regionShort = shortCoupangRegionLabel(region.label || region.vendorName || '');
   if (!valueShort || !regionShort || valueShort !== regionShort) return false;
-  if (coupangRegionIsZ(region.label || region.vendorName)) return true;
+  if (regionIsCoupangZ(region, zClusters)) return true;
   if (coupangRegionIsZ(value)) return false;
-  return !(zClusters && zClusters.has(regionShort));
+  const info = zClusterInfo(zClusters);
+  return !(info.shorts && info.shorts.has(regionShort));
 }
 
-let zClusterCache = { at: 0, set: new Set() };
+let zClusterCache = { at: 0, info: null };
+
+function emptyZClusterInfo() {
+  const shorts = new Set();
+  const vendorIds = new Set();
+  return {
+    shorts,
+    vendorIds,
+    has(value) { return shorts.has(value); }
+  };
+}
 
 async function loadCoupangZClusters(supabase) {
-  if (Date.now() - zClusterCache.at < 60 * 1000) return zClusterCache.set;
+  if (zClusterCache.info && Date.now() - zClusterCache.at < 60 * 1000) return zClusterCache.info;
   const { data, error } = await supabase
     .from('coupang_collect_items')
-    .select('vendor_name')
+    .select('vendor_id,vendor_name')
     .eq('source_menu', 'vendor_info')
     .ilike('vendor_name', '%(Z)%')
     .limit(500);
-  const set = new Set();
+  const info = emptyZClusterInfo();
   if (!error) {
     (data || []).forEach(row => {
       const short = shortCoupangRegionLabel(row.vendor_name);
-      if (short) set.add(short);
+      if (short) info.shorts.add(short);
+      const vendorId = String(row.vendor_id || '').trim();
+      if (vendorId) info.vendorIds.add(vendorId);
     });
-    zClusterCache = { at: Date.now(), set };
+    zClusterCache = { at: Date.now(), info };
   }
-  return zClusterCache.set;
+  return zClusterCache.info || info;
 }
 
 function isInactiveRiderStatus(status) {
@@ -1571,12 +1608,16 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
       regionCoupang: me.rider?.regionCoupang
     }
   });
-  const exposedAll = listExposedRegions(exposure, platform);
-  const regions = filterViewerRegions(exposure, platform, riderRow, exposedAll);
+  const exposedRaw = listExposedRegions(exposure, platform);
+  const zClusters = platform === 'coupang' ? await loadCoupangZClusters(supabase) : null;
+  const exposedAll = platform === 'coupang'
+    ? collapseCoupangZTwins(await enrichCoupangBranchRegions(supabase, platform, exposedRaw))
+    : exposedRaw;
+  const regions = filterViewerRegions(exposure, platform, riderRow, exposedAll, zClusters);
   if (!regions.length) {
     const hasAnyExposure = exposedAll.length > 0;
     const hiddenOnly = hasAnyExposure && exposedAll.some(region =>
-      riderMatchesRegion(riderRow, region)
+      riderMatchesRegion(riderRow, region, zClusters)
       && getRiderRegionModeForRegion(exposure, region, riderRow.id) === 'hidden'
     );
     return {
@@ -1601,8 +1642,7 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
     };
   }
 
-  const selected = regions.find(region => region.key === requestedKey)
-    || regions[0];
+  const selected = pickDefaultBranchRegion(regions, requestedKey) || regions[0];
 
   const coupangDateInfo = platform === 'coupang'
     ? await resolveCoupangRiderDailyDate(supabase, today)

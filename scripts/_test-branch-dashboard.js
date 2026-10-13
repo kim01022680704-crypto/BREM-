@@ -134,6 +134,10 @@ check('ERP 포항중앙 기사는 Z에 붙음', T.riderMatchesRegion({ regionCou
 check('ERP 포항중앙 기사는 일반에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[0], platform: 'coupang' }, zClusters));
 check('Z 표기 기사는 일반에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '포항중앙(Z)' }, { ...pohang[0], platform: 'coupang' }, zClusters));
 check('PostgREST는 (Z)를 따옴표로 감싼다', T.escapePostgrestValue('포항중앙(Z)') === '"포항중앙(Z)"');
+const unlabeledZ = { key: '19749', vendorId: '19749', label: '포항중앙', vendorName: '', platform: 'coupang' };
+const zInfo = { shorts: new Set(['포항중앙']), vendorIds: new Set(['19749']), has(v) { return this.shorts.has(v); } };
+check('저장 라벨에 Z가 없어도 vendorId로 Z 실적', T.riderMatchesRegion({ regionCoupang: '포항중앙' }, unlabeledZ, zInfo));
+check('같은 라벨 일반 vendor는 여전히 제외', !T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[0], platform: 'coupang' }, zInfo));
 check('남구처럼 Z 없는 권역은 그대로', T.riderMatchesRegion(
   { regionCoupang: '남구중앙' },
   { key: '1', vendorId: '1', label: '남구중앙', vendorName: '배달연합#plus_대구_남구중앙', platform: 'coupang' },
