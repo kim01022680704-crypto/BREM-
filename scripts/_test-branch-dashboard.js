@@ -133,6 +133,7 @@ const zClusters = new Set(['포항중앙']);
 check('ERP 포항중앙 기사는 Z에 붙음', T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[1], platform: 'coupang' }, zClusters));
 check('ERP 포항중앙 기사는 일반에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[0], platform: 'coupang' }, zClusters));
 check('Z 표기 기사는 일반에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '포항중앙(Z)' }, { ...pohang[0], platform: 'coupang' }, zClusters));
+check('PostgREST는 (Z)를 따옴표로 감싼다', T.escapePostgrestValue('포항중앙(Z)') === '"포항중앙(Z)"');
 check('남구처럼 Z 없는 권역은 그대로', T.riderMatchesRegion(
   { regionCoupang: '남구중앙' },
   { key: '1', vendorId: '1', label: '남구중앙', vendorName: '배달연합#plus_대구_남구중앙', platform: 'coupang' },

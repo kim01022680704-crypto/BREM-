@@ -651,9 +651,10 @@ function resolveBaeminCrawlDriver(lookup, baeminId, crawlName, phone) {
 }
 
 function escapePostgrestValue(value) {
-  return String(value || '')
+  const escaped = String(value || '')
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"');
+  return `"${escaped}"`;
 }
 
 /** 응답 메모리 캐시 — 같은 지역을 연속으로 열면 DB 없이 바로 돌려준다. */
@@ -710,7 +711,7 @@ async function loadRidersForRegion(supabase, region) {
     const partnerId = String(region.partnerId || '').trim();
     // 클라이언트 driversInRegion 의 includes(partnerId) 와 맞춘다.
     if (partnerId.length >= 6) {
-      parts.push(`raw_data->>regionBaemin.ilike.%${escapePostgrestValue(partnerId)}%`);
+      parts.push(`raw_data->>regionBaemin.ilike.${escapePostgrestValue(`%${partnerId}%`)}`);
     }
     if (parts.length) {
       result = await fetchPages(() => supabase
@@ -728,7 +729,7 @@ async function loadRidersForRegion(supabase, region) {
       .filter(Boolean)
       .filter((value, index, list) => list.indexOf(value) === index)
       .map(value => `raw_data->>regionCoupang.eq.${escapePostgrestValue(value)}`);
-    if (short) parts.push(`raw_data->>regionCoupang.ilike.%${escapePostgrestValue(short)}%`);
+    if (short) parts.push(`raw_data->>regionCoupang.ilike.${escapePostgrestValue(`%${short}%`)}`);
     if (parts.length) {
       result = await fetchPages(() => supabase
         .from('riders')
@@ -737,6 +738,21 @@ async function loadRidersForRegion(supabase, region) {
         .or(parts.join(',')));
     } else {
       result = { data: [], error: null };
+    }
+  }
+
+  if (!result.error && region.platform === 'coupang' && !(result.data || all).length) {
+    const shortOnly = shortCoupangRegion(region.label || region.key || region.vendorName || '');
+    const retry = [];
+    if (region.vendorId) retry.push(`raw_data->>regionCoupang.eq.${escapePostgrestValue(region.vendorId)}`);
+    if (shortOnly) retry.push(`raw_data->>regionCoupang.ilike.${escapePostgrestValue(`%${shortOnly}%`)}`);
+    if (retry.length) {
+      all.length = 0;
+      result = await fetchPages(() => supabase
+        .from('riders')
+        .select('id,name,baemin_id,phone,status,raw_data')
+        .not('status', 'in', '("휴무","퇴사")')
+        .or(retry.join(',')));
     }
   }
 
@@ -2705,6 +2721,7 @@ module.exports = {
     decorateCoupangBranchRegion,
     collapseCoupangZTwins,
     riderMatchesRegion,
+    escapePostgrestValue,
     mergeLiveDaySlots,
     sumBaeminDeliverySlotTotals,
     buildBranchWeeklyProgress
