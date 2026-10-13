@@ -42,6 +42,15 @@ function shortCoupangRegionLabel(name) {
   return base.length <= 4 ? base : base.slice(-4);
 }
 
+/** 화면용 라벨 — 포항중앙 / 포항중앙(Z) 를 구분한다. 매칭은 shortCoupangRegionLabel 을 쓴다. */
+function displayCoupangRegionLabel(name) {
+  const raw = String(name || '').replace(/\s+/g, '').trim();
+  if (!raw) return '';
+  const short = shortCoupangRegionLabel(raw);
+  if (/\(Z\)/i.test(raw) && short && !/\(Z\)/i.test(short)) return `${short}(Z)`;
+  return short || raw;
+}
+
 /** vendorName 정규화 — (2) 접미사 제거 */
 function coupangRegionDedupeKey(name) {
   return String(name || '').replace(/\s+/g, '').replace(/\(\d+\)$/g, '').trim();
@@ -264,6 +273,7 @@ module.exports = {
   buildMatchKey,
   digitsOnly,
   shortCoupangRegionLabel,
+  displayCoupangRegionLabel,
   coupangRegionDedupeKey,
   coupangVendorMatchesRegion,
   mapRealtimeToItems,

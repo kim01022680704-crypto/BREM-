@@ -10,6 +10,7 @@ const {
 } = require('./coupang-erp-sync');
 const {
   shortCoupangRegionLabel,
+  displayCoupangRegionLabel,
   coupangVendorMatchesRegion,
   PEAK_LABELS,
   PEAK_ORDER
@@ -265,7 +266,67 @@ function listBranchManagerRegions(exposure, platform, driverId) {
       vendorId: String(meta.vendorId || '').trim(),
       vendorName: String(meta.vendorName || meta.label || '').trim()
     }))
-    .sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+    .sort((a, b) => a.label.localeCompare(b.label, 'ko') || String(a.vendorId || a.key).localeCompare(String(b.vendorId || b.key)));
+}
+
+function decorateCoupangBranchRegion(region, vendorName) {
+  const name = String(vendorName || region?.vendorName || '').trim();
+  const label = displayCoupangRegionLabel(name || region?.label) || region?.label;
+  return {
+    ...region,
+    vendorName: name || region?.vendorName || '',
+    label
+  };
+}
+
+function pickDefaultBranchRegion(regions, requestedKey) {
+  const list = Array.isArray(regions) ? regions : [];
+  if (!list.length) return null;
+  const want = String(requestedKey || '').trim();
+  if (want) {
+    const hit = list.find(region => region.key === want || region.vendorId === want);
+    if (hit) return hit;
+  }
+  const z = list.find(region => /\(Z\)/i.test(`${region.label || ''} ${region.vendorName || ''}`));
+  if (z) {
+    const base = shortCoupangRegionLabel(z.label || z.vendorName);
+    const twin = list.some(region => (
+      region !== z && shortCoupangRegionLabel(region.label || region.vendorName) === base
+    ));
+    if (twin) return z;
+  }
+  return list[0];
+}
+
+async function enrichCoupangBranchRegions(supabase, platform, regions) {
+  if (platform !== 'coupang' || !Array.isArray(regions) || !regions.length) return regions || [];
+  const ids = [...new Set(regions
+    .map(region => String(region.vendorId || region.key || '').trim())
+    .filter(Boolean))];
+  if (!ids.length) return regions.map(region => decorateCoupangBranchRegion(region));
+  const { data, error } = await supabase
+    .from('coupang_collect_items')
+    .select('vendor_id,vendor_name')
+    .in('vendor_id', ids)
+    .in('source_menu', ['vendor_info', 'peak_realtime'])
+    .order('collected_at', { ascending: false })
+    .limit(Math.min(80, ids.length * 10));
+  if (error) {
+    console.warn('[BREM][branch] coupang vendor names:', error.message || error);
+    return regions.map(region => decorateCoupangBranchRegion(region));
+  }
+  const nameById = new Map();
+  (data || []).forEach(row => {
+    const id = String(row.vendor_id || '').trim();
+    const name = String(row.vendor_name || '').trim();
+    if (id && name && !nameById.has(id)) nameById.set(id, name);
+  });
+  return regions
+    .map(region => decorateCoupangBranchRegion(
+      region,
+      nameById.get(String(region.vendorId || region.key || ''))
+    ))
+    .sort((a, b) => a.label.localeCompare(b.label, 'ko') || String(a.vendorId || a.key).localeCompare(String(b.vendorId || b.key)));
 }
 
 /** 기사 지역 옵션:
@@ -1544,7 +1605,11 @@ async function getRiderBranchDashboard(accessToken, query = {}) {
 
   try {
     const exposure = await readExposureMap(supabase);
-    const regions = listBranchManagerRegions(exposure, platform, riderId);
+    const regions = await enrichCoupangBranchRegions(
+      supabase,
+      platform,
+      listBranchManagerRegions(exposure, platform, riderId)
+    );
     if (!regions.length) {
       return {
         ok: true,
@@ -1557,7 +1622,7 @@ async function getRiderBranchDashboard(accessToken, query = {}) {
         message: '이 플랫폼에서 등록된 지사장 권한이 없습니다.'
       };
     }
-    const selected = regions.find(region => region.key === requestedKey) || regions[0];
+    const selected = pickDefaultBranchRegion(regions, requestedKey) || regions[0];
     if (!isBranchManagerForRegion(exposure, selected, riderId)) {
       return { ok: false, status: 403, error: '이 지역의 지사장 권한이 없습니다.' };
     }
@@ -2432,6 +2497,7 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
         label: String(body.label || prev.label || key).trim() || key,
         partnerId: String(body.partnerId || prev.partnerId || '').trim(),
         vendorId: String(body.vendorId || prev.vendorId || '').trim(),
+        vendorName: String(body.vendorName || prev.vendorName || '').trim(),
         branchManagers,
         updatedAt: now
       };
@@ -2477,6 +2543,7 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
         label: String(body.label || prev.label || key).trim() || key,
         partnerId: String(body.partnerId || prev.partnerId || '').trim(),
         vendorId: String(body.vendorId || prev.vendorId || '').trim(),
+        vendorName: String(body.vendorName || prev.vendorName || '').trim(),
         riders,
         updatedAt: now
       };
@@ -2516,6 +2583,7 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
       label: String(body.label || prev.label || key).trim() || key,
       partnerId: String(body.partnerId || prev.partnerId || '').trim(),
       vendorId: String(body.vendorId || prev.vendorId || '').trim(),
+      vendorName: String(body.vendorName || prev.vendorName || '').trim(),
       riders,
       branchManagers,
       updatedAt: new Date().toISOString()
@@ -2561,6 +2629,8 @@ module.exports = {
     filterViewerRegions,
     isBranchManagerForRegion,
     listBranchManagerRegions,
+    pickDefaultBranchRegion,
+    decorateCoupangBranchRegion,
     mergeLiveDaySlots,
     sumBaeminDeliverySlotTotals,
     buildBranchWeeklyProgress

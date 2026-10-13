@@ -290,6 +290,14 @@ const BremDriverManagementAdmin = (function () {
     return base.length <= 4 ? base : base.slice(-4);
   }
 
+  function displayCoupangRegion(name) {
+    const raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '';
+    const short = shortCoupangRegion(raw);
+    if (/\(Z\)/i.test(raw) && short && !/\(Z\)/i.test(short)) return `${short}(Z)`;
+    return short || raw;
+  }
+
   function isDriverManagementSectionActive() {
     return Boolean(document.getElementById('driver-management')?.classList.contains('active'));
   }
@@ -1931,7 +1939,7 @@ const BremDriverManagementAdmin = (function () {
         const vendorName = String(item.vendorName || '').trim();
         if (!vendorId || seen.has(vendorId)) return null;
         seen.add(vendorId);
-        const label = shortCoupangRegion(vendorName) || vendorId;
+        const label = displayCoupangRegion(vendorName) || vendorId;
         return {
           key: vendorId,
           vendorId,
@@ -2080,7 +2088,8 @@ const BremDriverManagementAdmin = (function () {
       exposed: exposed === true,
       label: region.label,
       partnerId: region.partnerId || '',
-      vendorId: region.vendorId || ''
+      vendorId: region.vendorId || '',
+      vendorName: region.vendorName || ''
     });
   }
 
@@ -2094,7 +2103,8 @@ const BremDriverManagementAdmin = (function () {
       exposed: isRegionExposed(region.platform, region.key),
       label: region.label,
       partnerId: region.partnerId || '',
-      vendorId: region.vendorId || ''
+      vendorId: region.vendorId || '',
+      vendorName: region.vendorName || ''
     });
     invalidateRegionRankingCache(region);
   }
@@ -2109,7 +2119,8 @@ const BremDriverManagementAdmin = (function () {
       exposed: isRegionExposed(region.platform, region.key),
       label: region.label,
       partnerId: region.partnerId || '',
-      vendorId: region.vendorId || ''
+      vendorId: region.vendorId || '',
+      vendorName: region.vendorName || ''
     });
     invalidateRegionRankingCache(region);
   }
@@ -3590,7 +3601,7 @@ const BremDriverManagementAdmin = (function () {
       const byLabel = state.coupangRegions.find(item => item.label === key || item.key === key);
       if (byLabel) return byLabel;
     }
-    const label = key || shortCoupangRegion(vendorName) || vid;
+    const label = key || displayCoupangRegion(vendorName) || vid;
     return {
       key: vid || label,
       label,

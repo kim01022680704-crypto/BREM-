@@ -105,5 +105,16 @@ const coupangMerged = T.mergeLiveDaySlots(
 );
 check('쿠팡 저녁피크 실시간 반영', coupangMerged[0].slots[0].completed === 24.2);
 
+const { displayCoupangRegionLabel } = require(path.join(root, 'server', 'coupang-collect-sources.js'));
+console.log('\n[5] 쿠팡 포항중앙 / 포항중앙(Z) 구분');
+check('일반 포항중앙 라벨', displayCoupangRegionLabel('배달연합#plus_경북_포항중앙') === '포항중앙');
+check('Z 포항중앙 라벨', displayCoupangRegionLabel('배달연합#plus_경북_포항중앙(Z)') === '포항중앙(Z)');
+const pohang = [
+  { key: '18839', vendorId: '18839', label: '포항중앙', vendorName: '배달연합#plus_경북_포항중앙' },
+  { key: '19749', vendorId: '19749', label: '포항중앙(Z)', vendorName: '배달연합#plus_경북_포항중앙(Z)' }
+];
+check('기본은 실적 있는 Z', T.pickDefaultBranchRegion(pohang, '')?.key === '19749');
+check('요청 키가 있으면 그대로', T.pickDefaultBranchRegion(pohang, '18839')?.key === '18839');
+
 console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
 process.exit(failed ? 1 : 0);
