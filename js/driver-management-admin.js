@@ -280,22 +280,34 @@ const BremDriverManagementAdmin = (function () {
     return `<strong>${escapeHtml(name)}</strong>${erpHtml}`;
   }
 
+  const CoupangRegion = window.BremCoupangRegion || {};
+
   function shortCoupangRegion(name) {
-    let raw = String(name || '').replace(/\s+/g, '').trim();
-    if (!raw) return '';
-    raw = raw.replace(/\(\d+\)$/g, '');
-    const hangul = raw.replace(/[^가-힣]/g, '');
-    const base = hangul || raw;
-    if (!base) return '';
-    return base.length <= 4 ? base : base.slice(-4);
+    return CoupangRegion.shortCoupangRegionLabel
+      ? CoupangRegion.shortCoupangRegionLabel(name)
+      : String(name || '').replace(/\s+/g, '').trim();
   }
 
   function displayCoupangRegion(name) {
-    const raw = String(name || '').replace(/\s+/g, '').trim();
-    if (!raw) return '';
-    const short = shortCoupangRegion(raw);
-    if (/\(Z\)/i.test(raw) && short && !/\(Z\)/i.test(short)) return `${short}(Z)`;
-    return short || raw;
+    return CoupangRegion.displayCoupangRegionLabel
+      ? CoupangRegion.displayCoupangRegionLabel(name)
+      : shortCoupangRegion(name);
+  }
+
+  function coupangZBases(regions) {
+    return CoupangRegion.coupangZBases ? CoupangRegion.coupangZBases(regions) : new Set();
+  }
+
+  function collapseCoupangZTwins(regions) {
+    return CoupangRegion.collapseCoupangZTwins ? CoupangRegion.collapseCoupangZTwins(regions) : (regions || []);
+  }
+
+  function riderMatchesCoupangRegion(value, region, zBases) {
+    if (CoupangRegion.riderMatchesCoupangRegion) {
+      return CoupangRegion.riderMatchesCoupangRegion(value, region, zBases);
+    }
+    const raw = String(value || '').trim();
+    return Boolean(raw && region && (raw === region.label || raw === region.vendorId || raw === region.key));
   }
 
   function isDriverManagementSectionActive() {
@@ -418,6 +430,7 @@ const BremDriverManagementAdmin = (function () {
     const list = (typeof window.BremStorage?.drivers?.getAllKnownById === 'function'
       ? window.BremStorage.drivers.getAllKnownById()
       : window.BremStorage?.drivers?.getAll?.()) || [];
+    const zBases = platform === 'coupang' ? coupangZBases(state.coupangRegions) : null;
     return list.filter(driver => {
       const value = driverRegionValue(driver, platform);
       if (!value) return false;
@@ -427,11 +440,7 @@ const BremDriverManagementAdmin = (function () {
           || value === region.key
           || (region.partnerId && String(region.partnerId).length >= 6 && value.includes(region.partnerId));
       }
-      return value === region.vendorId
-        || value === region.key
-        || value === region.vendorName
-        || shortCoupangRegion(value) === region.label
-        || shortCoupangRegion(value) === shortCoupangRegion(region.vendorName);
+      return riderMatchesCoupangRegion(value, region, zBases);
     });
   }
 
@@ -1947,7 +1956,10 @@ const BremDriverManagementAdmin = (function () {
           label,
           platform: 'coupang'
         };
-      }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label, 'ko') || a.vendorId.localeCompare(b.vendorId));
+      }).filter(Boolean);
+      state.coupangRegions = collapseCoupangZTwins(state.coupangRegions)
+        .sort((a, b) => a.label.localeCompare(b.label, 'ko') || a.vendorId.localeCompare(b.vendorId));
+      invalidateRegionMemberCache();
     } catch (error) {
       console.warn('[BREM] coupang regions:', error);
       state.coupangRegions = [];
@@ -2263,15 +2275,15 @@ const BremDriverManagementAdmin = (function () {
         || raw === region.key
         || (region.partnerId && region.partnerId.length >= 6 && raw.includes(region.partnerId));
     }
-    return raw === region.vendorId
-      || raw === region.key
-      || raw === region.vendorName
-      || shortCoupangRegion(raw) === region.label
-      || shortCoupangRegion(raw) === shortCoupangRegion(region.vendorName);
+    const zBases = coupangZBases(state.coupangRegions);
+    return riderMatchesCoupangRegion(raw, region, zBases);
   }
 
   function findCatalogRegion(value, platform) {
     const catalog = platform === 'coupang' ? state.coupangRegions : state.baeminRegions;
+    if (platform === 'coupang' && CoupangRegion.pickCoupangCatalogRegion) {
+      return CoupangRegion.pickCoupangCatalogRegion(catalog, value);
+    }
     return catalog.find(region => regionMatchesDriverValue(region, value, platform)) || null;
   }
 
@@ -2671,6 +2683,7 @@ const BremDriverManagementAdmin = (function () {
         label: region.label || '',
         partnerId: region.partnerId || '',
         vendorId: region.vendorId || '',
+        vendorName: region.vendorName || '',
         weekStart: week
       });
       const res = await fetch(`/api/admin/rider-dashboard/region-ranking?${params}`, {
@@ -3207,7 +3220,7 @@ const BremDriverManagementAdmin = (function () {
     // 기사등록프로그램과 동일 필드(regionBaemin/regionCoupang)에 저장한다.
     const side = platform || region.platform || state.regionPlatform;
     const patch = side === 'coupang'
-      ? { regionCoupang: region.label, platformCoupang: true }
+      ? { regionCoupang: displayCoupangRegion(region.vendorName || region.label) || region.label, platformCoupang: true }
       : { regionBaemin: region.label, platformBaemin: true };
     await window.BremStorage.drivers.update(driverId, patch);
     invalidateRegionMemberCache();
@@ -3237,8 +3250,12 @@ const BremDriverManagementAdmin = (function () {
     if (state.regionPlatform === 'coupang') await fetchCoupangRegions();
     else await fetchBaeminRegions();
     if (seq !== state.regionRefreshSeq) return;
-    if (!selectedRegion() && regionCatalog()[0]) {
-      state.selectedRegionKey = regionCatalog()[0].key;
+    if (!selectedRegion() && regionCatalog().length) {
+      const remapped = state.regionPlatform === 'coupang'
+        ? (CoupangRegion.pickCoupangCatalogRegion?.(regionCatalog(), state.selectedRegionKey)
+          || regionCatalog().find(item => /\(Z\)/i.test(`${item.label || ''} ${item.vendorName || ''}`)))
+        : null;
+      state.selectedRegionKey = remapped?.key || regionCatalog()[0].key;
     }
     renderRegionCatalog();
     renderRegionDetail();
@@ -3269,13 +3286,20 @@ const BremDriverManagementAdmin = (function () {
   function matchCoupangRegion(input) {
     const raw = String(input || '').trim();
     if (!raw) return null;
+    if (CoupangRegion.pickCoupangCatalogRegion) {
+      const picked = CoupangRegion.pickCoupangCatalogRegion(state.coupangRegions, raw);
+      if (picked) return picked;
+    }
     const short = shortCoupangRegion(raw);
-    return state.coupangRegions.find(item => (
-      item.key === short
+    const hits = state.coupangRegions.filter(item => (
+      item.key === raw
+      || item.vendorId === raw
+      || item.label === raw
       || item.label === short
-      || shortCoupangRegion(item.vendorName) === short
       || item.vendorName === raw
-    )) || null;
+      || shortCoupangRegion(item.vendorName) === short
+    ));
+    return hits.find(item => /\(Z\)/i.test(`${item.label || ''} ${item.vendorName || ''}`)) || hits[0] || null;
   }
 
   function findDriverByPlatformId(platform, idValue) {
@@ -3392,7 +3416,7 @@ const BremDriverManagementAdmin = (function () {
         : state.baeminRegions.find(item => item.key === row.regionKey);
       if (!region || !row.driverId) continue;
       const patch = platform === 'coupang'
-        ? { regionCoupang: region.label, platformCoupang: true }
+        ? { regionCoupang: displayCoupangRegion(region.vendorName || region.label) || region.label, platformCoupang: true }
         : { regionBaemin: region.label, platformBaemin: true };
       await window.BremStorage.drivers.update(row.driverId, patch);
       saved += 1;
@@ -3597,9 +3621,15 @@ const BremDriverManagementAdmin = (function () {
       const byId = state.coupangRegions.find(item => item.vendorId === vid || item.key === vid);
       if (byId) return byId;
     }
+    if (key && CoupangRegion.pickCoupangCatalogRegion) {
+      const picked = CoupangRegion.pickCoupangCatalogRegion(state.coupangRegions, key)
+        || CoupangRegion.pickCoupangCatalogRegion(state.coupangRegions, vendorName);
+      if (picked) return picked;
+    }
     if (key) {
-      const byLabel = state.coupangRegions.find(item => item.label === key || item.key === key);
-      if (byLabel) return byLabel;
+      const hits = state.coupangRegions.filter(item => item.label === key || item.key === key);
+      const zHit = hits.find(item => /\(Z\)/i.test(`${item.label || ''} ${item.vendorName || ''}`));
+      if (zHit || hits[0]) return zHit || hits[0];
     }
     const label = key || displayCoupangRegion(vendorName) || vid;
     return {
@@ -3875,10 +3905,14 @@ const BremDriverManagementAdmin = (function () {
         ? String(driver.regionCoupang || driver.raw_data?.regionCoupang || '').trim()
         : String(driver.regionBaemin || driver.raw_data?.regionBaemin || '').trim();
       const already = Boolean(region && (
-        currentRegion === region.label
-        || currentRegion === region.partnerId
-        || currentRegion === region.vendorId
-        || (region.partnerId && currentRegion.includes(region.partnerId))
+        platform === 'coupang'
+          ? riderMatchesCoupangRegion(currentRegion, region, coupangZBases(state.coupangRegions))
+          : (
+            currentRegion === region.label
+            || currentRegion === region.partnerId
+            || currentRegion === region.vendorId
+            || (region.partnerId && currentRegion.includes(region.partnerId))
+          )
       ));
       row.driverId = driver.id;
       row.driverName = driver.name || '';

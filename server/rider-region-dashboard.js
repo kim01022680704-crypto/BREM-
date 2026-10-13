@@ -315,6 +315,40 @@ function pickDefaultBranchRegion(regions, requestedKey) {
   return z || use[0];
 }
 
+async function attachCoupangRegionName(supabase, region) {
+  if (!region || region.platform !== 'coupang') return region;
+  const vendorId = String(region.vendorId || (/^\d+$/.test(String(region.key || '')) ? region.key : '') || '').trim();
+  const current = String(region.vendorName || '').trim();
+  if (current && coupangRegionIsZ(region.label || current)) {
+    return {
+      ...region,
+      vendorId: vendorId || region.vendorId,
+      vendorName: current,
+      label: displayCoupangRegionLabel(current) || region.label
+    };
+  }
+  if (!vendorId) return region;
+  const { data, error } = await supabase
+    .from('coupang_collect_items')
+    .select('vendor_name')
+    .eq('vendor_id', vendorId)
+    .in('source_menu', ['vendor_info', 'peak_realtime', 'rider_daily'])
+    .order('collected_at', { ascending: false })
+    .limit(1);
+  if (error) {
+    console.warn('[BREM][region-dashboard] coupang vendor name:', error.message || error);
+    return region;
+  }
+  const name = String(data?.[0]?.vendor_name || current || '').trim();
+  if (!name) return region;
+  return {
+    ...region,
+    vendorId: vendorId || region.vendorId,
+    vendorName: name,
+    label: displayCoupangRegionLabel(name) || region.label
+  };
+}
+
 async function enrichCoupangBranchRegions(supabase, platform, regions) {
   if (platform !== 'coupang' || !Array.isArray(regions) || !regions.length) return regions || [];
   const ids = [...new Set(regions
@@ -1752,18 +1786,22 @@ async function getAdminRegionRanking(accessToken, query = {}) {
   const today = formatKstDateKey(new Date());
   const weekStart = normalizeSettlementWeekStart(query.weekStart || today);
   const weekEnd = settlementWeekEnd(weekStart);
-  const region = {
+  let region = {
     key: String(query.regionKey || query.key || '').trim(),
     platform,
     label: String(query.label || query.regionKey || '').trim(),
     partnerId: String(query.partnerId || '').trim(),
-    vendorId: String(query.vendorId || '').trim()
+    vendorId: String(query.vendorId || '').trim(),
+    vendorName: String(query.vendorName || '').trim()
   };
   if (!region.key && !region.partnerId && !region.label) {
     return { ok: false, status: 400, error: '지역 정보가 없습니다.' };
   }
   if (!region.key) region.key = region.partnerId || region.label;
   if (!region.label) region.label = region.key;
+  if (platform === 'coupang') {
+    region = await attachCoupangRegionName(supabase, region);
+  }
 
   const cacheKey = `admin|${platform}|${region.key}|${weekStart}|${today}|nomask|${platform === 'coupang' ? currentCoupangPeakKey() : currentBaeminSlotKey()}`;
   const cached = readResponseCache(cacheKey);

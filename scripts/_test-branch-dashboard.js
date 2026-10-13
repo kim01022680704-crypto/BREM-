@@ -59,6 +59,7 @@ check('집계 실패해도 지사장 권한은 유지', /isBranchManager: true[\
 
 console.log('\n[3] 관리자와 기사앱 연결');
 check('기사지역관리 등록 버튼', files.admin.includes('data-region-rider-branch='));
+check('기사지역관리 Z 매칭 모듈', files.admin.includes('BremCoupangRegion') && files.admin.includes('vendorName: region.vendorName'));
 const adminClickBlock = files.admin.match(/document\.addEventListener\('click'[\s\S]*?document\.addEventListener\('change'/)?.[0] || '';
 check('지사장 버튼은 click 이벤트에서 처리', adminClickBlock.includes("closest('[data-region-rider-branch]')"));
 check('기사앱 지사관리 패널', files.html.includes('id="driverBranchDashboardPanel"'));
