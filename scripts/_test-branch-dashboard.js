@@ -117,7 +117,13 @@ const pohang = [
   { key: '19749', vendorId: '19749', label: '포항중앙(Z)', vendorName: '배달연합#plus_경북_포항중앙(Z)' }
 ];
 check('기본은 실적 있는 Z', T.pickDefaultBranchRegion(pohang, '')?.key === '19749');
-check('요청 키가 있으면 그대로', T.pickDefaultBranchRegion(pohang, '18839')?.key === '18839');
+check('일반을 요청해도 Z로 돌림', T.pickDefaultBranchRegion(pohang, '18839')?.key === '19749');
+check('Z 쌍이 있으면 일반은 목록에서 제거', T.collapseCoupangZTwins(pohang).map(r => r.key).join(',') === '19749');
+const pohangLiveLabels = [
+  { key: '18839', vendorId: '18839', label: '포항중앙', vendorName: '배달연합#plus_경북_포항중앙' },
+  { key: '19749', vendorId: '19749', label: '포항중앙', vendorName: '배달연합#plus_경북_포항중앙(Z)' }
+];
+check('저장 라벨이 같아도 Z 실적 권역', T.pickDefaultBranchRegion(pohangLiveLabels, '18839')?.key === '19749');
 check('일반은 Z vendor 실적을 못 가져감', !coupangVendorMatchesRegion(pohang[0], '19749', '배달연합#plus_경북_포항중앙(Z)'));
 check('Z는 자기 vendor 실적만', coupangVendorMatchesRegion(pohang[1], '19749', '배달연합#plus_경북_포항중앙(Z)'));
 check('Z는 클러스터명 크롤도 흡수', coupangVendorMatchesRegion(pohang[1], '', '배달연합#plus_경북_포항중앙'));

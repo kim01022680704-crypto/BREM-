@@ -280,23 +280,39 @@ function decorateCoupangBranchRegion(region, vendorName) {
   };
 }
 
+function coupangRegionLooksZ(region) {
+  return coupangRegionIsZ(`${region?.label || ''} ${region?.vendorName || ''}`);
+}
+
+/** 같은 4글자 클러스터에 Z 쌍이 있으면 일반 권역은 목록에서 뺀다. 포항은 Z만 탄다. */
+function collapseCoupangZTwins(regions) {
+  const list = Array.isArray(regions) ? regions : [];
+  const zBases = new Set();
+  list.forEach(region => {
+    if (!coupangRegionLooksZ(region)) return;
+    const base = shortCoupangRegionLabel(region.label || region.vendorName);
+    if (base) zBases.add(base);
+  });
+  if (!zBases.size) return list;
+  return list.filter(region => {
+    const base = shortCoupangRegionLabel(region.label || region.vendorName);
+    if (!base || !zBases.has(base)) return true;
+    return coupangRegionLooksZ(region);
+  });
+}
+
 function pickDefaultBranchRegion(regions, requestedKey) {
   const list = Array.isArray(regions) ? regions : [];
   if (!list.length) return null;
+  const pool = collapseCoupangZTwins(list);
+  const use = pool.length ? pool : list;
   const want = String(requestedKey || '').trim();
   if (want) {
-    const hit = list.find(region => region.key === want || region.vendorId === want);
+    const hit = use.find(region => region.key === want || region.vendorId === want);
     if (hit) return hit;
   }
-  const z = list.find(region => /\(Z\)/i.test(`${region.label || ''} ${region.vendorName || ''}`));
-  if (z) {
-    const base = shortCoupangRegionLabel(z.label || z.vendorName);
-    const twin = list.some(region => (
-      region !== z && shortCoupangRegionLabel(region.label || region.vendorName) === base
-    ));
-    if (twin) return z;
-  }
-  return list[0];
+  const z = use.find(region => coupangRegionLooksZ(region));
+  return z || use[0];
 }
 
 async function enrichCoupangBranchRegions(supabase, platform, regions) {
@@ -309,7 +325,7 @@ async function enrichCoupangBranchRegions(supabase, platform, regions) {
     .from('coupang_collect_items')
     .select('vendor_id,vendor_name')
     .in('vendor_id', ids)
-    .in('source_menu', ['vendor_info', 'peak_realtime'])
+    .in('source_menu', ['vendor_info', 'peak_realtime', 'rider_daily'])
     .order('collected_at', { ascending: false })
     .limit(Math.min(80, ids.length * 10));
   if (error) {
@@ -1620,11 +1636,11 @@ async function getRiderBranchDashboard(accessToken, query = {}) {
 
   try {
     const exposure = await readExposureMap(supabase);
-    const regions = await enrichCoupangBranchRegions(
+    const regions = collapseCoupangZTwins(await enrichCoupangBranchRegions(
       supabase,
       platform,
       listBranchManagerRegions(exposure, platform, riderId)
-    );
+    ));
     if (!regions.length) {
       return {
         ok: true,
@@ -2649,6 +2665,7 @@ module.exports = {
     listBranchManagerRegions,
     pickDefaultBranchRegion,
     decorateCoupangBranchRegion,
+    collapseCoupangZTwins,
     riderMatchesRegion,
     mergeLiveDaySlots,
     sumBaeminDeliverySlotTotals,
