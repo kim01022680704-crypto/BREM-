@@ -11,6 +11,7 @@ const {
 const {
   shortCoupangRegionLabel,
   displayCoupangRegionLabel,
+  coupangRegionIsZ,
   coupangVendorMatchesRegion,
   PEAK_LABELS,
   PEAK_ORDER
@@ -455,7 +456,7 @@ function filterViewerRegions(exposure, platform, riderRow, regions = []) {
   });
 }
 
-function riderMatchesRegion(rider, region) {
+function riderMatchesRegion(rider, region, zClusters) {
   if (!rider || !region) return false;
   if (region.platform === 'baemin') {
     const value = String(rider.regionBaemin || rider.raw_data?.regionBaemin || '').trim();
@@ -471,7 +472,31 @@ function riderMatchesRegion(rider, region) {
   if (region.vendorName && value === region.vendorName) return true;
   const valueShort = shortCoupangRegionLabel(value);
   const regionShort = shortCoupangRegionLabel(region.label || region.vendorName || '');
-  return Boolean(valueShort && regionShort && valueShort === regionShort);
+  if (!valueShort || !regionShort || valueShort !== regionShort) return false;
+  if (coupangRegionIsZ(region.label || region.vendorName)) return true;
+  if (coupangRegionIsZ(value)) return false;
+  return !(zClusters && zClusters.has(regionShort));
+}
+
+let zClusterCache = { at: 0, set: new Set() };
+
+async function loadCoupangZClusters(supabase) {
+  if (Date.now() - zClusterCache.at < 60 * 1000) return zClusterCache.set;
+  const { data, error } = await supabase
+    .from('coupang_collect_items')
+    .select('vendor_name')
+    .eq('source_menu', 'vendor_info')
+    .ilike('vendor_name', '%(Z)%')
+    .limit(500);
+  const set = new Set();
+  if (!error) {
+    (data || []).forEach(row => {
+      const short = shortCoupangRegionLabel(row.vendor_name);
+      if (short) set.add(short);
+    });
+    zClusterCache = { at: Date.now(), set };
+  }
+  return zClusterCache.set;
 }
 
 function isInactiveRiderStatus(status) {
@@ -675,10 +700,13 @@ async function loadRidersForRegion(supabase, region) {
     if (result.error) throw result.error;
   }
 
+  const zClusters = region.platform === 'coupang'
+    ? await loadCoupangZClusters(supabase)
+    : null;
   return (result.data || all)
     .map(mapRiderRow)
     .filter(rider => !isInactiveRiderStatus(rider.status))
-    .filter(rider => riderMatchesRegion(rider, region));
+    .filter(rider => riderMatchesRegion(rider, region, zClusters));
 }
 
 /**
@@ -984,9 +1012,6 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
   let { data, error } = vendorId
     ? await baseQuery().eq('vendor_id', vendorId).limit(5000)
     : await baseQuery().limit(5000);
-  if (!error && vendorId && !(data || []).length) {
-    ({ data, error } = await baseQuery().limit(5000));
-  }
 
   if (error) {
     if (/does not exist|schema cache/i.test(error.message || '')) {
@@ -1004,7 +1029,7 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
   const regionRef = {
     key: vendorId || label,
     vendorId,
-    label: shortCoupangRegionLabel(region.label || region.key || region.vendorName || ''),
+    label: displayCoupangRegionLabel(region.vendorName || region.label || '') || region.label || label,
     vendorName: region.vendorName || region.label || ''
   };
 
@@ -1067,9 +1092,6 @@ async function buildCoupangLive(supabase, region, today, options = {}) {
   let { data: dailyRows, error: dailyError } = vendorId
     ? await dailyBaseQuery().eq('vendor_id', vendorId).limit(5000)
     : await dailyBaseQuery().limit(5000);
-  if (!dailyError && vendorId && !(dailyRows || []).length) {
-    ({ data: dailyRows, error: dailyError } = await dailyBaseQuery().limit(5000));
-  }
 
   let realtimeRanking = [];
   let performanceRiders = [];
@@ -1381,7 +1403,7 @@ async function buildBranchWeeklyProgress(supabase, region, weekStart, weekEnd) {
   const regionRef = {
     key: vendorId || region.label,
     vendorId,
-    label: shortCoupangRegionLabel(region.label || ''),
+    label: displayCoupangRegionLabel(region.vendorName || region.label || '') || region.label || '',
     vendorName: region.vendorName || region.label || ''
   };
   const matchesRegion = row => {
@@ -1430,13 +1452,6 @@ async function buildBranchWeeklyProgress(supabase, region, weekStart, weekEnd) {
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
   let peakRows = peakResult?.data || [];
-  if (vendorId && !peakRows.length && peakResult && !peakResult.error) {
-    const fallback = await peakQuery();
-    if (fallback.error && !/does not exist|schema cache/i.test(fallback.error.message || '')) {
-      throw fallback.error;
-    }
-    peakRows = fallback.data || [];
-  }
   const liveSlots = {};
   peakRows.filter(matchesRegion).forEach(row => {
     const parsed = row.parsed_json || {};
@@ -1829,18 +1844,21 @@ async function getAdminRegionCoupangCrawlMatch(accessToken, query = {}) {
   let { data: crawlRows, error: crawlError } = vendorId
     ? await baseQuery().eq('vendor_id', vendorId).limit(5000)
     : await baseQuery().limit(5000);
-  if (!crawlError && vendorId && !(crawlRows || []).length) {
-    ({ data: crawlRows, error: crawlError } = await baseQuery().limit(5000));
-  }
   if (crawlError) {
     return { ok: false, status: 500, error: crawlError.message || '쿠팡 라이더일일 크롤을 불러오지 못했습니다.' };
   }
 
-  const targetRegion = { key: vendorId || short, vendorId, label: short || label, vendorName: label };
+  const targetRegion = {
+    key: vendorId || short,
+    vendorId,
+    label: displayCoupangRegionLabel(label) || short || label,
+    vendorName: label
+  };
   const rowsFiltered = (crawlRows || []).filter(row => {
     const parsed = row.parsed_json || {};
     return coupangVendorMatchesRegion(targetRegion, row.vendor_id || parsed.vendorId, row.vendor_name || parsed.vendorName);
   });
+  const zClusters = await loadCoupangZClusters(supabase);
 
   let riderRows;
   try {
@@ -1865,13 +1883,11 @@ async function getAdminRegionCoupangCrawlMatch(accessToken, query = {}) {
   const lookup = buildCoupangLookup(drivers);
 
   function regionMatchesTarget(regionValue) {
-    const value = String(regionValue || '').trim();
-    if (!value) return false;
-    if (value === targetRegion.vendorId || value === targetRegion.label) return true;
-    if (targetRegion.vendorName && value === targetRegion.vendorName) return true;
-    const valueShort = shortCoupangRegionLabel(value);
-    const targetShort = shortCoupangRegionLabel(targetRegion.label || targetRegion.vendorName || '');
-    return Boolean(valueShort && targetShort && valueShort === targetShort);
+    return riderMatchesRegion(
+      { regionCoupang: regionValue },
+      { ...targetRegion, platform: 'coupang' },
+      zClusters
+    );
   }
 
   const seen = new Set();
@@ -1905,7 +1921,7 @@ async function getAdminRegionCoupangCrawlMatch(accessToken, query = {}) {
       driverName: driver?.name || '',
       currentRegion,
       status,
-      targetRegion: short || label
+      targetRegion: displayCoupangRegionLabel(label) || short || label
     });
   });
 
@@ -2109,7 +2125,7 @@ async function getAdminCoupangClusterCrawlAssign(accessToken, query = {}) {
     const parsed = row.parsed_json || {};
     const vendorId = String(row.vendor_id || parsed.vendorId || '').trim();
     const vendorName = String(row.vendor_name || parsed.vendorName || '').trim();
-    const cluster = shortCoupangRegionLabel(vendorName) || '';
+    const cluster = displayCoupangRegionLabel(vendorName) || shortCoupangRegionLabel(vendorName) || '';
     const matchKey = String(row.match_key || parsed.matchKey || '').trim();
     const courierId = String(row.courier_id || parsed.courierId || '').trim();
     const crawlName = String(row.rider_name || parsed.name || parsed.riderName || '').trim();
@@ -2161,8 +2177,10 @@ async function getAdminCoupangClusterCrawlAssign(accessToken, query = {}) {
   const clusterMap = new Map();
 
   bestByDriver.forEach(entry => {
-    const currentShort = shortCoupangRegionLabel(entry.currentRegion);
-    const status = currentShort === entry.cluster ? 'already' : 'assignable';
+    const currentDisplay = displayCoupangRegionLabel(entry.currentRegion);
+    const sameCluster = shortCoupangRegionLabel(entry.currentRegion) === shortCoupangRegionLabel(entry.cluster);
+    const sameZ = coupangRegionIsZ(entry.currentRegion) === coupangRegionIsZ(entry.cluster);
+    const status = currentDisplay === entry.cluster || (sameCluster && sameZ) ? 'already' : 'assignable';
     const row = { ...entry, status, targetRegion: entry.cluster };
     assignments.push(row);
 
@@ -2631,6 +2649,7 @@ module.exports = {
     listBranchManagerRegions,
     pickDefaultBranchRegion,
     decorateCoupangBranchRegion,
+    riderMatchesRegion,
     mergeLiveDaySlots,
     sumBaeminDeliverySlotTotals,
     buildBranchWeeklyProgress

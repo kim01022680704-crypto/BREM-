@@ -42,12 +42,16 @@ function shortCoupangRegionLabel(name) {
   return base.length <= 4 ? base : base.slice(-4);
 }
 
-/** 화면용 라벨 — 포항중앙 / 포항중앙(Z) 를 구분한다. 매칭은 shortCoupangRegionLabel 을 쓴다. */
+function coupangRegionIsZ(name) {
+  return /\(Z\)/i.test(String(name || ''));
+}
+
+/** 화면용 라벨 — 포항중앙 / 포항중앙(Z) 를 구분한다. */
 function displayCoupangRegionLabel(name) {
   const raw = String(name || '').replace(/\s+/g, '').trim();
   if (!raw) return '';
   const short = shortCoupangRegionLabel(raw);
-  if (/\(Z\)/i.test(raw) && short && !/\(Z\)/i.test(short)) return `${short}(Z)`;
+  if (coupangRegionIsZ(raw) && short && !coupangRegionIsZ(short)) return `${short}(Z)`;
   return short || raw;
 }
 
@@ -56,17 +60,34 @@ function coupangRegionDedupeKey(name) {
   return String(name || '').replace(/\s+/g, '').replace(/\(\d+\)$/g, '').trim();
 }
 
+function coupangVendorIdOf(region) {
+  const vendorId = String(region?.vendorId || '').trim();
+  if (vendorId) return vendorId;
+  const key = String(region?.key || '').trim();
+  return /^\d+$/.test(key) ? key : '';
+}
+
+/**
+ * 쿠팡 크롤 행 ↔ 권역.
+ * vendorId가 둘 다 있고 다르면 무조건 거부한다. 포항처럼 일반/Z 쌍이
+ * 같은 4글자(포항중앙)를 쓸 때 Z 실적이 일반에 붙는 걸 막는다.
+ * 라벨만 있을 때는 Z 권역이 클러스터명을 흡수하고, 일반은 Z 크롤을 못 가져간다.
+ */
 function coupangVendorMatchesRegion(region, vendorId, vendorName) {
   if (!region) return false;
   const vid = String(vendorId || '').trim();
   const vname = String(vendorName || '').trim();
-  const regionVid = String(region.vendorId || region.key || '').trim();
+  const regionVid = coupangVendorIdOf(region);
   if (vid && regionVid && vid === regionVid) return true;
+  if (vid && regionVid && vid !== regionVid) return false;
   const short = shortCoupangRegionLabel(vname);
   const regionShort = shortCoupangRegionLabel(region.label || region.vendorName || '');
-  if (short && regionShort && short === regionShort) return true;
-  if (vname && (vname === region.vendorName || vname === region.label)) return true;
-  return false;
+  if (short && regionShort && short === regionShort) {
+    if (coupangRegionIsZ(region.label || region.vendorName)) return true;
+    if (coupangRegionIsZ(vname)) return false;
+    return true;
+  }
+  return Boolean(vname && (vname === region.vendorName || vname === region.label));
 }
 
 function num(v) {
@@ -274,7 +295,9 @@ module.exports = {
   digitsOnly,
   shortCoupangRegionLabel,
   displayCoupangRegionLabel,
+  coupangRegionIsZ,
   coupangRegionDedupeKey,
+  coupangVendorIdOf,
   coupangVendorMatchesRegion,
   mapRealtimeToItems,
   mapWeeklyToItems,

@@ -105,7 +105,10 @@ const coupangMerged = T.mergeLiveDaySlots(
 );
 check('쿠팡 저녁피크 실시간 반영', coupangMerged[0].slots[0].completed === 24.2);
 
-const { displayCoupangRegionLabel } = require(path.join(root, 'server', 'coupang-collect-sources.js'));
+const {
+  displayCoupangRegionLabel,
+  coupangVendorMatchesRegion
+} = require(path.join(root, 'server', 'coupang-collect-sources.js'));
 console.log('\n[5] 쿠팡 포항중앙 / 포항중앙(Z) 구분');
 check('일반 포항중앙 라벨', displayCoupangRegionLabel('배달연합#plus_경북_포항중앙') === '포항중앙');
 check('Z 포항중앙 라벨', displayCoupangRegionLabel('배달연합#plus_경북_포항중앙(Z)') === '포항중앙(Z)');
@@ -115,6 +118,19 @@ const pohang = [
 ];
 check('기본은 실적 있는 Z', T.pickDefaultBranchRegion(pohang, '')?.key === '19749');
 check('요청 키가 있으면 그대로', T.pickDefaultBranchRegion(pohang, '18839')?.key === '18839');
+check('일반은 Z vendor 실적을 못 가져감', !coupangVendorMatchesRegion(pohang[0], '19749', '배달연합#plus_경북_포항중앙(Z)'));
+check('Z는 자기 vendor 실적만', coupangVendorMatchesRegion(pohang[1], '19749', '배달연합#plus_경북_포항중앙(Z)'));
+check('Z는 클러스터명 크롤도 흡수', coupangVendorMatchesRegion(pohang[1], '', '배달연합#plus_경북_포항중앙'));
+check('일반은 자기 vendor만', coupangVendorMatchesRegion(pohang[0], '18839', '배달연합#plus_경북_포항중앙'));
+const zClusters = new Set(['포항중앙']);
+check('ERP 포항중앙 기사는 Z에 붙음', T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[1], platform: 'coupang' }, zClusters));
+check('ERP 포항중앙 기사는 일반에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[0], platform: 'coupang' }, zClusters));
+check('Z 표기 기사는 일반에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '포항중앙(Z)' }, { ...pohang[0], platform: 'coupang' }, zClusters));
+check('남구처럼 Z 없는 권역은 그대로', T.riderMatchesRegion(
+  { regionCoupang: '남구중앙' },
+  { key: '1', vendorId: '1', label: '남구중앙', vendorName: '배달연합#plus_대구_남구중앙', platform: 'coupang' },
+  zClusters
+));
 
 console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
 process.exit(failed ? 1 : 0);
