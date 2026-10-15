@@ -5954,8 +5954,47 @@
           <div class="promotion-platform-tabs promotion-apply-channel-tabs" role="tablist">
             <button type="button" class="promotion-tab active" data-promotion-apply-channel="bro">브로</button>
             <button type="button" class="promotion-tab" data-promotion-apply-channel="direct">직계약</button>
+            <button type="button" class="promotion-tab" data-promotion-apply-channel="avgcalls">평균콜수 정리</button>
           </div>
           <p class="form-help" id="promotionApplyChannelHint">브로 주정산서로 계산합니다. 직계약 정산서에 적용할 프로모션은 「직계약」으로 바꿔 계산하세요.</p>
+          <div id="promotionApplyAvgCallsPanel" hidden>
+            <p class="form-help">저장된 주정산서마다 <strong>콜수 ÷ 정산인원</strong>입니다. 정산인원은 그 정산서에 올라온 인원, 콜수는 주정산 콜수 합입니다.</p>
+            <div class="mission-assignment-toolbar">
+              <label class="settlement-week-filter">
+                <span>정산주 (수요일)</span>
+                <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="promotion-apply-avgcalls" id="promotionApplySettlementWeekBtn-avgcalls" aria-label="평균콜수 정산주 수요일 선택">
+                  <span data-promotion-apply-week-label="avgcalls" id="promotionApplySettlementWeekLabel-avgcalls">수요일 선택</span>
+                </button>
+                <input type="hidden" id="promotionApplySettlementWeek-avgcalls">
+              </label>
+              <label>
+                채널
+                <select id="promotionApplyAvgCallsChannel">
+                  <option value="all">브로+직계약</option>
+                  <option value="bro">브로</option>
+                  <option value="direct">직계약</option>
+                </select>
+              </label>
+              <button type="button" class="small-btn" id="promotionApplyAvgCallsExportBtn">엑셀</button>
+            </div>
+            <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-avgcalls"></p>
+            <div class="table-wrap">
+              <table class="weekly-settlement-saved-table">
+                <thead>
+                  <tr>
+                    <th>채널</th>
+                    <th>플랫폼</th>
+                    <th>지역</th>
+                    <th class="weekly-amount-cell">콜수</th>
+                    <th class="weekly-amount-cell">정산인원</th>
+                    <th class="weekly-amount-cell">평균콜수</th>
+                  </tr>
+                </thead>
+                <tbody id="promotionApplyAvgCallsRows"></tbody>
+                <tfoot id="promotionApplyAvgCallsFoot"></tfoot>
+              </table>
+            </div>
+          </div>
           <div class="promotion-platform-tabs promotion-apply-tabs" role="tablist">
             <button type="button" class="promotion-tab active" data-promotion-apply-platform="coupang">쿠팡</button>
             <button type="button" class="promotion-tab" data-promotion-apply-platform="baemin">배민</button>
@@ -9673,7 +9712,7 @@
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
   <script src="js/promotion-apply.js?v=20261010combmaj1"></script>
-  <script src="js/promotion-apply-admin.js?v=20261010combmaj1"></script>
+  <script src="js/promotion-apply-admin.js?v=20261015avgcalls1"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>

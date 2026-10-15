@@ -18,7 +18,9 @@ const BremPromotionApplyAdmin = (function () {
     gapTab: 'mission',
     gapRegions: { baemin: [], coupang: [] },
     gapBusy: false,
-    gapResult: null
+    gapResult: null,
+    tool: 'apply',
+    avgCallsChannel: 'all'
   };
   const $ = selector => document.querySelector(selector);
   const $$ = selector => Array.from(document.querySelectorAll(selector));
@@ -193,8 +195,18 @@ const BremPromotionApplyAdmin = (function () {
     return !base ? '' : (base.length <= 4 ? base : base.slice(-4));
   }
 
+  function isReviewDriverLocked(driver) {
+    return Boolean(
+      window.BremMissionPromotionCatalog?.isAssignmentLocked?.(driver)
+      || BremPromotionApply.isDriverMissionLocked?.(driver)
+      || driver?.missionAssignmentLocked
+      || driver?.raw_data?.missionAssignmentLocked
+    );
+  }
+
   function currentSetupGaps(result = state.gapResult || state.lastResult) {
-    return BremPromotionApply.collectPromotionSetupGaps?.(result) || [];
+    return (BremPromotionApply.collectPromotionSetupGaps?.(result) || [])
+      .filter(item => !isReviewDriverLocked(item.driver));
   }
 
   function missionNameById(id) {
@@ -229,7 +241,7 @@ const BremPromotionApplyAdmin = (function () {
       setupDriverIds: currentSetupGaps(result).map(item => item.driverId),
       getDriver: id => BremStorage.drivers.getById?.(id) || null,
       getAssignment: driver => window.BremMissionPromotionCatalog?.getDriverAssignment?.(driver, { strict: false }) || {},
-      isAssignmentLocked: driver => window.BremMissionPromotionCatalog?.isAssignmentLocked?.(driver) || Boolean(driver?.missionAssignmentLocked),
+      isAssignmentLocked: isReviewDriverLocked,
       readDefaults: (platform, region) => readSavedRegionDefaults(platform, region),
       missionName: missionNameById
     }) || [];
@@ -1077,6 +1089,10 @@ const BremPromotionApplyAdmin = (function () {
     const normalized = syncWeekPickerDisplay(selectKey, value);
     setWeek(selectKey, normalized);
     updateSettlementWeekRangeLabel(selectKey);
+    if (selectKey === 'avgcalls') {
+      renderAvgCalls();
+      return;
+    }
     if (selectKey.startsWith('combined-')) {
       renderCombinedSettlementSelects();
     } else {
@@ -1438,7 +1454,11 @@ const BremPromotionApplyAdmin = (function () {
       } else {
         select.value = '';
       }
-      if (platform === 'baemin') fillSecondPartSelect('promotionApplySettlementSelect2-combined-baemin', options);
+      if (platform === 'baemin') {
+        fillSecondPartSelect('promotionApplySettlementSelect2-combined-baemin', options);
+        const twoHint = $('#promotionApplyBaeminTwoRegionHint');
+        if (twoHint) twoHint.hidden = options.length < 2;
+      }
     });
   }
 
@@ -2113,9 +2133,169 @@ const BremPromotionApplyAdmin = (function () {
     showToast('계산 결과를 초기화했습니다.');
   }
 
+  function riderSettlementCalls(rider) {
+    return Math.max(0, Math.round(Number(rider?.weeklyOrderCount || rider?.systemCallCount || 0)));
+  }
+
+  function formatAvgCalls(value) {
+    if (!Number.isFinite(value)) return '-';
+    return (Math.round(value * 10) / 10).toLocaleString('ko-KR', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 1
+    });
+  }
+
+  function defaultAvgCallsWeek() {
+    const weeks = ['bro', 'direct'].flatMap(channel => (
+      (BremPromotionApply.getWeeklySettlementIndex?.(channel) || [])
+        .map(item => applyWeekWednesday(item.weekStart || item.startDate || ''))
+        .filter(Boolean)
+    )).sort((a, b) => b.localeCompare(a));
+    return weeks[0] || weekStartKey();
+  }
+
+  function ensureAvgCallsWeek() {
+    const week = applyWeekWednesday(getWeek('avgcalls') || $('#promotionApplySettlementWeek-avgcalls')?.value || defaultAvgCallsWeek());
+    setWeek('avgcalls', week);
+    syncWeekPickerDisplay('avgcalls', week);
+    updateSettlementWeekRangeLabel('avgcalls');
+    return week;
+  }
+
+  function buildAvgCallRows(weekStart, channelFilter = 'all') {
+    const week = applyWeekWednesday(weekStart);
+    const channels = channelFilter === 'bro' || channelFilter === 'direct'
+      ? [channelFilter]
+      : ['bro', 'direct'];
+    const rows = [];
+    channels.forEach(channel => {
+      (BremPromotionApply.getWeeklySettlementIndex?.(channel) || [])
+        .filter(item => applyWeekWednesday(item.weekStart || item.startDate || '') === week)
+        .forEach(item => {
+          const record = BremStorage.weeklySettlements.getById(item.id, channel);
+          const riders = Array.isArray(record?.riders) ? record.riders : [];
+          const people = riders.length;
+          const calls = riders.reduce((sum, rider) => sum + riderSettlementCalls(rider), 0);
+          rows.push({
+            id: item.id,
+            channel,
+            platform: item.platform,
+            region: String(item.region || '').trim() || '지역없음',
+            people,
+            calls,
+            avg: people ? calls / people : 0
+          });
+        });
+    });
+    rows.sort((a, b) => (
+      String(a.channel).localeCompare(String(b.channel))
+      || String(a.platform).localeCompare(String(b.platform))
+      || String(a.region).localeCompare(String(b.region), 'ko-KR')
+    ));
+    return rows;
+  }
+
+  function renderAvgCalls() {
+    const week = ensureAvgCallsWeek();
+    const rows = buildAvgCallRows(week, state.avgCallsChannel);
+    const body = $('#promotionApplyAvgCallsRows');
+    const foot = $('#promotionApplyAvgCallsFoot');
+    if (!body) return;
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="6" class="empty">이 주에 저장된 주정산서가 없습니다.</td></tr>';
+      if (foot) foot.innerHTML = '';
+      return;
+    }
+    body.innerHTML = rows.map(row => `
+      <tr>
+        <td>${escapeHtml(channelLabel(row.channel))}</td>
+        <td>${escapeHtml(platformLabel(row.platform))}</td>
+        <td>${escapeHtml(row.region)}</td>
+        <td class="weekly-amount-cell">${formatNumber(row.calls)}</td>
+        <td class="weekly-amount-cell">${formatNumber(row.people)}</td>
+        <td class="weekly-amount-cell"><strong>${formatAvgCalls(row.avg)}</strong></td>
+      </tr>`).join('');
+    const people = rows.reduce((sum, row) => sum + row.people, 0);
+    const calls = rows.reduce((sum, row) => sum + row.calls, 0);
+    if (foot) {
+      foot.innerHTML = `
+        <tr>
+          <td colspan="3">합계 ${rows.length}건</td>
+          <td class="weekly-amount-cell"><strong>${formatNumber(calls)}</strong></td>
+          <td class="weekly-amount-cell"><strong>${formatNumber(people)}</strong></td>
+          <td class="weekly-amount-cell"><strong>${people ? formatAvgCalls(calls / people) : '-'}</strong></td>
+        </tr>`;
+    }
+  }
+
+  function exportAvgCallsExcel() {
+    if (!window.XLSX) {
+      showToast('엑셀 모듈을 불러오지 못했습니다.');
+      return;
+    }
+    const week = ensureAvgCallsWeek();
+    const rows = buildAvgCallRows(week, state.avgCallsChannel);
+    if (!rows.length) {
+      showToast('이 주에 내보낼 주정산서가 없습니다.');
+      return;
+    }
+    const people = rows.reduce((sum, row) => sum + row.people, 0);
+    const calls = rows.reduce((sum, row) => sum + row.calls, 0);
+    const aoa = [
+      ['채널', '플랫폼', '지역', '콜수', '정산인원', '평균콜수'],
+      ...rows.map(row => [
+        channelLabel(row.channel),
+        platformLabel(row.platform),
+        row.region,
+        row.calls,
+        row.people,
+        Math.round(row.avg * 10) / 10
+      ]),
+      ['합계', '', `${rows.length}건`, calls, people, people ? Math.round((calls / people) * 10) / 10 : '']
+    ];
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(aoa), '평균콜수');
+    window.XLSX.writeFile(wb, `평균콜수_${week}.xlsx`);
+    showToast(`평균콜수 엑셀 저장 · ${rows.length}건`);
+  }
+
+  function syncApplyToolVisibility() {
+    const avg = state.tool === 'avg';
+    const panel = $('#promotionApplyAvgCallsPanel');
+    if (panel) panel.hidden = !avg;
+    $$('.promotion-apply-tabs').forEach(el => { el.hidden = avg; });
+    const form = $('#promotionApplyForm');
+    if (form) form.hidden = avg;
+    if (avg) {
+      const card = $('#promotionApplyResultCard');
+      if (card) card.hidden = true;
+    }
+  }
+
+  function setApplyTool(tool, options = {}) {
+    if (tool === 'avgcalls' || tool === 'avg') {
+      state.tool = 'avg';
+      const root = applyRoot();
+      root?.querySelectorAll('[data-promotion-apply-channel]').forEach(button => {
+        const active = button.dataset.promotionApplyChannel === 'avgcalls';
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      const hint = $('#promotionApplyChannelHint');
+      if (hint) hint.textContent = '주정산서 콜수를 정산인원으로 나눈 평균입니다. 미션 구간 잡을 때 보세요.';
+      syncApplyToolVisibility();
+      if (!options.skipRender) renderAvgCalls();
+      return;
+    }
+    state.tool = 'apply';
+    syncApplyToolVisibility();
+    setChannel(tool === 'direct' ? 'direct' : 'bro', options);
+  }
+
   function setChannel(channel, options = {}) {
     const ch = channel === 'direct' ? 'direct' : 'bro';
     state.channel = ch;
+    if (state.tool !== 'apply') return;
 
     const root = applyRoot();
     root?.querySelectorAll('[data-promotion-apply-channel]').forEach(button => {
@@ -2183,8 +2363,14 @@ const BremPromotionApplyAdmin = (function () {
     bindEvents.bound = true;
 
     applyRoot()?.querySelectorAll('[data-promotion-apply-channel]').forEach(button => {
-      button.addEventListener('click', () => setChannel(button.dataset.promotionApplyChannel));
+      button.addEventListener('click', () => setApplyTool(button.dataset.promotionApplyChannel));
     });
+    $('#promotionApplyAvgCallsChannel')?.addEventListener('change', event => {
+      const value = String(event.target.value || 'all');
+      state.avgCallsChannel = value === 'bro' || value === 'direct' ? value : 'all';
+      renderAvgCalls();
+    });
+    $('#promotionApplyAvgCallsExportBtn')?.addEventListener('click', exportAvgCallsExcel);
 
     applyRoot()?.querySelectorAll('[data-promotion-apply-platform]').forEach(button => {
       button.addEventListener('click', () => setPlatform(button.dataset.promotionApplyPlatform));
@@ -2281,6 +2467,9 @@ const BremPromotionApplyAdmin = (function () {
     BremPromotionApply.invalidateSettlementOptionsCache?.();
     bindLegacyWeekInputs();
     initializeAllSettlementWeeks();
+    if (state.tool === 'avg') {
+      renderAvgCalls();
+    }
     const platform = getActivePlatform();
     if (platform === 'combined') {
       renderCombinedSettlementSelects();
@@ -2308,7 +2497,14 @@ const BremPromotionApplyAdmin = (function () {
     renderSavedList();
   }
 
-  window.BremPromotionApplyAdmin = { init, refresh, handleWeekSelect, handleSavedWeekSelect, openSetupGapPopup: openGapPopup };
+  window.BremPromotionApplyAdmin = {
+    init,
+    refresh,
+    handleWeekSelect,
+    handleSavedWeekSelect,
+    openSetupGapPopup: openGapPopup,
+    buildAvgCallRows
+  };
   return window.BremPromotionApplyAdmin;
 })();
 
