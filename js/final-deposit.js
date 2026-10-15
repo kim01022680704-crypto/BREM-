@@ -950,6 +950,52 @@ const BremFinalDeposit = (function () {
     }, 0);
   }
 
+  function prepaidSum(rows) {
+    return (rows || []).reduce((sum, row) => (
+      sum + Math.max(0, Math.round(Number(row?.prepaid || 0)))
+    ), 0);
+  }
+
+  // 체크한 정산서 → 플랫폼·부분별 시트. 지역마다 최종입금(플러스만) + 선정산.
+  function buildRegionExportGroups(sourceList) {
+    const packs = computeSettlementPacks(sourceList || checkedSettlements());
+    const groups = new Map();
+    packs.forEach(({ settlement, rows }) => {
+      const meta = partMeta(settlement);
+      const platform = Calc().normalizePlatform(settlement.platform);
+      const badge = meta.slot ? `부분${meta.slot}` : '전체';
+      const key = `${platform}|${meta.slot}`;
+      if (!groups.has(key)) {
+        groups.set(key, { platform, slot: meta.slot, badge, items: [] });
+      }
+      groups.get(key).items.push({
+        region: String(settlement.region || '').trim() || '지역없음',
+        fileName: String(settlement.fileName || '').trim(),
+        amount: positiveNetSum(rows),
+        prepaid: prepaidSum(rows)
+      });
+    });
+    const ordered = [...groups.values()].sort((a, b) => {
+      if (a.platform !== b.platform) return a.platform === 'coupang' ? -1 : 1;
+      return a.slot - b.slot;
+    });
+    ordered.forEach(group => {
+      const counts = new Map();
+      group.items.forEach(item => counts.set(item.region, (counts.get(item.region) || 0) + 1));
+      group.items.forEach(item => {
+        if ((counts.get(item.region) || 0) > 1 && item.fileName) item.region = `${item.region} (${item.fileName})`;
+      });
+      group.items.sort((a, b) => String(a.region).localeCompare(String(b.region), 'ko-KR'));
+      group.amount = group.items.reduce((sum, item) => sum + item.amount, 0);
+      group.prepaid = group.items.reduce((sum, item) => sum + item.prepaid, 0);
+    });
+    return {
+      ordered,
+      grand: ordered.reduce((sum, group) => sum + group.amount, 0),
+      prepaidGrand: ordered.reduce((sum, group) => sum + group.prepaid, 0)
+    };
+  }
+
   function regionSheetName(platform, badge, used) {
     const raw = `${platformLabel(platform)}_${badge || '전체'}`.replace(/[\\/?*[\]:]/g, ' ').trim();
     const base = (raw || '정산서').slice(0, 31);
@@ -974,68 +1020,39 @@ const BremFinalDeposit = (function () {
       return;
     }
     render();
-    const packs = computeSettlementPacks(checkedSettlements());
-    if (!packs.length) {
+    const { ordered, grand, prepaidGrand } = buildRegionExportGroups();
+    if (!ordered.length) {
       showToast('체크한 정산서가 없습니다.');
       return;
     }
-    const groups = new Map();
-    packs.forEach(({ settlement, rows }) => {
-      const meta = partMeta(settlement);
-      const platform = Calc().normalizePlatform(settlement.platform);
-      const badge = meta.slot ? `부분${meta.slot}` : '전체';
-      const key = `${platform}|${meta.slot}`;
-      if (!groups.has(key)) {
-        groups.set(key, { platform, slot: meta.slot, badge, items: [] });
-      }
-      groups.get(key).items.push({
-        region: String(settlement.region || '').trim() || '지역없음',
-        fileName: String(settlement.fileName || '').trim(),
-        amount: positiveNetSum(rows)
-      });
-    });
-    const ordered = [...groups.values()].sort((a, b) => {
-      if (a.platform !== b.platform) return a.platform === 'coupang' ? -1 : 1;
-      return a.slot - b.slot;
-    });
-    ordered.forEach(group => {
-      const counts = new Map();
-      group.items.forEach(item => counts.set(item.region, (counts.get(item.region) || 0) + 1));
-      group.items.forEach(item => {
-        if ((counts.get(item.region) || 0) > 1 && item.fileName) item.region = `${item.region} (${item.fileName})`;
-      });
-      group.items.sort((a, b) => String(a.region).localeCompare(String(b.region), 'ko-KR'));
-    });
-    const grand = ordered.reduce((sum, group) => (
-      sum + group.items.reduce((inner, item) => inner + item.amount, 0)
-    ), 0);
     const weekLabel = formatDate(ensureWeek());
-    const lines = ordered.map(group => {
-      const sub = group.items.reduce((sum, item) => sum + item.amount, 0);
-      return `· ${platformLabel(group.platform)} ${group.badge} ${group.items.length}지역 ${formatNumber(sub)}원`;
-    });
+    const lines = ordered.map(group => (
+      `· ${platformLabel(group.platform)} ${group.badge} ${group.items.length}지역`
+      + ` 최종입금 ${formatNumber(group.amount)}원 · 선정산 ${formatNumber(group.prepaid)}원`
+    ));
     if (!window.confirm(
       `${weekLabel}(수) 주 지역별 최종입금\n`
-      + '정산서마다 시트를 나누고, 마이너스 금액은 합계에 넣지 않습니다.\n\n'
+      + '정산서마다 시트를 나누고, 마이너스 최종입금은 합계에 넣지 않습니다. 선정산은 그 지역 출금 전액입니다.\n\n'
       + `${lines.join('\n')}\n`
-      + `합계 ${formatNumber(grand)}원\n\n`
-      + 'A열 지역 · B열 최종입금'
+      + `최종입금 합계 ${formatNumber(grand)}원 · 선정산 합계 ${formatNumber(prepaidGrand)}원\n\n`
+      + 'A열 지역 · B열 최종입금 · C열 선정산'
     )) return;
 
     const wb = window.XLSX.utils.book_new();
     const usedNames = new Set();
     ordered.forEach(group => {
-      const total = group.items.reduce((sum, item) => sum + item.amount, 0);
       const aoa = [
-        ['지역', '최종입금'],
-        ...group.items.map(item => [item.region, item.amount]),
-        ['합계', total]
+        ['지역', '최종입금', '선정산'],
+        ...group.items.map(item => [item.region, item.amount, item.prepaid]),
+        ['합계', group.amount, group.prepaid]
       ];
       const sheet = window.XLSX.utils.aoa_to_sheet(aoa);
-      sheet['!cols'] = [{ wch: 28 }, { wch: 16 }];
+      sheet['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 16 }];
       for (let r = 1; r < aoa.length; r += 1) {
-        const cell = sheet[window.XLSX.utils.encode_cell({ r, c: 1 })];
-        if (cell) cell.z = '#,##0';
+        [1, 2].forEach(c => {
+          const cell = sheet[window.XLSX.utils.encode_cell({ r, c })];
+          if (cell) cell.z = '#,##0';
+        });
       }
       window.XLSX.utils.book_append_sheet(
         wb,
@@ -1044,7 +1061,7 @@ const BremFinalDeposit = (function () {
       );
     });
     window.XLSX.writeFile(wb, `최종입금_지역별_${ensureWeek()}.xlsx`);
-    showToast(`지역별 엑셀 저장 · ${ordered.length}개 정산서 · 합계 ${formatNumber(grand)}원`);
+    showToast(`지역별 엑셀 저장 · ${ordered.length}개 시트 · 최종입금 ${formatNumber(grand)}원 · 선정산 ${formatNumber(prepaidGrand)}원`);
   }
 
   // --- 데이터 로딩 ----------------------------------------------------------
@@ -1150,7 +1167,7 @@ const BremFinalDeposit = (function () {
     bindEvents();
   }
 
-  return { init, refresh, state, onWeekPicked: setWeek };
+  return { init, refresh, state, onWeekPicked: setWeek, buildRegionExportGroups };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {
