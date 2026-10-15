@@ -20,7 +20,8 @@ const BremPromotionApplyAdmin = (function () {
     gapBusy: false,
     gapResult: null,
     tool: 'apply',
-    avgCallsChannel: 'all'
+    avgCallsChannel: 'all',
+    avgCallsPlatform: 'all'
   };
   const $ = selector => document.querySelector(selector);
   const $$ = selector => Array.from(document.querySelectorAll(selector));
@@ -2162,34 +2163,113 @@ const BremPromotionApplyAdmin = (function () {
     return week;
   }
 
-  function buildAvgCallRows(weekStart, channelFilter = 'all') {
+  function riderPersonKey(rider) {
+    const id = String(rider?.matchedRiderId || '').trim();
+    if (id) return `id:${id}`;
+    const name = String(rider?.driverName || rider?.riderName || rider?.originalName || '').replace(/\s+/g, '');
+    const baeminId = String(rider?.baeminUserId || '').trim();
+    const coupangId = String(rider?.coupangLoginKey || '').trim();
+    if (name && (baeminId || coupangId)) return `n:${name}|${baeminId || coupangId}`;
+    if (name) return `n:${name}`;
+    return '';
+  }
+
+  function overlapSize(left, right) {
+    let count = 0;
+    left.forEach(key => {
+      if (right.has(key)) count += 1;
+    });
+    return count;
+  }
+
+  function collectAvgCallSettlements(weekStart, channels) {
     const week = applyWeekWednesday(weekStart);
-    const channels = channelFilter === 'bro' || channelFilter === 'direct'
-      ? [channelFilter]
-      : ['bro', 'direct'];
-    const rows = [];
+    const list = [];
     channels.forEach(channel => {
       (BremPromotionApply.getWeeklySettlementIndex?.(channel) || [])
         .filter(item => applyWeekWednesday(item.weekStart || item.startDate || '') === week)
         .forEach(item => {
           const record = BremStorage.weeklySettlements.getById(item.id, channel);
           const riders = Array.isArray(record?.riders) ? record.riders : [];
-          const people = riders.length;
+          const keys = new Set(riders.map(riderPersonKey).filter(Boolean));
           const calls = riders.reduce((sum, rider) => sum + riderSettlementCalls(rider), 0);
-          rows.push({
+          list.push({
             id: item.id,
             channel,
             platform: item.platform,
             region: String(item.region || '').trim() || '지역없음',
-            people,
+            people: riders.length,
             calls,
-            avg: people ? calls / people : 0
+            keys
           });
         });
     });
+    return list;
+  }
+
+  function buildCombinedAvgRows(weekStart, channels) {
+    const rows = [];
+    channels.forEach(channel => {
+      const list = collectAvgCallSettlements(weekStart, [channel]);
+      const coupang = list.filter(item => item.platform === 'coupang');
+      const baemin = list.filter(item => item.platform === 'baemin');
+      const usedBaemin = new Set();
+      coupang.forEach(cRow => {
+        const partners = baemin
+          .map(bRow => ({ bRow, overlap: overlapSize(cRow.keys, bRow.keys) }))
+          .filter(item => item.overlap > 0)
+          .sort((a, b) => b.overlap - a.overlap || String(a.bRow.region).localeCompare(String(b.bRow.region), 'ko-KR'));
+        const taken = [];
+        partners.forEach(({ bRow, overlap }) => {
+          if (usedBaemin.has(bRow.id)) return;
+          const best = coupang.reduce((max, other) => Math.max(max, overlapSize(other.keys, bRow.keys)), 0);
+          if (overlap < best) return;
+          usedBaemin.add(bRow.id);
+          taken.push(bRow);
+        });
+        if (!taken.length) return;
+        const pack = [cRow, ...taken];
+        const peopleKeys = new Set();
+        pack.forEach(item => item.keys.forEach(key => peopleKeys.add(key)));
+        const people = peopleKeys.size || pack.reduce((sum, item) => sum + item.people, 0);
+        const calls = pack.reduce((sum, item) => sum + item.calls, 0);
+        rows.push({
+          id: `combined:${pack.map(item => item.id).join('+')}`,
+          channel,
+          platform: 'combined',
+          region: pack.map(item => item.region).join(' + '),
+          people,
+          calls,
+          avg: people ? calls / people : 0
+        });
+      });
+    });
+    return rows;
+  }
+
+  function buildAvgCallRows(weekStart, channelFilter = 'all', platformFilter = 'all') {
+    const week = applyWeekWednesday(weekStart);
+    const channels = channelFilter === 'bro' || channelFilter === 'direct'
+      ? [channelFilter]
+      : ['bro', 'direct'];
+    const singles = collectAvgCallSettlements(week, channels).map(item => ({
+      id: item.id,
+      channel: item.channel,
+      platform: item.platform,
+      region: item.region,
+      people: item.people,
+      calls: item.calls,
+      avg: item.people ? item.calls / item.people : 0
+    }));
+    const combined = buildCombinedAvgRows(week, channels);
+    const plat = platformFilter === 'combined' || platformFilter === 'coupang' || platformFilter === 'baemin'
+      ? platformFilter
+      : 'all';
+    const rows = [...singles, ...combined].filter(row => plat === 'all' || row.platform === plat);
+    const platRank = { combined: 0, coupang: 1, baemin: 2 };
     rows.sort((a, b) => (
       String(a.channel).localeCompare(String(b.channel))
-      || String(a.platform).localeCompare(String(b.platform))
+      || (platRank[a.platform] ?? 9) - (platRank[b.platform] ?? 9)
       || String(a.region).localeCompare(String(b.region), 'ko-KR')
     ));
     return rows;
@@ -2197,7 +2277,7 @@ const BremPromotionApplyAdmin = (function () {
 
   function renderAvgCalls() {
     const week = ensureAvgCallsWeek();
-    const rows = buildAvgCallRows(week, state.avgCallsChannel);
+    const rows = buildAvgCallRows(week, state.avgCallsChannel, state.avgCallsPlatform);
     const body = $('#promotionApplyAvgCallsRows');
     const foot = $('#promotionApplyAvgCallsFoot');
     if (!body) return;
@@ -2215,12 +2295,19 @@ const BremPromotionApplyAdmin = (function () {
         <td class="weekly-amount-cell">${formatNumber(row.people)}</td>
         <td class="weekly-amount-cell"><strong>${formatAvgCalls(row.avg)}</strong></td>
       </tr>`).join('');
-    const people = rows.reduce((sum, row) => sum + row.people, 0);
-    const calls = rows.reduce((sum, row) => sum + row.calls, 0);
+    const footRows = state.avgCallsPlatform === 'all'
+      ? rows.filter(row => row.platform !== 'combined')
+      : rows;
+    const people = footRows.reduce((sum, row) => sum + row.people, 0);
+    const calls = footRows.reduce((sum, row) => sum + row.calls, 0);
+    const combinedCount = rows.filter(row => row.platform === 'combined').length;
     if (foot) {
+      const label = state.avgCallsPlatform === 'all'
+        ? `개별 합계 ${footRows.length}건${combinedCount ? ` · 합산 ${combinedCount}건은 따로` : ''}`
+        : `합계 ${rows.length}건`;
       foot.innerHTML = `
         <tr>
-          <td colspan="3">합계 ${rows.length}건</td>
+          <td colspan="3">${escapeHtml(label)}</td>
           <td class="weekly-amount-cell"><strong>${formatNumber(calls)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatNumber(people)}</strong></td>
           <td class="weekly-amount-cell"><strong>${people ? formatAvgCalls(calls / people) : '-'}</strong></td>
@@ -2234,13 +2321,16 @@ const BremPromotionApplyAdmin = (function () {
       return;
     }
     const week = ensureAvgCallsWeek();
-    const rows = buildAvgCallRows(week, state.avgCallsChannel);
+    const rows = buildAvgCallRows(week, state.avgCallsChannel, state.avgCallsPlatform);
     if (!rows.length) {
       showToast('이 주에 내보낼 주정산서가 없습니다.');
       return;
     }
-    const people = rows.reduce((sum, row) => sum + row.people, 0);
-    const calls = rows.reduce((sum, row) => sum + row.calls, 0);
+    const footRows = state.avgCallsPlatform === 'all'
+      ? rows.filter(row => row.platform !== 'combined')
+      : rows;
+    const people = footRows.reduce((sum, row) => sum + row.people, 0);
+    const calls = footRows.reduce((sum, row) => sum + row.calls, 0);
     const aoa = [
       ['채널', '플랫폼', '지역', '콜수', '정산인원', '평균콜수'],
       ...rows.map(row => [
@@ -2251,7 +2341,7 @@ const BremPromotionApplyAdmin = (function () {
         row.people,
         Math.round(row.avg * 10) / 10
       ]),
-      ['합계', '', `${rows.length}건`, calls, people, people ? Math.round((calls / people) * 10) / 10 : '']
+      ['합계', '', `${footRows.length}건`, calls, people, people ? Math.round((calls / people) * 10) / 10 : '']
     ];
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(aoa), '평균콜수');
@@ -2282,7 +2372,7 @@ const BremPromotionApplyAdmin = (function () {
         button.setAttribute('aria-selected', active ? 'true' : 'false');
       });
       const hint = $('#promotionApplyChannelHint');
-      if (hint) hint.textContent = '주정산서 콜수를 정산인원으로 나눈 평균입니다. 미션 구간 잡을 때 보세요.';
+      if (hint) hint.textContent = '개별은 정산서별 평균, 합산은 겹치는 쿠팡+배민을 묶어 콜수합·인원중복제거 평균입니다.';
       syncApplyToolVisibility();
       if (!options.skipRender) renderAvgCalls();
       return;
@@ -2368,6 +2458,13 @@ const BremPromotionApplyAdmin = (function () {
     $('#promotionApplyAvgCallsChannel')?.addEventListener('change', event => {
       const value = String(event.target.value || 'all');
       state.avgCallsChannel = value === 'bro' || value === 'direct' ? value : 'all';
+      renderAvgCalls();
+    });
+    $('#promotionApplyAvgCallsPlatform')?.addEventListener('change', event => {
+      const value = String(event.target.value || 'all');
+      state.avgCallsPlatform = value === 'combined' || value === 'coupang' || value === 'baemin'
+        ? value
+        : 'all';
       renderAvgCalls();
     });
     $('#promotionApplyAvgCallsExportBtn')?.addEventListener('click', exportAvgCallsExcel);

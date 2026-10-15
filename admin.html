@@ -5958,7 +5958,7 @@
           </div>
           <p class="form-help" id="promotionApplyChannelHint">브로 주정산서로 계산합니다. 직계약 정산서에 적용할 프로모션은 「직계약」으로 바꿔 계산하세요.</p>
           <div id="promotionApplyAvgCallsPanel" hidden>
-            <p class="form-help">저장된 주정산서마다 <strong>콜수 ÷ 정산인원</strong>입니다. 정산인원은 그 정산서에 올라온 인원, 콜수는 주정산 콜수 합입니다.</p>
+            <p class="form-help">개별 정산서는 <strong>콜수 ÷ 정산인원</strong>입니다. <strong>합산</strong>은 같은 주·같은 채널에서 쿠팡+배민이 겹치는 정산서를 묶어, 콜수는 합치고 정산인원은 같은 사람을 한 명으로 셉니다.</p>
             <div class="mission-assignment-toolbar">
               <label class="settlement-week-filter">
                 <span>정산주 (수요일)</span>
@@ -5973,6 +5973,15 @@
                   <option value="all">브로+직계약</option>
                   <option value="bro">브로</option>
                   <option value="direct">직계약</option>
+                </select>
+              </label>
+              <label>
+                구분
+                <select id="promotionApplyAvgCallsPlatform">
+                  <option value="all">개별+합산</option>
+                  <option value="combined">합산</option>
+                  <option value="coupang">쿠팡</option>
+                  <option value="baemin">배민</option>
                 </select>
               </label>
               <button type="button" class="small-btn" id="promotionApplyAvgCallsExportBtn">엑셀</button>
@@ -9712,7 +9721,7 @@
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
   <script src="js/promotion-apply.js?v=20261010combmaj1"></script>
-  <script src="js/promotion-apply-admin.js?v=20261015avgcalls1"></script>
+  <script src="js/promotion-apply-admin.js?v=20261016avgcomb1"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>

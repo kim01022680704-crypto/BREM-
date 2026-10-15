@@ -103,8 +103,8 @@ const END = '2026-10-13';
   check('안내문에 정산인원', (window.document.querySelector('#promotionApplyAvgCallsPanel')?.textContent || '').includes('정산인원'), 'true');
 
   const all = Admin.buildAvgCallRows(WEEK, 'all');
-  const east = all.find(row => row.region.includes('동구'));
-  const south = all.find(row => row.region.includes('남A'));
+  const east = all.find(row => row.platform === 'coupang' && row.region.includes('동구'));
+  const south = all.find(row => row.platform === 'baemin' && row.region.includes('남A'));
   check('직계약 동구 콜수', east?.calls, 200);
   check('직계약 동구 인원', east?.people, 2);
   check('직계약 동구 평균', east?.avg, 100);
@@ -113,9 +113,77 @@ const END = '2026-10-13';
   check('브로 남A 평균 50', south?.avg, 50);
 
   const onlyDirect = Admin.buildAvgCallRows(WEEK, 'direct');
-  check('직계약만 1건', onlyDirect.length, 1);
+  check('직계약만 쿠팡 1건', onlyDirect.filter(row => row.platform !== 'combined').length, 1);
 
-  ['weekly_direct_coupang_avg_east', 'weekly_bro_baemin_avg_south'].forEach(id => {
+  S.weeklySettlements.save({
+    id: 'weekly_direct_baemin_avg_east',
+    platform: 'baemin',
+    channel: 'direct',
+    region: '표준울산동A',
+    startDate: WEEK,
+    endDate: END,
+    riders: [
+      { matchedRiderId: 'd1', driverName: '갑', weeklyOrderCount: 90 },
+      { matchedRiderId: 'd6', driverName: '기', weeklyOrderCount: 60 }
+    ]
+  }, 'direct');
+  const combined = Admin.buildAvgCallRows(WEEK, 'direct', 'combined');
+  check('합산 1건', combined.length, 1);
+  check('합산 지역에 쿠팡+배민', combined[0]?.region.includes('동구') && combined[0]?.region.includes('동A'), 'true');
+  check('합산 콜수 350', combined[0]?.calls, 350);
+  check('합산 인원 3(겹친 갑은 1명)', combined[0]?.people, 3);
+  check('합산 평균', Math.round(combined[0]?.avg * 10) / 10, 116.7);
+
+  S.weeklySettlements.save({
+    id: 'weekly_direct_coupang_avg_yangsan',
+    platform: 'coupang',
+    channel: 'direct',
+    region: '양산중앙(Z)',
+    startDate: WEEK,
+    endDate: END,
+    riders: [
+      { matchedRiderId: 'y1', driverName: '양갑', weeklyOrderCount: 100 },
+      { matchedRiderId: 'y2', driverName: '양을', weeklyOrderCount: 80 }
+    ]
+  }, 'direct');
+  S.weeklySettlements.save({
+    id: 'weekly_direct_baemin_avg_yangsan_b',
+    platform: 'baemin',
+    channel: 'direct',
+    region: '양산B',
+    startDate: WEEK,
+    endDate: END,
+    riders: [
+      { matchedRiderId: 'y1', driverName: '양갑', weeklyOrderCount: 50 },
+      { matchedRiderId: 'y3', driverName: '양병', weeklyOrderCount: 40 }
+    ]
+  }, 'direct');
+  S.weeklySettlements.save({
+    id: 'weekly_direct_baemin_avg_yangsan_c',
+    platform: 'baemin',
+    channel: 'direct',
+    region: '양산C',
+    startDate: WEEK,
+    endDate: END,
+    riders: [
+      { matchedRiderId: 'y1', driverName: '양갑', weeklyOrderCount: 30 },
+      { matchedRiderId: 'y2', driverName: '양을', weeklyOrderCount: 20 }
+    ]
+  }, 'direct');
+  const yangsan = Admin.buildAvgCallRows(WEEK, 'direct', 'combined')
+    .find(row => String(row.region).includes('양산'));
+  check('양산 합산 1쿠팡+2배민', Boolean(yangsan?.region.includes('양산B') && yangsan?.region.includes('양산C')), 'true');
+  check('양산 합산 콜수 320', yangsan?.calls, 320);
+  check('양산 합산 인원 3', yangsan?.people, 3);
+
+  [
+    'weekly_direct_coupang_avg_east',
+    'weekly_direct_baemin_avg_east',
+    'weekly_direct_coupang_avg_yangsan',
+    'weekly_direct_baemin_avg_yangsan_b',
+    'weekly_direct_baemin_avg_yangsan_c',
+    'weekly_bro_baemin_avg_south'
+  ].forEach(id => {
     S.weeklySettlements.remove(id, 'direct');
     S.weeklySettlements.remove(id, 'bro');
   });
