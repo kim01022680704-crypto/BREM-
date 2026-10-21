@@ -265,6 +265,64 @@ function makeRiderLoginId(rider) {
   return `${name}${phone.slice(-4)}`;
 }
 
+const COUPANG_OPS_LOOKBACK_WEEKS = 12;
+
+function coupangMatchKeysForRider(rider = {}) {
+  const raw = rider.raw_data && typeof rider.raw_data === 'object' ? rider.raw_data : {};
+  const keys = [];
+  const push = (value) => {
+    const key = String(value || '')
+      .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '')
+      .replace(/\s+/g, '')
+      .trim();
+    if (key.length >= 5 && !keys.includes(key)) keys.push(key);
+  };
+  push(raw.coupangLoginKey || raw.coupangId || rider.coupangLoginKey || rider.coupangId);
+  const name = String(rider.name || raw.name || '').replace(/\s/g, '');
+  const phone = normalizeDigits(rider.phone || raw.phone);
+  if (name && phone.length >= 4) push(`${name}${phone.slice(-4)}`);
+  return keys;
+}
+
+function latestCoupangDailyRowPerDay(rows = []) {
+  const byDay = new Map();
+  (rows || []).forEach(row => {
+    const date = String(row.collect_date || '').slice(0, 10);
+    if (!date) return;
+    const prev = byDay.get(date);
+    if (!prev || String(row.collected_at || '') > String(prev.collected_at || '')) {
+      byDay.set(date, row);
+    }
+  });
+  return [...byDay.values()].sort((a, b) => String(a.collect_date).localeCompare(String(b.collect_date)));
+}
+
+function groupCoupangDailyByWeek(rows = [], weekApi) {
+  const week = weekApi || require('./baemin-settlement-week');
+  const groups = new Map();
+  latestCoupangDailyRowPerDay(rows).forEach(row => {
+    const date = String(row.collect_date || '').slice(0, 10);
+    if (!date) return;
+    const start = week.settlementWeekStart(date);
+    if (!groups.has(start)) groups.set(start, []);
+    groups.get(start).push(row);
+  });
+  const out = {};
+  groups.forEach((list, start) => {
+    const sum = sumCoupangRiderDailyRows(list);
+    out[start] = {
+      weekStart: start,
+      weekEnd: week.settlementWeekEnd(start),
+      complete: sum.complete,
+      reject: sum.reject,
+      cancel: sum.cancel,
+      rejectionRate: calcRejectionRateFromCounts(sum.complete, sum.reject, sum.cancel),
+      collectedAt: sum.collectedAt
+    };
+  });
+  return out;
+}
+
 function riderAuthEmail(riderId) {
   const safeId = String(riderId || '').replace(/[^a-zA-Z0-9-]/g, '');
   return `rider+${safeId}@${getRiderEmailDomain()}`;
@@ -1089,7 +1147,7 @@ async function fetchLatestDeliveryStatusForBaeminId(supabase, baeminId, options 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(minDate)) {
     try {
       const week = require('./baemin-settlement-week');
-      minDate = week.settlementWeekStart(week.todayKST());
+      minDate = week.settlementWeekStart(week.businessTodayKST());
     } catch {
       minDate = '';
     }
@@ -1264,7 +1322,7 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
   let weekStart = '';
   try {
     const week = require('./baemin-settlement-week');
-    today = week.todayKST();
+    today = week.businessTodayKST();
     weekStart = week.settlementWeekStart(today);
   } catch {
     today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
@@ -1398,21 +1456,23 @@ function sumCoupangRiderDailyRows(rows = []) {
   }, { complete: 0, reject: 0, cancel: 0, collectedAt: null });
 }
 
-async function fetchCoupangRiderDailyByMatch(supabase, matchKey, fromDate, toDate) {
-  const key = String(matchKey || '').trim();
+async function fetchCoupangRiderDailyByKeys(supabase, keys, fromDate, toDate) {
+  const list = (Array.isArray(keys) ? keys : [keys])
+    .map(key => String(key || '').trim())
+    .filter(key => key.length >= 5);
   const from = String(fromDate || '').slice(0, 10);
   const to = String(toDate || '').slice(0, 10);
-  if (!key || !from || !to || from > to) return [];
+  if (!list.length || !from || !to || from > to) return [];
 
   const { data, error } = await supabase
     .from('coupang_collect_items')
-    .select('collect_date,collected_at,match_key,courier_id,rider_name,phone_number,vendor_id,parsed_json')
+    .select('collect_date,collected_at,match_key,courier_id,rider_name,phone_number,vendor_id,vendor_name,parsed_json')
     .eq('source_menu', 'rider_daily')
-    .eq('match_key', key)
+    .in('match_key', list)
     .gte('collect_date', from)
     .lte('collect_date', to)
     .order('collected_at', { ascending: false })
-    .limit(500);
+    .limit(2000);
 
   if (error) {
     if (/does not exist|Could not find the table/i.test(String(error.message || ''))) {
@@ -1424,18 +1484,25 @@ async function fetchCoupangRiderDailyByMatch(supabase, matchKey, fromDate, toDat
   return data || [];
 }
 
+async function fetchCoupangRiderDailyByMatch(supabase, matchKey, fromDate, toDate) {
+  return fetchCoupangRiderDailyByKeys(supabase, [matchKey], fromDate, toDate);
+}
+
 /**
  * 쿠팡 실시간 운행현황.
  * - 오늘 완료/거절/취소: rider_daily 오늘분 (쿠팡 0.8/1 가중치 그대로)
+ * - 주간 실적카드: 최근 정산주별 합(하루 최신 1건). 정산서 콜수와 섞지 않는다.
  * - 현재거절율: 오늘 완료·거절·취소 합으로 계산. 어제 비율과 평균하지 않는다.
  */
 async function loadRiderCoupangOps(supabase, rider = {}) {
-  const matchKey = makeRiderLoginId(rider);
+  const keys = coupangMatchKeysForRider(rider);
+  const matchKey = keys[0] || makeRiderLoginId(rider);
   const riderId = String(rider.id || '').trim();
   const empty = {
     available: false,
     riderId,
     matchKey: matchKey || '',
+    matchKeys: keys,
     complete: 0,
     reject: 0,
     cancel: 0,
@@ -1445,52 +1512,62 @@ async function loadRiderCoupangOps(supabase, rider = {}) {
     rejectionRateSource: null,
     weekStart: null,
     weekEnd: null,
+    weeks: {},
     collectDate: null,
     collectedAt: null,
     updatedAt: null,
-    reason: matchKey ? 'NO_DATA' : 'NO_COUPANG_ID'
+    reason: keys.length ? 'NO_DATA' : 'NO_COUPANG_ID'
   };
-  if (!matchKey || matchKey.length < 5) return empty;
+  if (!keys.length) return empty;
 
   let today = '';
   let weekStart = '';
   let yesterday = '';
+  let fromDate = '';
+  let weekApi = null;
   try {
-    const week = require('./baemin-settlement-week');
-    today = week.todayKST();
-    weekStart = week.settlementWeekStart(today);
-    yesterday = week.addDays(today, -1);
+    weekApi = require('./baemin-settlement-week');
+    today = weekApi.businessTodayKST();
+    weekStart = weekApi.settlementWeekStart(today);
+    yesterday = weekApi.addDays(today, -1);
+    fromDate = weekApi.addDays(weekStart, -7 * (COUPANG_OPS_LOOKBACK_WEEKS - 1));
   } catch {
     today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
     weekStart = today;
     yesterday = today;
+    fromDate = today;
   }
 
-  const pastFrom = weekStart;
-  const pastTo = yesterday >= weekStart && yesterday < today ? yesterday : '';
-
-  const [pastResult, todayResult] = await Promise.all([
-    pastTo
-      ? fetchCoupangRiderDailyByMatch(supabase, matchKey, pastFrom, pastTo)
-      : Promise.resolve([]),
-    fetchCoupangRiderDailyByMatch(supabase, matchKey, today, today)
-  ]);
-
-  if (pastResult?.missing || todayResult?.missing) {
+  const rowsResult = await fetchCoupangRiderDailyByKeys(supabase, keys, fromDate, today);
+  if (rowsResult?.missing) {
     return { ...empty, reason: 'TABLE_MISSING' };
   }
 
-  const pastRows = Array.isArray(pastResult) ? pastResult : [];
-  const todayRows = Array.isArray(todayResult) ? todayResult : [];
+  const rawRows = Array.isArray(rowsResult) ? rowsResult : [];
+  const daily = latestCoupangDailyRowPerDay(rawRows);
+  const weeks = weekApi ? groupCoupangDailyByWeek(daily, weekApi) : {};
+  const current = weeks[weekStart] || {
+    complete: 0,
+    reject: 0,
+    cancel: 0,
+    rejectionRate: null,
+    collectedAt: null
+  };
+
+  const pastRows = daily.filter(row => {
+    const date = String(row.collect_date || '').slice(0, 10);
+    return date >= weekStart && date <= yesterday && date < today;
+  });
+  const todayRows = daily.filter(row => String(row.collect_date || '').slice(0, 10) === today);
   const past = sumCoupangRiderDailyRows(pastRows);
   const live = sumCoupangRiderDailyRows(todayRows);
 
   const pastRate = calcRejectionRateFromCounts(past.complete, past.reject, past.cancel);
   const todayRate = calcRejectionRateFromCounts(live.complete, live.reject, live.cancel);
-  const weekComplete = Number(past.complete || 0) + Number(live.complete || 0);
-  const weekReject = Number(past.reject || 0) + Number(live.reject || 0);
-  const weekCancel = Number(past.cancel || 0) + Number(live.cancel || 0);
-  const weekRate = calcRejectionRateFromCounts(weekComplete, weekReject, weekCancel);
+  const weekComplete = Number(current.complete || 0);
+  const weekReject = Number(current.reject || 0);
+  const weekCancel = Number(current.cancel || 0);
+  const weekRate = current.rejectionRate ?? calcRejectionRateFromCounts(weekComplete, weekReject, weekCancel);
 
   let rejectionRate = todayRate;
   let rejectionRateSource = todayRate != null ? 'today_counts' : null;
@@ -1499,13 +1576,13 @@ async function loadRiderCoupangOps(supabase, rider = {}) {
     rejectionRateSource = 'past';
   }
 
-  const hasAny = pastRows.length > 0 || todayRows.length > 0;
-  if (!hasAny) return empty;
+  if (!daily.length) return empty;
 
   return {
     available: true,
     riderId,
     matchKey,
+    matchKeys: keys,
     complete: live.complete,
     reject: live.reject,
     cancel: live.cancel,
@@ -1521,16 +1598,11 @@ async function loadRiderCoupangOps(supabase, rider = {}) {
     todayRejectionRate: todayRate,
     rejectionRateSource,
     weekStart,
-    weekEnd: (() => {
-      try {
-        return require('./baemin-settlement-week').settlementWeekEnd(weekStart);
-      } catch {
-        return null;
-      }
-    })(),
+    weekEnd: weekApi ? weekApi.settlementWeekEnd(weekStart) : null,
+    weeks,
     collectDate: today,
-    collectedAt: live.collectedAt || past.collectedAt || null,
-    updatedAt: live.collectedAt || past.collectedAt || null,
+    collectedAt: live.collectedAt || past.collectedAt || current.collectedAt || null,
+    updatedAt: live.collectedAt || past.collectedAt || current.collectedAt || null,
     reason: null
   };
 }
@@ -1879,6 +1951,9 @@ module.exports = {
   readRiderSecrets,
   invalidateCachedRiderMe,
   makeRiderLoginId,
+  coupangMatchKeysForRider,
+  latestCoupangDailyRowPerDay,
+  groupCoupangDailyByWeek,
   loadRiderBaeminOps,
   loadRiderCoupangOps
 };

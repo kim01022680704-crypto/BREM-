@@ -1120,7 +1120,11 @@ async function applyStatusLoopToErp(collectDate) {
     return { ok: false, message: '로컬 .env에 SUPABASE_SERVICE_ROLE_KEY 가 없습니다.' };
   }
   const { applyBaeminDelivery } = require('../server/baemin-collect-pipeline');
-  const result = await applyBaeminDelivery(collectDate, { appliedBy: 'status_auto_loop' });
+  // 실시간 배달현황은 영업일로 스탬핑되므로, 배치 날짜(captureDate)도 영업일로 맞춰야
+  //   rebuild 의 live 필터(collect_date === captureDate)가 일치한다.
+  const { businessTodayKST } = require('../server/baemin-settlement-week');
+  const applyDate = businessTodayKST();
+  const result = await applyBaeminDelivery(applyDate, { appliedBy: 'status_auto_loop' });
   if (!result.ok) {
     return {
       ok: false,
@@ -1542,7 +1546,13 @@ function stopStatusAutoLoop() {
   statusLoop.stopping = true;
   statusLoop.active = false;
   setStatusLoopPhase('idle', '사용자가 종료함');
-  console.log('[BREM] [현황자동수집] 종료 요청');
+  // 진행 중인 협력사 스윕도 즉시 멈추도록 중단 플래그를 올린다.
+  try {
+    require('../server/baemin-collect-progress').requestAbort();
+  } catch (error) {
+    console.warn('[BREM] [현황자동수집] 중단 플래그 설정 실패:', error.message);
+  }
+  console.log('[BREM] [현황자동수집] 종료 요청 (협력사 스윕 중단 플래그 설정)');
   return { ok: true, stopped: true, statusLoop: getStatusLoopPayload() };
 }
 
@@ -1733,6 +1743,25 @@ async function resolveCollectRangeOptions(collectDate, body = {}) {
   return { dailyCollectRange, riderCollectRange };
 }
 
+// 신규 "실시간 운영 현황"(/v1/dashboard/*) 기반 배달현황 수집 — 전 협력사 순회.
+//   협력사 전환(selectPartnerCenter)은 기존 검증된 경로 재사용.
+//   A(/v1/dashboard/today) + B(/riders 페이지네이션) + C(/riders/{id}) 를
+//   헤더 캡처 후 재생 방식으로 수집하고, 구 delivery-status 아이템 형태로 저장.
+async function collectDeliveryStatusViaDashboard(collectDate, options = {}) {
+  // 핫리로드: 순회 로직은 모듈에 있어 재시작 없이 수정분 반영
+  try { delete require.cache[require.resolve('../server/baemin-dashboard-live-collect')]; } catch { /* ignore */ }
+  const live = require('../server/baemin-dashboard-live-collect');
+  const page = options.page || resolveCollectPlaywrightPage();
+  // 실시간 배달현황은 "영업일"(새벽 6시 이전엔 전날)로 스탬핑한다.
+  //   배민 영업일 06:00~익일 05:59 기준 → 수요일 새벽 6시 전까지는 화요일 영업일로 집계/주차 유지.
+  const { businessTodayKST } = require('../server/baemin-settlement-week');
+  const deliveryCollectDate = businessTodayKST();
+  return live.collectAllPartnersViaDashboard(page, {
+    collectDate: deliveryCollectDate,
+    partnerIds: options.partnerIds || null
+  });
+}
+
 async function runLocalFullCollect(options = {}) {
   if (collectRunning) {
     return { ok: false, conflict: true, message: '이미 수집 중입니다.' };
@@ -1812,6 +1841,48 @@ async function runLocalFullCollect(options = {}) {
       return { ok: false, message, browserClosed: true };
     }
 
+    // ── 배달현황(delivery_status)은 신규 실시간 운영 현황 API(/v1/dashboard/*)로 수집 ──
+    //   구 /v4/management/delivery-status 가 폐기됨(2026-10-21). daily/rider 는 기존 파이프라인 유지.
+    const requestedMenus = Array.isArray(sourceMenus) && sourceMenus.length
+      ? sourceMenus
+      : ['delivery_status', 'daily_history', 'rider_history'];
+    const wantDelivery = requestedMenus.includes('delivery_status');
+    const remainingMenus = requestedMenus.filter(m => m !== 'delivery_status');
+
+    let deliveryLiveResult = null;
+    if (wantDelivery) {
+      deliveryLiveResult = await collectDeliveryStatusViaDashboard(collectDate, {
+        partnerIds: options.partnerIds || null,
+        page: collectPage
+      });
+    }
+
+    // 배달현황만 요청된 경우(현황자동수집 반복 라운드 등) → 신규 수집 결과로 즉시 반환
+    if (wantDelivery && !remainingMenus.length) {
+      autoCollectRuntime = {
+        ...autoCollectRuntime,
+        lastRunAt: new Date().toISOString(),
+        lastStatus: deliveryLiveResult.ok ? 'success' : 'failed',
+        lastError: deliveryLiveResult.ok ? '' : (deliveryLiveResult.message || '배달현황 수집 실패'),
+        lastSavedCount: Number(deliveryLiveResult.savedCount || 0)
+      };
+      lastCollectResult = {
+        at: new Date().toISOString(),
+        ok: deliveryLiveResult.ok,
+        message: deliveryLiveResult.message || `저장 ${Number(deliveryLiveResult.savedCount || 0)}건`,
+        savedTotal: Number(deliveryLiveResult.savedCount || 0),
+        collectDate
+      };
+      console.log(`[BREM] [배달현황] 신규 수집 완료 | ${deliveryLiveResult.savedCount}건 | ${deliveryLiveResult.okCount}/${deliveryLiveResult.partnerTotal}곳`);
+      return {
+        ok: deliveryLiveResult.ok,
+        message: deliveryLiveResult.message,
+        collectDate,
+        savedCount: Number(deliveryLiveResult.savedCount || 0),
+        partnerSummaries: deliveryLiveResult.partnerSummaries
+      };
+    }
+
     await syncBrowserCookiesToSupabase().catch(error => {
       console.warn('[BREM] [전체수집] 쿠키 동기화 실패:', formatError(error));
       if (isPlaywrightClosedError(error)) clearActiveContextIfDead();
@@ -1825,9 +1896,13 @@ async function runLocalFullCollect(options = {}) {
       playwrightPage: collectPage,
       dailyCollectRange,
       riderCollectRange,
-      sourceMenus,
+      sourceMenus: wantDelivery ? remainingMenus : sourceMenus,
       partnerIds: options.partnerIds || null
     });
+    // 신규 배달현황 저장분을 합산 보고
+    if (deliveryLiveResult) {
+      result.savedCount = Number(result.savedCount || 0) + Number(deliveryLiveResult.savedCount || 0);
+    }
 
     autoCollectRuntime = {
       ...autoCollectRuntime,
@@ -2662,6 +2737,152 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === '/debug/capture-ops' && req.method === 'POST') {
+    if (!isContextAlive(activeContext)) {
+      return sendJsonWithCors(req, res, 409, { ok: false, message: 'Playwright 브라우저가 없습니다.' });
+    }
+    try {
+      const body = await readJsonBody(req);
+      const targetUrl = String(body?.url || `${BAEMIN_ORIGIN}/delivery/history`).trim();
+      const waitMs = Number(body?.waitMs || 6000);
+      const page = activeContext.pages().filter(p => !p.isClosed())[0];
+      if (!page) {
+        return sendJsonWithCors(req, res, 409, { ok: false, message: '열린 페이지가 없습니다.' });
+      }
+      const captured = [];
+      const handler = async response => {
+        try {
+          const respUrl = response.url();
+          if (!respUrl.includes('api-deliverycenter')) return;
+          const ct = String(response.headers()['content-type'] || '').toLowerCase();
+          if (!ct.includes('json')) return;
+          let pathname = respUrl;
+          try { pathname = new URL(respUrl).pathname; } catch { /* ignore */ }
+          const text = await response.text().catch(() => '');
+          let payload = null;
+          try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
+          const data = payload && (payload.data ?? payload.content ?? payload);
+          const firstItem = Array.isArray(data) ? data[0] : (Array.isArray(data?.data) ? data.data[0] : null);
+          captured.push({
+            method: response.request().method(),
+            status: response.status(),
+            pathname,
+            query: (() => { try { return new URL(respUrl).search; } catch { return ''; } })(),
+            topKeys: payload && typeof payload === 'object' ? Object.keys(payload).slice(0, 20) : [],
+            dataLength: Array.isArray(data) ? data.length : (Array.isArray(data?.data) ? data.data.length : null),
+            firstItemKeys: firstItem && typeof firstItem === 'object' ? Object.keys(firstItem) : null,
+            firstItem: firstItem && typeof firstItem === 'object' ? firstItem : null,
+            nonArrayPayload: Array.isArray(data) ? null : payload
+          });
+        } catch { /* ignore */ }
+      };
+      page.on('response', handler);
+      try {
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(err => {
+          if (!String(err.message || '').includes('ERR_ABORTED')) throw err;
+        });
+        await new Promise(r => setTimeout(r, waitMs));
+      } finally {
+        page.off('response', handler);
+      }
+      return sendJsonWithCors(req, res, 200, {
+        ok: true,
+        targetUrl,
+        finalUrl: page.url(),
+        capturedCount: captured.length,
+        captured
+      });
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, { ok: false, message: formatError(error) });
+    }
+  }
+
+  // 신규 실시간 운영 현황(A+B+C) 수집기 드라이런 — 기본은 저장 안 함(dryRun)
+  if (url.pathname === '/debug/collect-live' && req.method === 'POST') {
+    if (!isContextAlive(activeContext)) {
+      return sendJsonWithCors(req, res, 409, { ok: false, message: 'Playwright 브라우저가 없습니다.' });
+    }
+    try {
+      const body = await readJsonBody(req);
+      const page = activeContext.pages().filter(p => !p.isClosed())[0];
+      if (!page) {
+        return sendJsonWithCors(req, res, 409, { ok: false, message: '열린 페이지가 없습니다.' });
+      }
+      // 핫리로드: 모듈 수정분을 재시작 없이 반영
+      try { delete require.cache[require.resolve('../server/baemin-dashboard-live-collect')]; } catch { /* ignore */ }
+      const live = require('../server/baemin-dashboard-live-collect');
+      const centerCtx = require('../server/baemin-center-context');
+
+      // 특정 협력사 지정 시 전환(미지정이면 현재 활성 센터 그대로)
+      if (body?.partnerId) {
+        await centerCtx.selectPartnerCenter(page, {
+          partnerId: String(body.partnerId).trim(),
+          partnerName: String(body.partnerName || '').trim(),
+          requireSessionChange: true
+        });
+      }
+
+      const active = await centerCtx.resolveCenterContextViaPage(page);
+      const partnerContext = {
+        partnerId: active?.partnerId || active?.centerId || '',
+        partnerName: active?.partnerName || '',
+        regionName: active?.regionName || ''
+      };
+
+      const maxRiderDetail = Number(body?.maxRiderDetail || 0);
+      const t0 = Date.now();
+      const liveData = await live.fetchDashboardLiveViaPage(page, {
+        includeRiderDetail: body?.includeRiderDetail !== false,
+        maxRiderDetail,
+        riderConcurrency: Number(body?.riderConcurrency || 4)
+      });
+      const fetchMs = Date.now() - t0;
+
+      const summary = live.summarizeTodayAggregate(liveData);
+      const rows = live.buildDeliveryStatusRows(liveData, partnerContext, {
+        collectDate: baeminAutoCollect.todayDateStringKST()
+      });
+
+      // 합계 검산
+      const totals = rows.reduce((acc, row) => {
+        const p = row.parsed_json || {};
+        acc.allDayComplete += Number(p.allDayComplete || 0);
+        acc.slaComplete += Number(p.slaComplete || 0);
+        acc.slaOutComplete += Number(p.slaOutComplete || 0);
+        acc.totalReject += Number(p.totalReject || 0);
+        acc.cancelCount += Number(p.cancelCount || 0);
+        acc.morning += Number(p.morningCount || 0);
+        acc.afternoon += Number(p.afternoonCount || 0);
+        acc.evening += Number(p.eveningCount || 0);
+        acc.midnight += Number(p.midnightCount || 0);
+        return acc;
+      }, { allDayComplete: 0, slaComplete: 0, slaOutComplete: 0, totalReject: 0, cancelCount: 0, morning: 0, afternoon: 0, evening: 0, midnight: 0 });
+
+      let saved = null;
+      if (body?.save === true) {
+        const { saveCollectItems } = require('../server/baemin-collect-pipeline');
+        saved = await saveCollectItems(rows);
+      }
+
+      return sendJsonWithCors(req, res, 200, {
+        ok: true,
+        dryRun: body?.save !== true,
+        partner: partnerContext,
+        fetchMs,
+        riderCount: liveData.riders.length,
+        riderDetailCount: Object.keys(liveData.riderDetails || {}).length,
+        errors: liveData.errors || [],
+        summary,
+        rowTotals: totals,
+        rowCount: rows.length,
+        sampleRows: rows.slice(0, 3).map(r => ({ dedupe_key: r.dedupe_key, rider_name: r.rider_name, parsed_json: r.parsed_json })),
+        saved
+      });
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, { ok: false, message: formatError(error) });
+    }
+  }
+
   if (url.pathname === '/debug/partner-switch' && req.method === 'POST') {
     if (!isContextAlive(activeContext)) {
       return sendJsonWithCors(req, res, 409, { ok: false, message: 'Playwright 브라우저가 없습니다.' });
@@ -2903,6 +3124,23 @@ const server = http.createServer(async (req, res) => {
       ...result,
       autoCollect: getAutoCollectHealthPayload(),
       browser: getBrowserHealth()
+    });
+  }
+
+  if (url.pathname === '/collect/abort' && req.method === 'POST') {
+    try {
+      stopStatusAutoLoop();
+    } catch (error) {
+      console.warn('[BREM] [collect/abort] 루프 종료 실패:', error.message);
+    }
+    const progress = require('../server/baemin-collect-progress');
+    progress.requestAbort();
+    return sendJsonWithCors(req, res, 200, {
+      ok: true,
+      message: '수집 중단 요청됨 — 현재 협력사 처리 후 정지',
+      collectRunning,
+      progress: progress.getCollectProgress(),
+      statusLoop: getStatusLoopPayload()
     });
   }
 

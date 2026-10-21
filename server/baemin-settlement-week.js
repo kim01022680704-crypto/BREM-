@@ -20,8 +20,8 @@ function formatDateKey(date) {
   return `${y}-${m}-${d}`;
 }
 
-function todayKST() {
-  return formatDateKey(new Date());
+function todayKST(now = new Date()) {
+  return formatDateKey(now);
 }
 
 function addDays(dateKey, days) {
@@ -85,6 +85,17 @@ function latestQueryableDate(dateKey = todayKST(), now = new Date()) {
     return addDays(refKey, -2);
   }
   return addDays(refKey, -1);
+}
+
+/**
+ * 영업상 "오늘" (KST). 배민 영업일은 당일 06:00 ~ 익일 05:59 이므로,
+ * 새벽 06:00 이전에는 아직 전일 영업일이 진행 중 → 달력상 어제를 반환.
+ * 실시간 현황/정산주 경계가 자정이 아니라 06:00 에 넘어가도록 하기 위한 기준일.
+ */
+function businessTodayKST(now = new Date()) {
+  const cal = todayKST(now);
+  const hour = getKSTHour(now);
+  return hour < 6 ? addDays(cal, -1) : cal;
 }
 
 /** 일별/라이더: 전날(조회 가능 최신일)을 끝으로 하는 연속 일수. 수~화 주차와 무관. */
@@ -493,6 +504,7 @@ module.exports = {
   getKSTHour,
   addDays,
   weekdayKST,
+  businessTodayKST,
   settlementWeekStart,
   settlementWeekEnd,
   latestQueryableDate,

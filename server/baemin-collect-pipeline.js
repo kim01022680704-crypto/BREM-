@@ -66,11 +66,11 @@ async function launchClonedCollectContext(sourceContext) {
     storageState: state,
     viewport: { width: 1280, height: 900 }
   });
-  const { attachSafeSpaGuard } = require('./baemin-page-capture');
+  const { attachSafeSpaGuard, SAFE_LANDING_URL } = require('./baemin-page-capture');
   await attachSafeSpaGuard(context);
   const page = await context.newPage();
   context.__bremCollecting = true;
-  await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
+  await page.goto(SAFE_LANDING_URL, {
     waitUntil: 'domcontentloaded',
     timeout: 90000
   }).catch(() => {});
@@ -2239,6 +2239,10 @@ async function runFullCollectPipeline(options = {}) {
         await ensureProductionDeliveryPage(page).catch(() => {});
 
         for (let i = 0; i < partners.length; i += 1) {
+          if (collectProgress.isAbortRequested()) {
+            console.warn(`[BREM][collect] 중단 요청 감지 — 창 ${workerId} 협력사 순회 정지 (${i}/${partners.length})`);
+            break;
+          }
           const partner = partners[i];
           const globalIndex = Number.isInteger(partner.__globalIndex) ? partner.__globalIndex : i;
           const progressLabel = `[${workerId} ${i + 1}/${partners.length}] ${partner.partnerName || partner.partnerId}`;
@@ -2356,6 +2360,10 @@ async function runFullCollectPipeline(options = {}) {
       // 메인 창에서 순차로 최대 2패스 재수집한다. clone 창은 이미 닫힌 뒤라 충돌이 없다.
       const RECONCILE_PASSES = 2;
       for (let pass = 1; pass <= RECONCILE_PASSES; pass += 1) {
+        if (collectProgress.isAbortRequested()) {
+          console.warn('[BREM][collect] 중단 요청 감지 — 미수집 보강 생략');
+          break;
+        }
         const okIds = collectedOkIds();
         const remaining = orderedPartners.filter(p => !okIds.has(normPartnerId(p.partnerId)));
         if (!remaining.length) break;
@@ -4980,8 +4988,9 @@ function calcFoodAcceptRatePercent(metrics = {}) {
  * baemin_live_accept_rates 를 전지역 재생성 (기사앱 실시간 운행현황용)
  */
 async function rebuildLiveAcceptRatesForAppliedWeek(options = {}) {
-  const { settlementWeekStart } = require('./baemin-settlement-week');
-  const today = todayKST();
+  const { settlementWeekStart, businessTodayKST } = require('./baemin-settlement-week');
+  // 영업일 기준 "오늘"(새벽 6시 이전엔 전날) → 정산주 경계를 06:00 에 맞춘다.
+  const today = businessTodayKST();
   const weekStartRaw = String(options.weekStart || '').slice(0, 10);
   const weekStart = settlementWeekStart(
     /^\d{4}-\d{2}-\d{2}$/.test(weekStartRaw) ? weekStartRaw : today
@@ -5720,5 +5729,6 @@ module.exports = {
   getBaeminStorageDiagnosticsForAdmin,
   replaceLiveAcceptRatesForAdmin,
   rebuildLiveAcceptRatesForAppliedWeek,
+  saveCollectItems,
   BAEMIN_APPLIED_SETTINGS_KEY
 };

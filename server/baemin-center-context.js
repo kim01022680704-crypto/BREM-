@@ -840,7 +840,10 @@ async function waitForPartnerSwitchComplete(page, targetId, options = {}) {
       ? (require('./baemin-api-fetch').extractDataArray(deliveryCapture.payload) || [])
       : [];
     const deliveryOk = Boolean(deliveryCapture && Number(deliveryCapture.status) === 200);
-    const sessionGateOk = !requireSessionChange || sessionChanged || (uiOk && apiOk && deliveryOk);
+    // 2026-10-21: 새 UI는 센터를 CENTER_SESSION 쿠키가 아니라 center-id 헤더로 전달한다.
+    //   → CENTER_SESSION 값은 협력사가 바뀌어도 그대로. 구 delivery_status 캡처도 폐기됨.
+    //   UI(readActivePartnerDisplay)와 /v2/center(api) 가 모두 target 과 일치하면 전환 성공으로 간주.
+    const sessionGateOk = !requireSessionChange || sessionChanged || deliveryOk || (uiOk && apiOk);
 
     console.log(`[BREM][center] 전환확인 ${attempt}/${maxAttempts} target=${partnerId} ui=${ui.partnerId || '-'} api=${apiPartnerId || '-'} session=${sessionChanged ? 'changed' : (sessionBefore ? 'same' : 'ready')} deliveryCapture=${deliveryOk ? 'ok' : 'no'}`);
 
@@ -1334,19 +1337,18 @@ async function selectPartnerCenterInner(page, target = {}) {
 
   let sessionAfter = await readCenterSessionCookie(page);
   if (!sessionAfter || sessionAfter === sessionBeforeSwitch) {
-    console.warn(`[BREM][center] CENTER_SESSION 미변경 → 캡처/API 재전환 (${targetId})`);
-    console.warn('[BREM][center] 전환 네트워크:', JSON.stringify(switchCaptured.slice(-6).map(row => ({
-      method: row.method,
-      url: row.url,
-      status: row.status || 0
-    }))));
-    await replayCapturedCenterSwitch(page, switchCaptured, targetId);
-    await trySwitchCenterViaApi(page, targetId);
-    sessionAfter = await waitForCenterSessionChange(page, sessionBeforeSwitch, 12000);
-    if (sessionAfter && sessionAfter !== sessionBeforeSwitch) {
-      console.log(`[BREM][center] CENTER_SESSION 변경됨 (${targetId})`);
+    // 2026-10-21: 새 UI는 CENTER_SESSION 쿠키를 협력사별로 바꾸지 않고 center-id 헤더로 구분한다.
+    //   UI + /v2/center 가 이미 target 과 일치하면 전환이 끝난 것이므로 재전환/대기를 건너뛴다.
+    const quickUi = await readActivePartnerDisplayFromPage(page).catch(() => null);
+    const quickCenter = await resolveCenterContextViaPage(page).catch(() => null);
+    const quickApiId = String(quickCenter?.partnerId || quickCenter?.centerId || '').trim();
+    if (quickUi?.partnerId === targetId && quickApiId === targetId) {
+      console.log(`[BREM][center] UI+API 전환 확인 (CENTER_SESSION 헤더 방식, ${targetId})`);
     } else {
-      console.warn(`[BREM][center] CENTER_SESSION 여전히 동일 (${targetId})`);
+      console.warn(`[BREM][center] 전환 미확정 → 캡처/API 재전환 (${targetId})`);
+      await replayCapturedCenterSwitch(page, switchCaptured, targetId);
+      await trySwitchCenterViaApi(page, targetId);
+      sessionAfter = await waitForCenterSessionChange(page, sessionBeforeSwitch, 6000);
     }
   } else {
     console.log(`[BREM][center] CENTER_SESSION 변경 감지 (${targetId})`);
