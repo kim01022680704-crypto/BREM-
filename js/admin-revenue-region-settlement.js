@@ -696,7 +696,7 @@
       showToast('저장 기능을 사용할 수 없습니다. 페이지를 새로고침하세요.');
       return;
     }
-    const regions = collectDraftFromInputs();
+    const regions = options.regions != null ? options.regions : collectDraftFromInputs();
     const taxFeePercent = Math.max(0, Math.min(100, Number($('revenueRegionTaxFeePercent')?.value || state.taxFeePercent || 20)));
     state.taxFeePercent = taxFeePercent;
     const saved = Revenue().saveRegionSettlement(weekStart, {
@@ -1204,20 +1204,22 @@
       return false;
     }
     const incoming = groupPasteRows(matchIncomingRows(parsed));
-    addRowsToDraft(incoming, { add: true });
+    addRowsToDraft(incoming, { add: false });
     const unmatched = incoming.filter(row => row.unmatched).length;
-    const matched = incoming.length - unmatched;
+    const merged = parsed.length - incoming.length;
     setUploadStatus(
       unmatched
-        ? `붙여넣기 ${incoming.length}건 · 매칭 ${matched}건 · 미매칭 ${unmatched}건은 표에서 지역을 고르세요.`
-        : `붙여넣기 ${incoming.length}건 · 표에 합산했습니다.`
+        ? `붙여넣기 ${incoming.length}곳 · 미매칭 ${unmatched}곳은 표에서 지역을 고르세요.`
+        : `붙여넣기 ${incoming.length}곳을 반영했습니다. 다시 붙여넣으면 그 지역 금액이 바뀝니다.`
     );
     if (input) input.value = '';
     render();
     saveDraft({ silent: true });
     showToast(unmatched
-      ? `${incoming.length}건 반영 · 미매칭 ${unmatched}건은 표에서 지역을 고르세요.`
-      : `${incoming.length}건을 표에 합산했습니다.`);
+      ? `${incoming.length}곳 반영 · 미매칭 ${unmatched}곳은 표에서 지역을 고르세요.`
+      : (merged
+        ? `${incoming.length}곳으로 반영했습니다. 같은 이름 ${merged}곳은 한 줄로 합쳤고, 다시 붙여넣으면 금액이 바뀝니다.`
+        : `${incoming.length}곳으로 반영했습니다. 다시 붙여넣으면 더하지 않고 금액이 바뀝니다.`));
     return true;
   }
 
@@ -1649,6 +1651,11 @@
     return [...new Set(names.map(name => String(name || '').trim()).filter(Boolean))];
   }
 
+  function clearAmounts() {
+    state.draftRegions = {};
+    saveDraft({ silent: true, regions: {} });
+  }
+
   function groupSelected() {
     collectDraftFromInputs();
     const members = checkedBundleMembers();
@@ -1714,14 +1721,15 @@
       }
     });
     $('revenueRegionClearAmountsBtn')?.addEventListener('click', () => {
-      if (!Object.keys(state.draftRegions || {}).length) {
+      collectDraftFromInputs();
+      const hasAmount = Object.values(state.draftRegions || {}).some(row => Number(row?.supplyPaid) || Number(row?.vat));
+      if (!hasAmount) {
         showToast('지울 실지급액·부가세가 없습니다.');
         return;
       }
-      if (!window.confirm('이 주의 붙여넣기 표(실지급액·부가세)를 모두 지울까요?')) return;
-      state.draftRegions = {};
-      saveDraft({ silent: true });
-      showToast('붙여넣기 표를 비웠습니다.');
+      if (!window.confirm('이 주의 실지급액·부가세를 모두 지울까요?')) return;
+      clearAmounts();
+      showToast('실지급액·부가세를 지웠습니다.');
     });
 
     $('revenueRegionBody')?.addEventListener('paste', event => {
@@ -1736,6 +1744,11 @@
       event.preventDefault();
       const parsed = parseMoneyText(text);
       target.value = parsed ? String(parsed) : '';
+      collectDraftFromInputs();
+      refreshCalculated();
+    });
+    $('revenueRegionBody')?.addEventListener('input', event => {
+      if (!event.target.matches('[data-region-supply], [data-region-vat]')) return;
       collectDraftFromInputs();
       refreshCalculated();
     });
@@ -1888,6 +1901,7 @@
     parseMoneyText,
     computeRemain,
     summarizeBundle,
+    clearAmounts,
     handlePaste,
     addRowsToDraft,
     applyRegionFix,
