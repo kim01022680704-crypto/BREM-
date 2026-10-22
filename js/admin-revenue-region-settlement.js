@@ -885,7 +885,6 @@
   function matchRegionByLabel(label, regionNames, aliasMap) {
     const raw = String(label || '').trim();
     if (!raw) return '';
-    if (aliasMap[raw]) return aliasMap[raw];
     const key = regionCompareKey(raw) || normalizeRegionKey(raw);
     if (!key) return '';
     const folded = foldRegionKey(raw);
@@ -898,7 +897,9 @@
       return !!(folded && fk && fk === folded);
     });
     const foldedPick = pickRegionHit(foldedHits);
+    // 정산서 이름과 접히면 그 이름을 쓴다. 예전에 잘못 저장된 별칭이 다른 지역을 덮지 않게 한다.
     if (foldedPick) return foldedPick;
+    if (aliasMap[raw]) return aliasMap[raw];
     const partial = regionNames.filter(name => {
       const nk = regionCompareKey(name) || normalizeRegionKey(name);
       if (!nk || !sameZ(name)) return false;
@@ -1181,7 +1182,9 @@
         unmatched: unmatched && prev.unmatched !== false,
         kind: row.kind || prev.kind || ''
       };
-      if (!unmatched && row.source) aliases[row.source] = key;
+      if (!unmatched && row.source && foldRegionKey(row.source) === foldRegionKey(key)) {
+        aliases[row.source] = key;
+      }
     });
     if (Object.keys(aliases).length) Revenue()?.saveRegionAliases?.(aliases);
   }

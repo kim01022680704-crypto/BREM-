@@ -164,6 +164,7 @@ check('청원성산A → 창원성산', M.matchRegionByLabel('청원성산A', BA
 check('울산중A → 중필드A', M.matchRegionByLabel('울산중A', BAEMIN, {}), '표준울산중필드A');
 check('울산북B → 북필드B', M.matchRegionByLabel('울산북B', BAEMIN, {}), '표준울산북필드B');
 check('울산북A는 북필드B와 안 붙음', M.matchRegionByLabel('울산북A', BAEMIN, {}), '표준울산북필드A');
+check('틀린 별칭이 있어도 울산북A는 포항북이 아님', M.matchRegionByLabel('울산북A', BAEMIN, { '울산북A': '표준경북포항북A' }), '표준울산북필드A');
 check('양산A → 양산A', M.matchRegionByLabel('양산A', BAEMIN, {}), '표준경남양산A');
 check('울산남A → 남A', M.matchRegionByLabel('울산남A', BAEMIN, {}), '표준울산남A');
 const LEGACY = ['울산동a', '표준울산동A', '주식회사 119컴퍼니_표준울산동A주식회사119컴퍼니_DP2608316054', '창원성산', '표준경남창원성산A'];
