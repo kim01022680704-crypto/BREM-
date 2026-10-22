@@ -355,7 +355,10 @@ window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
   regions: {}
 });
 M.setWeekStart('2026-08-19');
-check('정산서만 있으면 표는 비어 있음', M.aggregateRegions('2026-08-19').regions.length, 0);
+const settlementOnly = M.aggregateRegions('2026-08-19').regions;
+check('정산서만 있어도 권역이 나옴', settlementOnly.length, 1);
+check('정산서만 있을 때 최종입금', settlementOnly[0]?.finalDeposit, 140000);
+check('정산서만 있을 때 선정산', settlementOnly[0]?.prepaid, 14000);
 
 window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
   weekStart: '2026-08-19',
@@ -410,7 +413,7 @@ window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
 M.setWeekStart('2026-08-19');
 M.handlePaste('울산_남구중앙\t40179\t3698\n없는권역XYZ\t5000\t500');
 const pasteOwned = M.aggregateRegions('2026-08-19').regions;
-check('붙여넣은 권역만 표에 있음', pasteOwned.length, 2);
+check('붙여넣은 권역과 정산서 지역이 같이 있음', pasteOwned.length, 5);
 const pastedNam = pasteOwned.find(row => row.region === '남구중앙');
 check('매칭 줄 실지급', pastedNam?.supplyPaid, 40179);
 check('매칭 줄 최종입금', pastedNam?.finalDeposit, 1000);
@@ -434,7 +437,7 @@ window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
 M.setWeekStart('2026-08-19');
 M.handlePaste('포항중앙\t100\t10\n포항중앙(Z)\t200\t20');
 const zRows = M.aggregateRegions('2026-08-19').regions;
-check('(Z)와 일반은 두 줄', zRows.length, 2);
+check('(Z)와 일반이 같이 있음', zRows.filter(row => row.region === '포항중앙' || row.region === '포항중앙(Z)').length, 2);
 const zPlain = zRows.find(row => row.region === '포항중앙');
 const zTwin = zRows.find(row => row.region === '포항중앙(Z)');
 check('일반 실지급은 일반에만', zPlain?.supplyPaid, 100);

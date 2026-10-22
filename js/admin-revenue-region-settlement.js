@@ -6,6 +6,7 @@
 
   const state = {
     weekStart: '',
+    followLatestIfEmpty: true,
     taxFeePercent: 20,
     rows: [],
     draftRegions: {},
@@ -178,12 +179,30 @@
     return { supplyPaid, vat };
   }
 
+  function directSettlements() {
+    return window.BremStorage?.weeklySettlements?.getAll?.('direct') || [];
+  }
+
   function settlementsForWeek(weekStart) {
     const calc = Calc();
     if (!calc) return [];
     const normalized = weekStartKey(weekStart);
-    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
-      .filter(record => calc.settlementWeek(record) === normalized);
+    const list = directSettlements();
+    if (typeof calc.recordMatchesWeek === 'function') {
+      return list.filter(record => calc.recordMatchesWeek(record, normalized));
+    }
+    return list.filter(record => calc.settlementWeek(record) === normalized);
+  }
+
+  function latestDirectSettlementWeek() {
+    const calc = Calc();
+    if (!calc?.settlementWeek) return '';
+    let latest = '';
+    directSettlements().forEach(record => {
+      const week = String(calc.settlementWeek(record) || '').slice(0, 10);
+      if (week && week > latest) latest = week;
+    });
+    return latest;
   }
 
   function buildPayoutComputeOptions(settlements, weekKey) {
@@ -274,46 +293,88 @@
     return emptyRegionBucket(region);
   }
 
+  function rowMoney(row) {
+    const taxFee = Math.round(Number(row.vat || 0) * (state.taxFeePercent / 100));
+    return {
+      ...row,
+      taxFee,
+      remain: computeRemain({
+        supplyPaid: row.supplyPaid,
+        vat: row.vat,
+        taxFeePercent: state.taxFeePercent,
+        finalDeposit: row.finalDeposit,
+        prepaid: row.prepaid
+      })
+    };
+  }
+
   function aggregateRegions(weekStart) {
     const normalized = weekStartKey(weekStart);
     const calc = Calc();
     const settlements = calc && normalized ? settlementsForWeek(normalized) : [];
     const lookup = calc && normalized ? buildPayoutLookup(settlements, normalized) : new Map();
+    const byKey = new Map();
 
-    const regions = Object.entries(state.draftRegions || {})
-      .map(([name, values]) => {
-        const unmatched = values?.unmatched === true;
-        const source = String(values?.source || name || '').trim();
-        const region = unmatched
-          ? (source || name)
-          : (canonicalRegionLabel(name) || name);
-        if (!region) return null;
-        const supplyPaid = Math.round(Number(values?.supplyPaid || 0));
-        const vat = Math.round(Number(values?.vat || 0));
-        if (!supplyPaid && !vat && !unmatched) return null;
-        const pay = unmatched ? emptyRegionBucket(region) : payoutForRegion(lookup, region);
-        const taxFee = Math.round(vat * (state.taxFeePercent / 100));
-        return {
+    settlements.forEach(record => {
+      const region = canonicalRegionLabel(record.region) || String(record.region || '').trim();
+      const key = regionCompareKey(region);
+      if (!region || !key || byKey.has(key)) return;
+      const pay = payoutForRegion(lookup, region);
+      byKey.set(key, {
+        region,
+        source: region,
+        unmatched: false,
+        riderCount: pay.riderCount,
+        finalDeposit: pay.finalDeposit,
+        prepaid: pay.prepaid,
+        supplyPaid: 0,
+        vat: 0,
+        kind: record.platform || ''
+      });
+    });
+
+    Object.entries(state.draftRegions || {}).forEach(([name, values]) => {
+      const unmatched = values?.unmatched === true;
+      const source = String(values?.source || name || '').trim();
+      const region = unmatched
+        ? (source || name)
+        : (canonicalRegionLabel(name) || name);
+      if (!region) return;
+      const supplyPaid = Math.round(Number(values?.supplyPaid || 0));
+      const vat = Math.round(Number(values?.vat || 0));
+      if (unmatched) {
+        byKey.set(`unmatched:${source || region}`, {
           region,
           source,
-          unmatched,
-          riderCount: pay.riderCount,
-          finalDeposit: pay.finalDeposit,
-          prepaid: pay.prepaid,
+          unmatched: true,
+          riderCount: 0,
+          finalDeposit: 0,
+          prepaid: 0,
           supplyPaid,
           vat,
-          taxFee,
-          remain: computeRemain({
-            supplyPaid,
-            vat,
-            taxFeePercent: state.taxFeePercent,
-            finalDeposit: pay.finalDeposit,
-            prepaid: pay.prepaid
-          }),
           kind: values?.kind || ''
-        };
-      })
-      .filter(Boolean)
+        });
+        return;
+      }
+      if (!supplyPaid && !vat) return;
+      const key = regionCompareKey(region) || region;
+      const prev = byKey.get(key);
+      const pay = prev || payoutForRegion(lookup, region);
+      byKey.set(key, {
+        region: prev?.region || region,
+        source: source || prev?.source || region,
+        unmatched: false,
+        riderCount: prev?.riderCount || pay.riderCount || 0,
+        finalDeposit: prev ? prev.finalDeposit : pay.finalDeposit,
+        prepaid: prev ? prev.prepaid : pay.prepaid,
+        supplyPaid: Math.round(Number(prev?.supplyPaid || 0)) + supplyPaid,
+        vat: Math.round(Number(prev?.vat || 0)) + vat,
+        kind: values?.kind || prev?.kind || ''
+      });
+    });
+
+    const regions = [...byKey.values()]
+      .map(rowMoney)
       .sort((a, b) => String(a.region).localeCompare(String(b.region), 'ko-KR'));
 
     return { settlements, regions };
@@ -350,12 +411,12 @@
     const weekHint = $('revenueRegionWeekHint');
     if (weekHint) {
       weekHint.textContent = settlements.length
-        ? `${formatWeekRange(state.weekStart)} · 붙여넣기 ${regions.length}곳 · 정산서 ${settlements.length}건(최종입금·선정산 조회)`
-        : `${formatWeekRange(state.weekStart)} · 붙여넣기 ${regions.length}곳 · 직계약 정산서가 없어 최종입금·선정산은 0원입니다.`;
+        ? `${formatWeekRange(state.weekStart)} · 정산서 ${settlements.length}건 · 지역 ${regions.length}곳`
+        : `${formatWeekRange(state.weekStart)} · 이 주에 올린 직계약 정산서가 없습니다.`;
     }
 
     if (!regions.length) {
-      body.innerHTML = '<tr><td colspan="7" class="empty">표시할 정산서가 없습니다. A열 정산서 이름 · B열 실지급액 · C열 부가세를 붙여넣으세요.</td></tr>';
+      body.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(formatWeekRange(state.weekStart))}에 올린 직계약 정산서가 없습니다.</td></tr>`;
       if (foot) foot.innerHTML = '';
       updateSummaryTotals([]);
       updateUnmatchedBanner([]);
@@ -523,10 +584,19 @@
         ]),
         timeout
       ]);
+      if (state.followLatestIfEmpty && !settlementsForWeek(state.weekStart).length) {
+        const latest = latestDirectSettlementWeek();
+        if (latest && latest !== state.weekStart) {
+          state.weekStart = latest;
+          state.lockedWeek = latest;
+          state.followLatestIfEmpty = false;
+          loadSavedDraft(state.weekStart);
+        }
+      }
       const count = settlementsForWeek(state.weekStart || weekStartKey()).length;
       setLoadStatus(count
         ? `정산서 ${count}건 불러옴 · ${formatWeekRange(state.weekStart)}`
-        : `정산서 없음 · ${formatWeekRange(state.weekStart)}`);
+        : `이 주 정산서 없음 · ${formatWeekRange(state.weekStart)}`);
     } catch (error) {
       console.warn('[revenue region settlement] load failed:', error);
       setLoadStatus('정산 데이터를 불러오지 못했습니다. 「불러오기」를 다시 눌러주세요.');
@@ -1632,14 +1702,28 @@
     if (!$('revenueRegionBody')) return;
     bindEvents();
 
-    if (!state.weekStart) state.weekStart = weekStartKey();
+    if (!state.weekStart) {
+      state.weekStart = weekStartKey();
+      state.followLatestIfEmpty = true;
+    }
     loadSavedDraft(state.weekStart);
     await loadSettlementData();
   }
 
   function setWeekStart(value) {
     collectDraftFromInputs();
-    state.weekStart = weekStartKey(value || today());
+    const next = weekStartKey(value || today());
+    const calendarWeek = weekStartKey();
+    if (state.lockedWeek && next === calendarWeek && state.lockedWeek !== calendarWeek) {
+      state.weekStart = state.lockedWeek;
+      state.followLatestIfEmpty = false;
+      loadSavedDraft(state.weekStart);
+      void loadSettlementData();
+      return;
+    }
+    if (next !== calendarWeek) state.lockedWeek = next;
+    state.followLatestIfEmpty = next === calendarWeek && !state.lockedWeek;
+    state.weekStart = next;
     loadSavedDraft(state.weekStart);
     void loadSettlementData();
   }
