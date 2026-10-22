@@ -11397,9 +11397,9 @@ body.driver-popup-open {
 }
 
 .revenue-region-stats.stats-grid {
-  grid-template-columns: 42px 220px repeat(6, minmax(140px, 1fr));
+  grid-template-columns: 42px 220px repeat(7, minmax(140px, 1fr));
   gap: 8px;
-  min-width: 1180px;
+  min-width: 1320px;
   margin-bottom: 8px;
   align-items: stretch;
 }
@@ -11411,7 +11411,7 @@ body.driver-popup-open {
 .revenue-region-table {
   table-layout: fixed;
   width: 100%;
-  min-width: 1180px;
+  min-width: 1320px;
 }
 
 .revenue-region-table col.revenue-region-col-check { width: 42px; }

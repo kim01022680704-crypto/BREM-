@@ -105,6 +105,25 @@
     return num > 0 ? `${formatMoney(num)} 남음` : `${formatMoney(Math.abs(num))} 초과`;
   }
 
+  // 소진율 = (최종입금 + 선정산) ÷ (실지급액 − 부가세) × 100
+  // 실지급액−부가세를 100%로 보고, 그 돈을 얼마나 썼는지·얼마나 넘겼는지 본다.
+  function usageRatio(supplyPaid, vat, finalDeposit, prepaid) {
+    const base = Math.round(Number(supplyPaid) || 0) - Math.round(Number(vat) || 0);
+    const used = Math.round(Number(finalDeposit) || 0) + Math.round(Number(prepaid) || 0);
+    if (base <= 0) return { base, used, ratio: null, over: 0 };
+    const ratio = used / base * 100;
+    return { base, used, ratio, over: ratio - 100 };
+  }
+
+  function formatUsage(usage) {
+    if (!usage || usage.ratio == null) return '-';
+    const pct = formatPercent(usage.ratio);
+    if (usage.over > 0.05) {
+      return `${pct}<br><span class="muted-inline">+${usage.over.toFixed(1)}%p 초과</span>`;
+    }
+    return pct;
+  }
+
   function escapeHtml(value) {
     return String(value ?? '')
       .replace(/&/g, '&amp;')
@@ -314,7 +333,8 @@
         taxFeePercent: state.taxFeePercent,
         finalDeposit: row.finalDeposit,
         prepaid: row.prepaid
-      })
+      }),
+      usage: usageRatio(row.supplyPaid, row.vat, row.finalDeposit, row.prepaid)
     };
   }
 
@@ -431,7 +451,8 @@
     return {
       ...summed,
       taxFee,
-      remain: summed.supplyPaid - taxFee - summed.finalDeposit - summed.prepaid
+      remain: summed.supplyPaid - taxFee - summed.finalDeposit - summed.prepaid,
+      usage: usageRatio(summed.supplyPaid, summed.vat, summed.finalDeposit, summed.prepaid)
     };
   }
 
@@ -470,7 +491,7 @@
     }
 
     if (!regions.length) {
-      body.innerHTML = `<tr><td colspan="8" class="empty">${escapeHtml(formatWeekRange(state.weekStart))}에 올린 직계약 정산서가 없습니다.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(formatWeekRange(state.weekStart))}에 올린 직계약 정산서가 없습니다.</td></tr>`;
       if (foot) foot.innerHTML = '';
       updateSummaryTotals([]);
       updateUnmatchedBanner([]);
@@ -512,7 +533,8 @@
       <td class="weekly-amount-cell" data-money="final">${formatMoney(row.finalDeposit)}</td>
       <td class="weekly-amount-cell" data-money="prepaid">${formatMoney(row.prepaid)}</td>
       <td class="weekly-amount-cell" data-money="tax">${formatMoney(row.taxFee)}</td>
-      <td class="weekly-amount-cell${row.remain < 0 ? ' revenue-region-overrun' : ''}" data-money="remain">${formatRemain(row.remain)}</td>`;
+      <td class="weekly-amount-cell${row.remain < 0 ? ' revenue-region-overrun' : ''}" data-money="remain">${formatRemain(row.remain)}</td>
+      <td class="weekly-amount-cell${row.usage && row.usage.over > 0 ? ' revenue-region-overrun' : ''}" data-money="usage">${formatUsage(row.usage)}</td>`;
   }
 
   function regionRowHtml(row, inGroup) {
@@ -551,6 +573,7 @@
         <td class="weekly-amount-cell" data-money="prepaid"><strong>${formatMoney(summary.prepaid)}</strong></td>
         <td class="weekly-amount-cell" data-money="tax"><strong>${formatMoney(summary.taxFee)}</strong></td>
         <td class="weekly-amount-cell${summary.remain < 0 ? ' revenue-region-overrun' : ''}" data-money="remain"><strong>${formatRemain(summary.remain)}</strong></td>
+        <td class="weekly-amount-cell${summary.usage && summary.usage.over > 0 ? ' revenue-region-overrun' : ''}" data-money="usage"><strong>${formatUsage(summary.usage)}</strong></td>
       </tr>`;
   }
 
@@ -566,6 +589,7 @@
         <td class="weekly-amount-cell"><strong>${formatMoney(totals.prepaid)}</strong></td>
         <td class="weekly-amount-cell"><strong>${formatMoney(totals.taxFee)}</strong></td>
         <td class="weekly-amount-cell${totals.remain < 0 ? ' revenue-region-overrun' : ''}"><strong>${formatRemain(totals.remain)}</strong></td>
+        <td class="weekly-amount-cell${totals.usage && totals.usage.over > 0 ? ' revenue-region-overrun' : ''}"><strong>${formatUsage(totals.usage)}</strong></td>
       </tr>`;
   }
 
@@ -616,6 +640,14 @@
     if (prepaidEl) prepaidEl.textContent = formatMoney(t.prepaid);
     const remainEl = $('revenueRegionRemainTotal');
     if (remainEl) remainEl.textContent = formatRemain(t.remain);
+    const usageEl = $('revenueRegionUsageTotal');
+    if (usageEl) {
+      const usage = t.usage || usageRatio(t.supplyPaid, t.vat, t.finalDeposit, t.prepaid);
+      usageEl.innerHTML = usage.ratio == null
+        ? '-'
+        : `${formatPercent(usage.ratio)}${usage.over > 0.05 ? ` <span class="muted-inline">+${usage.over.toFixed(1)}%p 초과</span>` : ''}`;
+      usageEl.classList.toggle('revenue-region-overrun', usage.over > 0);
+    }
   }
 
   function paintMoney(tr, row) {
@@ -623,16 +655,22 @@
     const prepaidCell = tr.querySelector('[data-money="prepaid"]');
     const taxCell = tr.querySelector('[data-money="tax"]');
     const remainCell = tr.querySelector('[data-money="remain"]');
+    const usageCell = tr.querySelector('[data-money="usage"]');
     const supplyCell = tr.querySelector('[data-money="supply"]');
     const vatCell = tr.querySelector('[data-money="vat"]');
+    const isGroup = tr.hasAttribute('data-group-row');
     if (supplyCell) supplyCell.innerHTML = `<strong>${formatMoney(row.supplyPaid)}</strong>`;
     if (vatCell) vatCell.innerHTML = `<strong>${formatMoney(row.vat)}</strong>`;
-    if (finalCell) finalCell.innerHTML = tr.hasAttribute('data-group-row') ? `<strong>${formatMoney(row.finalDeposit)}</strong>` : formatMoney(row.finalDeposit);
-    if (prepaidCell) prepaidCell.innerHTML = tr.hasAttribute('data-group-row') ? `<strong>${formatMoney(row.prepaid)}</strong>` : formatMoney(row.prepaid);
-    if (taxCell) taxCell.innerHTML = tr.hasAttribute('data-group-row') ? `<strong>${formatMoney(row.taxFee)}</strong>` : formatMoney(row.taxFee);
+    if (finalCell) finalCell.innerHTML = isGroup ? `<strong>${formatMoney(row.finalDeposit)}</strong>` : formatMoney(row.finalDeposit);
+    if (prepaidCell) prepaidCell.innerHTML = isGroup ? `<strong>${formatMoney(row.prepaid)}</strong>` : formatMoney(row.prepaid);
+    if (taxCell) taxCell.innerHTML = isGroup ? `<strong>${formatMoney(row.taxFee)}</strong>` : formatMoney(row.taxFee);
     if (remainCell) {
-      remainCell.innerHTML = tr.hasAttribute('data-group-row') ? `<strong>${formatRemain(row.remain)}</strong>` : formatRemain(row.remain);
+      remainCell.innerHTML = isGroup ? `<strong>${formatRemain(row.remain)}</strong>` : formatRemain(row.remain);
       remainCell.classList.toggle('revenue-region-overrun', row.remain < 0);
+    }
+    if (usageCell) {
+      usageCell.innerHTML = isGroup ? `<strong>${formatUsage(row.usage)}</strong>` : formatUsage(row.usage);
+      usageCell.classList.toggle('revenue-region-overrun', !!(row.usage && row.usage.over > 0));
     }
   }
 
@@ -1925,6 +1963,7 @@
     splitPasteLine,
     parseMoneyText,
     computeRemain,
+    usageRatio,
     summarizeBundle,
     clearAmounts,
     handlePaste,

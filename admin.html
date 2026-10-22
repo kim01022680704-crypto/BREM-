@@ -7645,6 +7645,10 @@
                   <span>남은 금액 합계</span>
                   <strong id="revenueRegionRemainTotal">-</strong>
                 </article>
+                <article class="stat-card stat-card--warning">
+                  <span>소진율 합계</span>
+                  <strong id="revenueRegionUsageTotal">-</strong>
+                </article>
               </div>
               <table class="data-table revenue-region-table">
                 <colgroup>
@@ -7655,6 +7659,7 @@
                   <col class="revenue-region-col-money">
                   <col class="revenue-region-col-money">
                   <col class="revenue-region-col-money">
+                  <col class="revenue-region-col-rate">
                   <col class="revenue-region-col-rate">
                 </colgroup>
                 <thead>
@@ -7667,6 +7672,7 @@
                     <th class="revenue-region-col-money">선정산<br><span class="muted-inline">(정산서)</span></th>
                     <th class="revenue-region-col-money">부가세 20%<br><span class="muted-inline">(C열×20%)</span></th>
                     <th class="revenue-region-col-rate">남은 금액<br><span class="muted-inline">(실지급−최종입금−선정산−부가세20%)</span></th>
+                    <th class="revenue-region-col-rate">소진율<br><span class="muted-inline">(최종입금+선정산)÷(실지급−부가세)</span></th>
                   </tr>
                 </thead>
                 <tbody id="revenueRegionBody"></tbody>
@@ -9726,7 +9732,7 @@
   <script src="js/admin-lease-menus.js?v=20260813g"></script>
   <script src="js/admin-rider-maintenance.js?v=20260924mt4"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-revenue-region-settlement.js?v=20261022regionpay6"></script>
+  <script src="js/admin-revenue-region-settlement.js?v=20261022regionpay7"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
   <script src="js/payroll-slip-utils.js?v=20260922payout1"></script>

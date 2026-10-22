@@ -314,12 +314,12 @@ const footCells = [...window.document.querySelectorAll('#revenueRegionFoot tr td
 
 check('본문 열 수 = 헤더 열 수', bodyCells.length, headCells.length);
 check('합계 열 수 = 헤더 열 수', footCells.length, headCells.length);
-check('열 수는 8개', headCells.length, 8);
+check('열 수는 9개', headCells.length, 9);
 
 const headText = headCells.map(th => th.textContent.replace(/\s+/g, ''));
 check('최종입금 열', headText.some(t => t.includes('최종입금')), 'true');
 check('선정산 열', headText.some(t => t.includes('선정산')), 'true');
-check('사용률 열은 없다', headText.some(t => t.includes('사용률')), 'false');
+check('소진율 열', headText.some(t => t.includes('소진율')), 'true');
 
 const bodyText = bodyCells.map(td => td.textContent.replace(/\s+/g, ''));
 check('세무처리비 740원', bodyText.includes('740원'), 'true');
@@ -477,6 +477,20 @@ const bundle = M.summarizeBundle([
 check('묶음 실지급은 세로 합', bundle.supplyPaid, 150);
 check('묶음 부가세 20%는 합계에 한 번', bundle.taxFee, 1);
 check('묶음 남은 금액은 합계 공식', bundle.remain, 132);
+
+console.log('\n[8] 소진율 (최종입금+선정산)÷(실지급−부가세)');
+// 실지급 100만, 부가세 10만 → 기준 90만. 최종+선정산 90만 → 정확히 100%
+const u100 = M.usageRatio(1000000, 100000, 850000, 50000);
+check('예시대로 100%', Math.round(u100.ratio), 100);
+check('초과 0%', Math.round(u100.over), 0);
+// 기준 90만을 넘겨 쓰면 초과율이 양수
+const uOver = M.usageRatio(1000000, 100000, 900000, 90000);
+check('99만÷90만 = 110%', Math.round(uOver.ratio), 110);
+check('초과율 +10%', Math.round(uOver.over), 10);
+// 실지급−부가세가 0 이하면 계산 불가(null)
+check('기준 0 이하면 null', M.usageRatio(100000, 100000, 50000, 0).ratio, null);
+// 묶음 합계에도 소진율이 붙는다
+check('묶음에도 소진율', bundle.usage && typeof bundle.usage.ratio === 'number', true);
 
 console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
 process.exit(failed ? 1 : 0);
