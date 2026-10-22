@@ -7559,7 +7559,7 @@
             <label class="revenue-region-tax-rate">
               세무처리비율 (%)
               <input type="number" id="revenueRegionTaxFeePercent" min="0" max="100" step="0.1" value="20">
-              <span class="form-help">부가세 × 이 비율 = 세무처리비 (기본 20%)</span>
+              <span class="form-help">C열 부가세 × 이 비율을 뺍니다. 기본 20%</span>
             </label>
           </div>
 
@@ -7567,8 +7567,8 @@
             <div class="card-header">
               <div>
                 <h2>지역별 정산</h2>
-                <p class="form-help">엑셀 A열 권역 · B열 실지급액 · C열 부가세를 붙여넣습니다. 쿠팡·배민 계산은 같고, 배민 정산서가 두 개면 같은 권역은 합산됩니다.</p>
-                <p class="form-help">남은 금액 = 실지급액 − 부가세×세무처리비율 − 최종입금(지역별) − 선정산(지역별)</p>
+                <p class="form-help">A열은 정산서 이름입니다. 그 이름으로 정산서를 찾아 최종입금·선정산을 붙입니다. B열은 배민·쿠팡에서 직접 받는 실지급액, C열은 부가세입니다. 배민은 같은 정산서 이름 두 줄이면 합칩니다.</p>
+                <p class="form-help">남은 금액 = 실지급액 − 최종입금 − 선정산 − 부가세×20%. 정산서에 없는 이름은 노란 줄로 남고, 지역을 고르면 최종입금·선정산이 붙습니다.</p>
                 <p class="form-help" id="revenueRegionWeekHint">-</p>
               </div>
               <div class="revenue-action-group">
@@ -7584,38 +7584,18 @@
             <div class="revenue-region-upload">
               <div class="revenue-region-upload-head">
                 <strong>엑셀 붙여넣기</strong>
-                <span class="form-help">A열 권역매칭 · B열 쿠팡/배민 실지급액 · C열 부가세. 같은 권역이 두 줄이면 합산합니다. 매칭이 안 되면 아래에서 지역을 고를 수 있습니다.</span>
+                <span class="form-help">A열 정산서 이름 · B열 실지급액 · C열 부가세. 같은 이름은 합산합니다. 정산서와 안 맞으면 본표 노란 줄에서 지역을 고릅니다.</span>
               </div>
               <div class="revenue-region-paste-kinds" role="radiogroup" aria-label="붙여넣기 구분">
                 <label><input type="radio" name="revenueRegionPasteKind" value="coupang" checked> 쿠팡</label>
                 <label><input type="radio" name="revenueRegionPasteKind" value="baemin"> 배민</label>
               </div>
-              <textarea id="revenueRegionPasteInput" class="revenue-region-paste-input" rows="6" placeholder="엑셀에서 A~C열을 복사해 붙여넣으세요.&#10;예) 울산_남구중앙	57685065	5353208"></textarea>
+              <textarea id="revenueRegionPasteInput" class="revenue-region-paste-input" rows="6" placeholder="엑셀에서 A~C열을 복사해 붙여넣으세요.&#10;A 정산서 이름  B 실지급액  C 부가세&#10;예) 울산_남구중앙	57685065	5353208"></textarea>
               <div class="revenue-region-upload-controls">
                 <button type="button" class="primary-btn" id="revenueRegionPasteBtn">붙여넣기</button>
-                <button type="button" class="small-btn" id="revenueRegionUploadClearBtn">미리보기 지우기</button>
               </div>
-              <p class="form-help" id="revenueRegionUploadStatus" aria-live="polite">엑셀 A~C열을 붙여넣으면 바로 표에 들어갑니다. 쉼표가 있는 숫자도 됩니다. 미매칭은 노란 줄로 남습니다.</p>
+              <p class="form-help" id="revenueRegionUploadStatus" aria-live="polite">A열 정산서 이름 · B열 실지급액 · C열 부가세를 붙여넣으면 바로 본표에 들어갑니다. 쉼표가 있는 숫자도 됩니다. 정산서와 안 맞으면 노란 줄로 남습니다.</p>
               <p class="revenue-region-unmatched-banner" id="revenueRegionUnmatchedBanner" hidden></p>
-              <div class="table-wrap revenue-region-preview-wrap" id="revenueRegionPreviewWrap" hidden>
-                <table class="data-table revenue-region-preview-table">
-                  <thead>
-                    <tr>
-                      <th>구분</th>
-                      <th>원본 권역</th>
-                      <th>반영할 지역</th>
-                      <th>실지급액</th>
-                      <th>부가세</th>
-                      <th>메모</th>
-                    </tr>
-                  </thead>
-                  <tbody id="revenueRegionPreviewBody"></tbody>
-                </table>
-              </div>
-              <div class="revenue-region-upload-actions" id="revenueRegionPreviewActions" hidden>
-                <button type="button" class="primary-btn" id="revenueRegionApplyUploadBtn">표에 반영</button>
-                <span class="form-help">매칭된 줄은 바로 합산되고, 미매칭만 남습니다. 지역을 고른 뒤 다시 반영하세요.</span>
-              </div>
               <details class="revenue-region-file-details">
                 <summary>정산서 파일로 넣기 (선택)</summary>
                 <div class="revenue-region-upload-controls">
@@ -7646,7 +7626,7 @@
                 <strong id="revenueRegionVatTotal">-</strong>
               </article>
               <article class="stat-card stat-card--warning">
-                <span>세무처리비 합계</span>
+                <span>부가세 20% 합계</span>
                 <strong id="revenueRegionTaxFeeTotal">-</strong>
               </article>
               <article class="stat-card">
@@ -7666,13 +7646,13 @@
               <table class="data-table revenue-region-table">
                 <thead>
                   <tr>
-                    <th class="revenue-region-col-region">지역</th>
-                    <th class="revenue-region-col-input">실지급액<br><span class="muted-inline">(붙여넣기 · 입력)</span></th>
-                    <th class="revenue-region-col-input">부가세<br><span class="muted-inline">(입력)</span></th>
-                    <th class="revenue-region-col-money">세무처리비<br><span class="muted-inline">(부가세×비율)</span></th>
-                    <th class="revenue-region-col-money">최종입금<br><span class="muted-inline">(지역별)</span></th>
-                    <th class="revenue-region-col-money">선정산<br><span class="muted-inline">(지역별)</span></th>
-                    <th class="revenue-region-col-rate">남은 금액<br><span class="muted-inline">(실지급액−세무처리비−최종입금−선정산)</span></th>
+                    <th class="revenue-region-col-region">정산서 이름</th>
+                    <th class="revenue-region-col-input">실지급액<br><span class="muted-inline">(배민·쿠팡 실수령)</span></th>
+                    <th class="revenue-region-col-input">부가세<br><span class="muted-inline">(C열)</span></th>
+                    <th class="revenue-region-col-money">최종입금<br><span class="muted-inline">(정산서)</span></th>
+                    <th class="revenue-region-col-money">선정산<br><span class="muted-inline">(정산서)</span></th>
+                    <th class="revenue-region-col-money">부가세 20%<br><span class="muted-inline">(C열×20%)</span></th>
+                    <th class="revenue-region-col-rate">남은 금액<br><span class="muted-inline">(실지급−최종입금−선정산−부가세20%)</span></th>
                   </tr>
                 </thead>
                 <tbody id="revenueRegionBody"></tbody>
@@ -9732,7 +9712,7 @@
   <script src="js/admin-lease-menus.js?v=20260813g"></script>
   <script src="js/admin-rider-maintenance.js?v=20260924mt4"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-revenue-region-settlement.js?v=20261013region2"></script>
+  <script src="js/admin-revenue-region-settlement.js?v=20261022regionpay1"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
   <script src="js/payroll-slip-utils.js?v=20260922payout1"></script>

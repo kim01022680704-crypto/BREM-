@@ -11589,6 +11589,15 @@ body.driver-popup-open {
   background: rgba(245, 185, 66, 0.08);
 }
 
+.revenue-region-table tr.revenue-region-unmatched td {
+  background: rgba(245, 185, 66, 0.08);
+}
+
+.revenue-region-table .revenue-region-fix {
+  margin-top: 6px;
+  min-width: 11rem;
+}
+
 .revenue-panel {
   margin-bottom: 18px;
 }

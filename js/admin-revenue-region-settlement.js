@@ -1,5 +1,6 @@
-// 수익 관리 · 지역별 정산 — 엑셀 A열 권역 · B열 실지급액 · C열 부가세를 붙여넣고
-// 남은 금액 = 실지급액 − 부가세×세무처리비율 − 최종입금(지역별) − 선정산(지역별) 로 본다.
+// 수익 관리 · 지역별 정산
+// A열 정산서 이름 → 정산서 지역과 매칭, B열 실지급액(배민·쿠팡에서 직접 받는 금액), C열 부가세
+// 남은 금액 = 실지급액 − 최종입금 − 선정산 − 부가세×20%
 (function () {
   const LOAD_TIMEOUT_MS = 20000;
 
@@ -80,7 +81,7 @@
     return `${value.toFixed(1)}%`;
   }
 
-  // 실지급액 − 부가세의 N% − 최종입금(지역별) − 선정산(지역별)
+  // 실지급액 − 최종입금 − 선정산 − 부가세의 N%(기본 20%)
   function computeRemain({
     supplyPaid = 0,
     vat = 0,
@@ -145,13 +146,13 @@
     document.querySelectorAll('[data-region-supply]').forEach(input => {
       const region = String(input.dataset.regionSupply || '').trim();
       if (!region) return;
-      if (!regions[region]) regions[region] = {};
+      if (!regions[region]) regions[region] = { supplyPaid: 0, vat: 0, source: region };
       regions[region].supplyPaid = parseMoneyText(input.value);
     });
     document.querySelectorAll('[data-region-vat]').forEach(input => {
       const region = String(input.dataset.regionVat || '').trim();
       if (!region) return;
-      if (!regions[region]) regions[region] = {};
+      if (!regions[region]) regions[region] = { supplyPaid: 0, vat: 0, source: region };
       regions[region].vat = parseMoneyText(input.value);
     });
     state.draftRegions = regions;
@@ -229,16 +230,12 @@
     };
   }
 
-  function aggregateRegions(weekStart) {
+  function buildPayoutLookup(settlements, weekKey) {
+    const byKey = new Map();
     const calc = Calc();
-    const normalized = weekStartKey(weekStart);
-    if (!calc || !normalized) return { settlements: [], regions: [] };
-
-    const settlements = settlementsForWeek(normalized);
-    const rowOptions = buildPayoutComputeOptions(settlements, normalized);
-    const byRegion = new Map();
-
-    settlements.forEach(settlement => {
+    if (!calc || !weekKey) return byKey;
+    const rowOptions = buildPayoutComputeOptions(settlements, weekKey);
+    (settlements || []).forEach(settlement => {
       let rows = [];
       try {
         rows = calc.computeRows(settlement, rowOptions) || [];
@@ -252,43 +249,71 @@
       }
       rows.forEach(row => {
         const region = canonicalRegionLabel(row.region || settlement.region) || '미지정';
-        const bucket = byRegion.get(region) || emptyRegionBucket(region);
+        const key = regionCompareKey(region);
+        if (!key) return;
+        const bucket = byKey.get(key) || emptyRegionBucket(region);
         const net = Math.round(Number(row.netPay || 0));
         if (net > 0) bucket.finalDeposit += net;
         bucket.prepaid += Math.round(Number(row.prepaid || 0));
         bucket.riderCount += 1;
-        byRegion.set(region, bucket);
+        byKey.set(key, bucket);
       });
     });
+    return byKey;
+  }
 
-    Object.entries(state.draftRegions || {}).forEach(([name, values]) => {
-      const region = canonicalRegionLabel(name) || name;
-      if (!region || byRegion.has(region)) return;
-      if (!Math.round(Number(values?.supplyPaid || 0)) && !Math.round(Number(values?.vat || 0))) return;
-      byRegion.set(region, emptyRegionBucket(region));
-    });
+  function payoutForRegion(lookup, region) {
+    const key = regionCompareKey(region);
+    if (key && lookup.has(key)) return lookup.get(key);
+    const names = [...lookup.values()].map(bucket => bucket.region);
+    const matched = matchRegionByLabel(region, names, Revenue()?.getRegionAliasMap?.() || {});
+    if (matched) {
+      const matchedKey = regionCompareKey(matched);
+      if (matchedKey && lookup.has(matchedKey)) return lookup.get(matchedKey);
+    }
+    return emptyRegionBucket(region);
+  }
 
-    const regions = [...byRegion.values()]
-      .map(bucket => {
-        const draft = draftForRegion(bucket.region);
-        const supplyPaid = draft.supplyPaid;
-        const vat = draft.vat;
+  function aggregateRegions(weekStart) {
+    const normalized = weekStartKey(weekStart);
+    const calc = Calc();
+    const settlements = calc && normalized ? settlementsForWeek(normalized) : [];
+    const lookup = calc && normalized ? buildPayoutLookup(settlements, normalized) : new Map();
+
+    const regions = Object.entries(state.draftRegions || {})
+      .map(([name, values]) => {
+        const unmatched = values?.unmatched === true;
+        const source = String(values?.source || name || '').trim();
+        const region = unmatched
+          ? (source || name)
+          : (canonicalRegionLabel(name) || name);
+        if (!region) return null;
+        const supplyPaid = Math.round(Number(values?.supplyPaid || 0));
+        const vat = Math.round(Number(values?.vat || 0));
+        if (!supplyPaid && !vat && !unmatched) return null;
+        const pay = unmatched ? emptyRegionBucket(region) : payoutForRegion(lookup, region);
         const taxFee = Math.round(vat * (state.taxFeePercent / 100));
-        const remain = computeRemain({
-          supplyPaid,
-          vat,
-          taxFeePercent: state.taxFeePercent,
-          finalDeposit: bucket.finalDeposit,
-          prepaid: bucket.prepaid
-        });
         return {
-          ...bucket,
+          region,
+          source,
+          unmatched,
+          riderCount: pay.riderCount,
+          finalDeposit: pay.finalDeposit,
+          prepaid: pay.prepaid,
           supplyPaid,
           vat,
           taxFee,
-          remain
+          remain: computeRemain({
+            supplyPaid,
+            vat,
+            taxFeePercent: state.taxFeePercent,
+            finalDeposit: pay.finalDeposit,
+            prepaid: pay.prepaid
+          }),
+          kind: values?.kind || ''
         };
       })
+      .filter(Boolean)
       .sort((a, b) => String(a.region).localeCompare(String(b.region), 'ko-KR'));
 
     return { settlements, regions };
@@ -325,30 +350,34 @@
     const weekHint = $('revenueRegionWeekHint');
     if (weekHint) {
       weekHint.textContent = settlements.length
-        ? `${formatWeekRange(state.weekStart)} · 직계약 정산서 ${settlements.length}건 · 권역 ${regions.length}곳`
-        : `${formatWeekRange(state.weekStart)} · 저장된 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요.`;
+        ? `${formatWeekRange(state.weekStart)} · 붙여넣기 ${regions.length}곳 · 정산서 ${settlements.length}건(최종입금·선정산 조회)`
+        : `${formatWeekRange(state.weekStart)} · 붙여넣기 ${regions.length}곳 · 직계약 정산서가 없어 최종입금·선정산은 0원입니다.`;
     }
 
     if (!regions.length) {
-      body.innerHTML = '<tr><td colspan="7" class="empty">표시할 지역이 없습니다. 엑셀 A~C열을 붙여넣거나 주정산서를 먼저 저장하세요.</td></tr>';
+      body.innerHTML = '<tr><td colspan="7" class="empty">표시할 정산서가 없습니다. A열 정산서 이름 · B열 실지급액 · C열 부가세를 붙여넣으세요.</td></tr>';
       if (foot) foot.innerHTML = '';
       updateSummaryTotals([]);
-      renderPreview();
+      updateUnmatchedBanner([]);
       return;
     }
 
     body.innerHTML = regions.map(row => `
-      <tr data-region-row="${escapeHtml(row.region)}">
-        <td class="revenue-region-col-region"><strong>${escapeHtml(row.region)}</strong><br><span class="muted-inline">${Number(row.riderCount || 0).toLocaleString('ko-KR')}명</span></td>
+      <tr class="${row.unmatched ? 'revenue-region-unmatched' : ''}" data-region-row="${escapeHtml(row.region)}">
+        <td class="revenue-region-col-region"><strong>${escapeHtml(row.region)}</strong>${
+          row.unmatched
+            ? `<br>${regionFixSelect(row)}<br><span class="muted-inline">미매칭</span>`
+            : `<br><span class="muted-inline">${Number(row.riderCount || 0).toLocaleString('ko-KR')}명</span>`
+        }</td>
         <td class="revenue-region-input-cell">
           <input type="text" inputmode="numeric" class="admin-period-input revenue-region-money-input" data-region-supply="${escapeHtml(row.region)}" value="${row.supplyPaid || ''}" placeholder="0">
         </td>
         <td class="revenue-region-input-cell">
           <input type="text" inputmode="numeric" class="admin-period-input revenue-region-money-input" data-region-vat="${escapeHtml(row.region)}" value="${row.vat || ''}" placeholder="0">
         </td>
-        <td class="weekly-amount-cell">${formatMoney(row.taxFee)}</td>
         <td class="weekly-amount-cell">${formatMoney(row.finalDeposit)}</td>
         <td class="weekly-amount-cell">${formatMoney(row.prepaid)}</td>
+        <td class="weekly-amount-cell">${formatMoney(row.taxFee)}</td>
         <td class="weekly-amount-cell${row.remain < 0 ? ' revenue-region-overrun' : ''}">${formatRemain(row.remain)}</td>
       </tr>
     `).join('');
@@ -376,15 +405,37 @@
           <td class="revenue-region-col-region"><strong>합계</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.supplyPaid)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.vat)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.taxFee)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.finalDeposit)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.prepaid)}</strong></td>
+          <td class="weekly-amount-cell"><strong>${formatMoney(totals.taxFee)}</strong></td>
           <td class="weekly-amount-cell${totals.remain < 0 ? ' revenue-region-overrun' : ''}"><strong>${formatRemain(totals.remain)}</strong></td>
         </tr>`;
     }
 
     updateSummaryTotals(regions, totals);
-    renderPreview();
+    updateUnmatchedBanner(regions);
+  }
+
+  function updateUnmatchedBanner(regions) {
+    const banner = $('revenueRegionUnmatchedBanner');
+    if (!banner) return;
+    const unmatched = (regions || []).filter(row => row.unmatched).length;
+    banner.hidden = unmatched === 0;
+    banner.textContent = unmatched
+      ? `미매칭 ${unmatched}건 — 노란 줄에서 지역을 고르면 최종입금·선정산이 붙습니다.`
+      : '';
+  }
+
+  function regionFixSelect(row) {
+    const names = [...new Set(settlementRegionNames())]
+      .sort((a, b) => String(a).localeCompare(String(b), 'ko-KR'));
+    if (!names.length) {
+      return '<span class="muted-inline">정산서 지역이 없어 최종입금·선정산을 붙일 수 없습니다</span>';
+    }
+    const options = ['<option value="">지역 선택</option>']
+      .concat(names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`))
+      .join('');
+    return `<select class="admin-period-input revenue-region-fix" data-region-fix="${escapeHtml(row.region)}">${options}</select>`;
   }
 
   function updateSummaryTotals(regions, totals = null) {
@@ -422,9 +473,9 @@
       const row = byName.get(tr.getAttribute('data-region-row') || '');
       if (!row) return;
       const cells = tr.querySelectorAll('td');
-      if (cells[3]) cells[3].textContent = formatMoney(row.taxFee);
-      if (cells[4]) cells[4].textContent = formatMoney(row.finalDeposit);
-      if (cells[5]) cells[5].textContent = formatMoney(row.prepaid);
+      if (cells[3]) cells[3].textContent = formatMoney(row.finalDeposit);
+      if (cells[4]) cells[4].textContent = formatMoney(row.prepaid);
+      if (cells[5]) cells[5].textContent = formatMoney(row.taxFee);
       if (cells[6]) {
         cells[6].textContent = formatRemain(row.remain);
         cells[6].classList.toggle('revenue-region-overrun', row.remain < 0);
@@ -446,9 +497,9 @@
           <td class="revenue-region-col-region"><strong>합계</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.supplyPaid)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.vat)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.taxFee)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.finalDeposit)}</strong></td>
           <td class="weekly-amount-cell"><strong>${formatMoney(totals.prepaid)}</strong></td>
+          <td class="weekly-amount-cell"><strong>${formatMoney(totals.taxFee)}</strong></td>
           <td class="weekly-amount-cell${totals.remain < 0 ? ' revenue-region-overrun' : ''}"><strong>${formatRemain(totals.remain)}</strong></td>
         </tr>`;
     }
@@ -528,14 +579,18 @@
     return (Array.isArray(row) ? row : []).map(cell => String(cell ?? '')).join(' ');
   }
 
-  // 시도 접두사(울산_ 경남_)와 (Z) 같은 꼬리표를 떼고 비교용 키를 만든다.
+  // 시도 접두사(울산_ 경남_)는 떼고, (Z)는 남겨 포항중앙과 포항중앙(Z)를 구분한다.
   function normalizeRegionKey(value) {
-    return String(value || '')
+    const raw = String(value || '');
+    const isZ = /\(\s*z\s*\)/i.test(raw);
+    const key = raw
+      .replace(/\(\s*z\s*\)/gi, '')
       .replace(/\([^)]*\)/g, '')
       .replace(/^[가-힣]{2}[_\-\s]/, '')
       .replace(/[\s_\-·.]/g, '')
       .toLowerCase()
       .trim();
+    return key ? (isZ ? `${key}z` : key) : '';
   }
 
   // 119·이글스 회사명과 DP 코드를 떼고 권역만 남긴다.
@@ -581,19 +636,36 @@
   function migrateDraftRegionKeys(regions) {
     const out = {};
     Object.entries(regions || {}).forEach(([name, values]) => {
-      const canon = canonicalRegionLabel(name) || name;
-      if (!out[canon]) out[canon] = { supplyPaid: 0, vat: 0 };
+      const unmatched = values?.unmatched === true;
+      const source = String(values?.source || name || '').trim();
+      const canon = unmatched
+        ? (source || name)
+        : (canonicalRegionLabel(name) || name);
+      if (!canon) return;
+      if (!out[canon]) {
+        out[canon] = {
+          supplyPaid: 0,
+          vat: 0,
+          source: source || canon,
+          unmatched,
+          kind: values?.kind || ''
+        };
+      }
       out[canon].supplyPaid += parseMoneyText(values?.supplyPaid);
       out[canon].vat += parseMoneyText(values?.vat);
+      if (values?.kind && !out[canon].kind) out[canon].kind = values.kind;
+      if (source) out[canon].source = source;
+      if (unmatched) out[canon].unmatched = true;
     });
     return out;
   }
 
-  function availableRegionNames() {
+  function sameRegionZFlag(leftKey, rightKey) {
+    return /z$/.test(String(leftKey || '')) === /z$/.test(String(rightKey || ''));
+  }
+
+  function settlementRegionNames() {
     const names = new Set();
-    (state.rows || []).forEach(row => {
-      if (row?.region) names.add(row.region);
-    });
     const addSettlementName = record => {
       const raw = String(record?.region || '').trim();
       if (raw) names.add(raw);
@@ -602,11 +674,41 @@
     };
     settlementsForWeek(state.weekStart || weekStartKey()).forEach(addSettlementName);
     (window.BremStorage?.weeklySettlements?.getAll?.('direct') || []).forEach(addSettlementName);
-    Object.keys(state.draftRegions || {}).forEach(name => {
-      const label = canonicalRegionLabel(name) || name;
-      if (label) names.add(label);
-    });
     return [...names];
+  }
+
+  function availableRegionNames() {
+    return settlementRegionNames();
+  }
+
+  // 정산서 이름과 엑셀 A열을 같은 키로 본다.
+  // 표준·경남·경북·필드는 표기 차이이고, 청원성산은 창원성산과 같다.
+  function foldRegionKey(value) {
+    const key = regionCompareKey(value) || normalizeRegionKey(value);
+    return String(key || '')
+      .replace(/표준/g, '')
+      .replace(/필드/g, '')
+      .replace(/경남/g, '')
+      .replace(/경북/g, '')
+      .replace(/청원성산/g, '창원성산');
+  }
+
+  function regionBaseKey(key) {
+    return String(key || '').replace(/z$/, '');
+  }
+
+  // 같은 권역이 긴 회사명·짧은 이름·표준 이름으로 여러 개면 표준 이름을 고른다.
+  function pickRegionHit(hits) {
+    const byKey = new Map();
+    (hits || []).forEach(name => {
+      const nk = regionCompareKey(name) || normalizeRegionKey(name);
+      if (!nk || byKey.has(nk)) return;
+      byKey.set(nk, canonicalRegionLabel(name) || name);
+    });
+    const labels = [...byKey.values()];
+    if (labels.length === 1) return labels[0];
+    const standard = labels.filter(name => String(name).includes('표준'));
+    return standard.length === 1 ? standard[0] : '';
   }
 
   function matchRegionByLabel(label, regionNames, aliasMap) {
@@ -615,16 +717,29 @@
     if (aliasMap[raw]) return aliasMap[raw];
     const key = regionCompareKey(raw) || normalizeRegionKey(raw);
     if (!key) return '';
-    const exact = regionNames.find(name => {
+    const folded = foldRegionKey(raw);
+    const sameZ = name => sameRegionZFlag(key, regionCompareKey(name) || normalizeRegionKey(name));
+    const foldedHits = regionNames.filter(name => {
+      if (!sameZ(name)) return false;
       const nk = regionCompareKey(name) || normalizeRegionKey(name);
-      return nk === key;
+      if (nk && nk === key) return true;
+      const fk = foldRegionKey(name);
+      return !!(folded && fk && fk === folded);
     });
-    if (exact) return exact;
+    const foldedPick = pickRegionHit(foldedHits);
+    if (foldedPick) return foldedPick;
     const partial = regionNames.filter(name => {
       const nk = regionCompareKey(name) || normalizeRegionKey(name);
-      return nk && (nk.includes(key) || key.includes(nk));
+      if (!nk || !sameZ(name)) return false;
+      return nk.includes(key) || key.includes(nk);
     });
-    return partial.length === 1 ? partial[0] : '';
+    const partialPick = pickRegionHit(partial);
+    if (partialPick) return partialPick;
+    // (Z) 표기만 다르고 정산서가 하나뿐이면 그 정산서에 붙인다.
+    // 일반·(Z)가 둘 다 있으면 붙이지 않는다.
+    const base = regionBaseKey(folded || key);
+    const zLoose = regionNames.filter(name => regionBaseKey(foldRegionKey(name)) === base);
+    return pickRegionHit(zLoose);
   }
 
   function parseBaeminUploadMeta(fileName) {
@@ -669,7 +784,8 @@
     );
     const hit = sorted.find(name => {
       const nk = regionCompareKey(name) || normalizeRegionKey(name);
-      return nk && (key.includes(nk) || normalizeRegionKey(base).includes(nk));
+      if (!nk || !sameRegionZFlag(key, nk)) return false;
+      return key.includes(nk) || normalizeRegionKey(base).includes(nk);
     });
     return hit || matchRegionByLabel(base, regionNames, aliasMap);
   }
@@ -744,7 +860,7 @@
 
   function isPasteHeaderRow(source, supplyRaw, vatRaw) {
     const joined = `${source} ${supplyRaw} ${vatRaw}`;
-    if (!/권역|지역|매칭|실지급|부가세|공급대가|vat/i.test(joined)) return false;
+    if (!/권역|지역|매칭|정산서|실지급|부가세|공급대가|vat/i.test(joined)) return false;
     return !String(supplyRaw ?? '').replace(/[^\d.\-]/g, '');
   }
 
@@ -834,19 +950,90 @@
   }
 
   function rematchDraftToSettlements() {
-    const names = availableRegionNames();
+    const names = settlementRegionNames();
     const aliases = Revenue()?.getRegionAliasMap?.() || {};
     const next = {};
     Object.entries(state.draftRegions || {}).forEach(([name, values]) => {
-      const region = matchRegionByLabel(name, names, aliases)
-        || canonicalRegionLabel(name)
+      const matched = matchRegionByLabel(name, names, aliases)
+        || matchRegionByLabel(values?.source, names, aliases);
+      const region = matched
+        || canonicalRegionLabel(values?.source || name)
         || name;
       if (!region) return;
-      if (!next[region]) next[region] = { supplyPaid: 0, vat: 0 };
+      if (!next[region]) {
+        next[region] = {
+          supplyPaid: 0,
+          vat: 0,
+          source: values?.source || name,
+          unmatched: !matched,
+          kind: values?.kind || ''
+        };
+      }
       next[region].supplyPaid += parseMoneyText(values?.supplyPaid);
       next[region].vat += parseMoneyText(values?.vat);
+      if (matched) next[region].unmatched = false;
+      else next[region].unmatched = true;
+      if (values?.kind && !next[region].kind) next[region].kind = values.kind;
     });
     state.draftRegions = next;
+  }
+
+  function findDraftKey(label, { unmatched = false, source = '' } = {}) {
+    if (state.draftRegions[label]) return label;
+    if (unmatched) {
+      const bySource = Object.keys(state.draftRegions).find(name => {
+        const row = state.draftRegions[name];
+        return row?.unmatched && (name === label || row.source === (source || label));
+      });
+      return bySource || label;
+    }
+    const key = regionCompareKey(label);
+    if (!key) return label;
+    return Object.keys(state.draftRegions).find(name => regionCompareKey(name) === key) || label;
+  }
+
+  function addRowsToDraft(rows, { add = true } = {}) {
+    collectDraftFromInputs();
+    const aliases = {};
+    (rows || []).forEach(row => {
+      const unmatched = !!row.unmatched;
+      const label = String(row.region || row.source || '').trim();
+      if (!label) return;
+      const key = findDraftKey(label, { unmatched, source: row.source || label });
+      const prev = state.draftRegions[key] || { supplyPaid: 0, vat: 0 };
+      const supply = Math.round(Number(row.supplyPaid || 0));
+      const vat = Math.round(Number(row.vat || 0));
+      state.draftRegions[key] = {
+        supplyPaid: add ? Math.round(Number(prev.supplyPaid || 0)) + supply : supply,
+        vat: add ? Math.round(Number(prev.vat || 0)) + vat : vat,
+        source: row.source || prev.source || label,
+        unmatched: unmatched && prev.unmatched !== false,
+        kind: row.kind || prev.kind || ''
+      };
+      if (!unmatched && row.source) aliases[row.source] = key;
+    });
+    if (Object.keys(aliases).length) Revenue()?.saveRegionAliases?.(aliases);
+  }
+
+  function applyRegionFix(fromName, toRegion) {
+    collectDraftFromInputs();
+    const from = state.draftRegions[fromName];
+    const region = String(toRegion || '').trim();
+    if (!from || !region) return;
+    const aliases = {};
+    if (from.source) aliases[from.source] = region;
+    const prev = state.draftRegions[region] || { supplyPaid: 0, vat: 0 };
+    state.draftRegions[region] = {
+      supplyPaid: Math.round(Number(prev.supplyPaid || 0)) + Math.round(Number(from.supplyPaid || 0)),
+      vat: Math.round(Number(prev.vat || 0)) + Math.round(Number(from.vat || 0)),
+      source: from.source || region,
+      unmatched: false,
+      kind: from.kind || prev.kind || ''
+    };
+    if (fromName !== region) delete state.draftRegions[fromName];
+    Revenue()?.saveRegionAliases?.(aliases);
+    render();
+    saveDraft({ silent: true });
   }
 
   function handlePaste(rawText) {
@@ -861,16 +1048,21 @@
       showToast('A열 권역 · B열 실지급액 · C열 부가세를 붙여넣어 주세요.');
       return false;
     }
-    state.uploadRows = groupPasteRows(matchIncomingRows((state.uploadRows || []).concat(parsed)));
-    const unmatched = state.uploadRows.filter(row => row.unmatched || !availableRegionNames().includes(row.region)).length;
-    const matched = state.uploadRows.length - unmatched;
+    const incoming = groupPasteRows(matchIncomingRows(parsed));
+    addRowsToDraft(incoming, { add: true });
+    const unmatched = incoming.filter(row => row.unmatched).length;
+    const matched = incoming.length - unmatched;
     setUploadStatus(
       unmatched
-        ? `매칭 ${matched}건 · 이름 다른 ${unmatched}건은 권역명 그대로 표에 넣었습니다.`
-        : `매칭 ${matched}건 · 표에 합산합니다.`
+        ? `붙여넣기 ${incoming.length}건 · 매칭 ${matched}건 · 미매칭 ${unmatched}건은 표에서 지역을 고르세요.`
+        : `붙여넣기 ${incoming.length}건 · 표에 합산했습니다.`
     );
-    applyPreview({ mode: 'add' });
     if (input) input.value = '';
+    render();
+    saveDraft({ silent: true });
+    showToast(unmatched
+      ? `${incoming.length}건 반영 · 미매칭 ${unmatched}건은 표에서 지역을 고르세요.`
+      : `${incoming.length}건을 표에 합산했습니다.`);
     return true;
   }
 
@@ -1067,10 +1259,6 @@
 
   async function handleCoupangUpload(file) {
     if (!file) return;
-    if (!availableRegionNames().length) {
-      showToast('먼저 정산주를 선택해 지역 목록을 불러오세요.');
-      return;
-    }
     setUploadStatus(`쿠팡 정산서 읽는 중… (${file.name})`);
     try {
       const rows = await readSheetRows(file, uploadPassword(), {
@@ -1082,20 +1270,23 @@
         setUploadStatus('쿠팡 정산서에서 지역구 표를 찾지 못했습니다. C열 지역구 · G열 부가세 · J열 실지급액 형식인지 확인하세요.');
         return;
       }
-      const regionNames = availableRegionNames();
-      const aliasMap = Revenue()?.getRegionAliasMap?.() || {};
-      const rowsForPreview = parsed.map(item => ({
+      const incoming = groupPasteRows(matchIncomingRows(parsed.map(item => ({
         kind: 'coupang',
         fileName: file.name,
         source: item.source,
-        region: matchRegionByLabel(item.source, regionNames, aliasMap),
         supplyPaid: item.supplyPaid,
         vat: item.vat,
         note: item.note
-      }));
-      mergePreviewRows(rowsForPreview);
-      const matched = rowsForPreview.filter(row => row.region).length;
-      setUploadStatus(`쿠팡 ${parsed.length}개 지역 읽음 · 자동 매칭 ${matched}개. 매칭 안 된 줄은 「반영할 지역」에서 골라주세요.`);
+      }))));
+      addRowsToDraft(incoming, { add: true });
+      const unmatched = incoming.filter(row => row.unmatched).length;
+      setUploadStatus(
+        unmatched
+          ? `쿠팡 ${incoming.length}곳 반영 · 미매칭 ${unmatched}건은 표에서 지역을 고르세요.`
+          : `쿠팡 ${incoming.length}곳을 표에 합산했습니다.`
+      );
+      render();
+      saveDraft({ silent: true });
     } catch (error) {
       console.warn('[revenue region settlement] coupang upload failed:', error);
       setUploadStatus(uploadErrorMessage(error));
@@ -1106,13 +1297,7 @@
   async function handleBaeminUpload(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
-    if (!availableRegionNames().length) {
-      showToast('먼저 정산주를 선택해 지역 목록을 불러오세요.');
-      return;
-    }
     setUploadStatus(`배민 정산서 ${files.length}개 읽는 중…`);
-    const regionNames = availableRegionNames();
-    const aliasMap = Revenue()?.getRegionAliasMap?.() || {};
     const collected = [];
     const failed = [];
 
@@ -1143,7 +1328,6 @@
           kind: 'baemin',
           fileName: file.name,
           source: file.name.replace(/\.[^.]+$/, ''),
-          region: matchRegionByFileName(file.name, regionNames, aliasMap),
           supplyPaid: parsed.supplyPaid,
           vat: parsed.vat,
           note: parsed.note
@@ -1155,21 +1339,20 @@
     }
 
     if (collected.length) {
-      collected.forEach(row => {
-        const at = state.baeminRaw.findIndex(item => item.fileName === row.fileName);
-        if (at >= 0) state.baeminRaw[at] = row;
-        else state.baeminRaw.push(row);
-      });
-      syncUploadRowsFromRaw();
+      const incoming = groupPasteRows(matchIncomingRows(groupBaeminUploadRows(collected)));
+      addRowsToDraft(incoming, { add: true });
+      const unmatched = incoming.filter(row => row.unmatched).length;
+      const splitCount = incoming.filter(row => (row.fileNames || []).length > 1).length;
+      const parts = [`배민 ${collected.length}개 파일 → ${incoming.length}곳 반영`];
+      if (splitCount) parts.push(`파일 합산 ${splitCount}곳`);
+      if (unmatched) parts.push(`미매칭 ${unmatched}건은 표에서 지역을 고르세요`);
+      if (failed.length) parts.push(`실패 ${failed.length}건: ${failed.join(' / ')}`);
+      setUploadStatus(parts.join(' · '));
+      render();
+      saveDraft({ silent: true });
+      return;
     }
-    const grouped = groupBaeminUploadRows(collected);
-    const matched = grouped.filter(row => row.region).length;
-    const splitCount = grouped.filter(row => (row.fileNames || []).length > 1).length;
-    const parts = [`배민 ${collected.length}개 파일 → ${grouped.length}개 지역`];
-    if (splitCount) parts.push(`파일 합산 ${splitCount}곳`);
-    parts.push(`자동 매칭 ${matched}개`);
-    if (failed.length) parts.push(`실패 ${failed.length}건: ${failed.join(' / ')}`);
-    setUploadStatus(parts.join(' · '));
+    setUploadStatus(failed.length ? `실패 ${failed.length}건: ${failed.join(' / ')}` : '배민 정산서에서 숫자를 찾지 못했습니다.');
   }
 
   function mergePreviewRows(rows) {
@@ -1250,61 +1433,14 @@
   }
 
   function applyPreview(options = {}) {
-    if (!state.uploadRows.length) return;
-    collectDraftFromInputs();
-    const add = options.mode !== 'replace';
-
-    const merged = {};
-    const aliases = {};
-    const leftover = [];
-    state.uploadRows.forEach(row => {
-      if (!row.region) {
-        leftover.push(row);
-        return;
-      }
-      if (!merged[row.region]) merged[row.region] = { supplyPaid: 0, vat: 0 };
-      merged[row.region].supplyPaid += Math.round(Number(row.supplyPaid || 0));
-      merged[row.region].vat += Math.round(Number(row.vat || 0));
-      if (row.source) aliases[row.source] = row.region;
-      (row.fileNames || [row.fileName]).forEach(name => {
-        if (name) aliases[String(name).replace(/\.[^.]+$/, '')] = row.region;
-      });
-    });
-
-    const appliedRegions = Object.keys(merged).length;
-    if (!appliedRegions) {
-      renderPreview();
-      showToast('매칭된 줄이 없습니다. 미매칭 줄에서 지역을 고르세요.');
-      return;
-    }
-
-    Object.entries(merged).forEach(([region, values]) => {
-      const prev = state.draftRegions[region] || {};
-      state.draftRegions[region] = add
-        ? {
-          ...prev,
-          supplyPaid: Math.round(Number(prev.supplyPaid || 0)) + values.supplyPaid,
-          vat: Math.round(Number(prev.vat || 0)) + values.vat
-        }
-        : { ...prev, ...values };
-    });
-    Revenue()?.saveRegionAliases?.(aliases);
-
-    const leftoverNames = new Set();
-    leftover.forEach(row => {
-      (row.fileNames || String(row.fileName || '').split(/\s*\+\s*/))
-        .map(name => String(name || '').trim())
-        .filter(Boolean)
-        .forEach(name => leftoverNames.add(name));
-    });
-    state.baeminRaw = state.baeminRaw.filter(row => leftoverNames.has(row.fileName));
-    state.uploadRows = leftover;
+    const incoming = groupPasteRows(matchIncomingRows(state.uploadRows || []));
+    if (!incoming.length) return;
+    addRowsToDraft(incoming, { add: options.mode !== 'replace' });
+    state.uploadRows = [];
+    state.baeminRaw = [];
     render();
     saveDraft({ silent: true });
-
-    const tail = leftover.length ? ` · 매칭 안 된 ${leftover.length}건은 아래에서 지역을 고르세요.` : '';
-    setUploadStatus(`${appliedRegions}개 지역 반영·저장 완료.${tail}`);
-    showToast(`${appliedRegions}개 지역 반영·저장 완료${leftover.length ? ` · 미매칭 ${leftover.length}건 남음` : ''}`);
+    setUploadStatus(`${incoming.length}곳을 표에 합산했습니다.`);
   }
 
   function exportExcel() {
@@ -1323,11 +1459,11 @@
     const rows = [
       ['지역별 정산', formatWeekRange(weekStart)],
       ['세무처리비율(%)', state.taxFeePercent],
-      ['계산', '실지급액 - 부가세×비율 - 최종입금(지역별) - 선정산(지역별)'],
+      ['계산', '실지급액 - 최종입금 - 선정산 - 부가세×비율'],
       [],
       [
-        '지역', '기사수', '실지급액', '부가세', '세무처리비',
-        '최종입금', '선정산', '남은 금액'
+        '정산서 이름', '기사수', '실지급액', '부가세',
+        '최종입금', '선정산', '부가세 20%', '남은 금액'
       ]
     ];
     regions.forEach(row => {
@@ -1336,9 +1472,9 @@
         row.riderCount,
         row.supplyPaid,
         row.vat,
-        row.taxFee,
         row.finalDeposit,
         row.prepaid,
+        row.taxFee,
         row.remain
       ]);
     });
@@ -1386,12 +1522,10 @@
         showToast('지울 실지급액·부가세가 없습니다.');
         return;
       }
-      if (!window.confirm('이 주의 실지급액·부가세 입력을 모두 지울까요?')) return;
-      Object.keys(state.draftRegions).forEach(region => {
-        state.draftRegions[region] = { supplyPaid: 0, vat: 0 };
-      });
+      if (!window.confirm('이 주의 붙여넣기 표(실지급액·부가세)를 모두 지울까요?')) return;
+      state.draftRegions = {};
       saveDraft({ silent: true });
-      showToast('실지급액·부가세 입력을 비웠습니다.');
+      showToast('붙여넣기 표를 비웠습니다.');
     });
 
     $('revenueRegionBody')?.addEventListener('paste', event => {
@@ -1410,6 +1544,11 @@
       refreshCalculated();
     });
     $('revenueRegionBody')?.addEventListener('change', event => {
+      const fix = event.target.closest('[data-region-fix]');
+      if (fix) {
+        applyRegionFix(fix.getAttribute('data-region-fix') || '', fix.value);
+        return;
+      }
       if (!event.target.matches('[data-region-supply], [data-region-vat]')) return;
       const parsed = parseMoneyText(event.target.value);
       event.target.value = parsed ? String(parsed) : '';
@@ -1526,6 +1665,9 @@
     parseMoneyText,
     computeRemain,
     handlePaste,
+    addRowsToDraft,
+    applyRegionFix,
+    rematchDraftToSettlements,
     applyPreview
   };
 })();

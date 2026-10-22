@@ -4,7 +4,7 @@
  * 확인 항목
  *  - 쿠팡 정산서: C열 지역구 · G열 부가세 · J열 실지급액을 지역별로 읽는지
  *  - 배민 정산서: C31 부가세액 · D31 공급대가 − (I열 고용보험 + J열 산재보험)
- *  - 지역명 매칭: 울산_/경남_ 접두사와 (Z) 꼬리표를 무시하고 ERP 지역명에 붙는지
+ *  - 지역명 매칭: 울산_/경남_ 접두사는 무시하고, (Z)는 포항중앙과 포항중앙(Z)를 구분
  *  - 엑셀 붙여넣기 A/B/C · 배민 같은 권역 합산 · 미매칭
  *  - 남은 금액 = 실지급액 − 부가세×20% − 최종입금 − 선정산
  */
@@ -144,25 +144,44 @@ check('헤더 없어도 D31 폴백', fallback.supplyTotal, 8070700);
 check('헤더 없어도 C31 폴백', fallback.vat, 733700);
 
 // --- 지역 매칭 --------------------------------------------------------------
-console.log('\n[3] 지역명 매칭 (접두사·(Z) 무시)');
-const REGIONS = ['남구중앙', '동구중앙(Z)', '양산동부(Z)', '북구남부', '북구중앙', '창원성산'];
+console.log('\n[3] 지역명 매칭 (접두사 무시 · (Z) 구분)');
+const REGIONS = ['남구중앙', '동구중앙(Z)', '양산동부(Z)', '북구남부', '북구중앙', '창원성산', '포항중앙', '포항중앙(Z)'];
 check('울산_남구중앙 → 남구중앙', M.matchRegionByLabel('울산_남구중앙', REGIONS, {}), '남구중앙');
 check('경남_양산동부(Z) → 양산동부(Z)', M.matchRegionByLabel('경남_양산동부(Z)', REGIONS, {}), '양산동부(Z)');
 check('울산_동구중앙(Z) → 동구중앙(Z)', M.matchRegionByLabel('울산_동구중앙(Z)', REGIONS, {}), '동구중앙(Z)');
 check('없는 지역은 빈값', M.matchRegionByLabel('울산_남구서부(Z)', REGIONS, {}), '');
 check('별칭이 있으면 우선', M.matchRegionByLabel('울산_남구서부(Z)', REGIONS, { '울산_남구서부(Z)': '북구남부' }), '북구남부');
+check('포항중앙은 일반만', M.matchRegionByLabel('포항중앙', REGIONS, {}), '포항중앙');
+check('포항중앙(Z)는 Z만', M.matchRegionByLabel('포항중앙(Z)', REGIONS, {}), '포항중앙(Z)');
+check('울산_포항중앙은 일반만', M.matchRegionByLabel('울산_포항중앙', REGIONS, {}), '포항중앙');
+check('울산_동구중앙은 Z만 있으면 그 정산서', M.matchRegionByLabel('울산_동구중앙', REGIONS, {}), '동구중앙(Z)');
+const BOTH_Z = ['북구남부', '북구남부(Z)'];
+check('일반·Z가 둘이면 Z 없는 붙여넣기는 일반', M.matchRegionByLabel('울산_북구남부', BOTH_Z, {}), '북구남부');
+check('Z를 적은 붙여넣기는 Z 정산서', M.matchRegionByLabel('울산_북구남부(Z)', BOTH_Z, {}), '북구남부(Z)');
+const BAEMIN = ['표준경북포항북A', '표준경북포항남B', '표준경남창원성산A', '표준경남양산A', '표준경남양산B', '표준울산중필드A', '표준울산울주A', '표준울산북필드B', '표준울산북필드A', '표준울산동A', '표준울산남A'];
+check('포항북A → 표준경북포항북A', M.matchRegionByLabel('포항북A', BAEMIN, {}), '표준경북포항북A');
+check('청원성산A → 창원성산', M.matchRegionByLabel('청원성산A', BAEMIN, {}), '표준경남창원성산A');
+check('울산중A → 중필드A', M.matchRegionByLabel('울산중A', BAEMIN, {}), '표준울산중필드A');
+check('울산북B → 북필드B', M.matchRegionByLabel('울산북B', BAEMIN, {}), '표준울산북필드B');
+check('울산북A는 북필드B와 안 붙음', M.matchRegionByLabel('울산북A', BAEMIN, {}), '표준울산북필드A');
+check('양산A → 양산A', M.matchRegionByLabel('양산A', BAEMIN, {}), '표준경남양산A');
+check('울산남A → 남A', M.matchRegionByLabel('울산남A', BAEMIN, {}), '표준울산남A');
+const LEGACY = ['울산동a', '표준울산동A', '주식회사 119컴퍼니_표준울산동A주식회사119컴퍼니_DP2608316054', '창원성산', '표준경남창원성산A'];
+check('울산동A는 예전 짧은 이름보다 표준', M.matchRegionByLabel('울산동A', LEGACY, {}), '표준울산동A');
+check('청원성산A는 쿠팡 창원성산과 안 붙음', M.matchRegionByLabel('청원성산A', LEGACY, {}), '표준경남창원성산A');
+check('일반과 (Z) 키는 다름', M.normalizeRegionKey('포항중앙') === M.normalizeRegionKey('포항중앙(Z)'), 'false');
 
 console.log('\n[4] 배민 파일명 매칭');
 check('파일명 안의 지역 추출', M.matchRegionByFileName('2026년8월3주차_정산서_북구남부.xlsx', REGIONS, {}), '북구남부');
 check('공백·하이픈 섞여도 매칭', M.matchRegionByFileName('배민 정산서 - 창원성산 (8월3주).xlsx', REGIONS, {}), '창원성산');
 check('매칭 없으면 빈값', M.matchRegionByFileName('정산서_미지정지역.xlsx', REGIONS, {}), '');
 const dpRegions = ['배달 이글스_표준울산북필드B배달이글스_DP2607217024', '배달 이글스_표준울산남A배달이글스_DP2607289309'];
-check('주정산 파일명 → DP 지역',
+check('주정산 파일명 → 표준 권역',
   M.matchRegionByFileName('20260826~20260831_배달 이글스_표준울산북필드B배달이글스_DP2607217024.xlsx', dpRegions, {}),
-  '배달 이글스_표준울산북필드B배달이글스_DP2607217024');
-check('화요일 분할 파일도 같은 지역',
+  '표준울산북필드B');
+check('화요일 분할 파일도 같은 권역',
   M.matchRegionByFileName('20260901~20260901_배달 이글스_표준울산북필드B배달이글스_DP2607217024.xlsx', dpRegions, {}),
-  '배달 이글스_표준울산북필드B배달이글스_DP2607217024');
+  '표준울산북필드B');
 
 console.log('\n[4c] 119·이글스 같은 권역으로 합치기');
 check('권역만 남김',
@@ -336,8 +355,16 @@ window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
   regions: {}
 });
 M.setWeekStart('2026-08-19');
+check('정산서만 있으면 표는 비어 있음', M.aggregateRegions('2026-08-19').regions.length, 0);
+
+window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
+  weekStart: '2026-08-19',
+  taxFeePercent: 20,
+  regions: { 표준울산남A: { supplyPaid: 1000, vat: 100 } }
+});
+M.setWeekStart('2026-08-19');
 const mergedRegions = M.aggregateRegions('2026-08-19').regions;
-check('같은 권역은 1줄', mergedRegions.length, 1);
+check('붙여넣은 권역만 1줄', mergedRegions.length, 1);
 check('권역명은 표준울산남A', mergedRegions[0]?.region, '표준울산남A');
 check('최종입금은 두 정산서 합', mergedRegions[0]?.finalDeposit, 140000);
 check('선정산은 두 정산서 합', mergedRegions[0]?.prepaid, 14000);
@@ -362,6 +389,64 @@ check('배민 부가세 합산', groupedPaste[0]?.vat, 12000);
 
 check('붙여넣기 권역 매칭', M.matchRegionByLabel(paste[0].source, REGIONS, {}), '남구중앙');
 check('없는 권역은 미매칭', M.matchRegionByLabel('없는권역XYZ', REGIONS, {}), '');
+
+console.log('\n[6b] 붙여넣기가 표를 만들고 (Z)는 합치지 않음');
+window.BremDirectSettlementCalc.computeRows = settlement => [{
+  region: settlement.region,
+  netPay: Number(settlement.netPay || 0),
+  prepaid: Number(settlement.prepaid || 0)
+}];
+window.BremStorage.weeklySettlements.getAll = () => [
+  { id: 's-nam', region: '남구중앙', startDate: '2026-08-19', netPay: 1000, prepaid: 100 },
+  { id: 's-buk', region: '북구남부', startDate: '2026-08-19', netPay: 2000, prepaid: 200 },
+  { id: 's-ph', region: '포항중앙', startDate: '2026-08-19', netPay: 10, prepaid: 1 },
+  { id: 's-phz', region: '포항중앙(Z)', startDate: '2026-08-19', netPay: 99, prepaid: 9 }
+];
+window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
+  weekStart: '2026-08-19',
+  taxFeePercent: 20,
+  regions: {}
+});
+M.setWeekStart('2026-08-19');
+M.handlePaste('울산_남구중앙\t40179\t3698\n없는권역XYZ\t5000\t500');
+const pasteOwned = M.aggregateRegions('2026-08-19').regions;
+check('붙여넣은 권역만 표에 있음', pasteOwned.length, 2);
+const pastedNam = pasteOwned.find(row => row.region === '남구중앙');
+check('매칭 줄 실지급', pastedNam?.supplyPaid, 40179);
+check('매칭 줄 최종입금', pastedNam?.finalDeposit, 1000);
+check('매칭 줄 선정산', pastedNam?.prepaid, 100);
+const pastedMiss = pasteOwned.find(row => row.unmatched);
+check('미매칭 줄이 본표에 남음', !!pastedMiss, 'true');
+check('미매칭 최종입금은 0', pastedMiss?.finalDeposit, 0);
+
+M.applyRegionFix(pastedMiss.region, '북구남부');
+const afterFix = M.aggregateRegions('2026-08-19').regions;
+const fixedBuk = afterFix.find(row => row.region === '북구남부');
+check('지역 고르면 미매칭이 사라짐', afterFix.some(row => row.unmatched), 'false');
+check('고른 지역에 실지급이 붙음', fixedBuk?.supplyPaid, 5000);
+check('고른 지역에 최종입금이 붙음', fixedBuk?.finalDeposit, 2000);
+
+window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
+  weekStart: '2026-08-19',
+  taxFeePercent: 20,
+  regions: {}
+});
+M.setWeekStart('2026-08-19');
+M.handlePaste('포항중앙\t100\t10\n포항중앙(Z)\t200\t20');
+const zRows = M.aggregateRegions('2026-08-19').regions;
+check('(Z)와 일반은 두 줄', zRows.length, 2);
+const zPlain = zRows.find(row => row.region === '포항중앙');
+const zTwin = zRows.find(row => row.region === '포항중앙(Z)');
+check('일반 실지급은 일반에만', zPlain?.supplyPaid, 100);
+check('Z 실지급은 Z에만', zTwin?.supplyPaid, 200);
+check('일반 최종입금은 섞이지 않음', zPlain?.finalDeposit, 10);
+check('Z 최종입금은 섞이지 않음', zTwin?.finalDeposit, 99);
+
+const baeminTwice = M.parsePasteRows('북필드B\t100000\t10000\n북필드B\t20000\t2000', { kind: 'baemin' });
+M.addRowsToDraft(M.groupPasteRows(baeminTwice.map(row => ({ ...row, region: '북필드B', unmatched: false }))));
+const baeminOwned = M.aggregateRegions('2026-08-19').regions.find(row => row.region === '북필드B');
+check('배민 같은 권역 두 줄은 합산', baeminOwned?.supplyPaid, 120000);
+check('배민 부가세도 합산', baeminOwned?.vat, 12000);
 
 const commaPaste = M.parsePasteRows('울산_남구중앙\t57,685,065\t5,353,208');
 check('탭+쉼표 실지급', commaPaste[0]?.supplyPaid, 57685065);
