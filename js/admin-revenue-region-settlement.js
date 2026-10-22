@@ -128,6 +128,14 @@
   }
 
   function loadSavedDraft(weekStart) {
+    const key = weekStartKey(weekStart);
+    if (state.clearedWeek && state.clearedWeek === key) {
+      state.draftRegions = {};
+      state.groups = [];
+      state.savedAt = '';
+      setSavedStatus('실지급액·부가세를 지웠습니다.');
+      return;
+    }
     const saved = Revenue()?.getRegionSettlementByWeek?.(weekStart);
     state.savedAt = saved?.savedAt || '';
     state.taxFeePercent = Math.max(0, Math.min(100, Number(saved?.taxFeePercent ?? 20)));
@@ -684,6 +692,14 @@
       showToast('정산 데이터 로드에 실패했습니다. 잠시 후 다시 시도하세요.');
     } finally {
       state.loading = false;
+      if (state.clearedWeek && state.clearedWeek === state.weekStart) {
+        state.draftRegions = {};
+        state.groups = [];
+        Revenue()?.saveRegionSettlement?.(state.weekStart, {
+          regions: {},
+          taxFeePercent: state.taxFeePercent
+        });
+      }
       rematchDraftToSettlements();
       render();
     }
@@ -1192,6 +1208,7 @@
   }
 
   function handlePaste(rawText) {
+    state.clearedWeek = '';
     const input = $('revenueRegionPasteInput');
     const text = rawText != null ? String(rawText) : (input?.value || '');
     if (!String(text).trim()) return false;
@@ -1652,7 +1669,12 @@
   }
 
   function clearAmounts() {
+    document.querySelectorAll('[data-region-supply], [data-region-vat]').forEach(input => {
+      input.value = '';
+    });
     state.draftRegions = {};
+    state.groups = [];
+    state.clearedWeek = weekStartKey(state.weekStart || weekStartKey());
     saveDraft({ silent: true, regions: {} });
   }
 
