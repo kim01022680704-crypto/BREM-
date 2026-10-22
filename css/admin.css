@@ -11392,14 +11392,48 @@ body.driver-popup-open {
   width: 100%;
 }
 
-.revenue-region-table {
-  min-width: 1080px;
+.revenue-region-sheet {
+  overflow-x: auto;
 }
+
+.revenue-region-stats.stats-grid {
+  grid-template-columns: 42px 220px repeat(6, minmax(140px, 1fr));
+  gap: 8px;
+  min-width: 1180px;
+  margin-bottom: 8px;
+  align-items: stretch;
+}
+
+.revenue-region-stat-pad {
+  min-width: 42px;
+}
+
+.revenue-region-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 1180px;
+}
+
+.revenue-region-table col.revenue-region-col-check { width: 42px; }
+.revenue-region-table col.revenue-region-col-region { width: 220px; }
 
 .revenue-region-table th,
 .revenue-region-table td {
   white-space: nowrap;
   vertical-align: middle;
+}
+
+.revenue-region-table .revenue-region-col-check {
+  width: 42px;
+  text-align: center;
+}
+
+.revenue-region-table td.weekly-amount-cell,
+.revenue-region-table th.revenue-region-col-input,
+.revenue-region-table th.revenue-region-col-money,
+.revenue-region-table th.revenue-region-col-rate {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .revenue-region-table th .muted-inline {
@@ -11591,6 +11625,20 @@ body.driver-popup-open {
 
 .revenue-region-table tr.revenue-region-unmatched td {
   background: rgba(245, 185, 66, 0.08);
+}
+
+.revenue-region-table tr.revenue-region-group td {
+  background: rgba(88, 166, 255, 0.1);
+}
+
+.revenue-region-table tr.revenue-region-member td {
+  background: rgba(88, 166, 255, 0.04);
+}
+
+.revenue-region-table .revenue-region-ungroup,
+.revenue-region-table [data-toggle-group] {
+  margin-top: 6px;
+  margin-right: 6px;
 }
 
 .revenue-region-table .revenue-region-fix {

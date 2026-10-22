@@ -10,6 +10,7 @@
     taxFeePercent: 20,
     rows: [],
     draftRegions: {},
+    groups: [],
     uploadRows: [],
     baeminRaw: [],
     loading: false,
@@ -130,9 +131,10 @@
     const saved = Revenue()?.getRegionSettlementByWeek?.(weekStart);
     state.savedAt = saved?.savedAt || '';
     state.taxFeePercent = Math.max(0, Math.min(100, Number(saved?.taxFeePercent ?? 20)));
-    state.draftRegions = migrateDraftRegionKeys(
-      saved?.regions && typeof saved.regions === 'object' ? saved.regions : {}
-    );
+    const rawRegions = saved?.regions && typeof saved.regions === 'object' ? { ...saved.regions } : {};
+    state.groups = normalizeGroups(rawRegions.__groups);
+    delete rawRegions.__groups;
+    state.draftRegions = migrateDraftRegionKeys(rawRegions);
     const taxInput = $('revenueRegionTaxFeePercent');
     if (taxInput) taxInput.value = String(state.taxFeePercent);
     if (state.savedAt) {
@@ -391,6 +393,50 @@
     }
   }
 
+  function groupKey() {
+    return `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  }
+
+  function normalizeGroups(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map(group => ({
+      id: String(group?.id || groupKey()),
+      members: [...new Set((group?.members || []).map(name => String(name || '').trim()).filter(Boolean))]
+    })).filter(group => group.members.length >= 2);
+  }
+
+  function sumMoney(rows) {
+    return (rows || []).reduce((acc, row) => {
+      acc.supplyPaid += Math.round(Number(row?.supplyPaid) || 0);
+      acc.vat += Math.round(Number(row?.vat) || 0);
+      acc.finalDeposit += Math.round(Number(row?.finalDeposit) || 0);
+      acc.prepaid += Math.round(Number(row?.prepaid) || 0);
+      acc.riderCount += Math.round(Number(row?.riderCount) || 0);
+      return acc;
+    }, { supplyPaid: 0, vat: 0, finalDeposit: 0, prepaid: 0, riderCount: 0 });
+  }
+
+  // 묶음은 각 줄의 부가세 20%를 더한 값이 아니라, 부가세 합계에 20%를 한 번 적용한다.
+  function summarizeBundle(rows, taxFeePercent = state.taxFeePercent) {
+    const summed = sumMoney(rows);
+    const taxFee = Math.round(summed.vat * (Number(taxFeePercent) || 0) / 100);
+    return {
+      ...summed,
+      taxFee,
+      remain: summed.supplyPaid - taxFee - summed.finalDeposit - summed.prepaid
+    };
+  }
+
+  function activeGroups(regions) {
+    const names = new Set((regions || []).map(row => row.region));
+    return state.groups
+      .map(group => ({
+        ...group,
+        members: group.members.filter(name => names.has(name))
+      }))
+      .filter(group => group.members.length >= 2);
+  }
+
   function render() {
     const body = $('revenueRegionBody');
     const foot = $('revenueRegionFoot');
@@ -416,19 +462,59 @@
     }
 
     if (!regions.length) {
-      body.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(formatWeekRange(state.weekStart))}에 올린 직계약 정산서가 없습니다.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="8" class="empty">${escapeHtml(formatWeekRange(state.weekStart))}에 올린 직계약 정산서가 없습니다.</td></tr>`;
       if (foot) foot.innerHTML = '';
       updateSummaryTotals([]);
       updateUnmatchedBanner([]);
       return;
     }
 
-    body.innerHTML = regions.map(row => `
-      <tr class="${row.unmatched ? 'revenue-region-unmatched' : ''}" data-region-row="${escapeHtml(row.region)}">
+    const groups = activeGroups(regions);
+    state.groups = groups;
+    const groupedNames = new Set(groups.flatMap(group => group.members));
+    const byName = new Map(regions.map(row => [row.region, row]));
+    const lines = [];
+    const consumed = new Set();
+    groups.forEach(group => {
+      const members = group.members.map(name => byName.get(name)).filter(Boolean);
+      lines.push({ kind: 'group', group, summary: summarizeBundle(members) });
+      members.forEach(row => {
+        consumed.add(row.region);
+        if (group.expanded) lines.push({ kind: 'member', row, groupId: group.id });
+      });
+    });
+    regions.forEach(row => {
+      if (!groupedNames.has(row.region) && !consumed.has(row.region)) lines.push({ kind: 'leaf', row });
+    });
+
+    body.innerHTML = lines.map(line => {
+      if (line.kind === 'group') return groupRowHtml(line.group, line.summary);
+      return regionRowHtml(line.row, line.kind === 'member');
+    }).join('');
+    const checkAll = $('revenueRegionCheckAll');
+    if (checkAll) checkAll.checked = false;
+
+    writeTotals(foot, summarizeBundle(regions));
+    updateSummaryTotals(regions, summarizeBundle(regions));
+    updateUnmatchedBanner(regions);
+  }
+
+  function moneyCells(row) {
+    return `
+      <td class="weekly-amount-cell" data-money="final">${formatMoney(row.finalDeposit)}</td>
+      <td class="weekly-amount-cell" data-money="prepaid">${formatMoney(row.prepaid)}</td>
+      <td class="weekly-amount-cell" data-money="tax">${formatMoney(row.taxFee)}</td>
+      <td class="weekly-amount-cell${row.remain < 0 ? ' revenue-region-overrun' : ''}" data-money="remain">${formatRemain(row.remain)}</td>`;
+  }
+
+  function regionRowHtml(row, inGroup) {
+    return `
+      <tr class="${row.unmatched ? 'revenue-region-unmatched' : ''} ${inGroup ? 'revenue-region-member' : ''}" data-region-row="${escapeHtml(row.region)}">
+        <td class="revenue-region-col-check">${inGroup ? '' : `<input type="checkbox" data-region-check value="${escapeHtml(row.region)}" aria-label="${escapeHtml(row.region)} 선택">`}</td>
         <td class="revenue-region-col-region"><strong>${escapeHtml(row.region)}</strong>${
           row.unmatched
             ? `<br>${regionFixSelect(row)}<br><span class="muted-inline">미매칭</span>`
-            : `<br><span class="muted-inline">${Number(row.riderCount || 0).toLocaleString('ko-KR')}명</span>`
+            : `<br><span class="muted-inline">${inGroup ? '묶음 안 · ' : ''}${Number(row.riderCount || 0).toLocaleString('ko-KR')}명</span>`
         }</td>
         <td class="revenue-region-input-cell">
           <input type="text" inputmode="numeric" class="admin-period-input revenue-region-money-input" data-region-supply="${escapeHtml(row.region)}" value="${row.supplyPaid || ''}" placeholder="0">
@@ -436,45 +522,43 @@
         <td class="revenue-region-input-cell">
           <input type="text" inputmode="numeric" class="admin-period-input revenue-region-money-input" data-region-vat="${escapeHtml(row.region)}" value="${row.vat || ''}" placeholder="0">
         </td>
-        <td class="weekly-amount-cell">${formatMoney(row.finalDeposit)}</td>
-        <td class="weekly-amount-cell">${formatMoney(row.prepaid)}</td>
-        <td class="weekly-amount-cell">${formatMoney(row.taxFee)}</td>
-        <td class="weekly-amount-cell${row.remain < 0 ? ' revenue-region-overrun' : ''}">${formatRemain(row.remain)}</td>
-      </tr>
-    `).join('');
+        ${moneyCells(row)}
+      </tr>`;
+  }
 
-    const totals = regions.reduce((acc, row) => {
-      acc.supplyPaid += row.supplyPaid;
-      acc.vat += row.vat;
-      acc.taxFee += row.taxFee;
-      acc.finalDeposit += row.finalDeposit;
-      acc.prepaid += row.prepaid;
-      acc.remain += row.remain;
-      return acc;
-    }, {
-      supplyPaid: 0,
-      vat: 0,
-      taxFee: 0,
-      finalDeposit: 0,
-      prepaid: 0,
-      remain: 0
-    });
+  function groupRowHtml(group, summary) {
+    const title = group.members.join(' + ');
+    return `
+      <tr class="revenue-region-group" data-group-row="${escapeHtml(group.id)}">
+        <td class="revenue-region-col-check"><input type="checkbox" data-group-check value="${escapeHtml(group.id)}" aria-label="묶음 선택"></td>
+        <td class="revenue-region-col-region">
+          <strong>${escapeHtml(title)}</strong>
+          <br><span class="muted-inline">묶음 ${group.members.length}곳 · 부가세 합계×20%로 계산</span>
+          <button type="button" class="small-btn" data-toggle-group="${escapeHtml(group.id)}">${group.expanded ? '접기' : '펼치기'}</button>
+          <button type="button" class="small-btn revenue-region-ungroup" data-ungroup="${escapeHtml(group.id)}">해제</button>
+        </td>
+        <td class="weekly-amount-cell" data-money="supply"><strong>${formatMoney(summary.supplyPaid)}</strong></td>
+        <td class="weekly-amount-cell" data-money="vat"><strong>${formatMoney(summary.vat)}</strong></td>
+        <td class="weekly-amount-cell" data-money="final"><strong>${formatMoney(summary.finalDeposit)}</strong></td>
+        <td class="weekly-amount-cell" data-money="prepaid"><strong>${formatMoney(summary.prepaid)}</strong></td>
+        <td class="weekly-amount-cell" data-money="tax"><strong>${formatMoney(summary.taxFee)}</strong></td>
+        <td class="weekly-amount-cell${summary.remain < 0 ? ' revenue-region-overrun' : ''}" data-money="remain"><strong>${formatRemain(summary.remain)}</strong></td>
+      </tr>`;
+  }
 
-    if (foot) {
-      foot.innerHTML = `
-        <tr class="revenue-region-total-row">
-          <td class="revenue-region-col-region"><strong>합계</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.supplyPaid)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.vat)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.finalDeposit)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.prepaid)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.taxFee)}</strong></td>
-          <td class="weekly-amount-cell${totals.remain < 0 ? ' revenue-region-overrun' : ''}"><strong>${formatRemain(totals.remain)}</strong></td>
-        </tr>`;
-    }
-
-    updateSummaryTotals(regions, totals);
-    updateUnmatchedBanner(regions);
+  function writeTotals(foot, totals) {
+    if (!foot) return;
+    foot.innerHTML = `
+      <tr class="revenue-region-total-row">
+        <td class="revenue-region-col-check"></td>
+        <td class="revenue-region-col-region"><strong>합계</strong><br><span class="muted-inline">세로 합 · 묶음은 한 번</span></td>
+        <td class="weekly-amount-cell"><strong>${formatMoney(totals.supplyPaid)}</strong></td>
+        <td class="weekly-amount-cell"><strong>${formatMoney(totals.vat)}</strong></td>
+        <td class="weekly-amount-cell"><strong>${formatMoney(totals.finalDeposit)}</strong></td>
+        <td class="weekly-amount-cell"><strong>${formatMoney(totals.prepaid)}</strong></td>
+        <td class="weekly-amount-cell"><strong>${formatMoney(totals.taxFee)}</strong></td>
+        <td class="weekly-amount-cell${totals.remain < 0 ? ' revenue-region-overrun' : ''}"><strong>${formatRemain(totals.remain)}</strong></td>
+      </tr>`;
   }
 
   function updateUnmatchedBanner(regions) {
@@ -526,6 +610,24 @@
     if (remainEl) remainEl.textContent = formatRemain(t.remain);
   }
 
+  function paintMoney(tr, row) {
+    const finalCell = tr.querySelector('[data-money="final"]');
+    const prepaidCell = tr.querySelector('[data-money="prepaid"]');
+    const taxCell = tr.querySelector('[data-money="tax"]');
+    const remainCell = tr.querySelector('[data-money="remain"]');
+    const supplyCell = tr.querySelector('[data-money="supply"]');
+    const vatCell = tr.querySelector('[data-money="vat"]');
+    if (supplyCell) supplyCell.innerHTML = `<strong>${formatMoney(row.supplyPaid)}</strong>`;
+    if (vatCell) vatCell.innerHTML = `<strong>${formatMoney(row.vat)}</strong>`;
+    if (finalCell) finalCell.innerHTML = tr.hasAttribute('data-group-row') ? `<strong>${formatMoney(row.finalDeposit)}</strong>` : formatMoney(row.finalDeposit);
+    if (prepaidCell) prepaidCell.innerHTML = tr.hasAttribute('data-group-row') ? `<strong>${formatMoney(row.prepaid)}</strong>` : formatMoney(row.prepaid);
+    if (taxCell) taxCell.innerHTML = tr.hasAttribute('data-group-row') ? `<strong>${formatMoney(row.taxFee)}</strong>` : formatMoney(row.taxFee);
+    if (remainCell) {
+      remainCell.innerHTML = tr.hasAttribute('data-group-row') ? `<strong>${formatRemain(row.remain)}</strong>` : formatRemain(row.remain);
+      remainCell.classList.toggle('revenue-region-overrun', row.remain < 0);
+    }
+  }
+
   function refreshCalculated() {
     const { regions } = aggregateRegions(state.weekStart);
     state.rows = regions;
@@ -533,37 +635,16 @@
     document.querySelectorAll('[data-region-row]').forEach(tr => {
       const row = byName.get(tr.getAttribute('data-region-row') || '');
       if (!row) return;
-      const cells = tr.querySelectorAll('td');
-      if (cells[3]) cells[3].textContent = formatMoney(row.finalDeposit);
-      if (cells[4]) cells[4].textContent = formatMoney(row.prepaid);
-      if (cells[5]) cells[5].textContent = formatMoney(row.taxFee);
-      if (cells[6]) {
-        cells[6].textContent = formatRemain(row.remain);
-        cells[6].classList.toggle('revenue-region-overrun', row.remain < 0);
-      }
+      paintMoney(tr, row);
     });
-    const totals = regions.reduce((acc, row) => {
-      acc.supplyPaid += row.supplyPaid;
-      acc.vat += row.vat;
-      acc.taxFee += row.taxFee;
-      acc.finalDeposit += row.finalDeposit;
-      acc.prepaid += row.prepaid;
-      acc.remain += row.remain;
-      return acc;
-    }, { supplyPaid: 0, vat: 0, taxFee: 0, finalDeposit: 0, prepaid: 0, remain: 0 });
-    const foot = $('revenueRegionFoot');
-    if (foot) {
-      foot.innerHTML = `
-        <tr class="revenue-region-total-row">
-          <td class="revenue-region-col-region"><strong>합계</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.supplyPaid)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.vat)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.finalDeposit)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.prepaid)}</strong></td>
-          <td class="weekly-amount-cell"><strong>${formatMoney(totals.taxFee)}</strong></td>
-          <td class="weekly-amount-cell${totals.remain < 0 ? ' revenue-region-overrun' : ''}"><strong>${formatRemain(totals.remain)}</strong></td>
-        </tr>`;
-    }
+    activeGroups(regions).forEach(group => {
+      const tr = document.querySelector(`[data-group-row="${group.id}"]`);
+      if (!tr) return;
+      const members = group.members.map(name => byName.get(name)).filter(Boolean);
+      paintMoney(tr, summarizeBundle(members));
+    });
+    const totals = summarizeBundle(regions);
+    writeTotals($('revenueRegionFoot'), totals);
     updateSummaryTotals(regions, totals);
   }
 
@@ -618,7 +699,10 @@
     const regions = collectDraftFromInputs();
     const taxFeePercent = Math.max(0, Math.min(100, Number($('revenueRegionTaxFeePercent')?.value || state.taxFeePercent || 20)));
     state.taxFeePercent = taxFeePercent;
-    const saved = Revenue().saveRegionSettlement(weekStart, { regions, taxFeePercent });
+    const saved = Revenue().saveRegionSettlement(weekStart, {
+      regions: { ...regions, __groups: state.groups },
+      taxFeePercent
+    });
     state.savedAt = saved?.savedAt || new Date().toISOString();
     state.draftRegions = { ...regions };
     setSavedStatus(`저장 완료 · ${new Date(state.savedAt).toLocaleString('ko-KR')}`);
@@ -706,6 +790,7 @@
   function migrateDraftRegionKeys(regions) {
     const out = {};
     Object.entries(regions || {}).forEach(([name, values]) => {
+      if (String(name).startsWith('__')) return;
       const unmatched = values?.unmatched === true;
       const source = String(values?.source || name || '').trim();
       const canon = unmatched
@@ -1555,6 +1640,38 @@
     showToast('지역별 정산 엑셀을 저장했습니다.');
   }
 
+  function checkedBundleMembers() {
+    const names = [...document.querySelectorAll('[data-region-check]:checked')].map(el => el.value);
+    document.querySelectorAll('[data-group-check]:checked').forEach(el => {
+      const group = state.groups.find(item => item.id === el.value);
+      if (group) names.push(...group.members);
+    });
+    return [...new Set(names.map(name => String(name || '').trim()).filter(Boolean))];
+  }
+
+  function groupSelected() {
+    collectDraftFromInputs();
+    const members = checkedBundleMembers();
+    if (members.length < 2) {
+      showToast('묶을 지역을 2곳 이상 선택하세요.');
+      return;
+    }
+    state.groups = state.groups.filter(group => !group.members.some(name => members.includes(name)));
+    state.groups.push({ id: groupKey(), members, expanded: false });
+    render();
+    showToast(`${members.length}곳을 묶었습니다. 남은 금액은 합계로 계산됩니다.`);
+  }
+
+  function ungroupSelected(ids) {
+    const set = new Set((ids || []).filter(Boolean));
+    if (!set.size) {
+      showToast('해제할 묶음을 선택하세요.');
+      return;
+    }
+    state.groups = state.groups.filter(group => !set.has(group.id));
+    render();
+  }
+
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
@@ -1568,6 +1685,15 @@
     $('revenueRegionSaveBtn')?.addEventListener('click', () => saveDraft());
     $('revenueRegionReloadBtn')?.addEventListener('click', () => { void loadSettlementData(); });
     $('revenueRegionExportBtn')?.addEventListener('click', exportExcel);
+    $('revenueRegionGroupBtn')?.addEventListener('click', groupSelected);
+    $('revenueRegionUngroupBtn')?.addEventListener('click', () => {
+      ungroupSelected([...document.querySelectorAll('[data-group-check]:checked')].map(el => el.value));
+    });
+    $('revenueRegionCheckAll')?.addEventListener('change', event => {
+      document.querySelectorAll('[data-region-check]').forEach(el => {
+        el.checked = event.target.checked;
+      });
+    });
     $('revenueRegionPasteBtn')?.addEventListener('click', () => {
       if (!String($('revenueRegionPasteInput')?.value || '').trim()) {
         showToast('A열 권역 · B열 실지급액 · C열 부가세를 붙여넣어 주세요.');
@@ -1612,6 +1738,19 @@
       target.value = parsed ? String(parsed) : '';
       collectDraftFromInputs();
       refreshCalculated();
+    });
+    $('revenueRegionBody')?.addEventListener('click', event => {
+      const toggle = event.target.closest('[data-toggle-group]');
+      if (toggle) {
+        const id = toggle.getAttribute('data-toggle-group');
+        state.groups = state.groups.map(group => (
+          group.id === id ? { ...group, expanded: !group.expanded } : group
+        ));
+        render();
+        return;
+      }
+      const ungroupBtn = event.target.closest('[data-ungroup]');
+      if (ungroupBtn) ungroupSelected([ungroupBtn.getAttribute('data-ungroup')]);
     });
     $('revenueRegionBody')?.addEventListener('change', event => {
       const fix = event.target.closest('[data-region-fix]');
@@ -1748,6 +1887,7 @@
     splitPasteLine,
     parseMoneyText,
     computeRemain,
+    summarizeBundle,
     handlePaste,
     addRowsToDraft,
     applyRegionFix,

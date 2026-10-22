@@ -313,7 +313,7 @@ const footCells = [...window.document.querySelectorAll('#revenueRegionFoot tr td
 
 check('본문 열 수 = 헤더 열 수', bodyCells.length, headCells.length);
 check('합계 열 수 = 헤더 열 수', footCells.length, headCells.length);
-check('열 수는 7개', headCells.length, 7);
+check('열 수는 8개', headCells.length, 8);
 
 const headText = headCells.map(th => th.textContent.replace(/\s+/g, ''));
 check('최종입금 열', headText.some(t => t.includes('최종입금')), 'true');
@@ -464,6 +464,13 @@ check('실지급-부가세20%-최종입금-선정산', M.computeRemain({
   supplyPaid: 40179, vat: 3698, taxFeePercent: 20, finalDeposit: 30000, prepaid: 2000
 }), 7439);
 check('입력 없으면 0', M.computeRemain({ finalDeposit: 30000, prepaid: 2000 }), 0);
+const bundle = M.summarizeBundle([
+  { supplyPaid: 100, vat: 3, finalDeposit: 10, prepaid: 1 },
+  { supplyPaid: 50, vat: 3, finalDeposit: 5, prepaid: 1 }
+], 20);
+check('묶음 실지급은 세로 합', bundle.supplyPaid, 150);
+check('묶음 부가세 20%는 합계에 한 번', bundle.taxFee, 1);
+check('묶음 남은 금액은 합계 공식', bundle.remain, 132);
 
 console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
 process.exit(failed ? 1 : 0);
