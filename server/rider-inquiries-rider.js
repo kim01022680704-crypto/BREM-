@@ -90,6 +90,9 @@ async function ackMine(accessToken, inquiryId) {
   if (!inquiry || !matchesRider(inquiry, me.riderId, me.rider?.phone)) {
     return { ok: false, status: 404, error: '문의를 찾지 못했습니다.' };
   }
+  if (!String(inquiry.adminReply || '').trim()) {
+    return { ok: false, status: 400, error: '답장이 없어 답장확인할 수 없습니다.' };
+  }
   const next = await store().updateInquiry(inquiry.id, { riderAck: true });
   return {
     ok: true,

@@ -41,9 +41,17 @@
       .replace(/"/g, '&quot;');
   }
 
+  function replySeen(item) {
+    if (!item?.adminReply || !item?.riderAckAt) return false;
+    const ack = Date.parse(item.riderAckAt);
+    const replied = Date.parse(item.adminRepliedAt || '');
+    if (!Number.isFinite(ack) || !Number.isFinite(replied)) return false;
+    return ack >= replied - 2000;
+  }
+
   function statusLabel(item) {
     if (item.status === 'done') return '처리완료';
-    if (item.riderAckAt) return '확인완료';
+    if (replySeen(item)) return '답장확인';
     if (item.adminReply) return '답장도착';
     if (item.status === 'read') return '확인중';
     return '미확인';
@@ -51,7 +59,7 @@
 
   function statusClass(item) {
     if (item.status === 'done') return 'is-done';
-    if (item.riderAckAt) return 'is-ack';
+    if (replySeen(item)) return 'is-ack';
     if (item.adminReply) return 'is-reply';
     if (item.status === 'read') return 'is-read';
     return 'is-new';
@@ -167,7 +175,7 @@
       return;
     }
     listEl.innerHTML = rows.map(item => {
-      const canAck = Boolean(item.adminReply) && !item.riderAckAt && item.status !== 'done';
+      const canAck = Boolean(item.adminReply) && !replySeen(item);
       return `
       <article class="driver-inquiry-item">
         <div class="driver-inquiry-item__head">
@@ -182,11 +190,11 @@
             <p>${escapeHtml(item.adminReply)}</p>
           </div>
         ` : ''}
-        ${item.riderAckAt
-          ? `<p class="driver-inquiry-ack-done">확인완료 · ${escapeHtml(formatWhen(item.riderAckAt))}</p>`
+        ${replySeen(item)
+          ? `<p class="driver-inquiry-ack-done">답장확인 · ${escapeHtml(formatWhen(item.riderAckAt))}</p>`
           : ''}
         ${canAck
-          ? `<button type="button" class="driver-inquiry-ack-btn" data-ack-inquiry="${escapeHtml(item.id)}">확인완료</button>`
+          ? `<button type="button" class="driver-inquiry-ack-btn" data-ack-inquiry="${escapeHtml(item.id)}">답장확인</button>`
           : ''}
       </article>
     `;
@@ -237,7 +245,7 @@
     }
     state.inquiries = result.inquiries || state.inquiries;
     renderHistory();
-    showToast('확인완료 했습니다.');
+    showToast('답장확인 했습니다.');
   }
 
   async function submit(event) {
@@ -349,7 +357,7 @@
       void ackInquiry(ackBtn.dataset.ackInquiry).finally(() => {
         if (ackBtn.isConnected) {
           ackBtn.disabled = false;
-          ackBtn.textContent = '확인완료';
+          ackBtn.textContent = '답장확인';
         }
       });
     }

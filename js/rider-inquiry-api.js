@@ -148,11 +148,19 @@
     return String(inquiry?.replyingBy || '다른 관리자');
   }
 
+  function replySeen(inquiry) {
+    if (!inquiry?.adminReply || !inquiry?.riderAckAt) return false;
+    const ack = Date.parse(inquiry.riderAckAt);
+    const replied = Date.parse(inquiry.adminRepliedAt || '');
+    if (!Number.isFinite(ack) || !Number.isFinite(replied)) return false;
+    return ack >= replied - 2000;
+  }
+
   function statusLabel(inquiry) {
     const parts = [];
     if (inquiry?.adminReply) parts.push('답장함');
     if (inquiry?.status === 'done') parts.push('처리완료');
-    if (inquiry?.riderAckAt) parts.push('기사확인');
+    if (replySeen(inquiry)) parts.push('답장확인');
     if (!parts.length && inquiry?.status === 'read') parts.push('확인중');
     if (!parts.length) parts.push('미확인');
     return parts.join(' · ');
@@ -161,7 +169,7 @@
   function statusClass(inquiry) {
     if (inquiry?.adminReply) return 'inquiry-badge inquiry-badge--reply';
     if (inquiry?.status === 'done') return 'inquiry-badge inquiry-badge--done';
-    if (inquiry?.riderAckAt) return 'inquiry-badge inquiry-badge--ack';
+    if (replySeen(inquiry)) return 'inquiry-badge inquiry-badge--ack';
     if (inquiry?.status === 'read') return 'inquiry-badge inquiry-badge--read';
     return 'inquiry-badge inquiry-badge--new';
   }
@@ -185,10 +193,10 @@
   function replyNote(inquiry) {
     const typing = typingName(inquiry);
     if (typing) return `${loginLabel(typing)} 답장 쓰는 중입니다. 겹치면 한쪽 답장이 사라질 수 있습니다.`;
-    if (inquiry?.adminReply && inquiry?.riderAckAt) {
+    if (replySeen(inquiry)) {
       const who = loginLabel(inquiry.adminReplyBy || '관리자');
       const when = String(inquiry.riderAckAt || '').replace('T', ' ').slice(0, 16);
-      return `${who} 답장을 기사가 확인했습니다.${when ? ` (${when})` : ''}`;
+      return `${who} 답장을 기사가 답장확인 했습니다.${when ? ` (${when})` : ''}`;
     }
     if (inquiry?.adminReply) {
       const who = loginLabel(inquiry.adminReplyBy);
