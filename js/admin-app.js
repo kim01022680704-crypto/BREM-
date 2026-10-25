@@ -690,7 +690,7 @@
     const root = $('driverDetailResults');
     if (root) root.innerHTML = '<p class="driver-detail-empty">기사 목록 불러오는 중…</p>';
     try {
-      await window.BremStorage?.ensureSectionLoaded?.('drivers');
+      await window.BremStorage?.ensureSectionLoaded?.('driver-management');
       $('driverDetailQuery')?.dispatchEvent(new Event('input'));
     } catch (error) {
       showToast(error?.message || '기사 목록을 불러오지 못했습니다.');
