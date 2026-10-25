@@ -1,6 +1,7 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const ridersAdmin = require('./riders-admin');
 const riderAuth = require('./rider-auth');
+const driverPreviewToken = require('./driver-preview-token');
 
 function kstToday() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
@@ -209,4 +210,14 @@ async function getDriverMobilePreview(accessToken, driverId) {
   };
 }
 
-module.exports = { getDriverMobilePreview };
+async function issueDriverAppPreviewToken(accessToken, driverId) {
+  const riderResult = await ridersAdmin.getRider(accessToken, driverId);
+  if (!riderResult.ok) return riderResult;
+  return {
+    ok: true,
+    token: driverPreviewToken.issue(riderResult.rider.id),
+    expiresInMs: driverPreviewToken.TTL_MS
+  };
+}
+
+module.exports = { getDriverMobilePreview, issueDriverAppPreviewToken };

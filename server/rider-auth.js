@@ -420,6 +420,36 @@ async function getRiderMe(accessToken) {
     return { ok: false, status: 401, error: '로그인이 필요합니다.' };
   }
 
+  if (token.startsWith('brempreview.')) {
+    const previewToken = require('./driver-preview-token');
+    const preview = previewToken.read(token);
+    if (!preview || preview.invalid) {
+      return { ok: false, status: 401, error: '보기 링크가 올바르지 않습니다.' };
+    }
+    if (preview.expired) {
+      return { ok: false, status: 401, error: '보기 시간이 끝났습니다. 모바일 화면을 다시 여세요.' };
+    }
+    const fetched = await fetchRiderById(supabase, preview.driverId);
+    if (!fetched.ok || !fetched.rider) {
+      return { ok: false, status: fetched.status || 404, error: fetched.error || '기사 정보를 찾을 수 없습니다.' };
+    }
+    const previewBlocked = riderAppBlockedResult(fetched.rider);
+    if (previewBlocked) return previewBlocked;
+    return {
+      ok: true,
+      preview: true,
+      riderId: fetched.rider.id,
+      rider: fetched.rider,
+      profile: {
+        user_id: '',
+        role: 'rider',
+        rider_id: fetched.rider.id,
+        display_name: fetched.rider.name || '',
+        active: true
+      }
+    };
+  }
+
   const cached = readCachedRiderMe(token);
   if (cached) {
     const blockedCached = riderAppBlockedResult(cached.rider);

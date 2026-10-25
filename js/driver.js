@@ -656,6 +656,10 @@
   }
 
   async function logoutDriver(options = {}) {
+    if (window.BremStorage?.isAdminAppPreview?.()) {
+      showToast('관리자 보기입니다. 위쪽 닫기로 나가세요.');
+      return;
+    }
     const { idle = false, message = '' } = options;
     const riderId = state.currentDriver?.id || BremStorage.auth.getDriverSessionId?.();
     window.BremSessionSecurity?.stop();
@@ -2350,6 +2354,32 @@
     setupDriverWeekPicker();
     state.selectedWeekStart = weekStartKey();
     consumeLogoutNotice();
+
+    if (window.BremStorage?.isAdminAppPreview?.()) {
+      try {
+        await Promise.all([
+          window.BremSupabaseConfig?.load?.() || Promise.resolve(),
+          BremStorage.waitForStorageBootstrap?.() || Promise.resolve()
+        ]);
+        const fetched = await BremStorage.fetchCurrentRiderFromServer?.();
+        if (!fetched?.ok || !fetched.driver) {
+          showLoggedOut();
+          showToast(fetched?.message || '기사 앱을 열지 못했습니다.');
+          return;
+        }
+        if (isRiderAppBlocked(fetched.driver)) {
+          showLoggedOut();
+          showToast(riderAppBlockedMessage(fetched.driver));
+          return;
+        }
+        showLoggedIn(fetched.driver);
+        void loadDriverAppDataThenRender(fetched.driver, { refreshProfile: false });
+      } catch (error) {
+        showLoggedOut();
+        showToast(error?.message || '기사 앱을 열지 못했습니다.');
+      }
+      return;
+    }
 
     window.BremLoginPrefs?.applyLoginForm?.('rider', {
       idInput: loginIdInput,

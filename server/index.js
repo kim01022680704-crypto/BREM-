@@ -32,6 +32,7 @@ const riderWithdrawal = require('./rider-withdrawal');
 const riderRegionDashboard = require('./rider-region-dashboard');
 const riderCrewLeader = require('./rider-crew-leader');
 const adminDriverMobile = require('./admin-driver-mobile');
+const driverPreviewToken = require('./driver-preview-token');
 const directPayslipPublish = require('./direct-payslip-publish');
 const payrollPublishAdmin = require('./payroll-publish-admin');
 const riderPublishAdmin = require('./rider-publish-admin');
@@ -168,6 +169,28 @@ app.post('/api/admin/ensure-profile', async (req, res) => {
 function getBearerToken(req) {
   return String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
 }
+
+app.use('/api/rider', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const preview = driverPreviewToken.read(getBearerToken(req));
+  if (!preview) return next();
+  return res.status(403).json({
+    error: '관리자 보기에서는 저장, 출금, 문의 보내기가 되지 않습니다. 화면 확인만 할 수 있습니다.'
+  });
+});
+
+app.get('/api/admin/driver-app-preview-token', async (req, res) => {
+  try {
+    const result = await adminDriverMobile.issueDriverAppPreviewToken(getBearerToken(req), req.query.driverId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 앱 보기를 열지 못했습니다.' });
+  }
+});
 
 app.get('/api/admin/driver-mobile-preview', async (req, res) => {
   try {

@@ -91,6 +91,24 @@ const BremStorage = (function () {
     driverId: 'brem_driver_logged_in_id'
   };
 
+  let adminPreviewToken = '';
+  let adminPreviewRiderId = '';
+
+  function captureAdminPreviewToken() {
+    try {
+      const token = new URLSearchParams(window.location.search).get('adminPreview') || '';
+      if (token.startsWith('brempreview.')) adminPreviewToken = token;
+    } catch {
+      adminPreviewToken = '';
+    }
+  }
+
+  captureAdminPreviewToken();
+
+  function isAdminAppPreview() {
+    return Boolean(adminPreviewToken);
+  }
+
 
   let lastSupabaseError = '';
   let activeSupabaseClient = null;
@@ -982,7 +1000,7 @@ const BremStorage = (function () {
   }
 
   async function fetchCurrentRiderFromServer() {
-    const token = await resolveAdminAccessToken();
+    const token = adminPreviewToken || await resolveAdminAccessToken();
     if (!token) {
       return { ok: false, message: '로그인 세션이 없습니다.' };
     }
@@ -1006,11 +1024,12 @@ const BremStorage = (function () {
       if (!driver) {
         return { ok: false, message: '기사 데이터 변환에 실패했습니다.' };
       }
-      if (payload.profile) {
+      if (payload.profile && !adminPreviewToken) {
         activeSupabaseProfile = payload.profile;
       }
       if (payload.riderId) {
-        sessionAdapter.write(SESSION_KEYS.driverId, payload.riderId);
+        if (adminPreviewToken) adminPreviewRiderId = String(payload.riderId);
+        else sessionAdapter.write(SESSION_KEYS.driverId, payload.riderId);
       }
       return { ok: true, driver };
     } catch (error) {
@@ -2916,6 +2935,7 @@ const BremStorage = (function () {
   }
 
   function isRiderProductionSession() {
+    if (adminPreviewToken && adminPreviewRiderId) return isProductionMode();
     return isProductionMode()
       && activeSupabaseProfile?.role === 'rider'
       && activeSupabaseProfile?.active !== false;
@@ -3473,7 +3493,7 @@ const BremStorage = (function () {
   let lastDriverAppPublishedAt = null;
 
   async function riderApiFetch(path, label = 'request', options = {}) {
-    const token = await resolveAdminAccessToken();
+    const token = adminPreviewToken || await resolveAdminAccessToken();
     if (!token) {
       return { ok: false, message: '로그인 세션이 없습니다.' };
     }
@@ -5383,6 +5403,19 @@ const BremStorage = (function () {
 
   function startStorageBootstrap() {
     if (storageBootstrapPromise) return storageBootstrapPromise;
+
+    if (adminPreviewToken) {
+      storageBootstrapPromise = (async () => {
+        try {
+          if (window.BremSupabaseConfig?.load) await window.BremSupabaseConfig.load();
+        } catch (error) {
+          console.error('[BREM] Public config load failed:', error);
+        }
+        dispatchStorageReadyOnce({ backend: 'preview' });
+        return { backend: 'preview' };
+      })();
+      return storageBootstrapPromise;
+    }
 
     storageBootstrapPromise = (async () => {
       try {
@@ -15461,6 +15494,7 @@ const BremStorage = (function () {
     },
 
     getDriverSessionId() {
+      if (adminPreviewRiderId) return adminPreviewRiderId;
       if (getSupabaseConfig().mode === 'production') {
         if (activeSupabaseProfile?.role === 'rider') {
           return activeSupabaseProfile.rider_id || '';
@@ -15471,6 +15505,10 @@ const BremStorage = (function () {
     },
 
     setDriverSessionId(driverId) {
+      if (adminPreviewToken) {
+        adminPreviewRiderId = driverId ? String(driverId) : '';
+        return;
+      }
       if (!driverId) {
         sessionAdapter.remove(SESSION_KEYS.driverId);
         return;
@@ -15891,6 +15929,7 @@ const BremStorage = (function () {
     ensureSupabaseClient,
     waitForStorageBootstrap,
     startStorageBootstrap,
+    isAdminAppPreview,
     resolveAdminAccessToken,
     loadSupabaseProfile,
     enforceProductionStorageGuard,

@@ -8,9 +8,13 @@
       try {
         var t = localStorage.getItem('brem_rider_theme');
         if (t === 'light') document.documentElement.setAttribute('data-rd-theme', 'light');
+        if (new URLSearchParams(location.search).get('adminPreview')) {
+          document.documentElement.classList.add('brem-admin-preview');
+        }
       } catch (e) {}
     })();
   </script>
+  <style>html.brem-admin-preview #driverLoginCard { display: none; }</style>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="BREM 기사 전용 조회">
   <meta name="theme-color" content="#0a0a0a">
@@ -1348,7 +1352,7 @@
   <script src="js/storage-supabase-mapper.js?v=20261009missionhome1"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260816popup1"></script>
-  <script src="js/storage.js?v=20260921off1"></script>
+  <script src="js/storage.js?v=20261025appview1"></script>
   <script src="js/driver-utils.js?v=20260921off1"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260816inq1"></script>
@@ -1359,7 +1363,7 @@
   <script src="js/driver-urgent-missions.js?v=20260924nomission1"></script>
   <script src="js/driver-inquiries.js?v=20261025inq7"></script>
   <script src="js/promotion-count-sim.js?v=20260928step1"></script>
-  <script src="js/driver.js?v=20261010missionlive1"></script>
+  <script src="js/driver.js?v=20261025appview1"></script>
   <script src="js/driver-maintenance.js?v=20261010mtaside3"></script>
   <script src="js/driver-app-nav.js?v=20260924nomission1"></script>
   <script src="js/driver-perf-calendar.js?v=20260924mt2"></script>

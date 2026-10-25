@@ -322,9 +322,11 @@ const BremDriverDetailSearch = (function () {
       </tr>`).join('');
 
     return `
+      <div class="driver-detail-op-line">
+        <span class="driver-detail-op is-unknown" id="driverDetailOpTag">운행 확인중</span>
+      </div>
       <div class="driver-detail-profile">
         <strong>${escapeHtml(driver.name || '-')}</strong>
-        <span class="driver-detail-op is-unknown" id="driverDetailOpTag">운행 확인중</span>
         <span>ERP ${escapeHtml(erpId(driver) || '-')}</span>
         <span>${escapeHtml(phoneLabel(driver))}</span>
         <span>${escapeHtml(driver.status || '근무중')}</span>
@@ -432,10 +434,11 @@ const BremDriverDetailSearch = (function () {
       tag.classList.add('is-unknown');
     }
     const extra = [platformTag('배민', operating.baemin), platformTag('쿠팡', operating.coupang)].join('');
-    if (!tag.parentElement?.querySelector('.driver-detail-op-row')) {
+    let row = tag.parentElement?.querySelector('.driver-detail-op-row');
+    if (!row) {
       tag.insertAdjacentHTML('afterend', `<span class="driver-detail-op-row">${extra}</span>`);
     } else {
-      tag.parentElement.querySelector('.driver-detail-op-row').innerHTML = extra;
+      row.innerHTML = extra;
     }
   }
 
@@ -463,7 +466,6 @@ const BremDriverDetailSearch = (function () {
       const payload = await fetchMobile(driverId);
       if (seq !== state.detailSeq || String(state.selectedId || '') !== driverId) return;
       paintOperating(payload);
-      if ($('#driverPhonePopup')?.classList.contains('is-open')) renderPhone(payload);
     } catch (error) {
       const tag = $('#driverDetailOpTag');
       if (tag && seq === state.detailSeq) {
@@ -568,31 +570,46 @@ const BremDriverDetailSearch = (function () {
 
   function closePhone() {
     const popup = $('#driverPhonePopup');
+    const screen = $('#driverPhoneScreen');
+    if (screen) screen.replaceChildren();
     if (!popup) return;
     popup.classList.remove('is-open');
     popup.hidden = true;
   }
 
+  async function fetchPreviewToken(driverId) {
+    const token = await window.BremStorage?.resolveAdminAccessToken?.();
+    if (!token) throw new Error('관리자 로그인 세션이 없습니다.');
+    const response = await fetch(`/api/admin/driver-app-preview-token?driverId=${encodeURIComponent(driverId)}`, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.token) throw new Error(payload.error || '기사 앱을 열지 못했습니다.');
+    return payload.token;
+  }
+
   async function openPhone() {
     const popup = $('#driverPhonePopup');
-    if (!popup || !state.selectedId) return;
+    const screen = $('#driverPhoneScreen');
+    if (!popup || !screen || !state.selectedId) return;
     popup.hidden = false;
     popup.classList.add('is-open');
-    const title = $('#driverPhoneTitle');
     const driver = drivers().find(item => String(item.id || '') === state.selectedId);
-    if (title) title.textContent = driver?.name ? `${driver.name} 앱 홈` : '기사 앱 홈';
-    if (state.phonePayload && state.phoneDriverId === state.selectedId) {
-      renderPhone(state.phonePayload);
-      return;
-    }
-    renderPhoneMessage('기사 앱 홈을 불러오는 중…');
+    const title = $('#driverPhoneTitle');
+    if (title) title.textContent = driver?.name ? `${driver.name} 기사앱` : '기사앱';
+    screen.innerHTML = '<p class="dphone-note">기사 앱을 여는 중…</p>';
     try {
-      const payload = await fetchMobile(state.selectedId);
+      const previewToken = await fetchPreviewToken(state.selectedId);
       if (!$('#driverPhonePopup')?.classList.contains('is-open')) return;
-      paintOperating(payload);
-      renderPhone(payload);
+      const frame = document.createElement('iframe');
+      frame.className = 'driver-phone__frame';
+      frame.title = driver?.name ? `${driver.name} 기사앱` : '기사앱';
+      frame.src = `driver.html?adminPreview=${encodeURIComponent(previewToken)}`;
+      screen.replaceChildren(frame);
     } catch (error) {
-      renderPhoneMessage(error?.message || '모바일 화면을 불러오지 못했습니다.');
+      screen.innerHTML = `<p class="dphone-note">${escapeHtml(error?.message || '기사 앱을 열지 못했습니다.')}</p>`;
     }
   }
 
@@ -619,12 +636,6 @@ const BremDriverDetailSearch = (function () {
     document.addEventListener('click', event => {
       if (event.target.closest('[data-driver-detail-mobile]')) {
         void openPhone();
-        return;
-      }
-      const periodBtn = event.target.closest('[data-phone-period]');
-      if (periodBtn && $('#driverPhonePopup')?.classList.contains('is-open')) {
-        state.phonePeriod = periodBtn.dataset.phonePeriod === 'week' ? 'week' : 'today';
-        if (state.phonePayload) renderPhone(state.phonePayload);
         return;
       }
       if (event.target.closest('[data-driver-phone-close]')) closePhone();
