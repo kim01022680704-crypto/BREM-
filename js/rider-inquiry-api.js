@@ -121,6 +121,23 @@
     return updateInquiry(id, { status });
   }
 
+  async function bulkComplete(ids) {
+    const unique = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
+    const doneIds = [];
+    let last = null;
+    let failed = 0;
+    for (const id of unique) {
+      try {
+        const saved = await updateInquiry(id, { status: 'done' });
+        if (Array.isArray(saved)) last = saved;
+        doneIds.push(id);
+      } catch (error) {
+        failed += 1;
+      }
+    }
+    return { list: last, failed, total: unique.length, doneIds };
+  }
+
   function escapeHtml(value) {
     return String(value ?? '')
       .replace(/&/g, '&amp;')
@@ -244,6 +261,7 @@
     create,
     updateInquiry,
     updateStatus,
+    bulkComplete,
     remove,
     currentAdmin,
     typingName,

@@ -1423,6 +1423,7 @@
 
   let inquiryListCache = [];
   let inquiryListMenu = 'open';
+  const inquirySelectedIds = new Set();
 
   function rememberInquiries(list) {
     inquiryListCache = Array.isArray(list) ? list : [];
@@ -1440,6 +1441,72 @@
       item.replyingAt || '',
       item.riderAckAt || ''
     ].join('\u001f')).join('\n');
+  }
+
+  function syncInquirySelection(event) {
+    const rows = document.getElementById('riderInquiryRows');
+    if (!rows || !rows.contains(event.target)) return;
+    const rowCheck = event.target.closest('[data-inquiry-check]');
+    const selectAll = event.target.closest('[data-inquiry-select-all]');
+    if (!rowCheck && !selectAll) return;
+    if (selectAll) {
+      rows.querySelectorAll('[data-inquiry-check]').forEach(input => {
+        input.checked = selectAll.checked;
+        const id = String(input.dataset.inquiryCheck || '');
+        if (selectAll.checked) inquirySelectedIds.add(id);
+        else inquirySelectedIds.delete(id);
+      });
+    } else {
+      const id = String(rowCheck.dataset.inquiryCheck || '');
+      if (rowCheck.checked) inquirySelectedIds.add(id);
+      else inquirySelectedIds.delete(id);
+    }
+    const checks = [...rows.querySelectorAll('[data-inquiry-check]')];
+    const selected = checks.filter(input => input.checked).length;
+    const all = rows.querySelector('[data-inquiry-select-all]');
+    if (all) {
+      all.checked = checks.length > 0 && selected === checks.length;
+      all.indeterminate = selected > 0 && selected < checks.length;
+    }
+    const btn = rows.querySelector('[data-inquiry-bulk-done]');
+    if (btn && btn.dataset.busy !== '1') {
+      btn.disabled = selected === 0;
+      btn.textContent = selected ? `선택 처리완료 ${selected}` : '선택 처리완료';
+    }
+  }
+
+  function markSelectedInquiriesDone(button) {
+    const rows = document.getElementById('riderInquiryRows');
+    const ids = [...(rows?.querySelectorAll('[data-inquiry-check]:checked') || [])]
+      .map(input => input.dataset.inquiryCheck)
+      .filter(Boolean);
+    if (!ids.length) {
+      showToast('처리할 문의를 선택하세요.');
+      return;
+    }
+    if (!window.confirm(`선택한 ${ids.length}건을 처리완료 할까요?`)) return;
+    if (button) {
+      button.disabled = true;
+      button.dataset.busy = '1';
+      button.textContent = '처리 중…';
+    }
+    void window.BremRiderInquiryApi.bulkComplete(ids).then(result => {
+      (result?.doneIds || ids).forEach(id => inquirySelectedIds.delete(String(id)));
+      if (Array.isArray(result?.list)) rememberInquiries(result.list);
+      const doneCount = Math.max(0, (result?.total || ids.length) - (result?.failed || 0));
+      showToast(result?.failed
+        ? `${doneCount}건 처리완료, ${result.failed}건은 실패했습니다.`
+        : `${doneCount}건을 처리완료했습니다.`);
+      if (rows) delete rows.dataset.inquiryKey;
+      void renderRiderInquiries(inquiryListCache.length ? inquiryListCache : undefined);
+    }).catch(error => {
+      showToast(error.message || '처리완료에 실패했습니다.');
+      if (button?.isConnected) {
+        button.disabled = false;
+        delete button.dataset.busy;
+        button.textContent = '선택 처리완료';
+      }
+    });
   }
 
   async function loadRiderInquiries() {
@@ -4002,9 +4069,12 @@
       button.classList.toggle('active', id === menu);
     });
 
+    const canBulk = menu === 'open' || menu === 'ack';
     if (summaryEl) {
       const menuLabel = menu === 'ack' ? '답장확인' : menu === 'done' ? '처리완료' : '미확인';
-      summaryEl.textContent = `${menuLabel} ${visible.length}건 · 클릭하면 상세를 봅니다.`;
+      summaryEl.textContent = canBulk
+        ? `${menuLabel} ${visible.length}건 · 고른 뒤 처리완료할 수 있습니다.`
+        : `${menuLabel} ${visible.length}건 · 클릭하면 상세를 봅니다.`;
     }
 
     if (rowsEl.dataset.inquiryKey === key && rowsEl.childElementCount) return;
@@ -4015,24 +4085,51 @@
       return;
     }
 
-    rowsEl.innerHTML = visible.map(inquiry => `
-      <article class="notice-item inquiry-item" data-open-inquiry="${escapeHtml(inquiry.id)}" role="button" tabindex="0">
-        <div class="notice-item-head">
-          <div>
-            <span class="${inquiryStatusClass(inquiry)}">${escapeHtml(inquiryStatusLabel(inquiry))}</span>
-            <strong>${escapeHtml(inquiry.name || '-')} · ${escapeHtml(inquiry.phone || '-')}</strong>
-          </div>
-          <span class="notice-date">${formatDateTime(inquiry.createdAt)}</span>
+    if (canBulk) {
+      const visibleIds = new Set(visible.map(item => String(item.id)));
+      inquirySelectedIds.forEach(id => {
+        if (!visibleIds.has(id)) inquirySelectedIds.delete(id);
+      });
+    }
+    const selectedCount = canBulk
+      ? visible.filter(item => inquirySelectedIds.has(String(item.id))).length
+      : 0;
+
+    rowsEl.innerHTML = `
+      ${canBulk ? `
+        <div class="inquiry-bulk-bar">
+          <label class="inquiry-bulk-check">
+            <input type="checkbox" data-inquiry-select-all ${visible.length && selectedCount === visible.length ? 'checked' : ''}>
+            <span>전체 선택</span>
+          </label>
+          <button type="button" class="small-btn" data-inquiry-bulk-done ${selectedCount ? '' : 'disabled'}>선택 처리완료${selectedCount ? ` ${selectedCount}` : ''}</button>
         </div>
-        <p class="inquiry-meta">
-          <span>지역: ${escapeHtml(inquiry.area || '-')}</span>
-          <span>구분: ${escapeHtml(inquiry.inquiryType || '-')}</span>
-          ${inquiry.source === 'payslip' ? '<span>주급명세서 첨부</span>' : ''}
-        </p>
-        <p class="notice-content">${escapeHtml(inquiry.message || '')}</p>
-        ${window.BremRiderInquiryApi?.listExtraHtml?.(inquiry) || ''}
+      ` : ''}
+      ${visible.map(inquiry => `
+      <article class="notice-item inquiry-item" data-open-inquiry="${escapeHtml(inquiry.id)}" role="button" tabindex="0">
+        <div class="inquiry-item-row">
+          ${canBulk ? `<label class="inquiry-select" data-inquiry-select><input type="checkbox" data-inquiry-check="${escapeHtml(inquiry.id)}" ${inquirySelectedIds.has(String(inquiry.id)) ? 'checked' : ''} aria-label="선택"></label>` : ''}
+          <div class="inquiry-item-body">
+            <div class="notice-item-head">
+              <div>
+                <span class="${inquiryStatusClass(inquiry)}">${escapeHtml(inquiryStatusLabel(inquiry))}</span>
+                <strong>${escapeHtml(inquiry.name || '-')} · ${escapeHtml(inquiry.phone || '-')}</strong>
+              </div>
+              <span class="notice-date">${formatDateTime(inquiry.createdAt)}</span>
+            </div>
+            <p class="inquiry-meta">
+              <span>지역: ${escapeHtml(inquiry.area || '-')}</span>
+              <span>구분: ${escapeHtml(inquiry.inquiryType || '-')}</span>
+              ${inquiry.source === 'payslip' ? '<span>주급명세서 첨부</span>' : ''}
+            </p>
+            <p class="notice-content">${escapeHtml(inquiry.message || '')}</p>
+            ${window.BremRiderInquiryApi?.listExtraHtml?.(inquiry) || ''}
+          </div>
+        </div>
       </article>
-    `).join('');
+    `).join('')}`;
+    const allBox = rowsEl.querySelector('[data-inquiry-select-all]');
+    if (allBox) allBox.indeterminate = selectedCount > 0 && selectedCount < visible.length;
   }
 
   function inquiryMoney(value) {
@@ -8777,6 +8874,12 @@
       }
     });
 
+    document.addEventListener('change', event => {
+      if (event.target.closest('#riderInquiryRows [data-inquiry-check], #riderInquiryRows [data-inquiry-select-all]')) {
+        syncInquirySelection(event);
+      }
+    });
+
     document.addEventListener('click', event => {
       const bulkDeleteCallsBtn = event.target.closest('[id^="bulkDeleteCalls-"]');
       if (bulkDeleteCallsBtn && !bulkDeleteCallsBtn.disabled) {
@@ -9297,6 +9400,14 @@
         return;
       }
 
+      const bulkDoneBtn = event.target.closest('[data-inquiry-bulk-done]');
+      if (bulkDoneBtn) {
+        if (!bulkDoneBtn.disabled) markSelectedInquiriesDone(bulkDoneBtn);
+        return;
+      }
+
+      if (event.target.closest('[data-inquiry-select], [data-inquiry-select-all], .inquiry-bulk-bar')) return;
+
       const openInquiry = event.target.closest('[data-open-inquiry]');
       if (openInquiry) {
         void openAdminInquiryPopup(openInquiry.dataset.openInquiry);
@@ -9306,6 +9417,7 @@
       const inquiryMenuBtn = event.target.closest('[data-inquiry-menu]');
       if (inquiryMenuBtn) {
         inquiryListMenu = inquiryMenuBtn.dataset.inquiryMenu || 'open';
+        inquirySelectedIds.clear();
         const rowsEl = $('#riderInquiryRows');
         if (rowsEl) delete rowsEl.dataset.inquiryKey;
         void renderRiderInquiries(inquiryListCache.length ? inquiryListCache : undefined);

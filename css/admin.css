@@ -5366,6 +5366,52 @@ textarea {
   cursor: pointer;
 }
 
+.inquiry-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.inquiry-bulk-check,
+.inquiry-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.inquiry-select {
+  flex: 0 0 auto;
+  padding-top: 2px;
+}
+
+.inquiry-bulk-check input,
+.inquiry-select input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #a78bfa;
+}
+
+.inquiry-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.inquiry-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
 .inquiry-popup {
   position: fixed;
   inset: 0;
