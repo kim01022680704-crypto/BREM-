@@ -6581,6 +6581,130 @@ textarea {
   min-width: 0;
 }
 
+/* 정산서 옵션에 기사 이름이 전부 들어가 네이티브 목록이 한 줄로 잘린다. */
+#promotion-apply > .card:first-child {
+  overflow: visible;
+}
+
+.promotion-settlement-picker-select {
+  position: relative;
+}
+
+.settlement-select-native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  pointer-events: none !important;
+}
+
+.settlement-select-menu {
+  position: relative;
+  min-width: 0;
+}
+
+.settlement-select-menu__trigger {
+  position: relative;
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 36px 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--black);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settlement-select-menu__trigger::after {
+  content: '';
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
+.settlement-select-menu__trigger:hover,
+.settlement-select-menu__trigger:focus-visible,
+.settlement-select-menu.is-open .settlement-select-menu__trigger {
+  border-color: var(--yellow);
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(255, 212, 0, 0.12);
+}
+
+.settlement-select-menu__panel {
+  position: fixed;
+  z-index: 80;
+  display: grid;
+  gap: 4px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #141414;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.settlement-select-menu__option {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  cursor: pointer;
+}
+
+.settlement-select-menu__option:hover,
+.settlement-select-menu__option.is-selected {
+  border-color: rgba(255, 212, 0, 0.45);
+  background: rgba(255, 212, 0, 0.12);
+}
+
+.settlement-select-menu__head {
+  white-space: normal;
+}
+
+.settlement-select-menu__names,
+.settlement-select-menu__roster {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.55;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.settlement-select-menu__roster {
+  margin: 2px 2px 0;
+}
+
 .promotion-delivery-fee-grid {
   margin-top: 4px;
 }

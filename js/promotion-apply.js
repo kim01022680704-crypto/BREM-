@@ -2276,6 +2276,7 @@ const BremPromotionApply = (function () {
         region: item.region,
         startDate: item.startDate,
         endDate: item.endDate,
+        matchedNamesLabel: item.matchedNamesLabel,
         label: `${item.region} · ${item.matchedNamesLabel} (${item.startDate}~${item.endDate})`
       }))
       .sort((a, b) => String(a.region || '').localeCompare(String(b.region || ''), 'ko'));
