@@ -75,9 +75,9 @@
         /* ignore */
       }
       var adminKeep = document.getElementById('adminKeepLoggedIn');
-      var adminKeepLabel = adminKeep && adminKeep.closest ? adminKeep.closest('.login-option') : null;
-      if (adminKeep) adminKeep.checked = true;
-      if (adminKeepLabel) adminKeepLabel.hidden = true;
+      if (adminKeep && window.BremLoginPrefs?.isAutoLoginEnabled) {
+        adminKeep.checked = window.BremLoginPrefs.isAutoLoginEnabled('admin');
+      }
       return;
     }
     try {

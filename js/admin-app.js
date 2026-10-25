@@ -656,8 +656,10 @@
         return;
       }
       void window.BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
+      try { localStorage.removeItem('brem_admin_autologin_paused'); } catch { /* ignore */ }
       window.BremLoginPrefs?.captureLoginPrefs?.('admin', {
         idInput: $('adminName'),
+        passwordInput: $('adminPassword'),
         rememberCheckbox: $('adminRememberId'),
         keepCheckbox: $('adminKeepLoggedIn')
       });
@@ -675,6 +677,7 @@
   }
 
   async function logout() {
+    try { localStorage.setItem('brem_admin_autologin_paused', '1'); } catch { /* ignore */ }
     await window.BremStorage?.auth?.signOutSupabase?.('admin');
     location.reload();
   }
@@ -857,21 +860,42 @@
   async function boot() {
     bindEvents();
     setupWeekPicker();
-    window.BremLoginPrefs?.restoreIdAfterLogout?.('admin', {
+    window.BremLoginPrefs?.applyLoginForm?.('admin', {
       idInput: $('adminName'),
+      passwordInput: $('adminPassword'),
       rememberCheckbox: $('adminRememberId'),
-      passwordInput: $('adminPassword')
+      keepCheckbox: $('adminKeepLoggedIn')
     });
     if (window.BremSupabaseConfig?.load) {
       await window.BremSupabaseConfig.load().catch(() => {});
     }
-    if (window.BremStorage?.auth?.isAdminLoggedIn?.()) {
+    const autoOn = window.BremLoginPrefs?.isAutoLoginEnabled?.('admin') === true;
+    if (autoOn && window.BremStorage?.auth?.isAdminLoggedIn?.()) {
       void window.BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
       showApp();
       hideBootSplash();
       void window.BremStorage.ensureSectionLoaded?.('admin-schedule');
       void refreshHome();
       return;
+    }
+    let autoPaused = false;
+    try { autoPaused = localStorage.getItem('brem_admin_autologin_paused') === '1'; } catch { /* ignore */ }
+    const savedId = window.BremLoginPrefs?.getRememberedId?.('admin') || '';
+    const savedPassword = window.BremLoginPrefs?.getRememberedPassword?.('admin') || '';
+    if (autoOn && !autoPaused && savedId && savedPassword) {
+      try {
+        const result = await window.BremStorage.auth.signInAdmin(savedId, savedPassword);
+        if (result?.ok) {
+          void window.BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
+          showApp();
+          hideBootSplash();
+          void window.BremStorage.ensureSectionLoaded?.('admin-schedule');
+          void refreshHome();
+          return;
+        }
+      } catch {
+        /* 저장된 비밀번호로 못 들어가면 로그인 화면을 보여준다 */
+      }
     }
     showLogin();
     hideBootSplash();

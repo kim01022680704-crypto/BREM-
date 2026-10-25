@@ -1,6 +1,7 @@
 /**
  * Login UI preferences — remember ID (localStorage) + keep logged in (session store).
- * Never stores passwords. Admin and rider scopes are isolated.
+ * Password is stored only when the mobile admin app "아이디·비밀번호 기억하기" box is checked.
+ * Admin and rider scopes are isolated.
  */
 (function () {
   const SCOPES = { ADMIN: 'admin', RIDER: 'rider' };
@@ -31,6 +32,8 @@
     const s = scopeOf(scope);
     if (kind === 'rememberEnabled') return `brem_${s}_remember_id_enabled`;
     if (kind === 'rememberId') return `brem_${s}_remember_id`;
+    if (kind === 'rememberPassword') return `brem_${s}_remember_password`;
+    if (kind === 'autoLogin') return `brem_${s}_auto_login`;
     if (kind === 'keepLoggedIn') return `brem_${s}_keep_logged_in`;
     return '';
   }
@@ -66,6 +69,53 @@
         localStorage.removeItem(prefKey('rememberEnabled', scope));
         localStorage.removeItem(prefKey('rememberId', scope));
       }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function getRememberedPassword(scope) {
+    if (!isRememberIdEnabled(scope)) return '';
+    try {
+      return String(localStorage.getItem(prefKey('rememberPassword', scope)) || '');
+    } catch {
+      return '';
+    }
+  }
+
+  function saveRememberPassword(scope, password, enabled) {
+    try {
+      if (enabled && password) {
+        localStorage.setItem(prefKey('rememberPassword', scope), String(password));
+      } else {
+        localStorage.removeItem(prefKey('rememberPassword', scope));
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function isAdminMobileApp() {
+    try {
+      return document.documentElement.classList.contains('brem-admin-app-nav');
+    } catch {
+      return false;
+    }
+  }
+
+  function isAutoLoginEnabled(scope) {
+    try {
+      const value = localStorage.getItem(prefKey('autoLogin', scope));
+      if (value == null) return isAdminMobileApp();
+      return value === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  function setAutoLoginEnabled(scope, enabled) {
+    try {
+      localStorage.setItem(prefKey('autoLogin', scope), enabled ? '1' : '0');
     } catch {
       /* ignore */
     }
@@ -183,26 +233,47 @@
   }
 
   function applyLoginForm(scope, elements = {}) {
-    const { idInput, rememberCheckbox, keepCheckbox } = elements;
-    if (rememberCheckbox) rememberCheckbox.checked = isRememberIdEnabled(scope);
+    const { idInput, passwordInput, rememberCheckbox, keepCheckbox } = elements;
+    const adminMobile = isAdminMobileApp();
+    if (rememberCheckbox) {
+      let rememberUnset = false;
+      try {
+        rememberUnset = localStorage.getItem(prefKey('rememberEnabled', scope)) == null;
+      } catch {
+        rememberUnset = false;
+      }
+      rememberCheckbox.checked = isRememberIdEnabled(scope) || (adminMobile && rememberUnset);
+    }
     if (keepCheckbox) {
-      keepCheckbox.checked = true;
-      if (!isKeepLoggedIn(scope)) setKeepLoggedIn(scope, true);
       const keepLabel = keepCheckbox.closest ? keepCheckbox.closest('.login-option') : null;
-      if (scopeOf(scope) === SCOPES.ADMIN || scopeOf(scope) === SCOPES.RIDER) {
-        if (keepLabel) keepLabel.hidden = true;
+      if (adminMobile) {
+        keepCheckbox.checked = isAutoLoginEnabled(scope);
+        if (keepLabel) keepLabel.hidden = false;
+      } else {
+        keepCheckbox.checked = true;
+        if (!isKeepLoggedIn(scope)) setKeepLoggedIn(scope, true);
+        if (scopeOf(scope) === SCOPES.ADMIN || scopeOf(scope) === SCOPES.RIDER) {
+          if (keepLabel) keepLabel.hidden = true;
+        }
       }
     }
     if (idInput) {
       const remembered = getRememberedId(scope);
       if (remembered) idInput.value = remembered;
     }
+    if (passwordInput && rememberCheckbox?.checked) {
+      const rememberedPassword = getRememberedPassword(scope);
+      if (rememberedPassword) passwordInput.value = rememberedPassword;
+    }
   }
 
   function captureLoginPrefs(scope, elements = {}) {
-    const { idInput, rememberCheckbox, keepCheckbox } = elements;
+    const { idInput, passwordInput, rememberCheckbox, keepCheckbox } = elements;
     const loginId = String(idInput?.value || '').trim();
-    saveRememberId(scope, loginId, Boolean(rememberCheckbox?.checked));
+    const remember = Boolean(rememberCheckbox?.checked);
+    saveRememberId(scope, loginId, remember);
+    if (passwordInput) saveRememberPassword(scope, passwordInput.value, remember);
+    if (isAdminMobileApp() && keepCheckbox) setAutoLoginEnabled(scope, Boolean(keepCheckbox.checked));
     // 관리자·기사: 체크 여부와 관계없이 항상 로그인 유지
     setKeepLoggedIn(scope, true);
   }
@@ -210,14 +281,17 @@
   function restoreIdAfterLogout(scope, elements = {}) {
     const { idInput, rememberCheckbox, passwordInput } = elements;
     if (passwordInput) passwordInput.value = '';
-    applyLoginForm(scope, { idInput, rememberCheckbox });
+    applyLoginForm(scope, { idInput, passwordInput, rememberCheckbox });
   }
 
   window.BremLoginPrefs = {
     SCOPES,
     isRememberIdEnabled,
     getRememberedId,
+    getRememberedPassword,
     saveRememberId,
+    isAutoLoginEnabled,
+    setAutoLoginEnabled,
     isKeepLoggedIn,
     setKeepLoggedIn,
     getSessionStore,
