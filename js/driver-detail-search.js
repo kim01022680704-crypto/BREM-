@@ -723,6 +723,22 @@ const BremDriverDetailSearch = (function () {
     showSearch();
   }
 
+  async function ensureHomepageDrivers() {
+    const storage = window.BremStorage;
+    if (!storage) return;
+    // ERP 관리자 홈과 같다. 배경 수화를 끝낸 뒤 대시보드 섹션(기사 목록 포함)을 연다.
+    if (typeof storage.hydrateAdminDataInBackground === 'function') {
+      await storage.hydrateAdminDataInBackground().catch(() => {});
+    }
+    if (typeof storage.ensureSectionLoaded === 'function') {
+      try {
+        await storage.ensureSectionLoaded('dashboard');
+      } catch (error) {
+        if (!drivers().length) throw error;
+      }
+    }
+  }
+
   function openPanel() {
     const panel = $('#driverDetailPanel');
     if (!panel) return;
@@ -731,6 +747,18 @@ const BremDriverDetailSearch = (function () {
     panel.classList.add('is-open');
     markOpenButtons(true);
     open();
+    const root = $('#driverDetailResults');
+    const typed = String($('#driverDetailQuery')?.value || '').trim();
+    if (root && !typed && !drivers().length) {
+      root.innerHTML = '<p class="driver-detail-empty">기사 목록 불러오는 중…</p>';
+    }
+    void ensureHomepageDrivers().then(() => {
+      $('#driverDetailQuery')?.dispatchEvent(new Event('input'));
+    }).catch(error => {
+      if (root) {
+        root.innerHTML = `<p class="driver-detail-empty">${escapeHtml(error?.message || '기사 목록을 불러오지 못했습니다.')}</p>`;
+      }
+    });
   }
 
   function closePanel() {
