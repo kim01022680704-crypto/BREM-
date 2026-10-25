@@ -19,7 +19,7 @@
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
   <link rel="stylesheet" href="css/admin.css?v=20261025inq8">
-  <link rel="stylesheet" href="css/driver-detail-search.css?v=20261025panel3">
+  <link rel="stylesheet" href="css/driver-detail-search.css?v=20261025panel4">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
@@ -9188,33 +9188,36 @@
         </article>
       </section>
     </main>
-    <aside class="driver-detail-panel" id="driverDetailPanel" hidden aria-label="기사상세검색">
-      <div class="driver-detail-panel__head">
-        <h2>기사상세검색</h2>
-        <button type="button" class="small-btn" data-driver-detail-close>닫기</button>
-      </div>
-      <p class="form-help">이름·전화·ERP ID·배민ID·쿠팡ID로 기사를 찾고, 정산주(수~화) 기준 배달료·콜수·수락율·거절율·등록 지역을 봅니다.</p>
-      <div class="driver-detail-toolbar">
-        <label class="field driver-detail-search-field">
-          <span class="field-label">기사 검색</span>
-          <input type="search" id="driverDetailQuery" placeholder="이름 · 전화 · ERP ID · 배민ID · 쿠팡ID" autocomplete="off">
-        </label>
-        <div class="driver-org-week-bar">
-          <span class="baemin-field__label">정산주 (수~화)</span>
-          <button type="button" class="small-btn" id="driverDetailWeekPrevBtn" title="이전 주">&lt;&lt;</button>
-          <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="driver-detail-week" id="driverDetailWeekBtn">이번 주(수)</button>
-          <input type="hidden" id="driverDetailWeek">
-          <button type="button" class="small-btn" id="driverDetailWeekNextBtn" title="다음 주">&gt;&gt;</button>
-          <span class="field-preview week-range-label" id="driverDetailWeekRange">수~화</span>
+    <div class="driver-detail-popup" id="driverDetailPanel" hidden>
+      <button type="button" class="driver-detail-popup__backdrop" data-driver-detail-close aria-label="닫기"></button>
+      <div class="driver-detail-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="driverDetailTitle">
+        <div class="driver-detail-popup__head">
+          <h2 id="driverDetailTitle">기사상세검색</h2>
+          <button type="button" class="small-btn" data-driver-detail-close>닫기</button>
+        </div>
+        <div id="driverDetailSearchView">
+          <label class="field driver-detail-search-field">
+            <span class="field-label">기사 검색</span>
+            <input type="search" id="driverDetailQuery" placeholder="기사 이름 · 전화 · ERP ID · 배민ID · 쿠팡ID" autocomplete="off">
+          </label>
+          <div class="driver-detail-results" id="driverDetailResults" aria-live="polite"></div>
+        </div>
+        <div id="driverDetailScreen" hidden>
+          <div class="driver-detail-detailbar">
+            <button type="button" class="small-btn" data-driver-detail-back>이름 검색</button>
+            <div class="driver-org-week-bar">
+              <span class="baemin-field__label">정산주 (수~화)</span>
+              <button type="button" class="small-btn" id="driverDetailWeekPrevBtn" title="이전 주">&lt;&lt;</button>
+              <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="driver-detail-week" id="driverDetailWeekBtn">이번 주(수)</button>
+              <input type="hidden" id="driverDetailWeek">
+              <button type="button" class="small-btn" id="driverDetailWeekNextBtn" title="다음 주">&gt;&gt;</button>
+              <span class="field-preview week-range-label" id="driverDetailWeekRange">수~화</span>
+            </div>
+          </div>
+          <div id="driverDetailBody"></div>
         </div>
       </div>
-      <div class="driver-detail-layout">
-        <div class="driver-detail-results" id="driverDetailResults" aria-live="polite"></div>
-        <div class="driver-detail-body" id="driverDetailBody">
-          <p class="driver-detail-empty">기사를 검색한 뒤 이름을 선택하세요.</p>
-        </div>
-      </div>
-    </aside>
+    </div>
   </div>
 
   <div class="overlay" id="overlay"></div>
@@ -9783,7 +9786,7 @@
   <script src="js/tax-management-admin.js?v=20261001tax1"></script>
   <script src="js/coupang-region-match.js?v=20261013zmatch1"></script>
   <script src="js/driver-management-admin.js?v=20261025panel1"></script>
-  <script src="js/driver-detail-search.js?v=20261025panel1"></script>
+  <script src="js/driver-detail-search.js?v=20261025panel4"></script>
   <script src="js/inactive-drivers-admin.js?v=20260922active1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260922pay1"></script>

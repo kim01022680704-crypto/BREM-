@@ -181,7 +181,7 @@ const BremDriverDetailSearch = (function () {
     if (!root) return;
     const query = String(state.query || '').trim();
     if (!query) {
-      root.innerHTML = '<p class="driver-detail-empty">이름, 전화, ID를 입력하세요.</p>';
+      root.innerHTML = '<p class="driver-detail-empty">기사 이름을 입력하세요.</p>';
       return;
     }
     const hits = searchHits();
@@ -194,7 +194,7 @@ const BremDriverDetailSearch = (function () {
       const active = id && id === state.selectedId ? ' is-active' : '';
       return `<button type="button" class="driver-detail-hit${active}" data-driver-detail-id="${escapeHtml(id)}">
         <strong>${escapeHtml(driver.name || '-')}</strong>
-        <small>${escapeHtml(erpId(driver) || '-')} · ${escapeHtml(driver.status || '근무중')}</small>
+        <small>${escapeHtml(erpId(driver) || '-')} · ${escapeHtml(phoneLabel(driver))} · ${escapeHtml(driver.status || '근무중')}</small>
       </button>`;
     }).join('');
   }
@@ -400,8 +400,10 @@ const BremDriverDetailSearch = (function () {
       const hit = event.target.closest('[data-driver-detail-id]');
       if (!hit) return;
       state.selectedId = hit.dataset.driverDetailId || '';
-      renderResults();
-      void renderDetail();
+      showDetail();
+    });
+    document.addEventListener('click', event => {
+      if (event.target.closest('[data-driver-detail-back]')) showSearch();
     });
     $('#driverDetailWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
     $('#driverDetailWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
@@ -419,14 +421,35 @@ const BremDriverDetailSearch = (function () {
     document.querySelector('[data-driver-mgmt-tab="detail"]')?.classList.toggle('is-open', open);
   }
 
+  function showSearch() {
+    const search = $('#driverDetailSearchView');
+    const screen = $('#driverDetailScreen');
+    const title = $('#driverDetailTitle');
+    if (search) search.hidden = false;
+    if (screen) screen.hidden = true;
+    if (title) title.textContent = '기사상세검색';
+    renderResults();
+    window.setTimeout(() => $('#driverDetailQuery')?.focus(), 30);
+  }
+
+  function showDetail() {
+    const search = $('#driverDetailSearchView');
+    const screen = $('#driverDetailScreen');
+    const title = $('#driverDetailTitle');
+    const driver = drivers().find(item => String(item.id || '') === state.selectedId);
+    if (search) search.hidden = true;
+    if (screen) screen.hidden = false;
+    if (title) title.textContent = driver?.name ? `${driver.name} 상세` : '기사상세';
+    if (!state.weekStart) state.weekStart = weekStartKey(localDateKey());
+    syncWeekUi();
+    void renderDetail();
+  }
+
   function open() {
     bind();
     if (!state.weekStart) state.weekStart = weekStartKey(localDateKey());
     syncWeekUi();
-    renderResults();
-    if (state.selectedId && !$('#driverDetailBody')?.querySelector('.driver-detail-kpis')) {
-      void renderDetail();
-    }
+    showSearch();
   }
 
   function openPanel() {
@@ -434,24 +457,18 @@ const BremDriverDetailSearch = (function () {
     if (!panel) return;
     bind();
     panel.hidden = false;
-    document.getElementById('adminApp')?.classList.add('driver-detail-open');
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => panel.classList.add('is-open'));
-    });
+    panel.classList.add('is-open');
     markOpenButtons(true);
     open();
-    window.setTimeout(() => $('#driverDetailQuery')?.focus(), 30);
   }
 
   function closePanel() {
     const panel = $('#driverDetailPanel');
     if (!panel) return;
     panel.classList.remove('is-open');
+    panel.hidden = true;
     document.getElementById('adminApp')?.classList.remove('driver-detail-open');
     markOpenButtons(false);
-    window.setTimeout(() => {
-      if (!panel.classList.contains('is-open')) panel.hidden = true;
-    }, 180);
   }
 
   function togglePanel() {
