@@ -1392,28 +1392,20 @@ const BremPromotionApplyAdmin = (function () {
     return parsed;
   }
 
-  function settlementNameList(names) {
-    const text = String(names || '').trim();
-    if (!text || /^\d+명$/.test(text)) return [];
-    return text.split(',').map(part => part.trim()).filter(Boolean);
-  }
-
-  function settlementSummary(meta) {
-    if (!meta?.value) return meta?.label || '';
-    const list = settlementNameList(meta.names);
-    const countLabel = /^\d+명$/.test(String(meta.names || '').trim())
-      ? String(meta.names).trim()
-      : (list.length ? `${list.length}명` : '');
-    const preview = list.length
-      ? (list.length > 3 ? `${list.slice(0, 3).join(', ')} 외 ${list.length - 3}명` : list.join(', '))
-      : '';
-    return [meta.region, preview || countLabel, meta.period].filter(Boolean).join(' · ') || meta.label;
+  function settlementOptionLabel(item) {
+    const names = String(item?.matchedNamesLabel || '').trim();
+    let count = '';
+    if (/^\d+명$/.test(names)) count = names;
+    else if (names) {
+      const total = names.split(',').map(part => part.trim()).filter(Boolean).length;
+      if (total) count = `${total}명`;
+    }
+    const period = item?.startDate && item?.endDate ? `${item.startDate}~${item.endDate}` : '';
+    return [item?.region, count, period].filter(Boolean).join(' · ');
   }
 
   function settlementOptionHtml(item) {
-    const names = String(item.matchedNamesLabel || '');
-    const period = item.startDate && item.endDate ? `${item.startDate}~${item.endDate}` : '';
-    return `<option value="${escapeHtml(item.id)}" data-region="${escapeHtml(item.region || '')}" data-names="${escapeHtml(names)}" data-period="${escapeHtml(period)}">${escapeHtml(item.label)}</option>`;
+    return `<option value="${escapeHtml(item.id)}">${escapeHtml(settlementOptionLabel(item))}</option>`;
   }
 
   function fillSettlementSelect(select, options, emptyLabel) {
@@ -1424,170 +1416,6 @@ const BremPromotionApplyAdmin = (function () {
       .concat(list.map(settlementOptionHtml))
       .join('');
     select.value = previous && list.some(item => item.id === previous) ? previous : '';
-    mountSettlementSelectMenu(select);
-  }
-
-  function settlementMenuOf(select) {
-    const menu = select?.nextElementSibling;
-    return menu && menu.classList.contains('settlement-select-menu') ? menu : null;
-  }
-
-  function closeSettlementMenus(except) {
-    document.querySelectorAll('.settlement-select-menu.is-open').forEach(menu => {
-      if (menu === except) return;
-      menu.classList.remove('is-open');
-      const panel = menu.querySelector('.settlement-select-menu__panel');
-      const trigger = menu.querySelector('.settlement-select-menu__trigger');
-      if (panel) panel.hidden = true;
-      if (trigger) trigger.setAttribute('aria-expanded', 'false');
-    });
-  }
-
-  function placeSettlementMenuPanel(trigger, panel) {
-    const rect = trigger.getBoundingClientRect();
-    const width = Math.max(rect.width, Math.min(720, window.innerWidth - 24));
-    let left = rect.left;
-    if (left + width > window.innerWidth - 12) left = Math.max(12, window.innerWidth - width - 12);
-    const top = rect.bottom + 4;
-    panel.style.left = `${left}px`;
-    panel.style.top = `${top}px`;
-    panel.style.width = `${width}px`;
-    panel.style.maxHeight = `${Math.max(180, window.innerHeight - top - 12)}px`;
-  }
-
-  function syncSettlementSelectMenu(select) {
-    const menu = settlementMenuOf(select);
-    if (!menu) return;
-    const trigger = menu.querySelector('.settlement-select-menu__trigger');
-    const panel = menu.querySelector('.settlement-select-menu__panel');
-    const roster = menu.querySelector('.settlement-select-menu__roster');
-    const options = Array.from(select.options).map(option => ({
-      value: option.value,
-      label: option.textContent || '',
-      region: option.dataset.region || '',
-      names: option.dataset.names || '',
-      period: option.dataset.period || ''
-    }));
-    const selected = options.find(item => item.value === select.value) || options[0] || { value: '', label: '' };
-    if (trigger) {
-      trigger.textContent = settlementSummary(selected);
-      trigger.title = selected.value && selected.names ? selected.names : trigger.textContent;
-    }
-    if (panel) {
-      panel.innerHTML = options.map(item => {
-        const names = settlementNameList(item.names);
-        const namesHtml = names.length
-          ? `<span class="settlement-select-menu__names">${escapeHtml(names.join(', '))}</span>`
-          : '';
-        const selectedClass = item.value === select.value ? ' is-selected' : '';
-        return `<button type="button" class="settlement-select-menu__option${selectedClass}" role="option" data-value="${escapeHtml(item.value)}" aria-selected="${item.value === select.value ? 'true' : 'false'}"><span class="settlement-select-menu__head">${escapeHtml(settlementSummary(item))}</span>${namesHtml}</button>`;
-      }).join('');
-    }
-    if (roster) {
-      const names = settlementNameList(selected.names);
-      roster.hidden = names.length === 0;
-      roster.textContent = names.join(', ');
-    }
-    if (menu.classList.contains('is-open') && trigger && panel && !panel.hidden) {
-      placeSettlementMenuPanel(trigger, panel);
-    }
-  }
-
-  function mountSettlementSelectMenu(select) {
-    if (!select) return;
-    bindSettlementMenuDismiss();
-    if (select.dataset.menuReady === '1') {
-      syncSettlementSelectMenu(select);
-      return;
-    }
-    select.dataset.menuReady = '1';
-    select.classList.add('settlement-select-native');
-    select.tabIndex = -1;
-    select.setAttribute('aria-hidden', 'true');
-
-    const menu = document.createElement('div');
-    menu.className = 'settlement-select-menu';
-    const trigger = document.createElement('button');
-    trigger.type = 'button';
-    trigger.className = 'settlement-select-menu__trigger';
-    trigger.setAttribute('aria-haspopup', 'listbox');
-    trigger.setAttribute('aria-expanded', 'false');
-    const panel = document.createElement('div');
-    panel.className = 'settlement-select-menu__panel';
-    panel.hidden = true;
-    panel.setAttribute('role', 'listbox');
-    const roster = document.createElement('p');
-    roster.className = 'settlement-select-menu__roster';
-    roster.hidden = true;
-    menu.append(trigger, panel, roster);
-    select.insertAdjacentElement('afterend', menu);
-
-    trigger.addEventListener('click', event => {
-      event.preventDefault();
-      event.stopPropagation();
-      const willOpen = !menu.classList.contains('is-open');
-      closeSettlementMenus();
-      if (!willOpen) return;
-      menu.classList.add('is-open');
-      panel.hidden = false;
-      trigger.setAttribute('aria-expanded', 'true');
-      placeSettlementMenuPanel(trigger, panel);
-      panel.querySelector('.is-selected')?.scrollIntoView({ block: 'nearest' });
-    });
-
-    panel.addEventListener('click', event => {
-      const button = event.target.closest('[data-value]');
-      if (!button) return;
-      event.preventDefault();
-      event.stopPropagation();
-      select.value = button.dataset.value;
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      syncSettlementSelectMenu(select);
-      closeSettlementMenus();
-    });
-
-    select.addEventListener('change', () => syncSettlementSelectMenu(select));
-
-    const label = select.closest('label');
-    label?.addEventListener('mousedown', event => {
-      if (event.target.closest('button')) return;
-      event.preventDefault();
-    });
-    label?.addEventListener('click', event => {
-      if (event.target.closest('button')) return;
-      event.preventDefault();
-      event.stopPropagation();
-      trigger.click();
-    });
-
-    syncSettlementSelectMenu(select);
-  }
-
-  function bindSettlementMenuDismiss() {
-    if (bindSettlementMenuDismiss.done) return;
-    bindSettlementMenuDismiss.done = true;
-    document.addEventListener('click', event => {
-      if (event.target.closest('.settlement-select-menu')) return;
-      closeSettlementMenus();
-    });
-    document.addEventListener('keydown', event => {
-      if (event.key === 'Escape') closeSettlementMenus();
-    });
-    window.addEventListener('resize', () => {
-      document.querySelectorAll('.settlement-select-menu.is-open').forEach(menu => {
-        const trigger = menu.querySelector('.settlement-select-menu__trigger');
-        const panel = menu.querySelector('.settlement-select-menu__panel');
-        if (trigger && panel) placeSettlementMenuPanel(trigger, panel);
-      });
-    });
-    window.addEventListener('scroll', event => {
-      if (event.target?.closest?.('.settlement-select-menu__panel')) return;
-      document.querySelectorAll('.settlement-select-menu.is-open').forEach(menu => {
-        const trigger = menu.querySelector('.settlement-select-menu__trigger');
-        const panel = menu.querySelector('.settlement-select-menu__panel');
-        if (trigger && panel) placeSettlementMenuPanel(trigger, panel);
-      });
-    }, true);
   }
 
   function renderSettlementSelectForPlatform(platform) {
