@@ -340,7 +340,12 @@ const BremDriverManagementAdmin = (function () {
 
   function setTab(tab, options = {}) {
     const next = String(tab || 'org');
-    state.tab = next === 'region' || next === 'org-list' || next === 'unassigned' ? next : 'org';
+    if (next === 'detail') {
+      window.BremDriverDetailSearch?.togglePanel?.();
+      return;
+    }
+    const detailTabs = new Set(['region', 'org-list', 'unassigned']);
+    state.tab = detailTabs.has(next) ? next : 'org';
     $$('[data-driver-mgmt-tab]').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.driverMgmtTab === state.tab);
     });

@@ -2154,6 +2154,16 @@
           };
         }
 
+        if (triggerId === 'driver-detail-week') {
+          return {
+            hiddenInput: $('#driverDetailWeek'),
+            labelEl: $('#driverDetailWeekBtn'),
+            onSelect(value) {
+              window.BremDriverDetailSearch?.setWeek?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'payroll-week-available') {
           return {
             hiddenInput: $('#payrollDailyAvailableWeekStart'),
