@@ -131,8 +131,13 @@
 
   function currentAdmin() {
     const account = window.BremStorage?.auth?.getAdminSessionAccount?.() || null;
-    const name = String(account?.name || account?.loginName || '').trim() || '관리자';
-    return { id: String(account?.id || '').trim(), name };
+    const loginId = String(account?.name || account?.loginName || '').trim() || '관리자';
+    return { id: String(account?.id || '').trim(), name: loginId, loginId };
+  }
+
+  function loginLabel(value) {
+    const loginId = String(value || '').trim();
+    return loginId ? `아이디 ${loginId}` : '';
   }
 
   function typingName(inquiry, now = Date.now()) {
@@ -165,13 +170,13 @@
     const typing = typingName(inquiry);
     const parts = [];
     if (typing) {
-      parts.push(`<p class="inquiry-typing">${escapeHtml(typing)}님이 답장을 쓰는 중입니다.</p>`);
+      parts.push(`<p class="inquiry-typing">${escapeHtml(loginLabel(typing))} 답장 쓰는 중</p>`);
     }
     if (inquiry?.adminReply) {
-      const who = String(inquiry.adminReplyBy || '').trim();
+      const who = loginLabel(inquiry.adminReplyBy);
       const when = String(inquiry.adminRepliedAt || '').replace('T', ' ').slice(0, 16);
       const preview = String(inquiry.adminReply).replace(/\s+/g, ' ').slice(0, 90);
-      const head = who ? `${who} 답장` : '답장함';
+      const head = who || '답장함';
       parts.push(`<p class="inquiry-reply-preview"><strong>${escapeHtml(head)}</strong>${when ? ` · ${escapeHtml(when)}` : ''} · ${escapeHtml(preview)}</p>`);
     }
     return parts.join('');
@@ -179,19 +184,19 @@
 
   function replyNote(inquiry) {
     const typing = typingName(inquiry);
-    if (typing) return `${typing}님이 지금 답장을 쓰고 있습니다. 겹치면 한쪽 답장이 사라질 수 있습니다.`;
+    if (typing) return `${loginLabel(typing)} 답장 쓰는 중입니다. 겹치면 한쪽 답장이 사라질 수 있습니다.`;
     if (inquiry?.adminReply && inquiry?.riderAckAt) {
-      const who = String(inquiry.adminReplyBy || '관리자').trim();
+      const who = loginLabel(inquiry.adminReplyBy || '관리자');
       const when = String(inquiry.riderAckAt || '').replace('T', ' ').slice(0, 16);
-      return `${who}님 답장을 기사가 확인했습니다.${when ? ` (${when})` : ''}`;
+      return `${who} 답장을 기사가 확인했습니다.${when ? ` (${when})` : ''}`;
     }
     if (inquiry?.adminReply) {
-      const who = String(inquiry.adminReplyBy || '').trim();
+      const who = loginLabel(inquiry.adminReplyBy);
       return who
-        ? `${who}님이 이미 답장했습니다. 다시 보내면 그 답장이 바뀝니다.`
+        ? `${who} 답장입니다. 다시 보내면 그 답장이 바뀝니다.`
         : '답장을 보냈습니다. 다시 보내면 그 답장이 바뀝니다.';
     }
-    return '답장을 보내면 기사앱에 보이고, 다른 관리자 목록에도 누가 보냈는지 남습니다.';
+    return '답장을 보내면 기사앱에 보이고, 관리자 화면에는 로그인한 아이디가 남습니다.';
   }
 
   async function remove(id) {

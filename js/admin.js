@@ -9183,13 +9183,13 @@
             let latest = inquiryListCache.find(item => String(item.id) === String(inquiryId));
             if (!latest) latest = (await loadRiderInquiries()).find(item => String(item.id) === String(inquiryId));
             const typing = window.BremRiderInquiryApi?.typingName?.(latest);
-            if (typing && !window.confirm(`${typing}님이 지금 답장을 쓰고 있습니다. 그래도 보낼까요?`)) return;
+            if (typing && !window.confirm(`아이디 ${typing} 답장 쓰는 중입니다. 그래도 보낼까요?`)) return;
             if (
               latest?.adminReply
               && latest.adminReply !== reply
               && latest.adminReplyById
               && latest.adminReplyById !== me.id
-              && !window.confirm(`${latest.adminReplyBy || '다른 관리자'}님이 이미 답장했습니다. 보내면 그 답장이 바뀝니다. 보낼까요?`)
+              && !window.confirm(`아이디 ${latest.adminReplyBy || '다른 관리자'} 답장입니다. 보내면 그 답장이 바뀝니다. 보낼까요?`)
             ) return;
             const patch = {
               adminReply: reply,
