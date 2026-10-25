@@ -121,6 +121,79 @@
     return updateInquiry(id, { status });
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function currentAdmin() {
+    const account = window.BremStorage?.auth?.getAdminSessionAccount?.() || null;
+    const name = String(account?.name || account?.loginName || '').trim() || '관리자';
+    return { id: String(account?.id || '').trim(), name };
+  }
+
+  function typingName(inquiry, now = Date.now()) {
+    const at = Date.parse(inquiry?.replyingAt || '');
+    if (!Number.isFinite(at) || now - at > 40000) return '';
+    const me = currentAdmin();
+    if (me.id && String(inquiry?.replyingById || '') === me.id) return '';
+    return String(inquiry?.replyingBy || '다른 관리자');
+  }
+
+  function statusLabel(inquiry) {
+    const status = inquiry?.status;
+    if (status === 'done') return '처리완료';
+    if (inquiry?.riderAckAt) return '기사확인';
+    if (inquiry?.adminReply) return '답장함';
+    if (status === 'read') return '확인중';
+    return '미확인';
+  }
+
+  function statusClass(inquiry) {
+    const status = inquiry?.status;
+    if (status === 'done') return 'inquiry-badge inquiry-badge--done';
+    if (inquiry?.riderAckAt) return 'inquiry-badge inquiry-badge--ack';
+    if (inquiry?.adminReply) return 'inquiry-badge inquiry-badge--reply';
+    if (status === 'read') return 'inquiry-badge inquiry-badge--read';
+    return 'inquiry-badge inquiry-badge--new';
+  }
+
+  function listExtraHtml(inquiry) {
+    const typing = typingName(inquiry);
+    const parts = [];
+    if (typing) {
+      parts.push(`<p class="inquiry-typing">${escapeHtml(typing)}님이 답장을 쓰는 중입니다.</p>`);
+    }
+    if (inquiry?.adminReply) {
+      const who = String(inquiry.adminReplyBy || '').trim();
+      const when = String(inquiry.adminRepliedAt || '').replace('T', ' ').slice(0, 16);
+      const preview = String(inquiry.adminReply).replace(/\s+/g, ' ').slice(0, 90);
+      const head = who ? `${who} 답장` : '답장함';
+      parts.push(`<p class="inquiry-reply-preview"><strong>${escapeHtml(head)}</strong>${when ? ` · ${escapeHtml(when)}` : ''} · ${escapeHtml(preview)}</p>`);
+    }
+    return parts.join('');
+  }
+
+  function replyNote(inquiry) {
+    const typing = typingName(inquiry);
+    if (typing) return `${typing}님이 지금 답장을 쓰고 있습니다. 겹치면 한쪽 답장이 사라질 수 있습니다.`;
+    if (inquiry?.adminReply && inquiry?.riderAckAt) {
+      const who = String(inquiry.adminReplyBy || '관리자').trim();
+      const when = String(inquiry.riderAckAt || '').replace('T', ' ').slice(0, 16);
+      return `${who}님 답장을 기사가 확인했습니다.${when ? ` (${when})` : ''}`;
+    }
+    if (inquiry?.adminReply) {
+      const who = String(inquiry.adminReplyBy || '').trim();
+      return who
+        ? `${who}님이 이미 답장했습니다. 다시 보내면 그 답장이 바뀝니다.`
+        : '답장을 보냈습니다. 다시 보내면 그 답장이 바뀝니다.';
+    }
+    return '답장을 보내면 기사앱에 보이고, 다른 관리자 목록에도 누가 보냈는지 남습니다.';
+  }
+
   async function remove(id) {
     await waitForConfig();
 
@@ -143,6 +216,12 @@
     updateInquiry,
     updateStatus,
     remove,
+    currentAdmin,
+    typingName,
+    statusLabel,
+    statusClass,
+    listExtraHtml,
+    replyNote,
     ready: waitForConfig()
   };
 })();

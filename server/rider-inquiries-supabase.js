@@ -119,6 +119,20 @@ async function updateInquiry(id, patch = {}) {
     if (!reply) throw new Error('답장 내용을 입력하세요.');
     raw.adminReply = reply;
     raw.adminRepliedAt = nowIso();
+    raw.adminReplyBy = String(patch.adminReplyBy || raw.adminReplyBy || '').trim();
+    raw.adminReplyById = String(patch.adminReplyById || raw.adminReplyById || '').trim();
+    raw.replyingBy = '';
+    raw.replyingById = '';
+    raw.replyingAt = '';
+  }
+  if (patch.replyingClear) {
+    raw.replyingBy = '';
+    raw.replyingById = '';
+    raw.replyingAt = '';
+  } else if (patch.replyingBy != null) {
+    raw.replyingBy = String(patch.replyingBy || '').trim();
+    raw.replyingById = String(patch.replyingById || '').trim();
+    raw.replyingAt = raw.replyingBy ? nowIso() : '';
   }
   if (patch.riderAck) {
     raw.riderAckAt = nowIso();

@@ -141,17 +141,11 @@
   }
 
   function inquiryStatusLabel(inquiry) {
-    if (inquiry?.status === 'done') return '처리완료';
-    if (inquiry?.riderAckAt) return '기사확인';
-    if (inquiry?.status === 'read') return '확인중';
-    return '미확인';
+    return window.BremRiderInquiryApi?.statusLabel?.(inquiry) || '미확인';
   }
 
   function inquiryStatusClass(inquiry) {
-    if (inquiry?.status === 'done') return 'inquiry-badge inquiry-badge--done';
-    if (inquiry?.riderAckAt) return 'inquiry-badge inquiry-badge--ack';
-    if (inquiry?.status === 'read') return 'inquiry-badge inquiry-badge--read';
-    return 'inquiry-badge inquiry-badge--new';
+    return window.BremRiderInquiryApi?.statusClass?.(inquiry) || 'inquiry-badge inquiry-badge--new';
   }
 
   function formatDateTime(value) {
@@ -244,6 +238,7 @@
           <span>구분: ${escapeHtml(inquiry.inquiryType || '-')}</span>
         </p>
         <p class="notice-content">${escapeHtml(inquiry.message || '')}</p>
+        ${window.BremRiderInquiryApi?.listExtraHtml?.(inquiry) || ''}
       </article>
     `).join('');
   }
@@ -293,11 +288,10 @@
       replyBox.hidden = false;
       if ($('adminInquiryReplyInput')) $('adminInquiryReplyInput').value = inquiry.adminReply || '';
       if ($('adminInquiryReplyNote')) {
-        $('adminInquiryReplyNote').textContent = inquiry.riderAckAt
-          ? `기사가 답장을 확인했습니다. (${formatDateTime(inquiry.riderAckAt)})`
-          : (inquiry.adminReply ? '답장을 보냈습니다. 기사 확인을 기다리는 중입니다.' : '답장을 남기면 기사앱에 표시됩니다.');
+        $('adminInquiryReplyNote').textContent = window.BremRiderInquiryApi?.replyNote?.(inquiry) || '';
       }
     }
+    popup.dataset.inquiryId = String(inquiry.id || '');
     if ($('adminInquiryPopupActions')) {
       $('adminInquiryPopupActions').innerHTML = `
         ${inquiry.status !== 'read' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="read">확인중</button>` : ''}
@@ -307,7 +301,42 @@
         <button class="small-btn" type="button" data-inquiry-popup-close>닫기</button>
       `;
     }
+    bindInquiryReplyPresence();
     popup.hidden = false;
+  }
+
+  let inquiryPresenceTimer = null;
+
+  function bindInquiryReplyPresence() {
+    const input = $('adminInquiryReplyInput');
+    const popup = $('adminInquiryPopup');
+    if (!input || !popup || input.dataset.presenceBound === '1') return;
+    input.dataset.presenceBound = '1';
+    const beat = () => {
+      const inquiryId = popup.dataset.inquiryId || '';
+      if (!inquiryId || document.activeElement !== input) return;
+      const me = window.BremRiderInquiryApi?.currentAdmin?.() || { id: '', name: '관리자' };
+      window.BremRiderInquiryApi?.updateInquiry(inquiryId, {
+        replyingBy: me.name,
+        replyingById: me.id
+      }).catch(() => {});
+    };
+    input.addEventListener('focus', () => {
+      beat();
+      if (inquiryPresenceTimer) window.clearInterval(inquiryPresenceTimer);
+      inquiryPresenceTimer = window.setInterval(beat, 12000);
+    });
+    input.addEventListener('blur', () => {
+      if (inquiryPresenceTimer) {
+        window.clearInterval(inquiryPresenceTimer);
+        inquiryPresenceTimer = null;
+      }
+      const inquiryId = popup.dataset.inquiryId || '';
+      window.setTimeout(() => {
+        if (document.activeElement === input || !inquiryId) return;
+        window.BremRiderInquiryApi?.updateInquiry(inquiryId, { replyingClear: true }).catch(() => {});
+      }, 700);
+    });
   }
 
   function setupWeekPicker() {
@@ -365,15 +394,32 @@
       const unseen = fresh.filter(item => !seen.has(String(item.id)));
       fresh.forEach(item => seen.add(String(item.id)));
       writeSeen(seen);
+      const inquiryPanel = document.querySelector('[data-admin-app-panel="inquiry"]');
+      const popup = $('adminInquiryPopup');
+      if ((inquiryPanel && !inquiryPanel.hidden) || (popup && !popup.hidden)) {
+        await renderInquiries();
+        const openId = popup && !popup.hidden ? popup.dataset.inquiryId : '';
+        const input = $('adminInquiryReplyInput');
+        if (openId && document.activeElement !== input) {
+          const current = list.find(item => String(item.id) === String(openId));
+          const note = $('adminInquiryReplyNote');
+          const statusEl = $('adminInquiryPopupStatus');
+          if (current && note) note.textContent = window.BremRiderInquiryApi?.replyNote?.(current) || '';
+          if (current && statusEl) {
+            statusEl.className = inquiryStatusClass(current);
+            statusEl.textContent = inquiryStatusLabel(current);
+          }
+        }
+      }
       if (!unseen.length) return;
       lastAlertInquiryId = String(unseen[0].id || '');
       const body = $('adminInquiryAlertBody');
-      const popup = $('adminInquiryAlertPopup');
-      if (body && popup) {
+      const alertPopup = $('adminInquiryAlertPopup');
+      if (body && alertPopup) {
         body.innerHTML = unseen.slice(0, 5).map(item => (
           `<p><strong>${escapeHtml(item.name || '-')}</strong> · ${escapeHtml(item.inquiryType || '문의')}<br><span>${escapeHtml(String(item.message || '').slice(0, 80))}</span></p>`
         )).join('');
-        popup.hidden = false;
+        alertPopup.hidden = false;
       }
     } catch {
       /* ignore */
@@ -383,7 +429,7 @@
   function startInquiryWatch() {
     if (inquiryWatchTimer) return;
     void watchInquiries();
-    inquiryWatchTimer = window.setInterval(() => void watchInquiries(), 20000);
+    inquiryWatchTimer = window.setInterval(() => void watchInquiries(), 8000);
   }
 
   async function login(event) {
@@ -456,6 +502,12 @@
       }
       if (event.target.closest('[data-inquiry-popup-close]')) {
         const popup = $('adminInquiryPopup');
+        const inquiryId = popup?.dataset.inquiryId || '';
+        if (inquiryPresenceTimer) {
+          window.clearInterval(inquiryPresenceTimer);
+          inquiryPresenceTimer = null;
+        }
+        if (inquiryId) window.BremRiderInquiryApi?.updateInquiry(inquiryId, { replyingClear: true }).catch(() => {});
         if (popup) popup.hidden = true;
         return;
       }
@@ -482,9 +534,24 @@
           showToast('답장을 입력하세요.');
           return;
         }
-        await window.BremRiderInquiryApi.updateInquiry(replyBtn.dataset.replyInquiry, {
-          status: 'done',
-          adminReply: reply
+        const inquiryId = replyBtn.dataset.replyInquiry;
+        const me = window.BremRiderInquiryApi?.currentAdmin?.() || { id: '', name: '관리자' };
+        const latest = (await loadInquiries()).find(item => String(item.id) === String(inquiryId));
+        const typing = window.BremRiderInquiryApi?.typingName?.(latest);
+        if (typing && !window.confirm(`${typing}님이 지금 답장을 쓰고 있습니다. 그래도 보낼까요?`)) return;
+        if (
+          latest?.adminReply
+          && latest.adminReply !== reply
+          && latest.adminReplyById
+          && latest.adminReplyById !== me.id
+          && !window.confirm(`${latest.adminReplyBy || '다른 관리자'}님이 이미 답장했습니다. 보내면 그 답장이 바뀝니다. 보낼까요?`)
+        ) return;
+        await window.BremRiderInquiryApi.updateInquiry(inquiryId, {
+          status: latest?.status === 'done' ? 'done' : 'read',
+          adminReply: reply,
+          adminReplyBy: me.name,
+          adminReplyById: me.id,
+          replyingClear: true
         });
         showToast('답장을 보냈습니다.');
         $('adminInquiryPopup').hidden = true;

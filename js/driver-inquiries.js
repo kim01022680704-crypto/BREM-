@@ -144,7 +144,7 @@
       return;
     }
     listEl.innerHTML = rows.map(item => {
-      const canAck = !item.riderAckAt && item.status !== 'done';
+      const canAck = Boolean(item.adminReply) && !item.riderAckAt && item.status !== 'done';
       return `
       <article class="driver-inquiry-item">
         <div class="driver-inquiry-item__head">

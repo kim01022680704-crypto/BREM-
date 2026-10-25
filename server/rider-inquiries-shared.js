@@ -71,6 +71,11 @@ function extraFromPayload(payload = {}) {
     payslipSnapshot: source === 'payslip' ? sanitizePayslipSnapshot(payload.payslipSnapshot) : null,
     adminReply: String(payload.adminReply || '').trim(),
     adminRepliedAt: String(payload.adminRepliedAt || '').trim(),
+    adminReplyBy: String(payload.adminReplyBy || '').trim(),
+    adminReplyById: String(payload.adminReplyById || '').trim(),
+    replyingBy: String(payload.replyingBy || '').trim(),
+    replyingById: String(payload.replyingById || '').trim(),
+    replyingAt: String(payload.replyingAt || '').trim(),
     riderAckAt: String(payload.riderAckAt || '').trim()
   };
 }
@@ -84,6 +89,11 @@ function enrichRecord(record, raw = {}) {
     payslipSnapshot: record.payslipSnapshot || raw.payslipSnapshot,
     adminReply: record.adminReply || raw.adminReply,
     adminRepliedAt: record.adminRepliedAt || raw.adminRepliedAt,
+    adminReplyBy: record.adminReplyBy || raw.adminReplyBy,
+    adminReplyById: record.adminReplyById || raw.adminReplyById,
+    replyingBy: record.replyingBy || raw.replyingBy,
+    replyingById: record.replyingById || raw.replyingById,
+    replyingAt: record.replyingAt || raw.replyingAt,
     riderAckAt: record.riderAckAt || raw.riderAckAt
   });
   return {

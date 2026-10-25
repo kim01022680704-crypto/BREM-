@@ -5338,6 +5338,30 @@ textarea {
   border: 1px solid rgba(234, 179, 8, 0.35);
 }
 
+.inquiry-badge--reply {
+  color: #ddd6fe;
+  background: rgba(139, 92, 246, 0.18);
+  border: 1px solid rgba(167, 139, 250, 0.4);
+}
+
+.inquiry-typing {
+  margin: 8px 0 0;
+  color: #fdba74;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.inquiry-reply-preview {
+  margin: 6px 0 0;
+  color: #d4d4d8;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.inquiry-reply-preview strong {
+  color: #ddd6fe;
+}
+
 .inquiry-item {
   cursor: pointer;
 }

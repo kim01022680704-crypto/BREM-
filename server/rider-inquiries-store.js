@@ -75,6 +75,20 @@ function updateInquiry(id, patch = {}) {
     if (!reply) throw new Error('답장 내용을 입력하세요.');
     current.adminReply = reply;
     current.adminRepliedAt = nowIso();
+    current.adminReplyBy = String(patch.adminReplyBy || current.adminReplyBy || '').trim();
+    current.adminReplyById = String(patch.adminReplyById || current.adminReplyById || '').trim();
+    current.replyingBy = '';
+    current.replyingById = '';
+    current.replyingAt = '';
+  }
+  if (patch.replyingClear) {
+    current.replyingBy = '';
+    current.replyingById = '';
+    current.replyingAt = '';
+  } else if (patch.replyingBy != null) {
+    current.replyingBy = String(patch.replyingBy || '').trim();
+    current.replyingById = String(patch.replyingById || '').trim();
+    current.replyingAt = current.replyingBy ? nowIso() : '';
   }
   if (patch.riderAck) {
     current.riderAckAt = nowIso();

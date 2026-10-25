@@ -3956,19 +3956,11 @@
   }
 
   function inquiryStatusLabel(inquiry) {
-    const status = typeof inquiry === 'string' ? inquiry : inquiry?.status;
-    if (status === 'done') return '처리완료';
-    if (inquiry && typeof inquiry === 'object' && inquiry.riderAckAt) return '기사확인';
-    if (status === 'read') return '확인중';
-    return '미확인';
+    return window.BremRiderInquiryApi?.statusLabel?.(inquiry) || '미확인';
   }
 
   function inquiryStatusClass(inquiry) {
-    const status = typeof inquiry === 'string' ? inquiry : inquiry?.status;
-    if (status === 'done') return 'inquiry-badge inquiry-badge--done';
-    if (inquiry && typeof inquiry === 'object' && inquiry.riderAckAt) return 'inquiry-badge inquiry-badge--ack';
-    if (status === 'read') return 'inquiry-badge inquiry-badge--read';
-    return 'inquiry-badge inquiry-badge--new';
+    return window.BremRiderInquiryApi?.statusClass?.(inquiry) || 'inquiry-badge inquiry-badge--new';
   }
 
   async function renderRiderInquiries() {
@@ -4005,6 +3997,7 @@
           ${inquiry.source === 'payslip' ? '<span>주급명세서 첨부</span>' : ''}
         </p>
         <p class="notice-content">${escapeHtml(inquiry.message || '')}</p>
+        ${window.BremRiderInquiryApi?.listExtraHtml?.(inquiry) || ''}
       </article>
     `).join('');
   }
@@ -4050,8 +4043,50 @@
     `;
   }
 
+  let inquiryPresenceTimer = null;
+
+  function bindInquiryReplyPresence() {
+    const input = $('#adminInquiryReplyInput');
+    const popup = $('#adminInquiryPopup');
+    if (!input || !popup || input.dataset.presenceBound === '1') return;
+    input.dataset.presenceBound = '1';
+    const beat = () => {
+      const inquiryId = popup.dataset.inquiryId || '';
+      if (!inquiryId || document.activeElement !== input) return;
+      const me = window.BremRiderInquiryApi?.currentAdmin?.() || { id: '', name: '관리자' };
+      window.BremRiderInquiryApi?.updateInquiry(inquiryId, {
+        replyingBy: me.name,
+        replyingById: me.id
+      }).catch(() => {});
+    };
+    input.addEventListener('focus', () => {
+      beat();
+      if (inquiryPresenceTimer) window.clearInterval(inquiryPresenceTimer);
+      inquiryPresenceTimer = window.setInterval(beat, 12000);
+    });
+    input.addEventListener('blur', () => {
+      if (inquiryPresenceTimer) {
+        window.clearInterval(inquiryPresenceTimer);
+        inquiryPresenceTimer = null;
+      }
+      const inquiryId = popup.dataset.inquiryId || '';
+      window.setTimeout(() => {
+        if (document.activeElement === input || !inquiryId) return;
+        window.BremRiderInquiryApi?.updateInquiry(inquiryId, { replyingClear: true }).catch(() => {});
+      }, 700);
+    });
+  }
+
   function closeAdminInquiryPopup() {
     const popup = $('#adminInquiryPopup');
+    const inquiryId = popup?.dataset.inquiryId || '';
+    if (inquiryPresenceTimer) {
+      window.clearInterval(inquiryPresenceTimer);
+      inquiryPresenceTimer = null;
+    }
+    if (inquiryId) {
+      window.BremRiderInquiryApi?.updateInquiry(inquiryId, { replyingClear: true }).catch(() => {});
+    }
     if (popup) popup.hidden = true;
   }
 
@@ -4104,16 +4139,9 @@
       const replyInput = $('#adminInquiryReplyInput');
       const replyNote = $('#adminInquiryReplyNote');
       if (replyInput) replyInput.value = inquiry.adminReply || '';
-      if (replyNote) {
-        if (inquiry.riderAckAt) {
-          replyNote.textContent = `기사가 답장을 확인했습니다. (${formatDateTime(inquiry.riderAckAt)})`;
-        } else if (inquiry.adminReply) {
-          replyNote.textContent = '답장을 보냈습니다. 기사 확인을 기다리는 중입니다.';
-        } else {
-          replyNote.textContent = '답장을 남기면 기사앱 문의내역에 표시됩니다.';
-        }
-      }
+      if (replyNote) replyNote.textContent = window.BremRiderInquiryApi?.replyNote?.(inquiry) || '';
     }
+    popup.dataset.inquiryId = String(inquiry.id || '');
     if (actionsEl) {
       actionsEl.innerHTML = `
         ${inquiry.status !== 'read' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="read">확인중</button>` : ''}
@@ -4123,6 +4151,7 @@
         <button class="small-btn" type="button" data-inquiry-popup-close>닫기</button>
       `;
     }
+    bindInquiryReplyPresence();
     popup.hidden = false;
   }
 
@@ -4170,7 +4199,7 @@
     void watchNewRiderInquiries({ announce: true });
     inquiryWatchTimer = window.setInterval(() => {
       void watchNewRiderInquiries({ announce: true });
-    }, 20000);
+    }, 8000);
   }
 
   function setSidebarNavBadge(section, count) {
@@ -4200,6 +4229,24 @@
       fresh.forEach(item => seen.add(String(item.id)));
       writeSeenInquiryIds(seen);
       if (announce && unseen.length) showInquiryAlertPopup(unseen);
+      const section = document.getElementById('rider-inquiries');
+      const popup = $('#adminInquiryPopup');
+      const screenOpen = section?.classList.contains('active') || (popup && !popup.hidden);
+      if (screenOpen) {
+        await renderRiderInquiries();
+        const openId = popup && !popup.hidden ? popup.dataset.inquiryId : '';
+        const input = $('#adminInquiryReplyInput');
+        if (openId && document.activeElement !== input) {
+          const current = list.find(item => String(item.id) === String(openId));
+          const note = $('#adminInquiryReplyNote');
+          const statusEl = $('#adminInquiryPopupStatus');
+          if (current && note) note.textContent = window.BremRiderInquiryApi?.replyNote?.(current) || '';
+          if (current && statusEl) {
+            statusEl.className = inquiryStatusClass(current);
+            statusEl.textContent = inquiryStatusLabel(current);
+          }
+        }
+      }
     } catch {
       /* 목록 실패는 무시 */
     }
@@ -9043,16 +9090,36 @@
           showToast('답장 내용을 입력하세요.');
           return;
         }
-        const update = window.BremRiderInquiryApi?.updateInquiry
-          ? window.BremRiderInquiryApi.updateInquiry(inquiryId, { adminReply: reply, status: 'read' })
-          : Promise.resolve(BremStorage.riderInquiries.updateInquiry(inquiryId, { adminReply: reply, status: 'read' }));
-        update.then(() => {
-          showToast('답장을 보냈습니다.');
-          renderRiderInquiries();
-          void openAdminInquiryPopup(inquiryId);
-        }).catch(error => {
-          showToast(error.message || '답장 전송에 실패했습니다.');
-        });
+        const me = window.BremRiderInquiryApi?.currentAdmin?.() || { id: '', name: '관리자' };
+        void (async () => {
+          const latest = (await loadRiderInquiries()).find(item => String(item.id) === String(inquiryId));
+          const typing = window.BremRiderInquiryApi?.typingName?.(latest);
+          if (typing && !window.confirm(`${typing}님이 지금 답장을 쓰고 있습니다. 그래도 보낼까요?`)) return;
+          if (
+            latest?.adminReply
+            && latest.adminReply !== reply
+            && latest.adminReplyById
+            && latest.adminReplyById !== me.id
+            && !window.confirm(`${latest.adminReplyBy || '다른 관리자'}님이 이미 답장했습니다. 보내면 그 답장이 바뀝니다. 보낼까요?`)
+          ) return;
+          const patch = {
+            adminReply: reply,
+            adminReplyBy: me.name,
+            adminReplyById: me.id,
+            status: latest?.status === 'done' ? 'done' : 'read',
+            replyingClear: true
+          };
+          const update = window.BremRiderInquiryApi?.updateInquiry
+            ? window.BremRiderInquiryApi.updateInquiry(inquiryId, patch)
+            : Promise.resolve(BremStorage.riderInquiries.updateInquiry(inquiryId, patch));
+          update.then(() => {
+            showToast('답장을 보냈습니다.');
+            renderRiderInquiries();
+            void openAdminInquiryPopup(inquiryId);
+          }).catch(error => {
+            showToast(error.message || '답장 전송에 실패했습니다.');
+          });
+        })();
         return;
       }
 
