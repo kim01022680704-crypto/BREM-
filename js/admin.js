@@ -9228,21 +9228,31 @@
         const inquiryId = markInquiryButton.dataset.markInquiry;
         const nextStatus = markInquiryButton.dataset.status;
         const previousLabel = markInquiryButton.textContent;
+        const draft = String($('#adminInquiryReplyInput')?.value || '').trim();
+        const current = inquiryListCache.find(item => String(item.id) === String(inquiryId));
+        const me = window.BremRiderInquiryApi?.currentAdmin?.() || { id: '', name: '관리자' };
+        const patch = { status: nextStatus };
+        const savingReply = Boolean(draft && draft !== String(current?.adminReply || '').trim());
+        if (savingReply) {
+          patch.adminReply = draft;
+          patch.adminReplyBy = me.name;
+          patch.adminReplyById = me.id;
+          patch.replyingClear = true;
+        }
         markInquiryButton.disabled = true;
         markInquiryButton.textContent = '처리 중…';
         const update = window.BremRiderInquiryApi?.updateInquiry
-          ? window.BremRiderInquiryApi.updateInquiry(inquiryId, { status: nextStatus })
-          : Promise.resolve(BremStorage.riderInquiries.updateInquiry(
-            inquiryId,
-            { status: nextStatus }
-          ));
+          ? window.BremRiderInquiryApi.updateInquiry(inquiryId, patch)
+          : Promise.resolve(BremStorage.riderInquiries.updateInquiry(inquiryId, patch));
         update.then(saved => {
           if (Array.isArray(saved)) rememberInquiries(saved);
           const updated = inquiryListCache.find(item => String(item.id) === String(inquiryId));
           if (updated && $('#adminInquiryPopup')?.dataset.motionOpen === '1') {
             paintAdminInquiryPopup(updated, { keepDraft: true });
           }
-          showToast(nextStatus === 'read' ? '확인중으로 표시했습니다.' : '처리완료로 변경했습니다.');
+          showToast(savingReply
+            ? '적은 답장도 함께 저장했습니다.'
+            : (nextStatus === 'read' ? '확인중으로 표시했습니다.' : '처리완료로 변경했습니다.'));
           void renderRiderInquiries(inquiryListCache);
         }).catch(error => {
           showToast(error.message || '문의 상태 변경에 실패했습니다.');

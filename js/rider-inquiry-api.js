@@ -149,20 +149,20 @@
   }
 
   function statusLabel(inquiry) {
-    const status = inquiry?.status;
-    if (status === 'done') return '처리완료';
-    if (inquiry?.riderAckAt) return '기사확인';
-    if (inquiry?.adminReply) return '답장함';
-    if (status === 'read') return '확인중';
-    return '미확인';
+    const parts = [];
+    if (inquiry?.adminReply) parts.push('답장함');
+    if (inquiry?.status === 'done') parts.push('처리완료');
+    if (inquiry?.riderAckAt) parts.push('기사확인');
+    if (!parts.length && inquiry?.status === 'read') parts.push('확인중');
+    if (!parts.length) parts.push('미확인');
+    return parts.join(' · ');
   }
 
   function statusClass(inquiry) {
-    const status = inquiry?.status;
-    if (status === 'done') return 'inquiry-badge inquiry-badge--done';
-    if (inquiry?.riderAckAt) return 'inquiry-badge inquiry-badge--ack';
     if (inquiry?.adminReply) return 'inquiry-badge inquiry-badge--reply';
-    if (status === 'read') return 'inquiry-badge inquiry-badge--read';
+    if (inquiry?.status === 'done') return 'inquiry-badge inquiry-badge--done';
+    if (inquiry?.riderAckAt) return 'inquiry-badge inquiry-badge--ack';
+    if (inquiry?.status === 'read') return 'inquiry-badge inquiry-badge--read';
     return 'inquiry-badge inquiry-badge--new';
   }
 

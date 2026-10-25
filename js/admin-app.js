@@ -660,18 +660,30 @@
       if (markBtn) {
         if (markBtn.disabled) return;
         const previousLabel = markBtn.textContent;
+        const inquiryId = markBtn.dataset.markInquiry;
+        const draft = String($('adminInquiryReplyInput')?.value || '').trim();
+        const current = inquiryListCache.find(item => String(item.id) === String(inquiryId));
+        const me = window.BremRiderInquiryApi?.currentAdmin?.() || { id: '', name: '관리자' };
+        const patch = { status: markBtn.dataset.status };
+        const savingReply = Boolean(draft && draft !== String(current?.adminReply || '').trim());
+        if (savingReply) {
+          patch.adminReply = draft;
+          patch.adminReplyBy = me.name;
+          patch.adminReplyById = me.id;
+          patch.replyingClear = true;
+        }
         markBtn.disabled = true;
         markBtn.textContent = '처리 중…';
         try {
-          const saved = await window.BremRiderInquiryApi.updateInquiry(markBtn.dataset.markInquiry, {
-            status: markBtn.dataset.status
-          });
+          const saved = await window.BremRiderInquiryApi.updateInquiry(inquiryId, patch);
           if (Array.isArray(saved)) rememberInquiries(saved);
           const updated = inquiryListCache.find(item => String(item.id) === String(markBtn.dataset.markInquiry));
           if (updated && $('adminInquiryPopup')?.dataset.motionOpen === '1') {
             paintInquiryPopup(updated, { keepDraft: true });
           }
-          showToast(markBtn.dataset.status === 'read' ? '확인중으로 표시했습니다.' : '처리완료로 변경했습니다.');
+          showToast(savingReply
+            ? '적은 답장도 함께 저장했습니다.'
+            : (markBtn.dataset.status === 'read' ? '확인중으로 표시했습니다.' : '처리완료로 변경했습니다.'));
           void renderInquiries(inquiryListCache);
         } catch (error) {
           showToast(error.message || '문의 상태 변경에 실패했습니다.');
