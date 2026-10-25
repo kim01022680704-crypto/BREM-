@@ -1,4 +1,5 @@
 .driver-detail-popup[hidden],
+.driver-phone-popup[hidden],
 #driverDetailSearchView[hidden],
 #driverDetailScreen[hidden] {
   display: none !important;
@@ -250,4 +251,275 @@
   .driver-detail-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.driver-detail-op {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #1c1c1c;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.driver-detail-op.is-on {
+  border-color: transparent;
+  background: var(--yellow);
+  color: #111;
+}
+
+.driver-detail-op.is-off {
+  color: var(--text);
+}
+
+.driver-detail-op-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.driver-detail-mobile-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--black-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.driver-detail-mobile-open:hover {
+  border-color: rgba(250, 204, 21, 0.7);
+}
+
+.driver-detail-mobile-open b,
+.driver-detail-mobile-open small,
+.driver-detail-mobile-open em {
+  display: block;
+  font-style: normal;
+}
+
+.driver-detail-mobile-open small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.driver-detail-mobile-open em {
+  color: #111;
+  background: var(--yellow);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.driver-phone-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.driver-phone-popup__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: pointer;
+}
+
+.driver-phone {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(390px, 100%);
+  height: min(760px, calc(100vh - 32px));
+  padding: 14px 12px 12px;
+  border: 10px solid #2a2a2a;
+  border-radius: 36px;
+  background: #0e0e0e;
+}
+
+.driver-phone__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.driver-phone__top strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.92rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.driver-phone__screen {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dphone-card,
+.dphone-kpis div {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #161616;
+}
+
+.dphone-profile {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+}
+
+.dphone-avatar {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--yellow);
+  color: #111;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+
+.dphone-profile strong {
+  display: block;
+}
+
+.dphone-profile p,
+.dphone-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.dphone-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.dphone-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 0;
+}
+
+.dphone-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px;
+}
+
+.dphone-seg button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dphone-seg button.is-active {
+  background: var(--yellow);
+  color: #111;
+}
+
+.dphone-plat {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.dphone-chip {
+  align-self: start;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.dphone-chip--baemin {
+  background: #12352f;
+  color: #7ddec8;
+}
+
+.dphone-chip--coupang {
+  background: #3a2a12;
+  color: #f0c36a;
+}
+
+.dphone-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 6px;
+}
+
+.dphone-metric span,
+.dphone-kpis span,
+.dphone-nav span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.dphone-metric strong,
+.dphone-kpis strong {
+  font-size: 0.92rem;
+}
+
+.dphone-metric strong.is-pos {
+  color: #7ddec8;
+}
+
+.dphone-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dphone-kpis div {
+  padding: 10px;
+}
+
+.dphone-nav {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 8px;
+  text-align: center;
+}
+
+.dphone-nav .is-active {
+  color: var(--yellow);
+  font-weight: 700;
 }

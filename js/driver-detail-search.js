@@ -7,6 +7,9 @@ const BremDriverDetailSearch = (function () {
     weekStart: '',
     query: '',
     selectedId: '',
+    phonePeriod: 'today',
+    phonePayload: null,
+    phoneDriverId: '',
     loading: false,
     loadError: '',
     searchTimer: null,
@@ -321,6 +324,7 @@ const BremDriverDetailSearch = (function () {
     return `
       <div class="driver-detail-profile">
         <strong>${escapeHtml(driver.name || '-')}</strong>
+        <span class="driver-detail-op is-unknown" id="driverDetailOpTag">운행 확인중</span>
         <span>ERP ${escapeHtml(erpId(driver) || '-')}</span>
         <span>${escapeHtml(phoneLabel(driver))}</span>
         <span>${escapeHtml(driver.status || '근무중')}</span>
@@ -331,6 +335,13 @@ const BremDriverDetailSearch = (function () {
         <span class="driver-detail-chip${baeminRegion.empty ? ' is-empty' : ''}">배민 지역 · ${escapeHtml(baeminRegion.text)}</span>
         <span class="driver-detail-chip${coupangRegion.empty ? ' is-empty' : ''}">쿠팡 지역 · ${escapeHtml(coupangRegion.text)}</span>
       </div>
+      <button type="button" class="driver-detail-mobile-open" data-driver-detail-mobile>
+        <span>
+          <b>모바일 화면 보기</b>
+          <small>이 기사가 보는 앱 홈</small>
+        </span>
+        <em>열기</em>
+      </button>
       <div class="driver-detail-kpis">
         <article class="driver-detail-kpi"><span>이번 주 배달료</span><b>${formatMoney(fee)}</b><em>배민 ${formatMoney(totals.baeminFee)} · 쿠팡 ${formatMoney(totals.coupangFee)}</em></article>
         <article class="driver-detail-kpi"><span>이번 주 콜수</span><b>${formatNumber(calls)}</b><em>배민 ${formatNumber(totals.baeminCalls)} · 쿠팡 ${formatNumber(totals.coupangCalls)}</em></article>
@@ -381,10 +392,207 @@ const BremDriverDetailSearch = (function () {
       if (seq !== state.detailSeq) return;
       const fresh = drivers().find(item => String(item.id || '') === state.selectedId) || driver;
       body.innerHTML = renderDetailHtml(fresh);
+      void refreshOperating(String(fresh.id || ''));
     } catch (error) {
       body.innerHTML = `<p class="driver-detail-empty">${escapeHtml(error?.message || '상세를 불러오지 못했습니다.')}</p>`;
     } finally {
       state.loading = false;
+    }
+  }
+
+  function metric(label, value, positive) {
+    return `<div class="dphone-metric"><span>${escapeHtml(label)}</span><strong${positive ? ' class="is-pos"' : ''}>${escapeHtml(value)}</strong></div>`;
+  }
+
+  function rateText(value) {
+    if (value == null || value === '' || Number.isNaN(Number(value))) return '-';
+    return `${Math.round(Number(value) * 10) / 10}%`;
+  }
+
+  function platformTag(label, row) {
+    if (row?.skipped) return `<span class="driver-detail-op is-off">${escapeHtml(label)} 해당없음</span>`;
+    if (!row?.known) return `<span class="driver-detail-op is-unknown">${escapeHtml(label)} 미확인</span>`;
+    const on = row.operating === true;
+    return `<span class="driver-detail-op ${on ? 'is-on' : 'is-off'}">${escapeHtml(label)} ${on ? '운행중' : '운행종료'}</span>`;
+  }
+
+  function paintOperating(payload) {
+    const tag = $('#driverDetailOpTag');
+    const operating = payload?.operating || {};
+    if (!tag) return;
+    tag.classList.remove('is-on', 'is-off', 'is-unknown');
+    if (operating.operating === true) {
+      tag.textContent = '운행중';
+      tag.classList.add('is-on');
+    } else if (operating.operating === false) {
+      tag.textContent = '운행종료';
+      tag.classList.add('is-off');
+    } else {
+      tag.textContent = '운행 미확인';
+      tag.classList.add('is-unknown');
+    }
+    const extra = [platformTag('배민', operating.baemin), platformTag('쿠팡', operating.coupang)].join('');
+    if (!tag.parentElement?.querySelector('.driver-detail-op-row')) {
+      tag.insertAdjacentHTML('afterend', `<span class="driver-detail-op-row">${extra}</span>`);
+    } else {
+      tag.parentElement.querySelector('.driver-detail-op-row').innerHTML = extra;
+    }
+  }
+
+  async function fetchMobile(driverId) {
+    const id = String(driverId || '');
+    if (!id) return null;
+    if (state.phonePayload && state.phoneDriverId === id) return state.phonePayload;
+    const token = await window.BremStorage?.resolveAdminAccessToken?.();
+    if (!token) throw new Error('관리자 로그인 세션이 없습니다.');
+    const response = await fetch(`/api/admin/driver-mobile-preview?driverId=${encodeURIComponent(id)}`, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || '모바일 화면을 불러오지 못했습니다.');
+    state.phoneDriverId = id;
+    state.phonePayload = payload;
+    return payload;
+  }
+
+  async function refreshOperating(driverId) {
+    const seq = state.detailSeq;
+    try {
+      const payload = await fetchMobile(driverId);
+      if (seq !== state.detailSeq || String(state.selectedId || '') !== driverId) return;
+      paintOperating(payload);
+      if ($('#driverPhonePopup')?.classList.contains('is-open')) renderPhone(payload);
+    } catch (error) {
+      const tag = $('#driverDetailOpTag');
+      if (tag && seq === state.detailSeq) {
+        tag.textContent = '운행 미확인';
+        tag.classList.remove('is-on', 'is-off');
+        tag.classList.add('is-unknown');
+        tag.title = error?.message || '';
+      }
+    }
+  }
+
+  function phonePeriodHtml(period, baemin, coupang) {
+    const today = period === 'today';
+    const bmComplete = today ? baemin?.complete : baemin?.weekComplete;
+    const bmSla = today ? baemin?.slaOutComplete : baemin?.weekSlaOutComplete;
+    const bmRate = today ? baemin?.acceptRate : baemin?.weekAcceptRate;
+    const bmReject = today ? baemin?.foodReject : baemin?.weekFoodReject;
+    const bmCancel = today ? baemin?.foodCancel : baemin?.weekFoodCancel;
+    const cpComplete = today ? coupang?.complete : coupang?.weekComplete;
+    const cpRate = today ? coupang?.rejectionRate : coupang?.weekRejectionRate;
+    const cpReject = today ? coupang?.reject : coupang?.weekReject;
+    const cpCancel = today ? coupang?.cancel : coupang?.weekCancel;
+    return `
+      <div class="dphone-plat">
+        <span class="dphone-chip dphone-chip--baemin">배민</span>
+        <div class="dphone-metrics">
+          ${metric('총완료', formatNumber(bmComplete))}
+          ${metric('시간외완료', formatNumber(bmSla))}
+          ${metric('수락율', rateText(bmRate), true)}
+          ${metric('거절', formatNumber(bmReject))}
+          ${metric('취소', formatNumber(bmCancel))}
+        </div>
+      </div>
+      <div class="dphone-plat">
+        <span class="dphone-chip dphone-chip--coupang">쿠팡</span>
+        <div class="dphone-metrics">
+          ${metric('총완료', formatNumber(cpComplete))}
+          ${metric('거절율', rateText(cpRate), true)}
+          ${metric('거절', formatNumber(cpReject))}
+          ${metric('취소', formatNumber(cpCancel))}
+        </div>
+      </div>`;
+  }
+
+  function renderPhone(payload) {
+    const screen = $('#driverPhoneScreen');
+    const title = $('#driverPhoneTitle');
+    if (!screen) return;
+    const driver = drivers().find(item => String(item.id || '') === state.selectedId);
+    const rider = payload?.rider || {};
+    const name = rider.name || driver?.name || '기사';
+    if (title) title.textContent = `${name} 앱 홈`;
+    const baeminRegion = regionText(driver || rider, 'baemin');
+    const coupangRegion = regionText(driver || rider, 'coupang');
+    const operating = payload?.operating || {};
+    const period = state.phonePeriod === 'week' ? 'week' : 'today';
+    const baemin = payload?.baeminOps;
+    const coupang = payload?.coupangOps;
+    const weekCalls = Number(baemin?.weekComplete || 0) + Number(coupang?.weekComplete || 0);
+    screen.innerHTML = `
+      <article class="dphone-card dphone-profile">
+        <div class="dphone-avatar">${escapeHtml(String(name).trim().slice(0, 1) || '-')}</div>
+        <div>
+          <strong>${escapeHtml(name)}</strong>
+          <div class="dphone-tags">
+            ${platformTag('배민', operating.baemin)}
+            ${platformTag('쿠팡', operating.coupang)}
+          </div>
+          <p>${escapeHtml(phoneLabel(driver || { phone: rider.phone }))} · ${escapeHtml(baeminRegion.text)} · ${escapeHtml(coupangRegion.text)}</p>
+        </div>
+      </article>
+      <article class="dphone-card">
+        <div class="dphone-head">
+          <b>실시간 현황</b>
+          <div class="dphone-seg">
+            <button type="button" data-phone-period="today"${period === 'today' ? ' class="is-active"' : ''}>오늘</button>
+            <button type="button" data-phone-period="week"${period === 'week' ? ' class="is-active"' : ''}>주간</button>
+          </div>
+        </div>
+        ${phonePeriodHtml(period, baemin, coupang)}
+      </article>
+      <div class="dphone-kpis">
+        <div><span>주간 콜수</span><strong>${formatNumber(weekCalls)}</strong></div>
+        <div><span>수락율(배민)</span><strong>${rateText(baemin?.weekAcceptRate)}</strong></div>
+        <div><span>거절율(쿠팡)</span><strong>${rateText(coupang?.weekRejectionRate)}</strong></div>
+      </div>
+      <p class="dphone-note">기사 앱 홈과 같은 오늘·주간 실적입니다. 다른 메뉴는 기사 앱에서 엽니다.</p>
+      <nav class="dphone-nav" aria-label="기사앱 메뉴">
+        <span class="is-active">홈</span>
+        <span>정비·지출</span>
+        <span>실적</span>
+        <span>공지</span>
+        <span>출금</span>
+        <span>명세서</span>
+      </nav>`;
+  }
+
+  function renderPhoneMessage(text) {
+    const screen = $('#driverPhoneScreen');
+    if (screen) screen.innerHTML = `<p class="dphone-note">${escapeHtml(text)}</p>`;
+  }
+
+  function closePhone() {
+    const popup = $('#driverPhonePopup');
+    if (!popup) return;
+    popup.classList.remove('is-open');
+    popup.hidden = true;
+  }
+
+  async function openPhone() {
+    const popup = $('#driverPhonePopup');
+    if (!popup || !state.selectedId) return;
+    popup.hidden = false;
+    popup.classList.add('is-open');
+    const title = $('#driverPhoneTitle');
+    const driver = drivers().find(item => String(item.id || '') === state.selectedId);
+    if (title) title.textContent = driver?.name ? `${driver.name} 앱 홈` : '기사 앱 홈';
+    if (state.phonePayload && state.phoneDriverId === state.selectedId) {
+      renderPhone(state.phonePayload);
+      return;
+    }
+    renderPhoneMessage('기사 앱 홈을 불러오는 중…');
+    try {
+      const payload = await fetchMobile(state.selectedId);
+      if (!$('#driverPhonePopup')?.classList.contains('is-open')) return;
+      paintOperating(payload);
+      renderPhone(payload);
+    } catch (error) {
+      renderPhoneMessage(error?.message || '모바일 화면을 불러오지 못했습니다.');
     }
   }
 
@@ -409,10 +617,26 @@ const BremDriverDetailSearch = (function () {
     $('#driverDetailWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     $('#driverDetailOpenBtn')?.addEventListener('click', () => togglePanel());
     document.addEventListener('click', event => {
+      if (event.target.closest('[data-driver-detail-mobile]')) {
+        void openPhone();
+        return;
+      }
+      const periodBtn = event.target.closest('[data-phone-period]');
+      if (periodBtn && $('#driverPhonePopup')?.classList.contains('is-open')) {
+        state.phonePeriod = periodBtn.dataset.phonePeriod === 'week' ? 'week' : 'today';
+        if (state.phonePayload) renderPhone(state.phonePayload);
+        return;
+      }
+      if (event.target.closest('[data-driver-phone-close]')) closePhone();
       if (event.target.closest('[data-driver-detail-close]')) closePanel();
     });
     document.addEventListener('keydown', event => {
-      if (event.key === 'Escape' && $('#driverDetailPanel')?.classList.contains('is-open')) closePanel();
+      if (event.key !== 'Escape') return;
+      if ($('#driverPhonePopup')?.classList.contains('is-open')) {
+        closePhone();
+        return;
+      }
+      if ($('#driverDetailPanel')?.classList.contains('is-open')) closePanel();
     });
   }
 
@@ -428,11 +652,16 @@ const BremDriverDetailSearch = (function () {
     if (search) search.hidden = false;
     if (screen) screen.hidden = true;
     if (title) title.textContent = '기사상세검색';
+    closePhone();
     renderResults();
     window.setTimeout(() => $('#driverDetailQuery')?.focus(), 30);
   }
 
   function showDetail() {
+    if (state.phoneDriverId && state.phoneDriverId !== state.selectedId) {
+      state.phonePayload = null;
+      state.phoneDriverId = '';
+    }
     const search = $('#driverDetailSearchView');
     const screen = $('#driverDetailScreen');
     const title = $('#driverDetailTitle');
@@ -465,6 +694,7 @@ const BremDriverDetailSearch = (function () {
   function closePanel() {
     const panel = $('#driverDetailPanel');
     if (!panel) return;
+    closePhone();
     panel.classList.remove('is-open');
     panel.hidden = true;
     document.getElementById('adminApp')?.classList.remove('driver-detail-open');
