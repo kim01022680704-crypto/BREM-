@@ -17,7 +17,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
   <link rel="stylesheet" href="css/admin.css?v=20261025inq8">
-  <link rel="stylesheet" href="css/admin-app.css?v=20261026regpop1">
+  <link rel="stylesheet" href="css/driver-detail-search.css?v=20261025panel8">
+  <link rel="stylesheet" href="css/admin-app.css?v=20261026home1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
 </head>
@@ -89,10 +90,16 @@
 
     <main class="admin-phone-main">
       <section class="admin-phone-panel is-active" data-admin-app-panel="home" id="dashboard">
-        <a class="admin-phone-shortcut" href="rider-manage.html?register=1" data-driver-popup="register">
-          <span>기사등록 프로그램</span>
-          <strong>등록하러 가기</strong>
-        </a>
+        <div class="admin-phone-stats">
+          <button type="button" class="admin-phone-stat admin-phone-stat--action" data-driver-popup="register">
+            <span>기사</span>
+            <strong>기사등록</strong>
+          </button>
+          <button type="button" class="admin-phone-stat admin-phone-stat--action" id="adminAppDriverDetailBtn">
+            <span>기사</span>
+            <strong>기사상세검색</strong>
+          </button>
+        </div>
         <div class="admin-phone-stats">
           <button type="button" class="admin-phone-stat" data-admin-app-jump="inquiry">
             <span>미확인 문의</span>
@@ -454,6 +461,47 @@
     <p class="calendar-help">수요일만 선택할 수 있습니다. (수~화)</p>
   </div>
 
+  <div class="driver-detail-popup" id="driverDetailPanel" hidden>
+    <button type="button" class="driver-detail-popup__backdrop" data-driver-detail-close aria-label="닫기"></button>
+    <div class="driver-detail-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="driverDetailTitle">
+      <div class="driver-detail-popup__head">
+        <h2 id="driverDetailTitle">기사상세검색</h2>
+        <button type="button" class="small-btn" data-driver-detail-close>닫기</button>
+      </div>
+      <div id="driverDetailSearchView">
+        <label class="field driver-detail-search-field">
+          <span class="field-label">기사 검색</span>
+          <input type="search" id="driverDetailQuery" placeholder="기사 이름 · 전화 · ERP ID · 배민ID · 쿠팡ID" autocomplete="off">
+        </label>
+        <div class="driver-detail-results" id="driverDetailResults" aria-live="polite"></div>
+      </div>
+      <div id="driverDetailScreen" hidden>
+        <div class="driver-detail-detailbar">
+          <button type="button" class="small-btn" data-driver-detail-back>이름 검색</button>
+          <div class="driver-org-week-bar">
+            <span class="baemin-field__label">정산주 (수~화)</span>
+            <button type="button" class="small-btn" id="driverDetailWeekPrevBtn" title="이전 주">&lt;&lt;</button>
+            <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="driver-detail-week" id="driverDetailWeekBtn">이번 주(수)</button>
+            <input type="hidden" id="driverDetailWeek">
+            <button type="button" class="small-btn" id="driverDetailWeekNextBtn" title="다음 주">&gt;&gt;</button>
+            <span class="field-preview week-range-label" id="driverDetailWeekRange">수~화</span>
+          </div>
+        </div>
+        <div id="driverDetailBody"></div>
+      </div>
+    </div>
+  </div>
+  <div class="driver-phone-popup" id="driverPhonePopup" hidden>
+    <button type="button" class="driver-phone-popup__backdrop" data-driver-phone-close aria-label="닫기"></button>
+    <div class="driver-phone" role="dialog" aria-modal="true" aria-labelledby="driverPhoneTitle">
+      <div class="driver-phone__top">
+        <strong id="driverPhoneTitle">기사앱</strong>
+        <button type="button" class="small-btn" data-driver-phone-close>닫기</button>
+      </div>
+      <div class="driver-phone__screen" id="driverPhoneScreen"></div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <div class="driver-popup-modal" id="driverPopupModal" hidden>
@@ -493,8 +541,10 @@
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/admin-payroll-slip-search.js?v=20260817pay6"></script>
   <script src="js/admin-work-requests.js?v=20260927req8"></script>
-  <script src="js/admin-driver-popups.js?v=20261026simple2"></script>
-  <script src="js/admin-app.js?v=20261026regpop1"></script>
+  <script src="js/driver-utils.js?v=20260921off1"></script>
+  <script src="js/driver-detail-search.js?v=20261025panel7"></script>
+  <script src="js/admin-driver-popups.js?v=20261026home1"></script>
+  <script src="js/admin-app.js?v=20261026home1"></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
 </html>

@@ -104,6 +104,27 @@ html.brem-admin-app-nav [hidden] {
   font-size: 1.35rem;
 }
 
+.admin-phone-stat--action {
+  cursor: pointer;
+}
+
+.admin-phone-stat--action strong {
+  font-size: 1.08rem;
+  line-height: 1.25;
+  letter-spacing: -0.03em;
+}
+
+html.brem-admin-app-nav .driver-detail-popup {
+  z-index: 170;
+  padding: max(10px, env(safe-area-inset-top)) 8px calc(10px + env(safe-area-inset-bottom));
+}
+
+html.brem-admin-app-nav .driver-detail-popup__dialog {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+
 .admin-phone-shortcut {
   display: flex;
   align-items: center;

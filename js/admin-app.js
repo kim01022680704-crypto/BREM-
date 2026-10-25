@@ -549,6 +549,15 @@
             }
           };
         }
+        if (triggerId === 'driver-detail-week') {
+          return {
+            hiddenInput: $('driverDetailWeek'),
+            labelEl: $('driverDetailWeekBtn'),
+            onSelect(value) {
+              window.BremDriverDetailSearch?.setWeek?.(value);
+            }
+          };
+        }
         return null;
       }
     });
@@ -676,6 +685,18 @@
     }
   }
 
+  async function openDriverDetailSearch() {
+    window.BremDriverDetailSearch?.openPanel?.();
+    const root = $('driverDetailResults');
+    if (root) root.innerHTML = '<p class="driver-detail-empty">기사 목록 불러오는 중…</p>';
+    try {
+      await window.BremStorage?.ensureSectionLoaded?.('drivers');
+      $('driverDetailQuery')?.dispatchEvent(new Event('input'));
+    } catch (error) {
+      showToast(error?.message || '기사 목록을 불러오지 못했습니다.');
+    }
+  }
+
   async function logout() {
     try { localStorage.setItem('brem_admin_autologin_paused', '1'); } catch { /* ignore */ }
     await window.BremStorage?.auth?.signOutSupabase?.('admin');
@@ -684,6 +705,7 @@
 
   function bindEvents() {
     $('adminLoginForm')?.addEventListener('submit', login);
+    $('adminAppDriverDetailBtn')?.addEventListener('click', () => { void openDriverDetailSearch(); });
     $('adminLogoutBtn')?.addEventListener('click', () => void logout());
     nav?.addEventListener('click', event => {
       const button = event.target.closest('[data-admin-app-tab]');
@@ -909,6 +931,16 @@
   const previousAppBack = window.BremDriverAppNav?.handleBack;
   window.BremDriverAppNav = window.BremDriverAppNav || {};
   window.BremDriverAppNav.handleBack = function () {
+    const phone = $('driverPhonePopup');
+    if (phone && !phone.hidden) {
+      phone.querySelector('[data-driver-phone-close]')?.click();
+      return true;
+    }
+    const detail = $('driverDetailPanel');
+    if (detail && !detail.hidden) {
+      window.BremDriverDetailSearch?.closePanel?.();
+      return true;
+    }
     if (window.BremDriverPopups?.isOpen?.()) {
       window.BremDriverPopups.close();
       return true;
