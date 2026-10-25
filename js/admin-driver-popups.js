@@ -110,4 +110,13 @@
   } else {
     init();
   }
+
+  window.BremDriverPopups = {
+    open: open,
+    close: close,
+    isOpen: function () {
+      var el = document.getElementById('driverPopupModal');
+      return !!(el && !el.hidden);
+    }
+  };
 })();

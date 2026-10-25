@@ -130,6 +130,19 @@ html.brem-admin-app-nav [hidden] {
   font-weight: 800;
 }
 
+html.brem-admin-app-nav .driver-popup-modal {
+  z-index: 160;
+  padding: max(12px, env(safe-area-inset-top)) 10px calc(12px + env(safe-area-inset-bottom));
+}
+
+html.brem-admin-app-nav .driver-popup-modal__dialog {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+}
+
 .admin-phone-week {
   margin: 0;
   font-size: 1rem;

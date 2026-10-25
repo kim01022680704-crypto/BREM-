@@ -906,6 +906,17 @@
     openInquiry
   };
 
+  const previousAppBack = window.BremDriverAppNav?.handleBack;
+  window.BremDriverAppNav = window.BremDriverAppNav || {};
+  window.BremDriverAppNav.handleBack = function () {
+    if (window.BremDriverPopups?.isOpen?.()) {
+      window.BremDriverPopups.close();
+      return true;
+    }
+    if (typeof previousAppBack === 'function') return previousAppBack();
+    return false;
+  };
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => void boot());
   } else {

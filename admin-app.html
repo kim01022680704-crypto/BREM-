@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
   <link rel="stylesheet" href="css/admin.css?v=20261025inq8">
-  <link rel="stylesheet" href="css/admin-app.css?v=20260910reg1">
+  <link rel="stylesheet" href="css/admin-app.css?v=20261026regpop1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
 </head>
@@ -89,7 +89,7 @@
 
     <main class="admin-phone-main">
       <section class="admin-phone-panel is-active" data-admin-app-panel="home" id="dashboard">
-        <a class="admin-phone-shortcut" href="rider-manage.html?register=1">
+        <a class="admin-phone-shortcut" href="rider-manage.html?register=1" data-driver-popup="register">
           <span>기사등록 프로그램</span>
           <strong>등록하러 가기</strong>
         </a>
@@ -376,7 +376,7 @@
         <span>문의</span>
         <span class="admin-app-nav__badge" id="adminAppInquiryBadge" hidden>0</span>
       </button>
-      <a class="admin-app-nav__item" href="rider-manage.html?register=1">
+      <a class="admin-app-nav__item" href="rider-manage.html?register=1" data-driver-popup="register">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6 19c.8-3.2 3-5 6-5s5.2 1.8 6 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M17.5 6.5v4M15.5 8.5h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
         <span>기사등록</span>
       </a>
@@ -456,6 +456,21 @@
 
   <div class="toast" id="toast"></div>
 
+  <div class="driver-popup-modal" id="driverPopupModal" hidden>
+    <div class="driver-popup-modal__backdrop" data-close-driver-popup></div>
+    <div class="driver-popup-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="driverPopupTitle">
+      <div class="driver-popup-modal__head">
+        <h3 id="driverPopupTitle">기사 간이 등록</h3>
+        <div class="driver-popup-modal__head-actions">
+          <button type="button" class="driver-popup-modal__close" data-close-driver-popup aria-label="닫기">✕</button>
+        </div>
+      </div>
+      <div class="driver-popup-modal__body">
+        <iframe class="driver-popup-modal__frame" id="driverPopupFrame" title="기사 간이 등록" src="about:blank" loading="lazy"></iframe>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>window.BREM_AUTH_SCOPE = 'admin';</script>
   <script src="js/native-app-bridge.js?v=20261026login1"></script>
@@ -478,7 +493,8 @@
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/admin-payroll-slip-search.js?v=20260817pay6"></script>
   <script src="js/admin-work-requests.js?v=20260927req8"></script>
-  <script src="js/admin-app.js?v=20261026login1"></script>
+  <script src="js/admin-driver-popups.js?v=20261026regpop1"></script>
+  <script src="js/admin-app.js?v=20261026regpop1"></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
 </html>
