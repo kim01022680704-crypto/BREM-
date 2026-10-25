@@ -523,7 +523,10 @@
   function applyAdminMenuPermissions() {
     const allowed = new Set(getCurrentAdminMenus());
     $$('.nav-btn[data-section]').forEach(button => {
-      button.hidden = !allowed.has(button.dataset.section);
+      const section = button.dataset.section === 'driver-detail-search'
+        ? 'driver-management'
+        : button.dataset.section;
+      button.hidden = !allowed.has(section);
     });
   }
 
@@ -8177,6 +8180,12 @@
 
     $$('.nav-btn').forEach(button => {
       button.addEventListener('click', () => {
+        if (button.dataset.section === 'driver-detail-search') {
+          window.BremDriverDetailSearch?.openPanel?.();
+          $('#sidebar')?.classList.remove('open');
+          $('#overlay')?.classList.remove('active');
+          return;
+        }
         const focus = String(button.dataset.baeminMenuFocus || '').trim();
         if (focus) {
           try {
