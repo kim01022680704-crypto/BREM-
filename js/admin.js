@@ -1421,20 +1421,40 @@
     return BremStorage.riderInquiries.getAll();
   }
 
+  let inquiryListCache = [];
+
+  function rememberInquiries(list) {
+    inquiryListCache = Array.isArray(list) ? list : [];
+    return inquiryListCache;
+  }
+
+  function inquiryListKey(list) {
+    return (list || []).map(item => [
+      item.id,
+      item.status,
+      item.adminReply || '',
+      item.adminRepliedAt || '',
+      item.adminReplyBy || '',
+      item.replyingBy || '',
+      item.replyingAt || '',
+      item.riderAckAt || ''
+    ].join('\u001f')).join('\n');
+  }
+
   async function loadRiderInquiries() {
     if (window.BremRiderInquiryApi?.ready) {
       await window.BremRiderInquiryApi.ready;
     }
     if (window.BremRiderInquiryApi?.list) {
       try {
-        return await window.BremRiderInquiryApi.list();
+        return rememberInquiries(await window.BremRiderInquiryApi.list());
       } catch (error) {
         if (BremStorage.getSupabaseConfig?.().mode === 'production') {
           throw error;
         }
       }
     }
-    return BremStorage.riderInquiries.getAll();
+    return rememberInquiries(BremStorage.riderInquiries.getAll());
   }
 
   function renderDbConnectionStatus() {
@@ -3963,12 +3983,13 @@
     return window.BremRiderInquiryApi?.statusClass?.(inquiry) || 'inquiry-badge inquiry-badge--new';
   }
 
-  async function renderRiderInquiries() {
+  async function renderRiderInquiries(preset) {
     const rowsEl = $('#riderInquiryRows');
     const summaryEl = $('#riderInquirySummary');
     if (!rowsEl) return;
 
-    const list = await loadRiderInquiries();
+    const list = rememberInquiries(preset || await loadRiderInquiries());
+    const key = inquiryListKey(list);
     const newCount = list.filter(item => item.status === 'new').length;
 
     if (summaryEl) {
@@ -3976,6 +3997,9 @@
         ? `미확인 문의 ${newCount}건 · 클릭하면 상세·주급명세서를 팝업으로 봅니다. 확인중·처리완료·삭제는 기사 확인과 관계없이 가능합니다.`
         : '클릭하면 상세·주급명세서를 팝업으로 봅니다. 확인중·처리완료·삭제는 기사 확인과 관계없이 가능합니다.';
     }
+
+    if (rowsEl.dataset.inquiryKey === key && rowsEl.childElementCount) return;
+    rowsEl.dataset.inquiryKey = key;
 
     if (!list.length) {
       rowsEl.innerHTML = '<p class="empty-state">접수된 라이더 문의가 없습니다.</p>';
@@ -4077,6 +4101,30 @@
     });
   }
 
+  function showMotionPopup(popup) {
+    if (!popup) return;
+    const token = String(Date.now());
+    popup.dataset.motionToken = token;
+    popup.dataset.motionOpen = '1';
+    popup.hidden = false;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (popup.dataset.motionToken === token) popup.classList.add('is-open');
+      });
+    });
+  }
+
+  function hideMotionPopup(popup) {
+    if (!popup) return;
+    const token = String(Date.now());
+    popup.dataset.motionToken = token;
+    popup.dataset.motionOpen = '0';
+    popup.classList.remove('is-open');
+    window.setTimeout(() => {
+      if (popup.dataset.motionToken === token) popup.hidden = true;
+    }, 180);
+  }
+
   function closeAdminInquiryPopup() {
     const popup = $('#adminInquiryPopup');
     const inquiryId = popup?.dataset.inquiryId || '';
@@ -4087,18 +4135,12 @@
     if (inquiryId) {
       window.BremRiderInquiryApi?.updateInquiry(inquiryId, { replyingClear: true }).catch(() => {});
     }
-    if (popup) popup.hidden = true;
+    hideMotionPopup(popup);
   }
 
-  async function openAdminInquiryPopup(inquiryId) {
+  function paintAdminInquiryPopup(inquiry, { keepDraft = false } = {}) {
     const popup = $('#adminInquiryPopup');
-    if (!popup) return;
-    const list = await loadRiderInquiries();
-    const inquiry = list.find(item => String(item.id) === String(inquiryId));
-    if (!inquiry) {
-      showToast('문의를 찾지 못했습니다.');
-      return;
-    }
+    if (!popup || !inquiry) return;
     const statusEl = $('#adminInquiryPopupStatus');
     const metaEl = $('#adminInquiryPopupMeta');
     const messageEl = $('#adminInquiryPopupMessage');
@@ -4119,18 +4161,22 @@
     if (messageEl) messageEl.textContent = inquiry.message || '';
     const snap = inquiry.payslipSnapshot;
     if (payslipEl) {
-      if (snap) {
-        payslipEl.hidden = false;
-        payslipEl.innerHTML = `
-          <p class="inquiry-popup__payslip-head">${escapeHtml(snap.weekLabel || `${snap.weekStart || ''} ~ ${snap.weekEnd || ''}`)} · ${escapeHtml(snap.riderName || inquiry.name || '')}</p>
-          <div class="inquiry-payslip-grid">
-            ${renderInquiryPayslipCard('쿠팡 주급명세서', snap.coupang)}
-            ${renderInquiryPayslipCard('배민 주급명세서', snap.baemin)}
-          </div>
-        `;
-      } else {
-        payslipEl.hidden = true;
-        payslipEl.innerHTML = '';
+      const payslipKey = snap ? `${inquiry.id}:${snap.weekStart || ''}:${snap.weekEnd || ''}` : '';
+      if (payslipEl.dataset.payslipKey !== payslipKey) {
+        payslipEl.dataset.payslipKey = payslipKey;
+        if (snap) {
+          payslipEl.hidden = false;
+          payslipEl.innerHTML = `
+            <p class="inquiry-popup__payslip-head">${escapeHtml(snap.weekLabel || `${snap.weekStart || ''} ~ ${snap.weekEnd || ''}`)} · ${escapeHtml(snap.riderName || inquiry.name || '')}</p>
+            <div class="inquiry-payslip-grid">
+              ${renderInquiryPayslipCard('쿠팡 주급명세서', snap.coupang)}
+              ${renderInquiryPayslipCard('배민 주급명세서', snap.baemin)}
+            </div>
+          `;
+        } else {
+          payslipEl.hidden = true;
+          payslipEl.innerHTML = '';
+        }
       }
     }
     const replyBox = $('#adminInquiryPopupReplyBox');
@@ -4138,21 +4184,60 @@
       replyBox.hidden = false;
       const replyInput = $('#adminInquiryReplyInput');
       const replyNote = $('#adminInquiryReplyNote');
-      if (replyInput) replyInput.value = inquiry.adminReply || '';
+      if (replyInput && !keepDraft && document.activeElement !== replyInput) {
+        const nextReply = inquiry.adminReply || '';
+        if (replyInput.value !== nextReply) replyInput.value = nextReply;
+      }
       if (replyNote) replyNote.textContent = window.BremRiderInquiryApi?.replyNote?.(inquiry) || '';
     }
     popup.dataset.inquiryId = String(inquiry.id || '');
     if (actionsEl) {
-      actionsEl.innerHTML = `
-        ${inquiry.status !== 'read' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="read">확인중</button>` : ''}
-        ${inquiry.status !== 'done' ? `<button class="small-btn" data-reply-inquiry="${escapeHtml(inquiry.id)}">답장보내기</button>` : ''}
-        ${inquiry.status !== 'done' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="done">처리완료</button>` : ''}
-        <button class="small-btn danger-btn" data-delete-inquiry="${escapeHtml(inquiry.id)}">삭제</button>
-        <button class="small-btn" type="button" data-inquiry-popup-close>닫기</button>
-      `;
+      const actionKey = `${inquiry.id}:${inquiry.status}`;
+      if (actionsEl.dataset.actionKey !== actionKey) {
+        actionsEl.dataset.actionKey = actionKey;
+        actionsEl.innerHTML = `
+          ${inquiry.status !== 'read' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="read">확인중</button>` : ''}
+          ${inquiry.status !== 'done' ? `<button class="small-btn" data-reply-inquiry="${escapeHtml(inquiry.id)}">답장보내기</button>` : ''}
+          ${inquiry.status !== 'done' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="done">처리완료</button>` : ''}
+          <button class="small-btn danger-btn" data-delete-inquiry="${escapeHtml(inquiry.id)}">삭제</button>
+          <button class="small-btn" type="button" data-inquiry-popup-close>닫기</button>
+        `;
+      }
     }
     bindInquiryReplyPresence();
-    popup.hidden = false;
+  }
+
+  function openAdminInquiryPopup(inquiryId) {
+    const popup = $('#adminInquiryPopup');
+    if (!popup) return;
+    const cached = inquiryListCache.find(item => String(item.id) === String(inquiryId))
+      || riderInquiries().find(item => String(item.id) === String(inquiryId));
+    popup.dataset.inquiryId = String(inquiryId || '');
+    if (cached) {
+      paintAdminInquiryPopup(cached);
+    } else {
+      const messageEl = $('#adminInquiryPopupMessage');
+      if (messageEl) messageEl.textContent = '불러오는 중…';
+    }
+    showMotionPopup(popup);
+    void loadRiderInquiries().then(list => {
+      if (popup.dataset.motionOpen !== '1' || popup.dataset.inquiryId !== String(inquiryId)) return;
+      const inquiry = list.find(item => String(item.id) === String(inquiryId));
+      if (!inquiry) {
+        if (!cached) {
+          showToast('문의를 찾지 못했습니다.');
+          hideMotionPopup(popup);
+        }
+        return;
+      }
+      const input = $('#adminInquiryReplyInput');
+      paintAdminInquiryPopup(inquiry, { keepDraft: document.activeElement === input });
+    }).catch(() => {
+      if (!cached && popup.dataset.inquiryId === String(inquiryId)) {
+        showToast('문의를 불러오지 못했습니다.');
+        hideMotionPopup(popup);
+      }
+    });
   }
 
   const SEEN_INQUIRY_KEY = 'brem_seen_rider_inquiry_ids';
@@ -4175,8 +4260,7 @@
   }
 
   function closeInquiryAlertPopup() {
-    const popup = $('#adminInquiryAlertPopup');
-    if (popup) popup.hidden = true;
+    hideMotionPopup($('#adminInquiryAlertPopup'));
   }
 
   let lastAlertInquiryId = '';
@@ -4189,7 +4273,7 @@
     body.innerHTML = items.slice(0, 5).map(item => (
       `<p><strong>${escapeHtml(item.name || '-')}</strong> · ${escapeHtml(item.inquiryType || '문의')}<br><span>${escapeHtml(String(item.message || '').slice(0, 80))}</span></p>`
     )).join('');
-    popup.hidden = false;
+    showMotionPopup(popup);
   }
 
   let inquiryWatchTimer = null;
@@ -4233,7 +4317,7 @@
       const popup = $('#adminInquiryPopup');
       const screenOpen = section?.classList.contains('active') || (popup && !popup.hidden);
       if (screenOpen) {
-        await renderRiderInquiries();
+        await renderRiderInquiries(list);
         const openId = popup && !popup.hidden ? popup.dataset.inquiryId : '';
         const input = $('#adminInquiryReplyInput');
         if (openId && document.activeElement !== input) {
@@ -9084,6 +9168,7 @@
 
       const replyInquiryButton = event.target.closest('[data-reply-inquiry]');
       if (replyInquiryButton) {
+        if (replyInquiryButton.disabled) return;
         const inquiryId = replyInquiryButton.dataset.replyInquiry;
         const reply = String($('#adminInquiryReplyInput')?.value || '').trim();
         if (!reply) {
@@ -9091,68 +9176,104 @@
           return;
         }
         const me = window.BremRiderInquiryApi?.currentAdmin?.() || { id: '', name: '관리자' };
+        replyInquiryButton.disabled = true;
+        replyInquiryButton.textContent = '보내는 중…';
         void (async () => {
-          const latest = (await loadRiderInquiries()).find(item => String(item.id) === String(inquiryId));
-          const typing = window.BremRiderInquiryApi?.typingName?.(latest);
-          if (typing && !window.confirm(`${typing}님이 지금 답장을 쓰고 있습니다. 그래도 보낼까요?`)) return;
-          if (
-            latest?.adminReply
-            && latest.adminReply !== reply
-            && latest.adminReplyById
-            && latest.adminReplyById !== me.id
-            && !window.confirm(`${latest.adminReplyBy || '다른 관리자'}님이 이미 답장했습니다. 보내면 그 답장이 바뀝니다. 보낼까요?`)
-          ) return;
-          const patch = {
-            adminReply: reply,
-            adminReplyBy: me.name,
-            adminReplyById: me.id,
-            status: latest?.status === 'done' ? 'done' : 'read',
-            replyingClear: true
-          };
-          const update = window.BremRiderInquiryApi?.updateInquiry
-            ? window.BremRiderInquiryApi.updateInquiry(inquiryId, patch)
-            : Promise.resolve(BremStorage.riderInquiries.updateInquiry(inquiryId, patch));
-          update.then(() => {
+          try {
+            let latest = inquiryListCache.find(item => String(item.id) === String(inquiryId));
+            if (!latest) latest = (await loadRiderInquiries()).find(item => String(item.id) === String(inquiryId));
+            const typing = window.BremRiderInquiryApi?.typingName?.(latest);
+            if (typing && !window.confirm(`${typing}님이 지금 답장을 쓰고 있습니다. 그래도 보낼까요?`)) return;
+            if (
+              latest?.adminReply
+              && latest.adminReply !== reply
+              && latest.adminReplyById
+              && latest.adminReplyById !== me.id
+              && !window.confirm(`${latest.adminReplyBy || '다른 관리자'}님이 이미 답장했습니다. 보내면 그 답장이 바뀝니다. 보낼까요?`)
+            ) return;
+            const patch = {
+              adminReply: reply,
+              adminReplyBy: me.name,
+              adminReplyById: me.id,
+              status: latest?.status === 'done' ? 'done' : 'read',
+              replyingClear: true
+            };
+            const update = window.BremRiderInquiryApi?.updateInquiry
+              ? window.BremRiderInquiryApi.updateInquiry(inquiryId, patch)
+              : Promise.resolve(BremStorage.riderInquiries.updateInquiry(inquiryId, patch));
+            const saved = await update;
+            if (Array.isArray(saved)) rememberInquiries(saved);
+            const updated = inquiryListCache.find(item => String(item.id) === String(inquiryId)) || {
+              ...(latest || {}),
+              ...patch
+            };
+            paintAdminInquiryPopup(updated, { keepDraft: true });
             showToast('답장을 보냈습니다.');
-            renderRiderInquiries();
-            void openAdminInquiryPopup(inquiryId);
-          }).catch(error => {
+            void renderRiderInquiries(inquiryListCache);
+          } catch (error) {
             showToast(error.message || '답장 전송에 실패했습니다.');
-          });
+          } finally {
+            if (replyInquiryButton.isConnected) {
+              replyInquiryButton.disabled = false;
+              replyInquiryButton.textContent = '답장보내기';
+            }
+          }
         })();
         return;
       }
 
       const markInquiryButton = event.target.closest('[data-mark-inquiry]');
       if (markInquiryButton) {
+        if (markInquiryButton.disabled) return;
         const inquiryId = markInquiryButton.dataset.markInquiry;
+        const nextStatus = markInquiryButton.dataset.status;
+        const previousLabel = markInquiryButton.textContent;
+        markInquiryButton.disabled = true;
+        markInquiryButton.textContent = '처리 중…';
         const update = window.BremRiderInquiryApi?.updateInquiry
-          ? window.BremRiderInquiryApi.updateInquiry(inquiryId, { status: markInquiryButton.dataset.status })
+          ? window.BremRiderInquiryApi.updateInquiry(inquiryId, { status: nextStatus })
           : Promise.resolve(BremStorage.riderInquiries.updateInquiry(
             inquiryId,
-            { status: markInquiryButton.dataset.status }
+            { status: nextStatus }
           ));
-        update.then(() => {
-          showToast(markInquiryButton.dataset.status === 'read' ? '확인중으로 표시했습니다.' : '처리완료로 변경했습니다.');
-          renderRiderInquiries();
-          if (!$('#adminInquiryPopup')?.hidden) {
-            void openAdminInquiryPopup(inquiryId);
+        update.then(saved => {
+          if (Array.isArray(saved)) rememberInquiries(saved);
+          const updated = inquiryListCache.find(item => String(item.id) === String(inquiryId));
+          if (updated && $('#adminInquiryPopup')?.dataset.motionOpen === '1') {
+            paintAdminInquiryPopup(updated, { keepDraft: true });
           }
+          showToast(nextStatus === 'read' ? '확인중으로 표시했습니다.' : '처리완료로 변경했습니다.');
+          void renderRiderInquiries(inquiryListCache);
         }).catch(error => {
           showToast(error.message || '문의 상태 변경에 실패했습니다.');
+        }).finally(() => {
+          if (markInquiryButton.isConnected) {
+            markInquiryButton.disabled = false;
+            markInquiryButton.textContent = previousLabel;
+          }
         });
         return;
       }
 
       const deleteInquiryButton = event.target.closest('[data-delete-inquiry]');
       if (deleteInquiryButton) {
+        if (deleteInquiryButton.disabled) return;
+        deleteInquiryButton.disabled = true;
+        deleteInquiryButton.textContent = '삭제 중…';
         const remove = window.BremRiderInquiryApi?.remove
           ? window.BremRiderInquiryApi.remove(deleteInquiryButton.dataset.deleteInquiry)
           : Promise.resolve(BremStorage.riderInquiries.removeById(deleteInquiryButton.dataset.deleteInquiry));
-        remove.then(() => {
+        remove.then(saved => {
+          if (Array.isArray(saved)) rememberInquiries(saved);
           showToast('문의가 삭제되었습니다.');
           closeAdminInquiryPopup();
-          renderRiderInquiries();
+          void renderRiderInquiries(Array.isArray(saved) ? saved : undefined);
+        }).catch(error => {
+          showToast(error.message || '문의 삭제에 실패했습니다.');
+          if (deleteInquiryButton.isConnected) {
+            deleteInquiryButton.disabled = false;
+            deleteInquiryButton.textContent = '삭제';
+          }
         });
         return;
       }

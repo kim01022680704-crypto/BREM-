@@ -117,8 +117,31 @@
     return alerts;
   }
 
+  function showMotion(popupEl) {
+    if (!popupEl) return;
+    popupEl.classList.add('is-motion');
+    const token = String(Date.now());
+    popupEl.dataset.motionToken = token;
+    popupEl.hidden = false;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (popupEl.dataset.motionToken === token) popupEl.classList.add('is-open');
+      });
+    });
+  }
+
+  function hideMotion(popupEl) {
+    if (!popupEl) return;
+    const token = String(Date.now());
+    popupEl.dataset.motionToken = token;
+    popupEl.classList.remove('is-open');
+    window.setTimeout(() => {
+      if (popupEl.dataset.motionToken === token) popupEl.hidden = true;
+    }, 180);
+  }
+
   function closeInquiryAlert() {
-    if (alertPopup) alertPopup.hidden = true;
+    hideMotion(alertPopup);
   }
 
   function showNextInquiryAlert() {
@@ -127,7 +150,7 @@
     const next = state.alertQueue.shift();
     if (!next) return;
     alertTitle.textContent = next.kind === 'reply' ? '답변이왓습니다.' : '문의 확인중입니다.';
-    alertPopup.hidden = false;
+    showMotion(alertPopup);
   }
 
   function queueInquiryAlerts(alerts) {
@@ -237,7 +260,10 @@
       payload.payslipSnapshot = snapshot;
       payload.weekStart = snapshot.weekStart || '';
     }
-    if (submitBtn) submitBtn.disabled = true;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '보내는 중…';
+    }
     try {
       const result = await window.BremStorage.submitRiderInquiryToServer(payload);
       if (!result?.ok) {
@@ -248,7 +274,10 @@
       if (formEl) formEl.reset();
       await loadHistory();
     } finally {
-      if (submitBtn) submitBtn.disabled = false;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '문의하기';
+      }
     }
   }
 
@@ -285,7 +314,7 @@
   function open(source = 'app') {
     applyMode(source);
     state.open = true;
-    popup.hidden = false;
+    showMotion(popup);
     openBtn?.setAttribute('aria-expanded', 'true');
     renderHistory();
     void loadHistory();
@@ -294,7 +323,7 @@
 
   function close() {
     state.open = false;
-    popup.hidden = true;
+    hideMotion(popup);
     openBtn?.setAttribute('aria-expanded', 'false');
     stopPoll();
   }
@@ -314,9 +343,14 @@
     }
     const ackBtn = event.target.closest('[data-ack-inquiry]');
     if (ackBtn) {
+      if (ackBtn.disabled) return;
       ackBtn.disabled = true;
+      ackBtn.textContent = '확인 중…';
       void ackInquiry(ackBtn.dataset.ackInquiry).finally(() => {
-        ackBtn.disabled = false;
+        if (ackBtn.isConnected) {
+          ackBtn.disabled = false;
+          ackBtn.textContent = '확인완료';
+        }
       });
     }
   });

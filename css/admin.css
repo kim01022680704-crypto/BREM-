@@ -5375,6 +5375,21 @@ textarea {
   padding: 20px 14px;
 }
 
+#adminInquiryPopup,
+#adminInquiryAlertPopup {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 160ms ease, visibility 160ms ease;
+}
+
+#adminInquiryPopup.is-open,
+#adminInquiryAlertPopup.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
 .inquiry-popup[hidden] {
   display: none !important;
 }
@@ -5396,6 +5411,17 @@ textarea {
   background: #fff;
   color: #111;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+#adminInquiryPopup .inquiry-popup__dialog,
+#adminInquiryAlertPopup .inquiry-popup__dialog {
+  transform: translateY(12px);
+  transition: transform 180ms ease;
+}
+
+#adminInquiryPopup.is-open .inquiry-popup__dialog,
+#adminInquiryAlertPopup.is-open .inquiry-popup__dialog {
+  transform: none;
 }
 
 .inquiry-popup__eyebrow {
@@ -5475,6 +5501,14 @@ textarea {
   justify-content: flex-end;
 }
 
+.inquiry-popup__actions .small-btn:disabled {
+  opacity: 0.62;
+}
+
+.inquiry-popup__actions .small-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
 .inquiry-popup__wait {
   align-self: center;
   color: #92400e;
@@ -5533,6 +5567,15 @@ textarea {
 #adminInquiryAlertBody span {
   color: #6b7280;
   font-size: 0.82rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #adminInquiryPopup,
+  #adminInquiryAlertPopup,
+  #adminInquiryPopup .inquiry-popup__dialog,
+  #adminInquiryAlertPopup .inquiry-popup__dialog {
+    transition: none;
+  }
 }
 
 @media (max-width: 720px) {
