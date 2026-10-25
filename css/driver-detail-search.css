@@ -251,29 +251,41 @@
   .driver-detail-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .driver-detail-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 .driver-detail-op {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 6px 12px;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: #1c1c1c;
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-  line-height: 1.4;
+  border: 2px solid #6b6b6b;
+  background: #2a2a2a;
+  color: #f5f5f5;
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .driver-detail-op.is-on {
-  border-color: transparent;
-  background: var(--yellow);
+  border-color: #111;
+  background: #ffe14a;
   color: #111;
 }
 
 .driver-detail-op.is-off {
-  color: var(--text);
+  border-color: #ffb4b4;
+  background: #8f1d1d;
+  color: #fff;
+}
+
+.driver-detail-op.is-unknown {
+  border-color: #f0c36a;
+  background: #3a2e10;
+  color: #ffe08a;
 }
 
 .driver-detail-op-row {
@@ -392,8 +404,37 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin: 0 0 12px;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.driver-detail-op-line > .driver-detail-op {
+  min-width: 132px;
+  justify-content: center;
+  padding: 10px 16px;
+  font-size: 1.15rem;
+}
+
+#payrollSlipSearchDetail {
+  z-index: 190;
+}
+
+button.driver-link {
+  display: block;
+  width: 100%;
+  font: inherit;
+}
+
+.driver-detail-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.driver-detail-actions .driver-detail-mobile-open {
+  margin: 0;
+  min-height: 72px;
 }
 
 .dphone-card,

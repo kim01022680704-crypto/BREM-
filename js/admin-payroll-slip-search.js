@@ -473,7 +473,32 @@
   document.getElementById('payrollSlipSearchPrevWeekBtn')?.addEventListener('click', () => shiftWeek(-1));
   document.getElementById('payrollSlipSearchNextWeekBtn')?.addEventListener('click', () => shiftWeek(1));
 
+  async function openForDriver(driver, weekStart) {
+    await window.BremStorage?.ensureSectionLoaded?.('payroll-slip-search');
+    const id = String(driver?.id || '').trim();
+    syncWeekUI(weekStart || state.weekStart || latestSlipWeek());
+    const riders = groupRiders('');
+    let rider = riders.find(item => item.driverId === id || item.key === `id:${id}`) || null;
+    if (!rider) {
+      rider = {
+        key: id ? `id:${id}` : `name:${normalizeName(driver?.name)}`,
+        name: String(driver?.name || '').trim(),
+        phone: String(driver?.phone || '').trim(),
+        driverId: id,
+        coupangId: String(driver?.coupangId || '').trim(),
+        baeminId: String(driver?.baeminId || '').trim(),
+        weeks: [],
+        lines: [],
+        weekNet: 0
+      };
+    }
+    state.results = riders.some(item => item.key === rider.key) ? riders : [rider, ...riders];
+    state.selectedKey = rider.key;
+    renderDetail();
+  }
+
   window.BremAdminPayrollSlipSearch = {
+    openForDriver,
     handleWeekChange,
     async refresh() {
       await window.BremStorage?.ensureSectionLoaded?.('payroll-slip-search');

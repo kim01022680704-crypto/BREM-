@@ -337,13 +337,22 @@ const BremDriverDetailSearch = (function () {
         <span class="driver-detail-chip${baeminRegion.empty ? ' is-empty' : ''}">배민 지역 · ${escapeHtml(baeminRegion.text)}</span>
         <span class="driver-detail-chip${coupangRegion.empty ? ' is-empty' : ''}">쿠팡 지역 · ${escapeHtml(coupangRegion.text)}</span>
       </div>
-      <button type="button" class="driver-detail-mobile-open" data-driver-detail-mobile>
-        <span>
-          <b>모바일 화면 보기</b>
-          <small>이 기사가 보는 앱 홈</small>
-        </span>
-        <em>열기</em>
-      </button>
+      <div class="driver-detail-actions">
+        <button type="button" class="driver-detail-mobile-open" data-driver-detail-mobile>
+          <span>
+            <b>모바일 화면 보기</b>
+            <small>이 기사가 보는 앱</small>
+          </span>
+          <em>열기</em>
+        </button>
+        <button type="button" class="driver-detail-mobile-open" data-driver-detail-payslip>
+          <span>
+            <b>급여명세서 보기</b>
+            <small>이 정산주 주급명세서</small>
+          </span>
+          <em>열기</em>
+        </button>
+      </div>
       <div class="driver-detail-kpis">
         <article class="driver-detail-kpi"><span>이번 주 배달료</span><b>${formatMoney(fee)}</b><em>배민 ${formatMoney(totals.baeminFee)} · 쿠팡 ${formatMoney(totals.coupangFee)}</em></article>
         <article class="driver-detail-kpi"><span>이번 주 콜수</span><b>${formatNumber(calls)}</b><em>배민 ${formatNumber(totals.baeminCalls)} · 쿠팡 ${formatNumber(totals.coupangCalls)}</em></article>
@@ -633,9 +642,18 @@ const BremDriverDetailSearch = (function () {
     $('#driverDetailWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
     $('#driverDetailWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     $('#driverDetailOpenBtn')?.addEventListener('click', () => togglePanel());
+    $('#driverDetailSideBtn')?.addEventListener('click', () => {
+      togglePanel();
+      document.getElementById('sidebar')?.classList.remove('open');
+      document.getElementById('overlay')?.classList.remove('active');
+    });
     document.addEventListener('click', event => {
       if (event.target.closest('[data-driver-detail-mobile]')) {
         void openPhone();
+        return;
+      }
+      if (event.target.closest('[data-driver-detail-payslip]')) {
+        void openPayslip();
         return;
       }
       if (event.target.closest('[data-driver-phone-close]')) closePhone();
@@ -653,7 +671,20 @@ const BremDriverDetailSearch = (function () {
 
   function markOpenButtons(open) {
     $('#driverDetailOpenBtn')?.classList.toggle('is-open', open);
+    $('#driverDetailSideBtn')?.classList.toggle('is-open', open);
     document.querySelector('[data-driver-mgmt-tab="detail"]')?.classList.toggle('is-open', open);
+  }
+
+  async function openPayslip() {
+    const driver = drivers().find(item => String(item.id || '') === state.selectedId);
+    if (!driver) return;
+    const opener = window.BremAdminPayrollSlipSearch?.openForDriver;
+    if (typeof opener !== 'function') return;
+    try {
+      await opener(driver, state.weekStart);
+    } catch (error) {
+      window.alert(error?.message || '급여명세서를 열지 못했습니다.');
+    }
   }
 
   function showSearch() {

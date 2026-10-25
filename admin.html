@@ -19,7 +19,7 @@
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
   <link rel="stylesheet" href="css/admin.css?v=20261025inq8">
-  <link rel="stylesheet" href="css/driver-detail-search.css?v=20261025panel6">
+  <link rel="stylesheet" href="css/driver-detail-search.css?v=20261025panel7">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
@@ -161,6 +161,7 @@
       </nav>
       <a class="driver-link" href="rider-manage.html?register=1" data-driver-popup="register">기사등록</a>
       <a class="driver-link secondary" href="drivers.html" data-driver-popup="list">기사 목록</a>
+      <button type="button" class="driver-link" id="driverDetailSideBtn">기사상세검색</button>
     </aside>
 
     <main class="main">
@@ -189,7 +190,7 @@
             <button type="button" class="primary-btn rider-app-publish-btn" id="riderAppPublishBtn" data-rider-app-publish title="콜수·거절율·장기근속을 기사 전용 앱에 일괄 반영 (월·주간 목표는 실시간)">라이더 앱 반영</button>
             <a class="top-link topbar-link--register" href="rider-manage.html?register=1" data-driver-popup="register">기사등록</a>
             <a class="top-link secondary topbar-link--register" href="drivers.html" data-driver-popup="list">기사목록</a>
-            <button type="button" class="top-link" id="driverDetailOpenBtn">기사상세</button>
+            <button type="button" class="top-link" id="driverDetailOpenBtn">기사검색</button>
             <a class="top-link topbar-link--desktop" href="rider-manage.html?register=1">기사등록프로그램</a>
             <a class="top-link secondary topbar-link--desktop" href="driver.html">기사 전용 페이지 열기</a>
             <button class="top-link danger" type="button" id="adminLogoutBtn">로그아웃</button>
@@ -9796,11 +9797,11 @@
   <script src="js/tax-management-admin.js?v=20261001tax1"></script>
   <script src="js/coupang-region-match.js?v=20261013zmatch1"></script>
   <script src="js/driver-management-admin.js?v=20261025panel1"></script>
-  <script src="js/driver-detail-search.js?v=20261025panel6"></script>
+  <script src="js/driver-detail-search.js?v=20261025panel7"></script>
   <script src="js/inactive-drivers-admin.js?v=20260922active1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260922pay1"></script>
-  <script src="js/admin-payroll-slip-search.js?v=20260817pay6"></script>
+  <script src="js/admin-payroll-slip-search.js?v=20261025payview1"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
   <script src="js/admin-urgent-missions.js?v=20260816push6"></script>
   <script src="js/admin-rider-push.js?v=20260816push7"></script>
