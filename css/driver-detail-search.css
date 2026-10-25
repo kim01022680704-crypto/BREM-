@@ -67,9 +67,53 @@
   margin-bottom: 16px;
 }
 
+.driver-detail-panel .driver-detail-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
 .driver-detail-search-field {
   flex: 1 1 280px;
   min-width: 220px;
+}
+
+.driver-detail-panel .driver-detail-search-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.driver-detail-panel .driver-org-week-bar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+}
+
+.driver-detail-panel .driver-org-week-bar .baemin-field__label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.driver-detail-panel .driver-org-week-bar .small-btn {
+  min-width: 44px;
+  min-height: 46px;
+  padding: 0 12px;
+}
+
+.driver-detail-panel .driver-org-week-bar .week-picker-trigger {
+  width: auto;
+  min-width: 148px;
+  white-space: nowrap;
+}
+
+.driver-detail-panel .driver-org-week-bar .week-range-label {
+  margin: 0;
+  white-space: nowrap;
 }
 
 .driver-detail-layout {
