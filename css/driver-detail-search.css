@@ -422,7 +422,10 @@
 button.driver-link {
   display: block;
   width: 100%;
-  font: inherit;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1.2;
 }
 
 .driver-detail-actions {
