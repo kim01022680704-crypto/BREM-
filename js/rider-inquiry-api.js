@@ -156,6 +156,21 @@
     return ack >= replied - 2000;
   }
 
+  function inquiryMenu(inquiry) {
+    if (inquiry?.status === 'done') return 'done';
+    if (replySeen(inquiry)) return 'ack';
+    return 'open';
+  }
+
+  function menuCounts(list) {
+    const counts = { open: 0, ack: 0, done: 0 };
+    (list || []).forEach(item => {
+      const key = inquiryMenu(item);
+      if (counts[key] != null) counts[key] += 1;
+    });
+    return counts;
+  }
+
   function statusLabel(inquiry) {
     const parts = [];
     if (inquiry?.adminReply) parts.push('답장함');
@@ -233,6 +248,8 @@
     typingName,
     statusLabel,
     statusClass,
+    inquiryMenu,
+    menuCounts,
     listExtraHtml,
     replyNote,
     ready: waitForConfig()

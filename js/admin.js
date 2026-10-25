@@ -1422,6 +1422,7 @@
   }
 
   let inquiryListCache = [];
+  let inquiryListMenu = 'open';
 
   function rememberInquiries(list) {
     inquiryListCache = Array.isArray(list) ? list : [];
@@ -3989,24 +3990,32 @@
     if (!rowsEl) return;
 
     const list = rememberInquiries(preset || await loadRiderInquiries());
-    const key = inquiryListKey(list);
+    const menu = inquiryListMenu || 'open';
+    const visible = list.filter(item => (window.BremRiderInquiryApi?.inquiryMenu?.(item) || 'open') === menu);
+    const key = `${menu}\n${inquiryListKey(list)}`;
     const newCount = list.filter(item => item.status === 'new').length;
+    const counts = window.BremRiderInquiryApi?.menuCounts?.(list) || { open: 0, ack: 0, done: 0 };
+    document.querySelectorAll('[data-inquiry-menu]').forEach(button => {
+      const id = button.dataset.inquiryMenu;
+      const label = id === 'ack' ? '답장확인' : id === 'done' ? '처리완료' : '미확인';
+      button.textContent = `${label} ${counts[id] || 0}`;
+      button.classList.toggle('active', id === menu);
+    });
 
     if (summaryEl) {
-      summaryEl.textContent = newCount
-        ? `미확인 문의 ${newCount}건 · 클릭하면 상세·주급명세서를 팝업으로 봅니다. 확인중·처리완료·삭제는 기사 확인과 관계없이 가능합니다.`
-        : '클릭하면 상세·주급명세서를 팝업으로 봅니다. 확인중·처리완료·삭제는 기사 확인과 관계없이 가능합니다.';
+      const menuLabel = menu === 'ack' ? '답장확인' : menu === 'done' ? '처리완료' : '미확인';
+      summaryEl.textContent = `${menuLabel} ${visible.length}건 · 클릭하면 상세를 봅니다.`;
     }
 
     if (rowsEl.dataset.inquiryKey === key && rowsEl.childElementCount) return;
     rowsEl.dataset.inquiryKey = key;
 
-    if (!list.length) {
-      rowsEl.innerHTML = '<p class="empty-state">접수된 라이더 문의가 없습니다.</p>';
+    if (!visible.length) {
+      rowsEl.innerHTML = '<p class="empty-state">이 메뉴에 문의가 없습니다.</p>';
       return;
     }
 
-    rowsEl.innerHTML = list.map(inquiry => `
+    rowsEl.innerHTML = visible.map(inquiry => `
       <article class="notice-item inquiry-item" data-open-inquiry="${escapeHtml(inquiry.id)}" role="button" tabindex="0">
         <div class="notice-item-head">
           <div>
@@ -9291,6 +9300,15 @@
       const openInquiry = event.target.closest('[data-open-inquiry]');
       if (openInquiry) {
         void openAdminInquiryPopup(openInquiry.dataset.openInquiry);
+        return;
+      }
+
+      const inquiryMenuBtn = event.target.closest('[data-inquiry-menu]');
+      if (inquiryMenuBtn) {
+        inquiryListMenu = inquiryMenuBtn.dataset.inquiryMenu || 'open';
+        const rowsEl = $('#riderInquiryRows');
+        if (rowsEl) delete rowsEl.dataset.inquiryKey;
+        void renderRiderInquiries(inquiryListCache.length ? inquiryListCache : undefined);
         return;
       }
 
