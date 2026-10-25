@@ -21,7 +21,9 @@
     pollTimer: null,
     watchTimer: null,
     watchSeeded: false,
-    alertQueue: []
+    alertQueue: [],
+    viewAckIds: new Set(),
+    viewAckRunning: false
   };
 
   function showToast(message) {
@@ -44,8 +46,9 @@
   function replySeen(item) {
     if (!item?.adminReply || !item?.riderAckAt) return false;
     const ack = Date.parse(item.riderAckAt);
+    if (!Number.isFinite(ack)) return false;
     const replied = Date.parse(item.adminRepliedAt || '');
-    if (!Number.isFinite(ack) || !Number.isFinite(replied)) return false;
+    if (!Number.isFinite(replied)) return true;
     return ack >= replied - 2000;
   }
 
@@ -174,9 +177,7 @@
       listEl.innerHTML = '<p class="driver-inquiry-empty">최근 2주 문의 내역이 없습니다.</p>';
       return;
     }
-    listEl.innerHTML = rows.map(item => {
-      const canAck = Boolean(item.adminReply) && !replySeen(item);
-      return `
+    listEl.innerHTML = rows.map(item => `
       <article class="driver-inquiry-item">
         <div class="driver-inquiry-item__head">
           <span class="driver-inquiry-status ${statusClass(item)}">${escapeHtml(statusLabel(item))}</span>
@@ -193,12 +194,36 @@
         ${replySeen(item)
           ? `<p class="driver-inquiry-ack-done">답장확인 · ${escapeHtml(formatWhen(item.riderAckAt))}</p>`
           : ''}
-        ${canAck
-          ? `<button type="button" class="driver-inquiry-ack-btn" data-ack-inquiry="${escapeHtml(item.id)}">답장확인</button>`
-          : ''}
       </article>
-    `;
-    }).join('');
+    `).join('');
+    if (state.open) markViewedReplies();
+  }
+
+  function markViewedReplies() {
+    if (!state.open || state.viewAckRunning || !window.BremStorage?.ackRiderInquiryOnServer) return;
+    const pending = (state.inquiries || []).filter(item => (
+      item?.id && item.adminReply && !replySeen(item) && !state.viewAckIds.has(String(item.id))
+    ));
+    if (!pending.length) return;
+    state.viewAckRunning = true;
+    pending.forEach(item => state.viewAckIds.add(String(item.id)));
+    void (async () => {
+      let changed = false;
+      try {
+        for (const item of pending) {
+          if (!state.open) return;
+          const result = await window.BremStorage.ackRiderInquiryOnServer(item.id);
+          if (result?.ok && Array.isArray(result.inquiries)) {
+            state.inquiries = result.inquiries;
+            changed = true;
+          }
+        }
+      } finally {
+        pending.forEach(item => state.viewAckIds.delete(String(item.id)));
+        state.viewAckRunning = false;
+        if (changed && state.open) renderHistory();
+      }
+    })();
   }
 
   function applyMode(source) {

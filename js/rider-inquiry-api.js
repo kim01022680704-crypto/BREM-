@@ -151,8 +151,9 @@
   function replySeen(inquiry) {
     if (!inquiry?.adminReply || !inquiry?.riderAckAt) return false;
     const ack = Date.parse(inquiry.riderAckAt);
+    if (!Number.isFinite(ack)) return false;
     const replied = Date.parse(inquiry.adminRepliedAt || '');
-    if (!Number.isFinite(ack) || !Number.isFinite(replied)) return false;
+    if (!Number.isFinite(replied)) return true;
     return ack >= replied - 2000;
   }
 
