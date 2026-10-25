@@ -838,12 +838,21 @@
   }
 
   function kstHourNow() {
-    const hourText = new Intl.DateTimeFormat('en-CA', {
+    const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Seoul',
       hour: 'numeric',
+      hourCycle: 'h23',
       hour12: false
-    }).format(new Date());
-    return Number(hourText);
+    }).formatToParts(new Date());
+    const hour = Number(parts.find(part => part.type === 'hour')?.value);
+    if (!Number.isFinite(hour)) return 0;
+    return hour % 24;
+  }
+
+  /** 06시 전은 전날 심야(20:00~05:59)가 이어진다. 운영일은 어제. */
+  function baeminOperatingDate(calendarToday = todayKstDate()) {
+    const today = String(calendarToday || todayKstDate()).slice(0, 10);
+    return kstHourNow() < 6 ? addDaysDate(today, -1) : today;
   }
 
   /** 배민 일별/라이더 조회 가능 최신일(보통 어제). 06시 전이면 그제. */
@@ -881,7 +890,7 @@
 
   // applyWeekWednesday 는 화요일을 다음 주로 넘기므로 쓰지 않는다. 오늘이 속한 수~화.
   function dashboardSettlementWeekRange() {
-    const today = todayKstDate();
+    const today = baeminOperatingDate();
     const dayName = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', weekday: 'long' })
       .format(new Date(`${today}T12:00:00+09:00`));
     const map = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
@@ -6425,12 +6434,10 @@
   function isUpcomingBaeminSlot(key, date = '') {
     const afterCurrent = BAEMIN_SLOT_ORDER.indexOf(key) > BAEMIN_SLOT_ORDER.indexOf(currentBaeminSlotKey());
     if (!date) return afterCurrent;
-    const today = todayKstDate();
+    const today = baeminOperatingDate();
     const day = String(date).slice(0, 10);
     if (day > today) return true;
     if (day < today) return false;
-    // 00~05시는 전날 심야가 진행 중이라 오늘 날짜 칸은 아직 시작 전이다.
-    if (new Date().getHours() < 6) return true;
     return afterCurrent;
   }
 
@@ -6543,17 +6550,20 @@
       return;
     }
 
-    const today = todayKstDate();
+    const today = baeminOperatingDate();
     const liveToday = state.dashboardTodayLive?.date === today
       ? state.dashboardTodayLive.byPartner?.[pid] || null
       : null;
-    const usesLive = Boolean(liveToday) && !byDate.has(today) && dates.includes(today);
+    const slotSum = (row) => Number(row?.morning || 0) + Number(row?.afternoon || 0) + Number(row?.evening || 0) + Number(row?.midnight || 0);
+    // 06시 전 운영일 일별은 아직 안 들어온다. 0으로 쌓인 행이 있어도 실시간 숫자를 그 날에 붙인다.
+    const usesLive = Boolean(liveToday) && dates.includes(today) && slotSum(byDate.get(today)) <= 0;
     rowsEl.innerHTML = dates.map(date => {
+      const stored = byDate.get(date);
       const live = usesLive && date === today;
-      const actual = byDate.get(date) || (live ? liveToday : null) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
+      const actual = (live ? liveToday : null) || stored || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
       const targets = computeSlotTargets(setCount, date);
       // 배민 일별은 다음 날 들어온다. 오늘은 실시간 숫자, 없으면 미달이 아니라 아직 안 들어온 것.
-      const notYet = !live && date >= today && !byDate.has(date);
+      const notYet = !live && date >= today && slotSum(stored) <= 0;
       return `<tr>
         <td><strong class="dashboard-baemin-region-name" title="${escapeHtml(regionName)}">${escapeHtml(regionName)}</strong></td>
         <td class="dashboard-baemin-date-cell" title="${escapeHtml(formatDeliveryDateWithWeekday(date))}">${escapeHtml(formatDeliveryDateShort(date))}${live ? '<span class="dashboard-baemin-region-meta">실시간</span>' : ''}</td>
@@ -6702,7 +6712,8 @@
       }
       return;
     }
-    const today = todayKstDate();
+    const calendarToday = todayKstDate();
+    const today = baeminOperatingDate(calendarToday);
     if (options.resume === true) {
       try { await loadViewConfig({ silent: true }); } catch { /* ignore */ }
     }
@@ -6727,7 +6738,7 @@
         state.weekdayQuotaMatrix ? Promise.resolve() : ensureWeekdayQuotaLoaded()
       ]).catch(() => {});
 
-      const captureDate = today;
+      const captureDate = calendarToday;
       const queriedAt = new Date();
 
       const regionRows = [];
