@@ -125,6 +125,25 @@ html.brem-admin-app-nav .driver-detail-popup__dialog {
   max-height: none;
 }
 
+/* 기사 모바일 보기: 기기마다 칸이 달라 찌그러지지 않게 390×844로 고정하고, 화면에는 비율 유지한 채 맞춘다. */
+html.brem-admin-app-nav .driver-phone-popup {
+  overflow: hidden;
+  padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+}
+
+html.brem-admin-app-nav .driver-phone {
+  width: 390px;
+  height: 844px;
+  max-width: none;
+  flex: none;
+  transform-origin: center center;
+  transform: scale(min(
+    1,
+    (100vw - 24px) / 390px,
+    (100vh - 48px) / 844px
+  ));
+}
+
 .admin-phone-shortcut {
   display: flex;
   align-items: center;
