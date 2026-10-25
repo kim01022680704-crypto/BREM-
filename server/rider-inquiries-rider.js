@@ -11,6 +11,27 @@ function store() {
   return useSupabase() ? riderInquiriesSupabase : riderInquiriesStore;
 }
 
+const STAFF_ONLY_FIELDS = [
+  'adminReplyBy',
+  'adminReplyById',
+  'replyingBy',
+  'replyingById',
+  'replyingAt'
+];
+
+function forRider(inquiry) {
+  if (!inquiry || typeof inquiry !== 'object') return inquiry;
+  const next = { ...inquiry };
+  STAFF_ONLY_FIELDS.forEach(key => {
+    delete next[key];
+  });
+  return next;
+}
+
+function forRiderList(list) {
+  return (Array.isArray(list) ? list : []).map(forRider);
+}
+
 function riderArea(rider = {}) {
   const raw = rider.raw_data && typeof rider.raw_data === 'object' ? rider.raw_data : {};
   return String(
@@ -24,7 +45,7 @@ async function listMine(accessToken) {
   const list = await store().readAll();
   return {
     ok: true,
-    inquiries: list.filter(item => matchesRider(item, me.riderId, me.rider?.phone))
+    inquiries: forRiderList(list.filter(item => matchesRider(item, me.riderId, me.rider?.phone)))
   };
 }
 
@@ -58,7 +79,7 @@ async function createMine(accessToken, body = {}) {
     payslipSnapshot
   });
 
-  return { ok: true, inquiry: record };
+  return { ok: true, inquiry: forRider(record) };
 }
 
 async function ackMine(accessToken, inquiryId) {
@@ -72,7 +93,7 @@ async function ackMine(accessToken, inquiryId) {
   const next = await store().updateInquiry(inquiry.id, { riderAck: true });
   return {
     ok: true,
-    inquiries: next.filter(item => matchesRider(item, me.riderId, me.rider?.phone))
+    inquiries: forRiderList(next.filter(item => matchesRider(item, me.riderId, me.rider?.phone)))
   };
 }
 
