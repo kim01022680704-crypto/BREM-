@@ -4290,9 +4290,13 @@
       replyBox.hidden = false;
       const replyInput = $('#adminInquiryReplyInput');
       const replyNote = $('#adminInquiryReplyNote');
-      if (replyInput && !keepDraft && document.activeElement !== replyInput) {
-        const nextReply = inquiry.adminReply || '';
-        if (replyInput.value !== nextReply) replyInput.value = nextReply;
+      if (replyInput && !keepDraft) {
+        const draft = String(replyInput.value || '').trim();
+        const serverReply = String(inquiry.adminReply || '').trim();
+        const ownDraft = document.activeElement === replyInput && draft && draft !== serverReply;
+        if (!ownDraft && replyInput.value !== (inquiry.adminReply || '')) {
+          replyInput.value = inquiry.adminReply || '';
+        }
       }
       if (replyNote) replyNote.textContent = window.BremRiderInquiryApi?.replyNote?.(inquiry) || '';
     }
@@ -4411,6 +4415,7 @@
 
   async function watchNewRiderInquiries({ announce = true } = {}) {
     try {
+      const before = inquiryListCache.slice();
       const list = await loadRiderInquiries();
       const fresh = list.filter(item => item.status === 'new');
       setSidebarNavBadge('rider-inquiries', fresh.length);
@@ -4425,15 +4430,22 @@
       if (screenOpen) {
         await renderRiderInquiries(list);
         const openId = popup && !popup.hidden ? popup.dataset.inquiryId : '';
-        const input = $('#adminInquiryReplyInput');
-        if (openId && document.activeElement !== input) {
+        if (openId) {
           const current = list.find(item => String(item.id) === String(openId));
-          const note = $('#adminInquiryReplyNote');
-          const statusEl = $('#adminInquiryPopupStatus');
-          if (current && note) note.textContent = window.BremRiderInquiryApi?.replyNote?.(current) || '';
-          if (current && statusEl) {
-            statusEl.className = inquiryStatusClass(current);
-            statusEl.textContent = inquiryStatusLabel(current);
+          if (current) paintAdminInquiryPopup(current, { keepDraft: false });
+        }
+        if (before.length) {
+          const known = new Map(before.map(item => [String(item.id), item]));
+          const me = window.BremRiderInquiryApi?.currentAdmin?.() || {};
+          const arrived = list.filter(item => {
+            if (!item.adminReply || known.get(String(item.id))?.adminReply) return false;
+            if (me.id && item.adminReplyById && String(item.adminReplyById) === String(me.id)) return false;
+            return true;
+          });
+          if (arrived.length) {
+            showToast(arrived.length === 1
+              ? '다른 관리자 답장이 반영됐습니다.'
+              : `다른 관리자 답장 ${arrived.length}건이 반영됐습니다.`);
           }
         }
       }

@@ -35,7 +35,7 @@
   }
 
   async function request(url, options) {
-    const response = await fetch(url, options);
+    const response = await fetch(url, { ...(options || {}), cache: 'no-store' });
     if (!response.ok) {
       let message = '요청에 실패했습니다.';
       try {

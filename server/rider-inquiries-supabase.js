@@ -32,9 +32,23 @@ function createId() {
   return `inq-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function rawObject(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return { ...value };
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object') return { ...parsed };
+    } catch {
+      /* raw_data가 문자로 오면 답장이 빠지지 않게 한 번 더 읽는다 */
+    }
+  }
+  return {};
+}
+
 function rowToRecord(row) {
   if (!row) return null;
-  const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+  const raw = rawObject(row.raw_data);
   return enrichRecord({
     id: row.id,
     name: row.name || '',
@@ -101,57 +115,85 @@ async function createInquiry(payload) {
   return rowToRecord(data);
 }
 
+function applyInquiryPatch(raw, patch, row) {
+  const next = { ...raw };
+  if (patch.adminReply != null) {
+    const reply = String(patch.adminReply || '').trim();
+    if (!reply) throw new Error('답장 내용을 입력하세요.');
+    next.adminReply = reply;
+    next.adminRepliedAt = nowIso();
+    next.adminReplyBy = String(patch.adminReplyBy || next.adminReplyBy || '').trim();
+    next.adminReplyById = String(patch.adminReplyById || next.adminReplyById || '').trim();
+    next.replyingBy = '';
+    next.replyingById = '';
+    next.replyingAt = '';
+  }
+  if (patch.replyingClear) {
+    next.replyingBy = '';
+    next.replyingById = '';
+    next.replyingAt = '';
+  } else if (patch.replyingBy != null) {
+    next.replyingBy = String(patch.replyingBy || '').trim();
+    next.replyingById = String(patch.replyingById || '').trim();
+    next.replyingAt = next.replyingBy ? nowIso() : '';
+  }
+  if (patch.riderAck) {
+    next.riderAckAt = nowIso();
+  }
+  let nextStatus = patch.status != null ? String(patch.status || 'new') : row.status;
+  if (patch.adminReply != null && nextStatus === 'new') nextStatus = 'read';
+  return { raw: next, status: nextStatus };
+}
+
 async function updateInquiry(id, patch = {}) {
   const supabase = getClient();
   if (!supabase) throw new Error('Supabase 문의 저장소가 설정되지 않았습니다.');
 
-  const { data: row, error: readError } = await supabase
-    .from('rider_inquiries')
-    .select(INQUIRY_SELECT)
-    .eq('id', id)
-    .maybeSingle();
-  if (readError) throw readError;
-  if (!row) throw new Error('문의를 찾지 못했습니다.');
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const { data: row, error: readError } = await supabase
+      .from('rider_inquiries')
+      .select(INQUIRY_SELECT)
+      .eq('id', id)
+      .maybeSingle();
+    if (readError) throw readError;
+    if (!row) throw new Error('문의를 찾지 못했습니다.');
 
-  const raw = row.raw_data && typeof row.raw_data === 'object' ? { ...row.raw_data } : {};
-  if (patch.adminReply != null) {
-    const reply = String(patch.adminReply || '').trim();
-    if (!reply) throw new Error('답장 내용을 입력하세요.');
-    raw.adminReply = reply;
-    raw.adminRepliedAt = nowIso();
-    raw.adminReplyBy = String(patch.adminReplyBy || raw.adminReplyBy || '').trim();
-    raw.adminReplyById = String(patch.adminReplyById || raw.adminReplyById || '').trim();
-    raw.replyingBy = '';
-    raw.replyingById = '';
-    raw.replyingAt = '';
+    const applied = applyInquiryPatch(rawObject(row.raw_data), patch, row);
+    const writtenAt = nowIso();
+    const { data: saved, error } = await supabase
+      .from('rider_inquiries')
+      .update({
+        status: applied.status,
+        raw_data: applied.raw,
+        updated_at: writtenAt
+      })
+      .eq('id', id)
+      .eq('updated_at', row.updated_at)
+      .select('id');
+    if (error) throw error;
+    if (saved && saved.length) return readAll();
+
+    const { data: again, error: againError } = await supabase
+      .from('rider_inquiries')
+      .select('updated_at')
+      .eq('id', id)
+      .maybeSingle();
+    if (againError) throw againError;
+    if (again && again.updated_at === row.updated_at) {
+      const { error: plainError } = await supabase
+        .from('rider_inquiries')
+        .update({
+          status: applied.status,
+          raw_data: applied.raw,
+          updated_at: writtenAt
+        })
+        .eq('id', id);
+      if (plainError) throw plainError;
+      return readAll();
+    }
   }
-  if (patch.replyingClear) {
-    raw.replyingBy = '';
-    raw.replyingById = '';
-    raw.replyingAt = '';
-  } else if (patch.replyingBy != null) {
-    raw.replyingBy = String(patch.replyingBy || '').trim();
-    raw.replyingById = String(patch.replyingById || '').trim();
-    raw.replyingAt = raw.replyingBy ? nowIso() : '';
-  }
-  if (patch.riderAck) {
-    raw.riderAckAt = nowIso();
-  }
 
-  let nextStatus = patch.status != null ? String(patch.status || 'new') : row.status;
-  if (patch.adminReply != null && nextStatus === 'new') nextStatus = 'read';
-
-  const { error } = await supabase
-    .from('rider_inquiries')
-    .update({
-      status: nextStatus,
-      raw_data: raw,
-      updated_at: nowIso()
-    })
-    .eq('id', id);
-
-  if (error) throw error;
-  return readAll();
+  throw new Error('다른 관리자가 방금 수정했습니다. 다시 시도하세요.');
 }
 
 async function updateStatus(id, status) {
