@@ -2745,6 +2745,26 @@
     }
   }
 
+  // [오류 처리] 정산 설정 데이터 로딩 실패 시, 0원 표 대신 명확한 오류+재시도 배너를 띄운다.
+  function showSectionDataLoadError(sectionId, result) {
+    const section = document.getElementById(sectionId)
+      || document.getElementById(state.currentSection);
+    const message = result?.message
+      || '정산 데이터를 불러오지 못했습니다. 네트워크 확인 후 재시도해 주세요.';
+    if (window.BremLoadingUI?.showStatus) {
+      window.BremLoadingUI.showStatus(section, {
+        type: 'error',
+        message,
+        action: {
+          label: '재시도',
+          onClick: () => { void showSection(sectionId, { force: true }); }
+        }
+      });
+    } else {
+      showToast(message);
+    }
+  }
+
   function showSectionLoadingSkeleton(sectionId) {
     if (BremStorage.isSectionCacheReady?.(sectionId)) return;
     if (sectionId === 'dashboard') {
@@ -2884,7 +2904,11 @@
     Promise.resolve(loadPromise).then(result => {
       showAdminDataLoading(false);
       if (result && result.ok === false) {
-        showToast(result.message || '데이터 연결에 실패했습니다.');
+        if (result.settingsLoadFailed) {
+          showSectionDataLoadError(initialSection, result);
+        } else {
+          showToast(result.message || '데이터 연결에 실패했습니다.');
+        }
         renderDbConnectionStatus();
         return;
       }
@@ -8090,14 +8114,18 @@
     showSectionLoadingSkeleton(sectionId);
     showAdminDataLoading(true);
 
+    let settingsFailResult = null;
     try {
-      const result = await (BremStorage.ensureSectionLoaded?.(sectionId) || Promise.resolve({ ok: true }));
+      const result = await (BremStorage.ensureSectionLoaded?.(sectionId, { force: options.force === true }) || Promise.resolve({ ok: true }));
       // 거절율 메뉴만 전체 이력이 필요하다 (다른 메뉴는 최근 2년 범위로 로딩됨)
       if (sectionId === 'rejections' && !rejectionHistoryReloaded && BremStorage.refreshDataFromServer) {
         rejectionHistoryReloaded = true;
         await BremStorage.refreshDataFromServer(BremStorage.STORAGE_KEYS.rejections, { allHistory: true });
       }
-      if (result?.ok === false && !BremStorage.drivers?.getAll?.().length && sectionId !== 'admin-account') {
+      if (result?.settingsLoadFailed) {
+        // 정산 설정 로딩 실패: 0원 표를 그리지 말고 오류+재시도 배너만 띄운다.
+        settingsFailResult = result;
+      } else if (result?.ok === false && !BremStorage.drivers?.getAll?.().length && sectionId !== 'admin-account') {
         showToast(result.message || '데이터를 불러오지 못했습니다.');
       } else if (result?.ok === false && result?.stale) {
         console.warn('[BREM] Section load used stale cache:', sectionId, result.message);
@@ -8111,6 +8139,12 @@
       showAdminDataLoading(false);
     }
 
+    // 로딩 실패 시엔 섹션 렌더(계산 포함)를 건너뛴다 → 빈 금액/0원 표 방지.
+    // 배너는 로딩 표시 해제(finally) 이후에 띄워야 가려지지 않는다.
+    if (settingsFailResult) {
+      showSectionDataLoadError(sectionId, settingsFailResult);
+      return;
+    }
     finishSectionNavigation(sectionId);
   }
 

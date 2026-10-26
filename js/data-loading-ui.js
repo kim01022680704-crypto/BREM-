@@ -101,12 +101,33 @@ window.BremLoadingUI = (function () {
     if (spinner) spinner.hidden = false;
   }
 
+  // 오류 배너의 '재시도' 등 액션 버튼을 세팅/정리한다.
+  function setBannerAction(el, action) {
+    if (!el) return;
+    let btn = el.querySelector('.brem-data-loading__action');
+    if (action && action.label) {
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'brem-data-loading__action';
+        el.appendChild(btn);
+      }
+      btn.textContent = action.label;
+      btn.onclick = typeof action.onClick === 'function' ? action.onClick : null;
+      btn.hidden = false;
+    } else if (btn) {
+      btn.onclick = null;
+      btn.hidden = true;
+    }
+  }
+
   function show(target, message = DEFAULT_MESSAGE) {
     const el = ensureBanner(target, message);
     if (!el) return;
 
     clearStatusTimer(el);
     applyBannerMode(el, 'loading');
+    setBannerAction(el, null);
 
     const textEl = el.querySelector('.brem-data-loading__text');
     if (textEl) textEl.textContent = message;
@@ -138,6 +159,7 @@ window.BremLoadingUI = (function () {
     el.classList.remove('is-visible', 'brem-data-loading--success', 'brem-data-loading--error');
     el.hidden = true;
     applyBannerMode(el, 'loading');
+    setBannerAction(el, null);
 
     resolveSection(el)?.classList.remove('is-data-loading');
   }
@@ -156,6 +178,8 @@ window.BremLoadingUI = (function () {
 
     const textEl = el.querySelector('.brem-data-loading__text');
     if (textEl) textEl.textContent = options.message || DEFAULT_MESSAGE;
+
+    setBannerAction(el, options.action);
 
     el.hidden = false;
     el.classList.add('is-visible');

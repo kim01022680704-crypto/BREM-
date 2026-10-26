@@ -72,6 +72,24 @@
   color: #f87171;
 }
 
+.brem-data-loading__action {
+  margin-left: 10px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.brem-data-loading__action:hover {
+  background: rgba(248, 113, 113, 0.3);
+  color: #fff;
+}
+
 .table-wrap.is-loading::after,
 .mobile-list.is-loading::after {
   content: '데이터 불러오는 중...';

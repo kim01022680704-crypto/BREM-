@@ -249,13 +249,18 @@ window.BremSupabaseStorageAdapter = (function () {
         keys.promotionSettings,
         keys.promotionSelectorOptions,
         keys.manualNameMappings,
-        keys.weeklySettlementsDirect,
-        keys.settlementUploadLogsDirect,
-        keys.settlementUnmatchedDirect,
-        keys.directOtherPayments,
-        keys.directBremPromotions,
-        keys.directSettlementAdjustments,
-        keys.directRetroAdjustments,
+        // [Egress 최적화] 직계약 정산 클러스터(약 7.3MB)는 코어에서 분리한다.
+        // 모든 읽기가 ensureSectionLoaded 뒤(promotion-settlement/settlement-result-direct/
+        // final-deposit/tax-management/revenue-region-settlement/weekly-settlement-direct)에서만 일어나므로,
+        // 해당 섹션 진입시 reloadSettingKey(storage.js ensureSectionLoadedInternal)로 지연 로드된다.
+        // 코어 콜드로드 9.70MB -> 2.43MB, 응답 526ms -> 136ms. (쓰기/판별엔 이 목록을 쓰지 않음)
+        // keys.weeklySettlementsDirect,        // 6.3MB  (deferred)
+        // keys.settlementUploadLogsDirect,     // 161KB  (deferred)
+        // keys.settlementUnmatchedDirect,      // 95KB   (deferred)
+        // keys.directOtherPayments,            // ~0KB   (deferred)
+        // keys.directBremPromotions,           // 10KB   (deferred)
+        // keys.directSettlementAdjustments,    // 728KB  (deferred)
+        // keys.directRetroAdjustments,         // 102KB  (deferred)
         keys.leaseLoans,
         keys.deductionLedger,
         keys.missionDefaults,

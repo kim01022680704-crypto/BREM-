@@ -1826,6 +1826,43 @@ const BremStorage = (function () {
     return result;
   }
 
+  // [오류 처리] 지연 로드(reloadSettingKey)가 '네트워크 오류로 throw' 한 설정 키를 모은다.
+  // 행이 없어 null 로 돌아온 '정상 빈 데이터'는 여기 담기지 않는다(정상 0원 vs 로딩 실패 구분).
+  const failedSettingKeys = new Set();
+
+  function sectionDeferredSettingKeys(sectionKeys) {
+    return (sectionKeys || []).filter(key => (
+      key
+      && key !== KEYS.drivers
+      && !TABLE_STORAGE_KEYS.has(key)
+      && !isPayrollStorageKey(key)
+    ));
+  }
+
+  // 섹션이 의존하는 설정 키 중 '네트워크 로딩 실패' 상태인 것이 있는지.
+  function hasSettingsLoadFailure(sectionId) {
+    const keys = ADMIN_SECTION_KEYS[sectionId] || [];
+    return sectionDeferredSettingKeys(keys).some(key => failedSettingKeys.has(key));
+  }
+
+  function isSettingKeyLoadFailed(key) {
+    return failedSettingKeys.has(key);
+  }
+
+  // [Egress 최적화] 섹션의 '설정(JSON) 키'가 캐시에 올라와 있는지 검사한다.
+  // 코어에서 분리(지연 로드)된 직계약 정산 키들은 섹션 첫 진입 전에는 캐시에 없으므로,
+  // 테이블 키만 보던 기존 준비판정에 이 게이트를 더해야 빈 화면으로 조기반환되지 않는다.
+  // (drivers/테이블키/급여키는 각자 별도 로드 경로가 판정하므로 여기선 제외.)
+  function sectionSettingsLoaded(sectionKeys) {
+    if (!activeStorageAdapter.read) return true;
+    return (sectionKeys || []).every(key => {
+      if (!key || key === KEYS.drivers) return true;
+      if (TABLE_STORAGE_KEYS.has(key)) return true;
+      if (isPayrollStorageKey(key)) return true;
+      return activeStorageAdapter.read(key, null) != null;
+    });
+  }
+
   function isSectionCacheReady(sectionId) {
     if (!activeStorageAdapter.isHydrated?.()) return false;
 
@@ -1861,9 +1898,10 @@ const BremStorage = (function () {
           .every(key => window.BremDataCache?.isValid?.(key));
         return restReady && isDashboardCallsWindowReady();
       }
-      return sectionKeys
-        .filter(key => TABLE_STORAGE_KEYS.has(key) && key !== KEYS.missions && key !== KEYS.drivers)
-        .every(key => window.BremDataCache?.isValid?.(key));
+      return sectionSettingsLoaded(sectionKeys)
+        && sectionKeys
+          .filter(key => TABLE_STORAGE_KEYS.has(key) && key !== KEYS.missions && key !== KEYS.drivers)
+          .every(key => window.BremDataCache?.isValid?.(key));
     }
 
     if (!sectionKeys.length) {
@@ -1892,14 +1930,15 @@ const BremStorage = (function () {
 
     if (sectionId === 'dashboard') return false;
 
-    return sectionKeys
-      .filter(key => TABLE_STORAGE_KEYS.has(key) && key !== KEYS.missions && key !== KEYS.drivers)
-      .every(key => {
-        if (isPayrollStorageKey(key) && isPayrollLocalStorageMode()) {
-          return window.BremDataCache?.isValid?.(key);
-        }
-        return window.BremDataCache?.isValid?.(key) && activeStorageAdapter.isKeyLoaded?.(key);
-      });
+    return sectionSettingsLoaded(sectionKeys)
+      && sectionKeys
+        .filter(key => TABLE_STORAGE_KEYS.has(key) && key !== KEYS.missions && key !== KEYS.drivers)
+        .every(key => {
+          if (isPayrollStorageKey(key) && isPayrollLocalStorageMode()) {
+            return window.BremDataCache?.isValid?.(key);
+          }
+          return window.BremDataCache?.isValid?.(key) && activeStorageAdapter.isKeyLoaded?.(key);
+        });
   }
 
   async function ensureSectionLoadedInternal(sectionId, options = {}) {
@@ -2051,10 +2090,17 @@ const BremStorage = (function () {
         && !isPayrollStorageKey(key)
       ));
       settingKeys.forEach(key => {
-        if (!force && activeStorageAdapter.read?.(key, null) != null) return;
-        tasks.push(activeStorageAdapter.reloadSettingKey(key).catch(error => {
-          console.warn('[BREM] setting reload skipped:', key, error?.message || error);
-        }));
+        if (!force && activeStorageAdapter.read?.(key, null) != null) {
+          failedSettingKeys.delete(key);
+          return;
+        }
+        tasks.push(activeStorageAdapter.reloadSettingKey(key)
+          .then(() => { failedSettingKeys.delete(key); })
+          .catch(error => {
+            // 네트워크 오류 등으로 실패 → 실패 집합에 기록(정상 빈 데이터와 구분).
+            console.warn('[BREM] setting reload failed:', key, error?.message || error);
+            failedSettingKeys.add(key);
+          }));
       });
     }
 
@@ -2070,6 +2116,19 @@ const BremStorage = (function () {
 
     if (tasks.length) {
       await Promise.all(tasks);
+    }
+
+    // [오류 처리] 섹션 필수 설정 키가 네트워크 오류로 로드 실패했으면 실패로 보고한다.
+    // (정상 빈 데이터는 failedSettingKeys 에 없으므로 여기 걸리지 않는다.)
+    const failedKeys = sectionDeferredSettingKeys(sectionKeys).filter(key => failedSettingKeys.has(key));
+    if (failedKeys.length) {
+      window.BremPerf?.timeEnd?.(`storage.ensureSection:${sectionId}`);
+      return {
+        ok: false,
+        settingsLoadFailed: true,
+        failedKeys,
+        message: '정산 설정 데이터를 불러오지 못했습니다. 네트워크 확인 후 재시도해 주세요.'
+      };
     }
 
     // 장기근속 진행률은 시작일 이후 콜수가 필요. 기본 2년 윈도우보다 이른 시작일이 있으면 더 앞부터 로드.
@@ -11976,6 +12035,11 @@ const BremStorage = (function () {
     save(record, options = {}) {
       const next = normalizeWeeklySettlement(stampWeeklyCallFees(record, options.callFeeUnit));
       const key = weeklySettlementsKey(next.channel);
+      // [오류 처리] 지연 로드가 네트워크 오류로 실패한 상태면, getAll()이 빈 목록이라
+      // 저장 시 전체 정산서를 빈 목록으로 덮어써 '데이터 손실'이 날 수 있다. 저장을 차단한다.
+      if (failedSettingKeys.has(key)) {
+        throw new Error('정산 데이터가 로드되지 않아(네트워크 오류) 저장할 수 없습니다. 재시도 후 다시 시도하세요.');
+      }
       const list = weeklySettlements.getAll(next.channel).filter(item => item.id !== next.id);
       list.unshift(next);
       storageAdapter.write(key, list);
@@ -16013,6 +16077,8 @@ const BremStorage = (function () {
     ensureLongEventCallsLoaded,
     ensurePromotionCalculationCalls,
     isSectionCacheReady,
+    hasSettingsLoadFailure,
+    isSettingKeyLoadFailed,
     isBootstrapComplete,
     loadBootstrapData,
     getCacheStatus,
