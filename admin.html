@@ -4,17 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <script>
-    /* 폰에서 홈 화면에 깐 관리자 PWA는 전체 ERP가 아니라 안드로이드 관리자앱과 같은 화면을 연다. */
+    /* 폰에서 연 관리자 화면은 전체 ERP가 아니라 안드로이드 관리자앱과 같은 화면을 연다. */
     (function () {
       try {
-        var standalone = window.matchMedia('(display-mode: standalone)').matches
-          || window.matchMedia('(display-mode: fullscreen)').matches
-          || window.navigator.standalone === true;
-        if (!standalone) return;
-        var shortSide = Math.min(screen.width || 0, screen.height || 0);
-        var phone = shortSide > 0 && shortSide <= 520;
-        if (!phone || /\/admin-app\.html$/i.test(location.pathname)) return;
-        location.replace('/admin-app.html' + location.search + location.hash);
+        if (/\/admin-app\.html$/i.test(location.pathname)) return;
+        var go = function () {
+          var phone = window.matchMedia('(max-width: 768px)').matches
+            || (window.innerWidth > 0 && window.innerWidth <= 768);
+          if (!phone) return;
+          location.replace('/admin-app.html' + location.search + location.hash);
+        };
+        go();
+        document.addEventListener('DOMContentLoaded', go);
       } catch (e) {}
     })();
   </script>
