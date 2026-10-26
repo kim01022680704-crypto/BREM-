@@ -100,6 +100,11 @@ const BremDriverDetailSearch = (function () {
     return tail ? `${name}${tail}` : name;
   }
 
+  function erpPassword(driver) {
+    const saved = String(driver?.password || '').trim();
+    return saved || '1234';
+  }
+
   function coupangId(driver) {
     const get = window.BremDriverUtils?.getErpCoupangId;
     if (typeof get === 'function') return String(get(driver) || '').trim();
@@ -328,6 +333,7 @@ const BremDriverDetailSearch = (function () {
       <div class="driver-detail-profile">
         <strong>${escapeHtml(driver.name || '-')}</strong>
         <span>ERP ${escapeHtml(erpId(driver) || '-')}</span>
+        <span>비밀번호 ${escapeHtml(erpPassword(driver))}</span>
         <span>${escapeHtml(phoneLabel(driver))}</span>
         <span>${escapeHtml(driver.status || '근무중')}</span>
         <span>배민ID ${escapeHtml(driver.baeminId || '-')}</span>
