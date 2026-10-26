@@ -1830,6 +1830,12 @@ const BremStorage = (function () {
   // 행이 없어 null 로 돌아온 '정상 빈 데이터'는 여기 담기지 않는다(정상 0원 vs 로딩 실패 구분).
   const failedSettingKeys = new Set();
 
+  // [렉 방지] reloadSettingKey 가 '성공'한 설정 키(행이 없어 빈 값이어도 성공)를 기억한다.
+  // 행이 없는 키(예: direct_other_payments)는 캐시에 값이 안 들어가 read()가 계속 null 이라,
+  // 이 집합이 없으면 준비판정이 영원히 false → 매 클릭마다 로딩+재조회가 반복된다.
+  // 네트워크 오류(throw)는 여기 담기지 않으므로 '정상 빈 데이터'와 '로딩 실패'는 계속 구분된다.
+  const loadedSettingKeys = new Set();
+
   function sectionDeferredSettingKeys(sectionKeys) {
     return (sectionKeys || []).filter(key => (
       key
@@ -1859,7 +1865,8 @@ const BremStorage = (function () {
       if (!key || key === KEYS.drivers) return true;
       if (TABLE_STORAGE_KEYS.has(key)) return true;
       if (isPayrollStorageKey(key)) return true;
-      return activeStorageAdapter.read(key, null) != null;
+      // 값이 캐시에 있으면 OK. 값이 없어도 '한 번 성공적으로 로드(빈 데이터)'했으면 OK.
+      return activeStorageAdapter.read(key, null) != null || loadedSettingKeys.has(key);
     });
   }
 
@@ -2092,14 +2099,20 @@ const BremStorage = (function () {
       settingKeys.forEach(key => {
         if (!force && activeStorageAdapter.read?.(key, null) != null) {
           failedSettingKeys.delete(key);
+          loadedSettingKeys.add(key);
           return;
         }
         tasks.push(activeStorageAdapter.reloadSettingKey(key)
-          .then(() => { failedSettingKeys.delete(key); })
+          .then(() => {
+            // 성공(행이 없어 빈 값이어도 포함) → 로드완료로 기억, 실패 집합에서 제외.
+            failedSettingKeys.delete(key);
+            loadedSettingKeys.add(key);
+          })
           .catch(error => {
             // 네트워크 오류 등으로 실패 → 실패 집합에 기록(정상 빈 데이터와 구분).
             console.warn('[BREM] setting reload failed:', key, error?.message || error);
             failedSettingKeys.add(key);
+            loadedSettingKeys.delete(key);
           }));
       });
     }
