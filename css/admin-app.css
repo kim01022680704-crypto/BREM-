@@ -236,15 +236,22 @@ html.brem-admin-app-nav .driver-popup-modal__dialog {
   gap: 3px;
   min-width: 0;
   min-height: 46px;
-  padding: 4px 2px;
+  padding: 4px 1px;
   border: 0;
   border-radius: 12px;
   background: transparent;
   color: #9ca3af;
-  font-size: 0.68rem;
+  font-size: clamp(0.58rem, 2.7vw, 0.68rem);
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
   text-decoration: none;
+}
+
+.admin-app-nav__item > span:not(.admin-app-nav__badge) {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .admin-app-nav__item svg {
