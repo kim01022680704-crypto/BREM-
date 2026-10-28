@@ -701,10 +701,11 @@ const BremTaxInvoiceAdmin = (function () {
     const insurance = platform === 'baemin'
       ? list.reduce((sum, row) => sum + baeminInsuranceSum(row), 0)
       : sumKey(list, 'totalInsurance');
+    const invoiceAmount = supply + vat;
     rows.push([]);
     rows.push([platformLabel(platform)]);
-    rows.push(['2%뺀 공급가액', '2%뺀 부가세', '공급대가', '보험료합계']);
-    rows.push([supply, vat, supply + vat, insurance]);
+    rows.push(['2%뺀 공급가액', '2%뺀 부가세', '공급대가', '보험료합계', '실지급액']);
+    rows.push([supply, vat, invoiceAmount, insurance, invoiceAmount - insurance]);
   }
 
   function weekSheetRows(weekStart, month, fee) {
