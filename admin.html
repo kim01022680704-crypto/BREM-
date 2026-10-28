@@ -165,6 +165,7 @@
         <button class="nav-btn" data-section="final-deposit">최종입금</button>
         <button class="nav-btn" data-section="withdrawal-management">출금 관리</button>
         <button class="nav-btn" data-section="tax-management">세무관리</button>
+        <button class="nav-btn" data-section="tax-invoice-management">계산서 관리</button>
         <button class="nav-btn" data-section="driver-management">기사관리</button>
         <button class="nav-btn" type="button" data-section="driver-detail-search">기사상세검색</button>
         <button class="nav-btn" data-section="inactive-drivers">비활성기사</button>
@@ -5965,6 +5966,125 @@
         </div>
       </section>
 
+      <section class="section" id="tax-invoice-management">
+        <div class="promotion-platform-tabs admin-section-tabs" role="tablist">
+          <button type="button" class="promotion-tab active" data-admin-platform-tab="tax-invoice-management" data-platform="baemin">배민</button>
+          <button type="button" class="promotion-tab" data-admin-platform-tab="tax-invoice-management" data-platform="coupang">쿠팡</button>
+        </div>
+
+        <div class="admin-platform-panel" id="tax-invoice-management-baemin" data-platform="baemin">
+          <article class="card">
+            <div class="card-header">
+              <h2>배민 계산서</h2>
+              <button type="button" class="small-btn" id="taxInvoiceReloadBtn-baemin">불러오기</button>
+            </div>
+            <p class="form-help">수요일 기준 한 주입니다. 파일마다 공급가액 <strong>B31</strong>, 부가세액 <strong>C31</strong>, 공급대가 <strong>D31</strong>, 시간제보험 <strong>H25</strong>, 사업주부담 고용보험 <strong>I25</strong>, 라이더부담 고용보험 <strong>J25</strong>, 사업주부담 산재보험 <strong>K25</strong>, 라이더부담 산재보험 <strong>L25</strong>(비어 있으면 L2)를 읽습니다. 비밀번호는 주정산서와 같고, <strong>엑셀은 여러 개를 한 번에</strong> 고를 수 있습니다. 같은 지역을 다시 올리면 그 줄만 바뀝니다.</p>
+            <form id="taxInvoiceForm-baemin" class="weekly-settlement-form">
+              <div class="promotion-form-grid">
+                <label class="settlement-week-filter">
+                  <span>정산주 (수요일)</span>
+                  <span class="coupang-week-picker-inline">
+                    <button type="button" class="small-btn" id="taxInvoiceWeekPrevBtn-baemin" title="이전 주">&lt;&lt;</button>
+                    <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="tax-invoice-baemin" id="taxInvoiceWeekBtn-baemin">수요일 선택</button>
+                    <button type="button" class="small-btn" id="taxInvoiceWeekNextBtn-baemin" title="다음 주">&gt;&gt;</button>
+                  </span>
+                  <input type="hidden" id="taxInvoiceWeek-baemin">
+                </label>
+                <label>
+                  엑셀 비밀번호
+                  <input type="text" id="taxInvoicePassword-baemin" placeholder="주정산서와 같은 열람 비밀번호" autocomplete="off" spellcheck="false" required>
+                </label>
+                <label>
+                  계산서 엑셀 (여러 파일)
+                  <input type="file" id="taxInvoiceFiles-baemin" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple required>
+                </label>
+              </div>
+              <p class="settlement-week-range-label" id="taxInvoiceWeekRange-baemin"></p>
+              <div class="promotion-form-actions">
+                <button type="submit" class="primary-btn" id="taxInvoiceUploadBtn-baemin">엑셀 등록</button>
+              </div>
+            </form>
+            <p class="form-help" id="taxInvoiceErrors-baemin" style="white-space:pre-line"></p>
+            <p class="direct-inline-stats" id="taxInvoiceSummary-baemin">엑셀을 고르고 비밀번호를 입력한 뒤 「엑셀 등록」을 누르세요.</p>
+            <div class="table-wrap direct-scroll">
+              <table class="weekly-settlement-saved-table">
+                <thead>
+                  <tr>
+                    <th>지역</th>
+                    <th>파일</th>
+                    <th class="weekly-amount-cell">공급가액</th>
+                    <th class="weekly-amount-cell">부가세액</th>
+                    <th class="weekly-amount-cell">공급대가</th>
+                    <th class="weekly-amount-cell">시간제보험</th>
+                    <th class="weekly-amount-cell">사업주부담 고용보험</th>
+                    <th class="weekly-amount-cell">라이더부담 고용보험</th>
+                    <th class="weekly-amount-cell">사업주부담 산재보험</th>
+                    <th class="weekly-amount-cell">라이더부담 산재보험</th>
+                    <th>관리</th>
+                  </tr>
+                </thead>
+                <tbody id="taxInvoiceRows-baemin"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="admin-platform-panel" id="tax-invoice-management-coupang" data-platform="coupang" hidden>
+          <article class="card">
+            <div class="card-header">
+              <h2>쿠팡 계산서</h2>
+              <button type="button" class="small-btn" id="taxInvoiceReloadBtn-coupang">불러오기</button>
+            </div>
+            <p class="form-help">수요일 기준 한 주입니다. 시트에서 <strong>공급가액 · 부가세 · 합계 · 총합계금액 · 총보험료 · 총실지급액</strong> 글자를 찾아 오른쪽(없으면 아래) 금액을 읽습니다. 비밀번호는 주정산서와 같고, <strong>엑셀은 여러 개를 한 번에</strong> 고를 수 있습니다. 같은 지역을 다시 올리면 그 줄만 바뀝니다.</p>
+            <form id="taxInvoiceForm-coupang" class="weekly-settlement-form">
+              <div class="promotion-form-grid">
+                <label class="settlement-week-filter">
+                  <span>정산주 (수요일)</span>
+                  <span class="coupang-week-picker-inline">
+                    <button type="button" class="small-btn" id="taxInvoiceWeekPrevBtn-coupang" title="이전 주">&lt;&lt;</button>
+                    <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="tax-invoice-coupang" id="taxInvoiceWeekBtn-coupang">수요일 선택</button>
+                    <button type="button" class="small-btn" id="taxInvoiceWeekNextBtn-coupang" title="다음 주">&gt;&gt;</button>
+                  </span>
+                  <input type="hidden" id="taxInvoiceWeek-coupang">
+                </label>
+                <label>
+                  엑셀 비밀번호
+                  <input type="text" id="taxInvoicePassword-coupang" placeholder="주정산서와 같은 열람 비밀번호" autocomplete="off" spellcheck="false" required>
+                </label>
+                <label>
+                  계산서 엑셀 (여러 파일)
+                  <input type="file" id="taxInvoiceFiles-coupang" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple required>
+                </label>
+              </div>
+              <p class="settlement-week-range-label" id="taxInvoiceWeekRange-coupang"></p>
+              <div class="promotion-form-actions">
+                <button type="submit" class="primary-btn" id="taxInvoiceUploadBtn-coupang">엑셀 등록</button>
+              </div>
+            </form>
+            <p class="form-help" id="taxInvoiceErrors-coupang" style="white-space:pre-line"></p>
+            <p class="direct-inline-stats" id="taxInvoiceSummary-coupang">엑셀을 고르고 비밀번호를 입력한 뒤 「엑셀 등록」을 누르세요.</p>
+            <div class="table-wrap direct-scroll">
+              <table class="weekly-settlement-saved-table">
+                <thead>
+                  <tr>
+                    <th>지역</th>
+                    <th>파일</th>
+                    <th class="weekly-amount-cell">공급가액</th>
+                    <th class="weekly-amount-cell">부가세</th>
+                    <th class="weekly-amount-cell">합계</th>
+                    <th class="weekly-amount-cell">총합계금액</th>
+                    <th class="weekly-amount-cell">총보험료</th>
+                    <th class="weekly-amount-cell">총실지급액</th>
+                    <th>관리</th>
+                  </tr>
+                </thead>
+                <tbody id="taxInvoiceRows-coupang"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+      </section>
+
       <section class="section" id="promotion-apply">
         <article class="card">
           <div class="card-header">
@@ -9761,7 +9881,7 @@
   <script src="js/storage-supabase-mapper.js?v=20261009missionassign1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20261004rebase1"></script>
-  <script src="js/storage.js?v=20261011missbulk1"></script>
+  <script src="js/storage.js?v=20261028invoice1"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js?v=20261025inq9"></script>
@@ -9769,7 +9889,7 @@
   <script src="js/driver-utils.js?v=20260921off1"></script>
   <script src="js/driver-duplicate-dialog.js?v=20260820c"></script>
   <script src="js/settlement-formats.js?v=20260917ai1"></script>
-  <script src="js/settlement-client.js?v=20260918hi1"></script>
+  <script src="js/settlement-client.js?v=20261028invoice1"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
   <script src="js/promotion-conditions.js?v=20260928step1"></script>
@@ -9811,6 +9931,8 @@
   <script src="js/final-deposit.js?v=20261015regionprepaid1"></script>
   <script src="js/withdrawal-management-admin.js?v=20261003wd2"></script>
   <script src="js/tax-management-admin.js?v=20261001tax1"></script>
+  <script src="js/tax-invoice-parse.js?v=20261028invoice2"></script>
+  <script src="js/tax-invoice-admin.js?v=20261028invoice3"></script>
   <script src="js/coupang-region-match.js?v=20261013zmatch1"></script>
   <script src="js/driver-management-admin.js?v=20261025panel1"></script>
   <script src="js/driver-detail-search.js?v=20261027pw1"></script>
@@ -9827,9 +9949,9 @@
   <script src="js/admin-mission-assignment.js?v=20261010missionkeep1"></script>
   <script src="js/table-sort.js"></script>
     <script src="js/admin-work-requests.js?v=20260927req8"></script>
-    <script src="js/admin.js?v=20261025panel2"></script>
+    <script src="js/admin.js?v=20261028invoice2"></script>
   <script src="js/admin-driver-popups.js?v=20260914popup2" defer></script>
-  <script src="js/admin-sidebar-groups.js?v=20261025panel2" defer></script>
+  <script src="js/admin-sidebar-groups.js?v=20261028invoice1" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

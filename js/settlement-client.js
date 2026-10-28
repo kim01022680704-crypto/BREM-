@@ -1187,6 +1187,174 @@ const BremSettlementParser = (function () {
     };
   }
 
+  function columnLetter(index) {
+    let n = index;
+    let letters = '';
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      letters = String.fromCharCode(65 + rem) + letters;
+      n = Math.floor((n - 1) / 26);
+    }
+    return letters;
+  }
+
+  function xlsxCellValue(cell) {
+    if (!cell) return '';
+    if (typeof cell.v === 'number' && Number.isFinite(cell.v)) return cell.v;
+    if (cell.w != null && String(cell.w).trim() !== '') return String(cell.w).trim();
+    if (cell.v == null) return '';
+    return cell.v;
+  }
+
+  function excelJsCellValue(cell) {
+    const value = cell?.value;
+    if (value == null) {
+      return cell?.text != null ? String(cell.text).trim() : '';
+    }
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') return value.trim();
+    if (value instanceof Date) return '';
+    if (typeof value === 'object') {
+      if (value.result != null && value.result !== '') return value.result;
+      if (Array.isArray(value.richText)) {
+        return value.richText.map(part => part.text || '').join('').trim();
+      }
+      if (value.text != null) return String(value.text).trim();
+    }
+    return cell?.text != null ? String(cell.text).trim() : '';
+  }
+
+  function sheetCellMapsFromXlsx(workbook) {
+    return (workbook?.SheetNames || []).map(name => {
+      const sheet = workbook.Sheets[name] || {};
+      const cells = {};
+      Object.keys(sheet).forEach(key => {
+        if (!key || key.charAt(0) === '!') return;
+        const pos = window.XLSX.utils.decode_cell(key);
+        if (pos.r > 199 || pos.c > 40) return;
+        const value = xlsxCellValue(sheet[key]);
+        if (value === '' || value == null) return;
+        cells[key] = value;
+      });
+      return { name, cells };
+    }).filter(item => Object.keys(item.cells).length);
+  }
+
+  function sheetCellMapsFromExcelJs(workbook) {
+    return (workbook?.worksheets || []).map(sheet => {
+      const cells = {};
+      sheet.eachRow({ includeEmpty: false }, row => {
+        if (row.number > 200) return;
+        row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+          if (colNumber > 41) return;
+          const value = excelJsCellValue(cell);
+          if (value === '' || value == null) return;
+          cells[columnLetter(colNumber) + row.number] = value;
+        });
+      });
+      return { name: sheet.name, cells };
+    }).filter(item => Object.keys(item.cells).length);
+  }
+
+  function tryXlsxCellMaps(source) {
+    if (!window.XLSX) return null;
+    try {
+      const workbook = window.XLSX.read(source, { type: 'array', cellDates: true });
+      const maps = sheetCellMapsFromXlsx(workbook);
+      return maps.length ? maps : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function openAllSheetCellsViaServer(buffer, password) {
+    const form = new FormData();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    form.append('file', blob, 'invoice.xlsx');
+    form.append('password', String(password || ''));
+    form.append('allSheets', '1');
+    const response = await fetch('/api/settlement/open-sheet', {
+      method: 'POST',
+      body: form,
+      credentials: 'same-origin'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(data.error || '서버에서 엑셀을 열지 못했습니다.');
+      error.code = data.code || (response.status === 401 ? 'WRONG_PASSWORD' : 'SERVER_OPEN_FAILED');
+      throw error;
+    }
+    const sheets = Array.isArray(data.sheets) ? data.sheets : [];
+    return sheets
+      .map(item => ({
+        name: item?.name || '',
+        cells: item?.cells && typeof item.cells === 'object' ? item.cells : {}
+      }))
+      .filter(item => Object.keys(item.cells).length);
+  }
+
+  async function readAllSheetCellMaps(buffer, password) {
+    if (!window.XLSX) {
+      throw new Error('엑셀 읽기 모듈이 로드되지 않았습니다. 페이지를 새로고침해주세요.');
+    }
+    const input = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    const passwords = passwordVariants(password);
+    const plain = tryXlsxCellMaps(input);
+    if (plain) return plain;
+
+    if (!passwords.length) {
+      const error = new Error('비밀번호가 필요한 파일입니다. 엑셀 비밀번호를 입력하세요.');
+      error.code = 'PASSWORD_REQUIRED';
+      throw error;
+    }
+
+    const ExcelJS = await loadExcelJS();
+    if (ExcelJS) {
+      for (let i = 0; i < passwords.length; i += 1) {
+        try {
+          const workbook = new ExcelJS.Workbook();
+          await workbook.xlsx.load(input, { password: passwords[i] });
+          const maps = sheetCellMapsFromExcelJs(workbook);
+          if (maps.length) return maps;
+        } catch {
+          // 다음 비밀번호
+        }
+      }
+    }
+
+    try {
+      const { Buffer, officeCrypto } = await loadOfficeCrypto();
+      for (let i = 0; i < passwords.length; i += 1) {
+        const decrypted = await tryOfficeCryptoDecrypt(officeCrypto, Buffer, input, passwords[i]);
+        if (!decrypted) continue;
+        const maps = tryXlsxCellMaps(decrypted);
+        if (maps) return maps;
+      }
+    } catch (error) {
+      if (error.code && error.code !== 'CRYPTO_LOAD_FAILED') throw error;
+    }
+
+    let lastError = null;
+    for (let i = 0; i < passwords.length; i += 1) {
+      try {
+        const maps = await openAllSheetCellsViaServer(input, passwords[i]);
+        if (maps.length) return maps;
+      } catch (error) {
+        lastError = error;
+        if (error.code === 'PASSWORD_REQUIRED') throw error;
+      }
+    }
+
+    const error = new Error(
+      lastError?.message
+      || '엑셀을 열지 못했습니다. 비밀번호를 다시 확인하세요.'
+    );
+    error.code = lastError?.code || 'WRONG_PASSWORD';
+    throw error;
+  }
+
   return {
     parseSettlementFile,
     parseBaeminHourlyInsuranceFile,
@@ -1198,6 +1366,7 @@ const BremSettlementParser = (function () {
     resolveWorkbookSheetName,
     findBaeminSettlementSheet,
     readWorkbookMeta,
+    readAllSheetCellMaps,
     cellText,
     parseNumber,
     normalizePassword,

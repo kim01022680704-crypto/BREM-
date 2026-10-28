@@ -2392,11 +2392,13 @@ app.post('/api/settlement/open-sheet', upload.single('file'), async (req, res) =
     const password = String(req.body.password || '');
     const sheetIndex = Number(req.body.sheetIndex || 0);
     const sheetName = String(req.body.sheetName || '').trim();
+    const allSheets = String(req.body.allSheets || '') === '1';
     const result = await openSheetRows({
       buffer: req.file.buffer,
       password,
       sheetIndex,
-      sheetName
+      sheetName,
+      allSheets
     });
     res.json(result);
   } catch (error) {

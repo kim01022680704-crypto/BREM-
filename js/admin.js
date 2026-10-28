@@ -93,7 +93,8 @@
     'weekly-settlement': { title: '주정산서 업로드 (브로)', defaultPlatform: 'coupang' },
     'weekly-settlement-direct': { title: '주정산서 업로드 (직계약)', defaultPlatform: 'coupang' },
     'promotion-settlement': { title: '프로모션정산등록', defaultPlatform: 'baemin' },
-    'settlement-result-direct': { title: '정산결과 (직계약)', defaultPlatform: 'baemin' }
+    'settlement-result-direct': { title: '정산결과 (직계약)', defaultPlatform: 'baemin' },
+    'tax-invoice-management': { title: '계산서 관리', defaultPlatform: 'baemin' }
   };
 
   const DRIVER_FILTERED_SECTIONS = new Set([
@@ -227,6 +228,7 @@
     { id: 'final-deposit', label: '최종입금' },
     { id: 'withdrawal-management', label: '출금 관리' },
     { id: 'tax-management', label: '세무관리' },
+    { id: 'tax-invoice-management', label: '계산서 관리' },
     { id: 'driver-management', label: '기사관리' },
     { id: 'inactive-drivers', label: '비활성기사' },
     { id: 'admin-account', label: '관리자 계정' },
@@ -2123,6 +2125,17 @@
             labelEl: $('#settlementResultWeekBtn'),
             onSelect(value) {
               window.BremSettlementResultDirect?.onWeekPicked?.(value);
+            }
+          };
+        }
+
+        if (triggerId === 'tax-invoice-baemin' || triggerId === 'tax-invoice-coupang') {
+          const invoicePlatform = triggerId === 'tax-invoice-coupang' ? 'coupang' : 'baemin';
+          return {
+            hiddenInput: $(`#taxInvoiceWeek-${invoicePlatform}`),
+            labelEl: $(`#taxInvoiceWeekBtn-${invoicePlatform}`),
+            onSelect(value) {
+              if (typeof BremTaxInvoiceAdmin !== 'undefined') BremTaxInvoiceAdmin.onWeekPicked(invoicePlatform, value);
             }
           };
         }
@@ -7874,6 +7887,9 @@
         break;
       case 'tax-management':
         if (typeof BremTaxManagementAdmin !== 'undefined') BremTaxManagementAdmin.refresh();
+        break;
+      case 'tax-invoice-management':
+        if (typeof BremTaxInvoiceAdmin !== 'undefined') BremTaxInvoiceAdmin.refresh();
         break;
       case 'driver-management':
         window.BremDriverManagementAdmin?.refresh?.();

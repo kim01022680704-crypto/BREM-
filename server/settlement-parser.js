@@ -235,11 +235,31 @@ function passwordVariants(password) {
   return [...new Set([trimmed, raw, compact, noSpaces, nfc, nfkc, halfWidth].filter(Boolean))];
 }
 
+function cellMapFromSheet(sheet) {
+  const cells = {};
+  if (!sheet) return cells;
+  Object.keys(sheet).forEach(key => {
+    if (!key || key.charAt(0) === '!') return;
+    const pos = XLSX.utils.decode_cell(key);
+    if (pos.r > 199 || pos.c > 40) return;
+    const cell = sheet[key];
+    if (!cell) return;
+    let value = '';
+    if (typeof cell.v === 'number' && Number.isFinite(cell.v)) value = cell.v;
+    else if (cell.w != null && String(cell.w).trim() !== '') value = String(cell.w).trim();
+    else if (cell.v != null) value = cell.v;
+    if (value === '' || value == null) return;
+    cells[key] = value;
+  });
+  return cells;
+}
+
 /**
  * 브라우저 암호해제 실패 시 서버에서 열어 시트 행을 반환.
  * 주정산(쿠팡/배민) 업로드 폴백용.
+ * allSheets 이면 계산서 관리용으로 시트별 셀 맵(1~200행)을 돌려준다.
  */
-async function openSheetRows({ buffer, password, sheetIndex = 0, sheetName = '' }) {
+async function openSheetRows({ buffer, password, sheetIndex = 0, sheetName = '', allSheets = false }) {
   const input = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
   const variants = passwordVariants(password);
   let decrypted = null;
@@ -282,6 +302,14 @@ async function openSheetRows({ buffer, password, sheetIndex = 0, sheetName = '' 
   const names = workbook.SheetNames || [];
   if (!names.length) {
     throw new Error('엑셀 시트를 찾을 수 없습니다.');
+  }
+
+  if (allSheets) {
+    const sheets = names.map(name => ({
+      name,
+      cells: cellMapFromSheet(workbook.Sheets[name])
+    })).filter(item => Object.keys(item.cells).length);
+    return { sheetNames: names, sheets };
   }
 
   let resolved = sheetName && names.includes(sheetName) ? sheetName : '';

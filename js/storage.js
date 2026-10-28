@@ -69,7 +69,8 @@ const BremStorage = (function () {
     adminAccounts: 'brem_admin_accounts',
     adminCredentials: 'brem_admin_credentials',
     driverOrgChart: 'brem_admin_driver_org_chart_v1',
-    workRequests: 'brem_work_requests_v1'
+    workRequests: 'brem_work_requests_v1',
+    taxInvoices: 'brem_admin_tax_invoices_v1'
   });
 
   const SCHEMA = Object.freeze({
@@ -1616,6 +1617,7 @@ const BremStorage = (function () {
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
     'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts, KEYS.payrollSlipLines],
     'tax-management': [KEYS.drivers, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
+    'tax-invoice-management': [KEYS.taxInvoices],
     'withdrawal-management': [KEYS.drivers],
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'inactive-drivers': [KEYS.drivers],
@@ -14228,6 +14230,7 @@ const BremStorage = (function () {
     'final-deposit',
     'withdrawal-management',
     'tax-management',
+    'tax-invoice-management',
     'driver-management',
     'inactive-drivers',
     'admin-account',
@@ -14366,6 +14369,9 @@ const BremStorage = (function () {
         : (normalized.includes('final-deposit') ? normalized.indexOf('final-deposit') : -1);
       if (after >= 0) normalized.splice(after + 1, 0, 'withdrawal-management');
       else normalized.push('withdrawal-management');
+    }
+    if (normalized.includes('tax-management') && !normalized.includes('tax-invoice-management')) {
+      normalized.splice(normalized.indexOf('tax-management') + 1, 0, 'tax-invoice-management');
     }
 
     if (!normalized.includes('driver-management')) {
@@ -14509,6 +14515,10 @@ const BremStorage = (function () {
         : (next.includes('final-deposit') ? next.indexOf('final-deposit') : -1);
       if (after >= 0) next.splice(after + 1, 0, 'withdrawal-management');
       else next.push('withdrawal-management');
+    }
+    if (allowed.has('tax-invoice-management') && !next.includes('tax-invoice-management')
+      && next.includes('tax-management')) {
+      next.splice(next.indexOf('tax-management') + 1, 0, 'tax-invoice-management');
     }
     return next;
   }
@@ -15975,6 +15985,20 @@ const BremStorage = (function () {
     return result;
   }
 
+  const taxInvoices = {
+    getAll() {
+      let raw = storageAdapter.read(KEYS.taxInvoices, []);
+      if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch { raw = []; }
+      }
+      return Array.isArray(raw) ? raw.map(item => ({ ...item })) : [];
+    },
+    saveAll(list) {
+      const next = Array.isArray(list) ? list : [];
+      return writeTableKey(KEYS.taxInvoices, next, { allowEmpty: next.length === 0 });
+    }
+  };
+
   const workRequests = {
     getAll() {
       const raw = storageAdapter.read(KEYS.workRequests, []);
@@ -15989,6 +16013,7 @@ const BremStorage = (function () {
   return {
     createId,
     STORAGE_KEYS: KEYS,
+    taxInvoices,
     workRequests,
     SCHEMA,
     DATA_GROUPS,
