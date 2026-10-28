@@ -207,7 +207,7 @@ const BremTaxInvoiceAdmin = (function () {
     );
     if (!picked) {
       if (platform === 'coupang') {
-        throw new Error('공급가액·총합계금액·총실지급액 항목을 찾지 못했습니다.');
+        throw new Error('공급가액 F19, 부가세 G19, 총합계금액 H19 칸을 읽지 못했습니다.');
       }
       throw new Error('공급가액 B31, 부가세액 C31, 공급대가 D31 칸을 읽지 못했습니다.');
     }

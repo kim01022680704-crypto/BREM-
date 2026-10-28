@@ -35,41 +35,36 @@ function testBaeminL2Fallback() {
   assert.strictEqual(result.amounts.riderIndustrialIns, 9);
 }
 
-function testCoupangLabelsDoNotCollide() {
+function testCoupangFixedCells() {
   const cells = {
+    F18: '공급가액합계', G18: '부가세합계', H18: '총합계금액', I18: '총보험료', J18: '총실지급액',
+    F19: '1,000', G19: 100, H19: 2000, I19: 7, J19: 900,
     A1: '합계', B1: 10,
-    A2: '총합계금액', B2: 20,
-    A3: '공급가액', B3: '1,000',
-    A4: '부가세', B4: 100,
-    A5: '총보험료', B5: 7,
-    A6: '총실지급액', B6: 900
+    A3: '공급가액', B3: 5
   };
   const result = Parse.extractCoupang(cells);
   assert.strictEqual(result.ok, true);
-  assert.strictEqual(result.amounts.subtotal, 10);
-  assert.strictEqual(result.amounts.grandTotal, 20);
   assert.strictEqual(result.amounts.supplyAmount, 1000);
   assert.strictEqual(result.amounts.vatAmount, 100);
+  assert.strictEqual(result.amounts.subtotal, 1100);
+  assert.strictEqual(result.amounts.grandTotal, 2000);
   assert.strictEqual(result.amounts.totalInsurance, 7);
   assert.strictEqual(result.amounts.netPay, 900);
 }
 
 function testPickRicherSheet() {
   const sheets = [
-    { name: '라이더', cells: { A1: '합계', B1: 999 } },
+    { name: '라이더', cells: { A1: '합계', B1: 999, F19: 1 } },
     {
       name: '계산서',
-      cells: {
-        A1: '공급가액', B1: 50,
-        A2: '총합계금액', B2: 80,
-        A3: '총실지급액', B3: 70
-      }
+      cells: { F19: 50, G19: 5, H19: 80, J19: 70 }
     }
   ];
   const picked = Parse.pickSheet(sheets, Parse.extractCoupang);
   assert.strictEqual(picked.sheetName, '계산서');
   assert.strictEqual(picked.amounts.supplyAmount, 50);
-  assert.strictEqual(picked.amounts.subtotal, 0);
+  assert.strictEqual(picked.amounts.subtotal, 55);
+  assert.strictEqual(picked.amounts.grandTotal, 80);
 }
 
 async function testServerCellMap() {
@@ -96,7 +91,7 @@ async function main() {
   testBaeminCells();
   testBaeminNetPay();
   testBaeminL2Fallback();
-  testCoupangLabelsDoNotCollide();
+  testCoupangFixedCells();
   testPickRicherSheet();
   await testServerCellMap();
   console.log('tax invoice parse ok');

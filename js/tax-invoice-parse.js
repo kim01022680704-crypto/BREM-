@@ -14,12 +14,13 @@ const BremTaxInvoiceParse = (function () {
   ];
 
   const COUPANG_FIELDS = [
-    { key: 'supplyAmount', label: '공급가액', labels: ['공급가액'] },
-    { key: 'vatAmount', label: '부가세', labels: ['부가세액', '부가세'] },
-    { key: 'subtotal', label: '합계', labels: ['합계'] },
-    { key: 'grandTotal', label: '총합계금액', labels: ['총합계금액', '총합계'] },
-    { key: 'totalInsurance', label: '총보험료', labels: ['총보험료'] },
-    { key: 'netPay', label: '총실지급액', labels: ['총실지급액', '실지급액'] }
+    { key: 'supplyAmount', label: '공급가액', cells: ['F19'] },
+    { key: 'vatAmount', label: '부가세', cells: ['G19'] },
+    // 합계 칸은 없다. 공급가액합계 F19 + 부가세합계 G19.
+    { key: 'subtotal', label: '합계', sum: ['supplyAmount', 'vatAmount'] },
+    { key: 'grandTotal', label: '총합계금액', cells: ['H19'] },
+    { key: 'totalInsurance', label: '총보험료', cells: ['I19'] },
+    { key: 'netPay', label: '총실지급액', cells: ['J19'] }
   ];
 
   function parseMoney(value) {
@@ -35,65 +36,12 @@ const BremTaxInvoiceParse = (function () {
     return Math.abs(Math.round(amount));
   }
 
-  function normLabel(value) {
-    return String(value ?? '').replace(/\s+/g, '').replace(/[：:]/g, '');
-  }
-
-  function decodeAddr(addr) {
-    const match = String(addr || '').toUpperCase().match(/^([A-Z]+)(\d+)$/);
-    if (!match) return null;
-    let col = 0;
-    const letters = match[1];
-    for (let i = 0; i < letters.length; i += 1) {
-      col = col * 26 + (letters.charCodeAt(i) - 64);
-    }
-    return { col, row: Number(match[2]) };
-  }
-
-  function encodeAddr(col, row) {
-    let n = col;
-    let letters = '';
-    while (n > 0) {
-      const rem = (n - 1) % 26;
-      letters = String.fromCharCode(65 + rem) + letters;
-      n = Math.floor((n - 1) / 26);
-    }
-    return `${letters}${row}`;
-  }
-
   function readFirstMoney(cells, addresses) {
     const source = cells || {};
     for (let i = 0; i < addresses.length; i += 1) {
       const addr = addresses[i];
       if (!Object.prototype.hasOwnProperty.call(source, addr)) continue;
       const amount = parseMoney(source[addr]);
-      if (amount != null) return amount;
-    }
-    return null;
-  }
-
-  function neighborAmount(cells, addr) {
-    const pos = decodeAddr(addr);
-    if (!pos) return null;
-    for (let offset = 1; offset <= 6; offset += 1) {
-      const amount = parseMoney(cells[encodeAddr(pos.col + offset, pos.row)]);
-      if (amount != null) return amount;
-    }
-    for (let offset = 1; offset <= 2; offset += 1) {
-      const amount = parseMoney(cells[encodeAddr(pos.col, pos.row + offset)]);
-      if (amount != null) return amount;
-    }
-    return null;
-  }
-
-  function findLabeledAmount(cells, labels) {
-    const wanted = new Set((labels || []).map(normLabel));
-    const source = cells || {};
-    const addresses = Object.keys(source);
-    for (let i = 0; i < addresses.length; i += 1) {
-      const addr = addresses[i];
-      if (!wanted.has(normLabel(source[addr]))) continue;
-      const amount = neighborAmount(source, addr);
       if (amount != null) return amount;
     }
     return null;
@@ -136,10 +84,15 @@ const BremTaxInvoiceParse = (function () {
     const amounts = {};
     let found = 0;
     COUPANG_FIELDS.forEach(field => {
-      const value = findLabeledAmount(cells, field.labels);
+      if (field.sum) return;
+      const value = readFirstMoney(cells, field.cells || []);
       amounts[field.key] = value;
       if (value != null) found += 1;
     });
+    const supply = amounts.supplyAmount;
+    const vat = amounts.vatAmount;
+    amounts.subtotal = (supply == null && vat == null) ? null : Number(supply || 0) + Number(vat || 0);
+    if (amounts.subtotal != null) found += 1;
     const anchor = amounts.supplyAmount != null
       || amounts.grandTotal != null
       || amounts.netPay != null;
