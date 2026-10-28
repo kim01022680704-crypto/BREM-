@@ -87,11 +87,34 @@ async function testServerCellMap() {
   assert.strictEqual(parsed.amounts.supplyTotal, 4753);
 }
 
+function testTwoPercentInvoice() {
+  assert.strictEqual(Parse.deductTwoPercent(1000000), 980000);
+  assert.strictEqual(Parse.invoiceAmountAfterFee({
+    supplyAmount: 1000000,
+    vatAmount: 100000
+  }), 1078000);
+  assert.strictEqual(Parse.baeminNetPayAfterFee({
+    supplyAmount: 1000000,
+    vatAmount: 100000,
+    hourlyInsurance: 1000,
+    employerEmploymentIns: 2000,
+    riderEmploymentIns: 3000,
+    employerIndustrialIns: 4000,
+    riderIndustrialIns: 5000
+  }), 1063000);
+  assert.strictEqual(Parse.coupangNetPayAfterFee({
+    supplyAmount: 1000000,
+    vatAmount: 100000,
+    totalInsurance: 30000
+  }), 1048000);
+}
+
 async function main() {
   testBaeminCells();
   testBaeminNetPay();
   testBaeminL2Fallback();
   testCoupangFixedCells();
+  testTwoPercentInvoice();
   testPickRicherSheet();
   await testServerCellMap();
   console.log('tax invoice parse ok');

@@ -58,6 +58,33 @@ const BremTaxInvoiceParse = (function () {
       - n('riderIndustrialIns');
   }
 
+  /** 금액에서 2%를 뺀 원 단위. 100만원이면 2만원을 빼 98만원. */
+  function deductTwoPercent(amount) {
+    const n = Math.round(Number(amount) || 0);
+    return n - Math.round(n * 0.02);
+  }
+
+  function invoiceAmountAfterFee(row) {
+    return deductTwoPercent(row?.supplyAmount) + deductTwoPercent(row?.vatAmount);
+  }
+
+  function baeminInsuranceSum(row) {
+    const n = key => Number(row?.[key] || 0);
+    return n('hourlyInsurance')
+      + n('employerEmploymentIns')
+      + n('riderEmploymentIns')
+      + n('employerIndustrialIns')
+      + n('riderIndustrialIns');
+  }
+
+  function baeminNetPayAfterFee(row) {
+    return invoiceAmountAfterFee(row) - baeminInsuranceSum(row);
+  }
+
+  function coupangNetPayAfterFee(row) {
+    return invoiceAmountAfterFee(row) - Number(row?.totalInsurance || 0);
+  }
+
   function zeroFill(amounts) {
     const next = {};
     Object.keys(amounts || {}).forEach(key => {
@@ -120,6 +147,10 @@ const BremTaxInvoiceParse = (function () {
     COUPANG_FIELDS,
     parseMoney,
     baeminNetPay,
+    deductTwoPercent,
+    invoiceAmountAfterFee,
+    baeminNetPayAfterFee,
+    coupangNetPayAfterFee,
     extractBaemin,
     extractCoupang,
     pickSheet

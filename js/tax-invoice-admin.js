@@ -4,7 +4,7 @@ const BremTaxInvoiceAdmin = (function () {
   const Parse = () => BremTaxInvoiceParse;
 
   const PLATFORMS = ['baemin', 'coupang'];
-  const monthState = { month: '' };
+  const monthState = { month: '', feeApplied: false };
   let monthPicker = null;
 
   function escapeHtml(value) {
@@ -447,6 +447,52 @@ const BremTaxInvoiceAdmin = (function () {
     return picker?.formatWednesdayWeekRange?.(weekStart) || shortWeek(weekStart);
   }
 
+  function feeOn(explicit) {
+    return explicit == null ? monthState.feeApplied : Boolean(explicit);
+  }
+
+  function shownAmount(platform, row, field, useFee) {
+    const raw = Number(row[field.key] || 0);
+    if (!feeOn(useFee)) return raw;
+    const parse = Parse();
+    if (field.key === 'supplyAmount' || field.key === 'vatAmount') return parse.deductTwoPercent(raw);
+    if (platform === 'baemin' && field.key === 'supplyTotal') return parse.invoiceAmountAfterFee(row);
+    if (platform === 'coupang' && field.key === 'subtotal') return parse.invoiceAmountAfterFee(row);
+    if (platform === 'coupang' && field.key === 'netPay') return parse.coupangNetPayAfterFee(row);
+    return raw;
+  }
+
+  function shownNet(platform, row, useFee) {
+    if (platform !== 'baemin') return 0;
+    const parse = Parse();
+    return feeOn(useFee) ? parse.baeminNetPayAfterFee(row) : baeminNetPay(row);
+  }
+
+  function fieldLabel(platform, field, useFee) {
+    if (!feeOn(useFee)) return field.label;
+    if (field.key === 'supplyAmount') return '공급가액(2%적용)';
+    if (field.key === 'vatAmount') return field.label === '부가세' ? '부가세(2%적용)' : '부가세액(2%적용)';
+    if (platform === 'baemin' && field.key === 'supplyTotal') return '계산서 금액';
+    if (platform === 'coupang' && field.key === 'subtotal') return '계산서 금액';
+    if (platform === 'coupang' && field.key === 'netPay') return '실지급액';
+    return field.label;
+  }
+
+  function paintMonthHeaders() {
+    const fee = monthState.feeApplied;
+    const baeminTotal = $('#taxInvoiceMonthHead-baemin-supplyTotal');
+    if (baeminTotal) baeminTotal.textContent = fee ? '계산서 금액' : '공급대가';
+    const coupangSum = $('#taxInvoiceMonthHead-coupang-subtotal');
+    if (coupangSum) coupangSum.textContent = fee ? '계산서 금액' : '합계';
+    const coupangNet = $('#taxInvoiceMonthHead-coupang-netPay');
+    if (coupangNet) coupangNet.textContent = fee ? '실지급액' : '총실지급액';
+    const button = $('#taxInvoiceMonthFeeBtn');
+    if (button) {
+      button.textContent = fee ? '2% 계산식 해제' : '2% 계산식 적용';
+      button.classList.toggle('active', fee);
+    }
+  }
+
   function renderMonthTable(platform) {
     const body = $(`#taxInvoiceMonthRows-${platform}`);
     if (!body) return { rows: [], weeks: [] };
@@ -464,11 +510,11 @@ const BremTaxInvoiceAdmin = (function () {
     fields.forEach(field => { totals[field.key] = 0; });
     let netTotal = 0;
     body.innerHTML = rows.map(row => {
-      fields.forEach(field => { totals[field.key] += Number(row[field.key] || 0); });
-      const net = hasNetPay(platform) ? baeminNetPay(row) : 0;
+      fields.forEach(field => { totals[field.key] += shownAmount(platform, row, field); });
+      const net = shownNet(platform, row);
       netTotal += net;
       const amountCells = fields.map(field => (
-        `<td class="weekly-amount-cell">${formatMoney(row[field.key])}</td>`
+        `<td class="weekly-amount-cell">${formatMoney(shownAmount(platform, row, field))}</td>`
       )).join('');
       const netCell = hasNetPay(platform)
         ? `<td class="weekly-amount-cell">${formatMoney(net)}</td>`
@@ -503,6 +549,7 @@ const BremTaxInvoiceAdmin = (function () {
     if (hidden) hidden.value = month;
     const baemin = renderMonthTable('baemin');
     const coupang = renderMonthTable('coupang');
+    paintMonthHeaders();
     const weeks = [...new Set([...baemin.weeks, ...coupang.weeks])].sort();
     const range = $('#taxInvoiceMonthRange');
     if (range) {
@@ -512,7 +559,9 @@ const BremTaxInvoiceAdmin = (function () {
     const summary = $('#taxInvoiceMonthSummary');
     if (summary) {
       summary.textContent = `배민 ${baemin.rows.length}건 · 쿠팡 ${coupang.rows.length}건`
-        + ' · 등록한 계산서를 주차별로 그대로 보여 줍니다. 배민 실지급액은 공급대가에서 보험 5항목을 뺀 값입니다.';
+        + (monthState.feeApplied
+          ? ' · 2% 적용 중. 계산서 금액은 공급가액·부가세에서 2%를 뺀 합입니다.'
+          : ' · 등록한 계산서를 주차별로 그대로 보여 줍니다. 배민 실지급액은 공급대가에서 보험 5항목을 뺀 값입니다.');
     }
     const exportBtn = $('#taxInvoiceMonthExportBtn');
     if (exportBtn) exportBtn.disabled = !baemin.rows.length && !coupang.rows.length;
@@ -535,22 +584,24 @@ const BremTaxInvoiceAdmin = (function () {
     renderMonthly();
   }
 
-  function exportMonth() {
+  function exportMonth(useFee) {
+    const fee = feeOn(useFee);
     const month = ensureMonth();
     const sheets = PLATFORMS.map(platform => {
       const rows = monthDetailRows(platform, month);
       if (!rows.length) return null;
       const fields = fieldsFor(platform);
-      const header = ['주차', '지역', '파일', ...fields.map(field => field.label)];
+      const header = ['주차', '지역', '파일', ...fields.map(field => fieldLabel(platform, field, fee))];
       if (hasNetPay(platform)) header.push('실지급액');
       const body = rows.map(row => [
         weekLabel(row.weekStart),
         row.region || '',
         row.fileName || '',
-        ...amountLine(platform, row)
+        ...fields.map(field => shownAmount(platform, row, field, fee)),
+        ...(hasNetPay(platform) ? [shownNet(platform, row, fee)] : [])
       ]);
-      const totals = fields.map(field => rows.reduce((sum, row) => sum + Number(row[field.key] || 0), 0));
-      if (hasNetPay(platform)) totals.push(rows.reduce((sum, row) => sum + baeminNetPay(row), 0));
+      const totals = fields.map(field => rows.reduce((sum, row) => sum + shownAmount(platform, row, field, fee), 0));
+      if (hasNetPay(platform)) totals.push(rows.reduce((sum, row) => sum + shownNet(platform, row, fee), 0));
       return {
         name: platformLabel(platform),
         rows: [header, ...body, ['합계', `${rows.length}건`, '', ...totals]]
@@ -560,8 +611,13 @@ const BremTaxInvoiceAdmin = (function () {
       showToast('이 달에 보낼 계산서가 없습니다.');
       return;
     }
-    const ok = writeWorkbook(`계산서월별_${month}.xlsx`, sheets);
-    if (ok) showToast(`${formatMonthLabel(month)} 계산서를 엑셀로 보냈습니다.`);
+    const filename = fee ? `계산서월별_2퍼센트_${month}.xlsx` : `계산서월별_${month}.xlsx`;
+    const ok = writeWorkbook(filename, sheets);
+    if (ok) {
+      showToast(fee
+        ? `${formatMonthLabel(month)} 2% 적용 계산서를 엑셀로 보냈습니다.`
+        : `${formatMonthLabel(month)} 계산서를 엑셀로 보냈습니다.`);
+    }
   }
 
   function setupMonthPicker() {
@@ -624,7 +680,12 @@ const BremTaxInvoiceAdmin = (function () {
     $('#taxInvoiceMonthPrevBtn')?.addEventListener('click', () => shiftMonth(-1));
     $('#taxInvoiceMonthNextBtn')?.addEventListener('click', () => shiftMonth(1));
     $('#taxInvoiceMonthReloadBtn')?.addEventListener('click', () => { void reloadMonthly(); });
-    $('#taxInvoiceMonthExportBtn')?.addEventListener('click', exportMonth);
+    $('#taxInvoiceMonthExportBtn')?.addEventListener('click', () => exportMonth(false));
+    $('#taxInvoiceMonthFeeBtn')?.addEventListener('click', () => {
+      monthState.feeApplied = !monthState.feeApplied;
+      renderMonthly();
+    });
+    $('#taxInvoiceMonthFeeExportBtn')?.addEventListener('click', () => exportMonth(true));
     setupMonthPicker();
     document.addEventListener('click', event => {
       const button = event.target.closest('[data-tax-invoice-delete]');
