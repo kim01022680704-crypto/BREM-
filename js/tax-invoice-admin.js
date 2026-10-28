@@ -83,6 +83,10 @@ const BremTaxInvoiceAdmin = (function () {
     return String(region || '').replace(/\s+/g, '').toLowerCase();
   }
 
+  function fileKey(fileName) {
+    return String(fileName || '').replace(/\s+/g, '').toLowerCase();
+  }
+
   function guessRegion(fileName, platform) {
     const weekly = window.BremWeeklySettlement;
     const base = String(fileName || '').replace(/\.(xlsx|xls)$/i, '').trim();
@@ -105,7 +109,10 @@ const BremTaxInvoiceAdmin = (function () {
     const weekStart = ensureWeek(platform);
     return readList()
       .filter(item => item.platform === platform && item.weekStart === weekStart)
-      .sort((a, b) => String(a.region || '').localeCompare(String(b.region || ''), 'ko'));
+      .sort((a, b) => (
+        String(a.region || '').localeCompare(String(b.region || ''), 'ko')
+        || String(a.fileName || '').localeCompare(String(b.fileName || ''), 'ko')
+      ));
   }
 
   function render(platform) {
@@ -158,7 +165,7 @@ const BremTaxInvoiceAdmin = (function () {
       <td></td>
     </tr>`);
     if (summary) {
-      summary.textContent = `${platformLabel(platform)} ${rows.length}건 · 같은 지역을 다시 올리면 그 줄이 바뀝니다.`;
+      summary.textContent = `${platformLabel(platform)} ${rows.length}건 · 한 지역에 파일이 여러 개면 전부 남고 합계에 더합니다. 같은 파일 이름만 다시 올리면 그 줄이 바뀝니다.`;
     }
   }
 
@@ -183,6 +190,31 @@ const BremTaxInvoiceAdmin = (function () {
     const next = picker?.applyWeekWednesday?.(dateKeyFromDate(date)) || dateKeyFromDate(date);
     paintWeek(platform, next);
     render(platform);
+  }
+
+  async function loadSavedList() {
+    const local = readList();
+    try {
+      await window.BremStorage?.ensureSectionLoaded?.('tax-invoice-management', { force: true });
+    } catch {
+      // 서버를 다시 못 읽어도 화면에 있던 목록은 유지한다.
+    }
+    const remote = readList();
+    const merged = new Map();
+    const put = row => {
+      if (!row || typeof row !== 'object') return;
+      const id = String(row.id || '').trim();
+      const key = id || `${row.platform}|${row.weekStart}|${fileKey(row.fileName)}`;
+      if (!merged.has(key)) merged.set(key, row);
+    };
+    remote.forEach(put);
+    local.forEach(row => {
+      if (!row || typeof row !== 'object') return;
+      const id = String(row.id || '').trim();
+      const key = id || `${row.platform}|${row.weekStart}|${fileKey(row.fileName)}`;
+      merged.set(key, row);
+    });
+    return [...merged.values()];
   }
 
   async function readSheets(file, password) {
@@ -258,17 +290,17 @@ const BremTaxInvoiceAdmin = (function () {
     }
 
     if (parsed.length) {
-      const list = readList();
+      const list = await loadSavedList();
       let replaced = 0;
-      parsed.forEach(item => {
-        const key = regionKey(item.region);
+      parsed.forEach((item, itemIndex) => {
+        const key = fileKey(item.fileName);
         const index = list.findIndex(row => (
           row.platform === platform
           && row.weekStart === weekStart
-          && regionKey(row.region) === key
+          && fileKey(row.fileName) === key
         ));
         const record = {
-          id: index >= 0 ? list[index].id : (window.BremStorage?.createId?.() || `inv_${Date.now()}`),
+          id: index >= 0 ? list[index].id : (window.BremStorage?.createId?.() || `inv_${Date.now()}_${itemIndex}`),
           platform,
           weekStart,
           region: item.region,
@@ -288,7 +320,9 @@ const BremTaxInvoiceAdmin = (function () {
         const result = window.BremStorage?.taxInvoices?.saveAll?.(list);
         if (window.BremStorage?.awaitPersist) await window.BremStorage.awaitPersist(result);
         const fresh = parsed.length - replaced;
-        showToast(`${platformLabel(platform)} 계산서 ${parsed.length}건 등록 (신규 ${fresh} · 갱신 ${replaced})`);
+        showToast(replaced
+          ? `${platformLabel(platform)} 계산서 ${fresh}건 추가, 같은 파일 ${replaced}건만 바꿨습니다. 다른 파일은 그대로입니다.`
+          : `${platformLabel(platform)} 계산서 ${fresh}건을 추가했습니다. 먼저 올린 파일은 그대로입니다.`);
       } catch (error) {
         errors.push(error.message || '저장에 실패했습니다.');
       }
