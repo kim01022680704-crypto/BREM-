@@ -367,9 +367,10 @@ const BremTaxInvoiceAdmin = (function () {
     const workbook = window.XLSX.utils.book_new();
     sheets.forEach(sheet => {
       const worksheet = window.XLSX.utils.aoa_to_sheet(sheet.rows);
-      worksheet['!cols'] = sheet.rows[0].map((cell, index) => (
-        { wch: index < 2 ? 18 : 16 }
-      ));
+      worksheet['!cols'] = (sheet.rows[0] || []).map((cell, index) => {
+        if (index === 0 && String(cell) === '주차') return { wch: 42 };
+        return { wch: index < 3 ? 18 : 16 };
+      });
       const name = String(sheet.name || '계산서').slice(0, 31);
       window.XLSX.utils.book_append_sheet(workbook, worksheet, name);
     });
@@ -584,29 +585,48 @@ const BremTaxInvoiceAdmin = (function () {
     renderMonthly();
   }
 
+  function monthWeeks(month) {
+    const weeks = new Set();
+    PLATFORMS.forEach(platform => {
+      monthSourceRows(platform, month).forEach(row => {
+        if (row.weekStart) weeks.add(row.weekStart);
+      });
+    });
+    return [...weeks].sort();
+  }
+
+  function weekSheetName(month, index, platform) {
+    const monthNo = Number(String(month).slice(5, 7));
+    return `${monthNo}월${index}주 ${platformLabel(platform)}`;
+  }
+
   function exportMonth(useFee) {
     const fee = feeOn(useFee);
     const month = ensureMonth();
-    const sheets = PLATFORMS.map(platform => {
-      const rows = monthDetailRows(platform, month);
-      if (!rows.length) return null;
-      const fields = fieldsFor(platform);
-      const header = ['주차', '지역', '파일', ...fields.map(field => fieldLabel(platform, field, fee))];
-      if (hasNetPay(platform)) header.push('실지급액');
-      const body = rows.map(row => [
-        weekLabel(row.weekStart),
-        row.region || '',
-        row.fileName || '',
-        ...fields.map(field => shownAmount(platform, row, field, fee)),
-        ...(hasNetPay(platform) ? [shownNet(platform, row, fee)] : [])
-      ]);
-      const totals = fields.map(field => rows.reduce((sum, row) => sum + shownAmount(platform, row, field, fee), 0));
-      if (hasNetPay(platform)) totals.push(rows.reduce((sum, row) => sum + shownNet(platform, row, fee), 0));
-      return {
-        name: platformLabel(platform),
-        rows: [header, ...body, ['합계', `${rows.length}건`, '', ...totals]]
-      };
-    }).filter(Boolean);
+    const weeks = monthWeeks(month);
+    const sheets = [];
+    weeks.forEach((weekStart, weekIndex) => {
+      PLATFORMS.forEach(platform => {
+        const rows = monthDetailRows(platform, month).filter(row => row.weekStart === weekStart);
+        if (!rows.length) return;
+        const fields = fieldsFor(platform);
+        const header = ['주차', '지역', '파일', ...fields.map(field => fieldLabel(platform, field, fee))];
+        if (hasNetPay(platform)) header.push('실지급액');
+        const body = rows.map(row => [
+          weekLabel(row.weekStart),
+          row.region || '',
+          row.fileName || '',
+          ...fields.map(field => shownAmount(platform, row, field, fee)),
+          ...(hasNetPay(platform) ? [shownNet(platform, row, fee)] : [])
+        ]);
+        const totals = fields.map(field => rows.reduce((sum, row) => sum + shownAmount(platform, row, field, fee), 0));
+        if (hasNetPay(platform)) totals.push(rows.reduce((sum, row) => sum + shownNet(platform, row, fee), 0));
+        sheets.push({
+          name: weekSheetName(month, weekIndex + 1, platform),
+          rows: [header, ...body, ['합계', `${rows.length}건`, '', ...totals]]
+        });
+      });
+    });
     if (!sheets.length) {
       showToast('이 달에 보낼 계산서가 없습니다.');
       return;
@@ -615,8 +635,8 @@ const BremTaxInvoiceAdmin = (function () {
     const ok = writeWorkbook(filename, sheets);
     if (ok) {
       showToast(fee
-        ? `${formatMonthLabel(month)} 2% 적용 계산서를 엑셀로 보냈습니다.`
-        : `${formatMonthLabel(month)} 계산서를 엑셀로 보냈습니다.`);
+        ? `${formatMonthLabel(month)} 2% 적용 계산서를 주차 ${weeks.length}개 시트로 보냈습니다.`
+        : `${formatMonthLabel(month)} 계산서를 주차 ${weeks.length}개, 시트 ${sheets.length}개로 보냈습니다.`);
     }
   }
 
