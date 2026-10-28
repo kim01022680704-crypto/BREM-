@@ -18,6 +18,17 @@ function testBaeminCells() {
   assert.strictEqual(result.amounts.riderIndustrialIns, 5);
 }
 
+function testBaeminNetPay() {
+  assert.strictEqual(Parse.baeminNetPay({
+    supplyTotal: 8742800,
+    hourlyInsurance: 39492,
+    employerEmploymentIns: 79770,
+    riderEmploymentIns: 79770,
+    employerIndustrialIns: 54390,
+    riderIndustrialIns: 54390
+  }), 8434988);
+}
+
 function testBaeminL2Fallback() {
   const cells = { B31: 10, L2: 9 };
   const result = Parse.extractBaemin(cells);
@@ -83,6 +94,7 @@ async function testServerCellMap() {
 
 async function main() {
   testBaeminCells();
+  testBaeminNetPay();
   testBaeminL2Fallback();
   testCoupangLabelsDoNotCollide();
   testPickRicherSheet();

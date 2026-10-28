@@ -4,6 +4,8 @@ const BremTaxInvoiceAdmin = (function () {
   const Parse = () => BremTaxInvoiceParse;
 
   const PLATFORMS = ['baemin', 'coupang'];
+  const monthState = { month: '' };
+  let monthPicker = null;
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -28,6 +30,14 @@ const BremTaxInvoiceAdmin = (function () {
   function fieldsFor(platform) {
     const parse = Parse();
     return platform === 'coupang' ? parse.COUPANG_FIELDS : parse.BAEMIN_FIELDS;
+  }
+
+  function baeminNetPay(row) {
+    return Number(Parse()?.baeminNetPay?.(row) || 0);
+  }
+
+  function hasNetPay(platform) {
+    return platform === 'baemin';
   }
 
   function dateKeyFromDate(date) {
@@ -104,7 +114,8 @@ const BremTaxInvoiceAdmin = (function () {
     if (!body) return;
     const fields = fieldsFor(platform);
     const rows = weekRows(platform);
-    const colSpan = fields.length + 3;
+    const netCol = hasNetPay(platform) ? 1 : 0;
+    const colSpan = fields.length + 3 + netCol;
     if (!rows.length) {
       body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">이 주차에 등록된 ${platformLabel(platform)} 계산서가 없습니다.</td></tr>`;
       if (summary) summary.textContent = '엑셀을 고르고 비밀번호를 입력한 뒤 「엑셀 등록」을 누르세요.';
@@ -112,27 +123,38 @@ const BremTaxInvoiceAdmin = (function () {
     }
     const totals = {};
     fields.forEach(field => { totals[field.key] = 0; });
+    let netTotal = 0;
     body.innerHTML = rows.map(row => {
       fields.forEach(field => {
         totals[field.key] += Number(row[field.key] || 0);
       });
+      const net = hasNetPay(platform) ? baeminNetPay(row) : 0;
+      netTotal += net;
       const amountCells = fields.map(field => (
         `<td class="weekly-amount-cell">${formatMoney(row[field.key])}</td>`
       )).join('');
+      const netCell = hasNetPay(platform)
+        ? `<td class="weekly-amount-cell">${formatMoney(net)}</td>`
+        : '';
       const sheetTitle = row.sourceSheet ? `시트 ${row.sourceSheet}` : '';
       return `<tr>
         <td>${escapeHtml(row.region || '-')}</td>
         <td title="${escapeHtml(sheetTitle)}">${escapeHtml(row.fileName || '-')}</td>
         ${amountCells}
+        ${netCell}
         <td><button type="button" class="small-btn danger-btn" data-tax-invoice-delete="${escapeHtml(row.id)}">삭제</button></td>
       </tr>`;
     }).join('');
     const totalCells = fields.map(field => (
       `<td class="weekly-amount-cell">${formatMoney(totals[field.key])}</td>`
     )).join('');
+    const netTotalCell = hasNetPay(platform)
+      ? `<td class="weekly-amount-cell">${formatMoney(netTotal)}</td>`
+      : '';
     body.insertAdjacentHTML('beforeend', `<tr>
       <td colspan="2"><strong>합계 ${rows.length}건</strong></td>
       ${totalCells}
+      ${netTotalCell}
       <td></td>
     </tr>`);
     if (summary) {
@@ -295,6 +317,278 @@ const BremTaxInvoiceAdmin = (function () {
     render(row.platform);
   }
 
+  function amountHeaders(platform) {
+    const headers = ['지역', '파일', ...fieldsFor(platform).map(field => field.label)];
+    if (hasNetPay(platform)) headers.push('실지급액');
+    return headers;
+  }
+
+  function amountLine(platform, row) {
+    const line = fieldsFor(platform).map(field => Number(row[field.key] || 0));
+    if (hasNetPay(platform)) line.push(baeminNetPay(row));
+    return line;
+  }
+
+  function writeWorkbook(filename, sheets) {
+    if (!window.XLSX) {
+      showToast('엑셀 라이브러리를 불러오지 못했습니다.');
+      return false;
+    }
+    const workbook = window.XLSX.utils.book_new();
+    sheets.forEach(sheet => {
+      const worksheet = window.XLSX.utils.aoa_to_sheet(sheet.rows);
+      worksheet['!cols'] = sheet.rows[0].map((cell, index) => (
+        { wch: index < 2 ? 18 : 16 }
+      ));
+      const name = String(sheet.name || '계산서').slice(0, 31);
+      window.XLSX.utils.book_append_sheet(workbook, worksheet, name);
+    });
+    window.XLSX.writeFile(workbook, filename);
+    return true;
+  }
+
+  function exportWeek(platform) {
+    const rows = weekRows(platform);
+    if (!rows.length) {
+      showToast('이 주차에 보낼 계산서가 없습니다.');
+      return;
+    }
+    const fields = fieldsFor(platform);
+    const header = amountHeaders(platform);
+    const body = rows.map(row => [row.region || '', row.fileName || '', ...amountLine(platform, row)]);
+    const totals = fields.map(field => rows.reduce((sum, row) => sum + Number(row[field.key] || 0), 0));
+    if (hasNetPay(platform)) totals.push(rows.reduce((sum, row) => sum + baeminNetPay(row), 0));
+    const weekStart = ensureWeek(platform);
+    const ok = writeWorkbook(`계산서_${platformLabel(platform)}_${weekStart}.xlsx`, [{
+      name: platformLabel(platform),
+      rows: [header, ...body, ['합계', `${rows.length}건`, ...totals]]
+    }]);
+    if (ok) showToast(`${platformLabel(platform)} 계산서 ${rows.length}건을 엑셀로 보냈습니다.`);
+  }
+
+  function currentMonthKey() {
+    return (typeof BremDatePicker !== 'undefined' && BremDatePicker.currentMonth)
+      ? BremDatePicker.currentMonth()
+      : new Date().toISOString().slice(0, 7);
+  }
+
+  function formatMonthLabel(value) {
+    if (typeof BremDatePicker !== 'undefined' && BremDatePicker.formatMonthLabel) {
+      return BremDatePicker.formatMonthLabel(value, '월 선택');
+    }
+    if (!value) return '월 선택';
+    const [year, month] = String(value).split('-');
+    return `${year}년 ${Number(month)}월`;
+  }
+
+  function ensureMonth() {
+    if (/^\d{4}-\d{2}$/.test(monthState.month)) return monthState.month;
+    const latest = readList()
+      .map(item => String(item.weekStart || '').slice(0, 7))
+      .filter(value => /^\d{4}-\d{2}$/.test(value))
+      .sort()
+      .pop();
+    monthState.month = latest || currentMonthKey();
+    return monthState.month;
+  }
+
+  function shortWeek(weekStart) {
+    const match = String(weekStart || '').match(/^\d{4}-(\d{2})-(\d{2})$/);
+    if (!match) return String(weekStart || '');
+    return `${Number(match[1])}/${Number(match[2])}`;
+  }
+
+  function monthSourceRows(platform, month) {
+    return readList().filter(item => (
+      item.platform === platform && String(item.weekStart || '').slice(0, 7) === month
+    ));
+  }
+
+  function monthRegionRows(platform, month) {
+    const fields = fieldsFor(platform);
+    const grouped = new Map();
+    monthSourceRows(platform, month).forEach(row => {
+      const key = regionKey(row.region) || String(row.id || row.fileName || '');
+      if (!grouped.has(key)) {
+        const amounts = {};
+        fields.forEach(field => { amounts[field.key] = 0; });
+        grouped.set(key, {
+          region: row.region || '-',
+          weeks: new Set(),
+          fileCount: 0,
+          amounts
+        });
+      }
+      const bucket = grouped.get(key);
+      bucket.weeks.add(row.weekStart);
+      bucket.fileCount += 1;
+      fields.forEach(field => {
+        bucket.amounts[field.key] += Number(row[field.key] || 0);
+      });
+    });
+    return [...grouped.values()]
+      .map(bucket => ({
+        region: bucket.region,
+        weeks: [...bucket.weeks].filter(Boolean).sort(),
+        fileCount: bucket.fileCount,
+        ...bucket.amounts
+      }))
+      .sort((a, b) => String(a.region).localeCompare(String(b.region), 'ko'));
+  }
+
+  function renderMonthTable(platform) {
+    const body = $(`#taxInvoiceMonthRows-${platform}`);
+    if (!body) return { rows: [], weeks: [] };
+    const month = ensureMonth();
+    const fields = fieldsFor(platform);
+    const rows = monthRegionRows(platform, month);
+    const weeks = [...new Set(monthSourceRows(platform, month).map(row => row.weekStart))].filter(Boolean).sort();
+    const netCol = hasNetPay(platform) ? 1 : 0;
+    const colSpan = fields.length + 2 + netCol;
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">${formatMonthLabel(month)}에 등록된 ${platformLabel(platform)} 계산서가 없습니다.</td></tr>`;
+      return { rows, weeks };
+    }
+    const totals = {};
+    fields.forEach(field => { totals[field.key] = 0; });
+    let netTotal = 0;
+    body.innerHTML = rows.map(row => {
+      fields.forEach(field => { totals[field.key] += Number(row[field.key] || 0); });
+      const net = hasNetPay(platform) ? baeminNetPay(row) : 0;
+      netTotal += net;
+      const weekTitle = row.weeks.map(shortWeek).join(', ');
+      const amountCells = fields.map(field => (
+        `<td class="weekly-amount-cell">${formatMoney(row[field.key])}</td>`
+      )).join('');
+      const netCell = hasNetPay(platform)
+        ? `<td class="weekly-amount-cell">${formatMoney(net)}</td>`
+        : '';
+      return `<tr>
+        <td>${escapeHtml(row.region)}</td>
+        <td title="${escapeHtml(weekTitle)}">${row.weeks.length}주 · ${row.fileCount}건</td>
+        ${amountCells}
+        ${netCell}
+      </tr>`;
+    }).join('');
+    const totalCells = fields.map(field => (
+      `<td class="weekly-amount-cell">${formatMoney(totals[field.key])}</td>`
+    )).join('');
+    const netTotalCell = hasNetPay(platform)
+      ? `<td class="weekly-amount-cell">${formatMoney(netTotal)}</td>`
+      : '';
+    body.insertAdjacentHTML('beforeend', `<tr>
+      <td colspan="2"><strong>합계 ${rows.length}지역</strong></td>
+      ${totalCells}
+      ${netTotalCell}
+    </tr>`);
+    return { rows, weeks };
+  }
+
+  function renderMonthly() {
+    const month = ensureMonth();
+    const label = $('#taxInvoiceMonthLabel');
+    const hidden = $('#taxInvoiceMonth');
+    if (label) label.textContent = formatMonthLabel(month);
+    if (hidden) hidden.value = month;
+    const baemin = renderMonthTable('baemin');
+    const coupang = renderMonthTable('coupang');
+    const weeks = [...new Set([...baemin.weeks, ...coupang.weeks])].sort();
+    const range = $('#taxInvoiceMonthRange');
+    if (range) {
+      const weekText = weeks.length ? weeks.map(shortWeek).join(', ') : '등록된 주 없음';
+      range.textContent = `${formatMonthLabel(month)} · 정산주(수요일)가 이 달인 계산서 · ${weekText}`;
+    }
+    const summary = $('#taxInvoiceMonthSummary');
+    if (summary) {
+      summary.textContent = `배민 ${baemin.rows.length}지역 · 쿠팡 ${coupang.rows.length}지역`
+        + ' · 같은 지역은 그 달 주차를 더한 값입니다. 배민 실지급액은 공급대가에서 보험 5항목을 뺀 값입니다.';
+    }
+    const exportBtn = $('#taxInvoiceMonthExportBtn');
+    if (exportBtn) exportBtn.disabled = !baemin.rows.length && !coupang.rows.length;
+  }
+
+  function setMonth(value) {
+    const next = String(value || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(next) || next === monthState.month) return;
+    monthState.month = next;
+    renderMonthly();
+  }
+
+  function shiftMonth(deltaMonths) {
+    const base = ensureMonth();
+    const [year, month] = base.split('-').map(Number);
+    const date = new Date(year, month - 1 + deltaMonths, 1);
+    const next = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    monthState.month = next;
+    monthPicker?.setMonth?.(next);
+    renderMonthly();
+  }
+
+  function exportMonth() {
+    const month = ensureMonth();
+    const sheets = PLATFORMS.map(platform => {
+      const rows = monthRegionRows(platform, month);
+      if (!rows.length) return null;
+      const fields = fieldsFor(platform);
+      const header = ['지역', '주차', ...fields.map(field => field.label)];
+      if (hasNetPay(platform)) header.push('실지급액');
+      const body = rows.map(row => [
+        row.region,
+        row.weeks.map(shortWeek).join(', '),
+        ...amountLine(platform, row)
+      ]);
+      const totals = fields.map(field => rows.reduce((sum, row) => sum + Number(row[field.key] || 0), 0));
+      if (hasNetPay(platform)) totals.push(rows.reduce((sum, row) => sum + baeminNetPay(row), 0));
+      return {
+        name: platformLabel(platform),
+        rows: [header, ...body, ['합계', `${rows.length}지역`, ...totals]]
+      };
+    }).filter(Boolean);
+    if (!sheets.length) {
+      showToast('이 달에 보낼 계산서가 없습니다.');
+      return;
+    }
+    const ok = writeWorkbook(`계산서월별_${month}.xlsx`, sheets);
+    if (ok) showToast(`${formatMonthLabel(month)} 계산서를 엑셀로 보냈습니다.`);
+  }
+
+  function setupMonthPicker() {
+    if (monthPicker || typeof BremDatePicker === 'undefined' || !BremDatePicker.setupMonthSingle) return;
+    if (!$('#taxInvoiceMonthCalendar')) return;
+    monthPicker = BremDatePicker.setupMonthSingle({
+      popup: $('#taxInvoiceMonthCalendar'),
+      monthsContainer: $('#taxInvoiceMonthGrid'),
+      titleEl: $('#taxInvoiceMonthTitle'),
+      prevBtn: $('#taxInvoiceMonthPrev'),
+      nextBtn: $('#taxInvoiceMonthNext'),
+      todayBtn: $('#taxInvoiceMonthThisMonth'),
+      hiddenInput: $('#taxInvoiceMonth'),
+      openButton: $('#taxInvoiceMonthBtn'),
+      labelEl: $('#taxInvoiceMonthLabel'),
+      emptyLabel: '월 선택',
+      onSelect(value) {
+        setMonth(value);
+      }
+    });
+  }
+
+  async function reloadMonthly() {
+    try {
+      await window.BremStorage?.ensureSectionLoaded?.('tax-invoice-monthly', { force: true });
+    } catch (error) {
+      showToast(error.message || '불러오지 못했습니다.');
+    }
+    renderMonthly();
+    showToast('계산서 월별을 불러왔습니다.');
+  }
+
+  function refreshMonthly() {
+    setupMonthPicker();
+    ensureMonth();
+    monthPicker?.setMonth?.(ensureMonth());
+    renderMonthly();
+  }
+
   function bind() {
     if (bind.done) return;
     bind.done = true;
@@ -305,6 +599,7 @@ const BremTaxInvoiceAdmin = (function () {
       });
       $(`#taxInvoiceWeekPrevBtn-${platform}`)?.addEventListener('click', () => shiftWeek(platform, -1));
       $(`#taxInvoiceWeekNextBtn-${platform}`)?.addEventListener('click', () => shiftWeek(platform, 1));
+      $(`#taxInvoiceExportBtn-${platform}`)?.addEventListener('click', () => exportWeek(platform));
       $(`#taxInvoiceReloadBtn-${platform}`)?.addEventListener('click', async () => {
         try {
           await window.BremStorage?.ensureSectionLoaded?.('tax-invoice-management', { force: true });
@@ -314,6 +609,11 @@ const BremTaxInvoiceAdmin = (function () {
         refresh();
       });
     });
+    $('#taxInvoiceMonthPrevBtn')?.addEventListener('click', () => shiftMonth(-1));
+    $('#taxInvoiceMonthNextBtn')?.addEventListener('click', () => shiftMonth(1));
+    $('#taxInvoiceMonthReloadBtn')?.addEventListener('click', () => { void reloadMonthly(); });
+    $('#taxInvoiceMonthExportBtn')?.addEventListener('click', exportMonth);
+    setupMonthPicker();
     document.addEventListener('click', event => {
       const button = event.target.closest('[data-tax-invoice-delete]');
       if (!button) return;
@@ -323,7 +623,7 @@ const BremTaxInvoiceAdmin = (function () {
 
   bind();
 
-  return { refresh, onWeekPicked };
+  return { refresh, refreshMonthly, onWeekPicked };
 })();
 
 window.BremTaxInvoiceAdmin = BremTaxInvoiceAdmin;

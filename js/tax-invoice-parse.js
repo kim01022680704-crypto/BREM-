@@ -99,6 +99,17 @@ const BremTaxInvoiceParse = (function () {
     return null;
   }
 
+  /** 공급대가 − 시간제·고용(사업주·라이더)·산재(사업주·라이더). */
+  function baeminNetPay(row) {
+    const n = key => Number(row?.[key] || 0);
+    return n('supplyTotal')
+      - n('hourlyInsurance')
+      - n('employerEmploymentIns')
+      - n('riderEmploymentIns')
+      - n('employerIndustrialIns')
+      - n('riderIndustrialIns');
+  }
+
   function zeroFill(amounts) {
     const next = {};
     Object.keys(amounts || {}).forEach(key => {
@@ -155,6 +166,7 @@ const BremTaxInvoiceParse = (function () {
     BAEMIN_FIELDS,
     COUPANG_FIELDS,
     parseMoney,
+    baeminNetPay,
     extractBaemin,
     extractCoupang,
     pickSheet

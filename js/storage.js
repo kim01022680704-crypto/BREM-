@@ -1618,6 +1618,7 @@ const BremStorage = (function () {
     'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts, KEYS.payrollSlipLines],
     'tax-management': [KEYS.drivers, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
     'tax-invoice-management': [KEYS.taxInvoices],
+    'tax-invoice-monthly': [KEYS.taxInvoices],
     'withdrawal-management': [KEYS.drivers],
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'inactive-drivers': [KEYS.drivers],
@@ -14231,6 +14232,7 @@ const BremStorage = (function () {
     'withdrawal-management',
     'tax-management',
     'tax-invoice-management',
+    'tax-invoice-monthly',
     'driver-management',
     'inactive-drivers',
     'admin-account',
@@ -14372,6 +14374,9 @@ const BremStorage = (function () {
     }
     if (normalized.includes('tax-management') && !normalized.includes('tax-invoice-management')) {
       normalized.splice(normalized.indexOf('tax-management') + 1, 0, 'tax-invoice-management');
+    }
+    if (normalized.includes('tax-invoice-management') && !normalized.includes('tax-invoice-monthly')) {
+      normalized.splice(normalized.indexOf('tax-invoice-management') + 1, 0, 'tax-invoice-monthly');
     }
 
     if (!normalized.includes('driver-management')) {
@@ -14519,6 +14524,10 @@ const BremStorage = (function () {
     if (allowed.has('tax-invoice-management') && !next.includes('tax-invoice-management')
       && next.includes('tax-management')) {
       next.splice(next.indexOf('tax-management') + 1, 0, 'tax-invoice-management');
+    }
+    if (allowed.has('tax-invoice-monthly') && !next.includes('tax-invoice-monthly')
+      && next.includes('tax-invoice-management')) {
+      next.splice(next.indexOf('tax-invoice-management') + 1, 0, 'tax-invoice-monthly');
     }
     return next;
   }
