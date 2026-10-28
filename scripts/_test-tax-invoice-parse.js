@@ -27,6 +27,13 @@ function testBaeminNetPay() {
     employerIndustrialIns: 54390,
     riderIndustrialIns: 54390
   }), 8434988);
+  assert.strictEqual(Parse.baeminInsuranceSum({
+    hourlyInsurance: 39492,
+    employerEmploymentIns: 79770,
+    riderEmploymentIns: 79770,
+    employerIndustrialIns: 54390,
+    riderIndustrialIns: 54390
+  }), 307812);
 }
 
 function testBaeminL2Fallback() {

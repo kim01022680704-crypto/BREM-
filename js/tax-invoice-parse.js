@@ -147,6 +147,7 @@ const BremTaxInvoiceParse = (function () {
     COUPANG_FIELDS,
     parseMoney,
     baeminNetPay,
+    baeminInsuranceSum,
     deductTwoPercent,
     invoiceAmountAfterFee,
     baeminNetPayAfterFee,

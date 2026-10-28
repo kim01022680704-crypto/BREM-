@@ -36,6 +36,16 @@ const BremTaxInvoiceAdmin = (function () {
     return Number(Parse()?.baeminNetPay?.(row) || 0);
   }
 
+  function baeminInsuranceSum(row) {
+    const parse = Parse();
+    if (parse.baeminInsuranceSum) return Number(parse.baeminInsuranceSum(row) || 0);
+    return Number(row?.hourlyInsurance || 0)
+      + Number(row?.employerEmploymentIns || 0)
+      + Number(row?.riderEmploymentIns || 0)
+      + Number(row?.employerIndustrialIns || 0)
+      + Number(row?.riderIndustrialIns || 0);
+  }
+
   function hasNetPay(platform) {
     return platform === 'baemin';
   }
@@ -117,7 +127,7 @@ const BremTaxInvoiceAdmin = (function () {
     if (!body) return;
     const fields = fieldsFor(platform);
     const rows = weekRows(platform);
-    const netCol = hasNetPay(platform) ? 1 : 0;
+    const netCol = hasNetPay(platform) ? 2 : 0;
     const colSpan = fields.length + 3 + netCol;
     if (!rows.length) {
       body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">이 주차에 등록된 ${platformLabel(platform)} 계산서가 없습니다.</td></tr>`;
@@ -127,15 +137,21 @@ const BremTaxInvoiceAdmin = (function () {
     const totals = {};
     fields.forEach(field => { totals[field.key] = 0; });
     let netTotal = 0;
+    let insuranceTotal = 0;
     body.innerHTML = rows.map(row => {
       fields.forEach(field => {
         totals[field.key] += Number(row[field.key] || 0);
       });
       const net = hasNetPay(platform) ? baeminNetPay(row) : 0;
+      const insurance = hasNetPay(platform) ? baeminInsuranceSum(row) : 0;
       netTotal += net;
+      insuranceTotal += insurance;
       const amountCells = fields.map(field => (
         `<td class="weekly-amount-cell">${formatMoney(row[field.key])}</td>`
       )).join('');
+      const insuranceCell = hasNetPay(platform)
+        ? `<td class="weekly-amount-cell">${formatMoney(insurance)}</td>`
+        : '';
       const netCell = hasNetPay(platform)
         ? `<td class="weekly-amount-cell">${formatMoney(net)}</td>`
         : '';
@@ -144,6 +160,7 @@ const BremTaxInvoiceAdmin = (function () {
         <td>${escapeHtml(row.region || '-')}</td>
         <td title="${escapeHtml(sheetTitle)}">${escapeHtml(row.fileName || '-')}</td>
         ${amountCells}
+        ${insuranceCell}
         ${netCell}
         <td><button type="button" class="small-btn danger-btn" data-tax-invoice-delete="${escapeHtml(row.id)}">삭제</button></td>
       </tr>`;
@@ -151,12 +168,16 @@ const BremTaxInvoiceAdmin = (function () {
     const totalCells = fields.map(field => (
       `<td class="weekly-amount-cell">${formatMoney(totals[field.key])}</td>`
     )).join('');
+    const insuranceTotalCell = hasNetPay(platform)
+      ? `<td class="weekly-amount-cell">${formatMoney(insuranceTotal)}</td>`
+      : '';
     const netTotalCell = hasNetPay(platform)
       ? `<td class="weekly-amount-cell">${formatMoney(netTotal)}</td>`
       : '';
     body.insertAdjacentHTML('beforeend', `<tr>
       <td colspan="2"><strong>합계 ${rows.length}건</strong></td>
       ${totalCells}
+      ${insuranceTotalCell}
       ${netTotalCell}
       <td></td>
     </tr>`);
@@ -349,13 +370,16 @@ const BremTaxInvoiceAdmin = (function () {
 
   function amountHeaders(platform) {
     const headers = ['지역', '파일', ...fieldsFor(platform).map(field => field.label)];
-    if (hasNetPay(platform)) headers.push('실지급액');
+    if (hasNetPay(platform)) headers.push('보험료합계', '실지급액');
     return headers;
   }
 
   function amountLine(platform, row) {
     const line = fieldsFor(platform).map(field => Number(row[field.key] || 0));
-    if (hasNetPay(platform)) line.push(baeminNetPay(row));
+    if (hasNetPay(platform)) {
+      line.push(baeminInsuranceSum(row));
+      line.push(baeminNetPay(row));
+    }
     return line;
   }
 
@@ -387,7 +411,10 @@ const BremTaxInvoiceAdmin = (function () {
     const header = amountHeaders(platform);
     const body = rows.map(row => [row.region || '', row.fileName || '', ...amountLine(platform, row)]);
     const totals = fields.map(field => rows.reduce((sum, row) => sum + Number(row[field.key] || 0), 0));
-    if (hasNetPay(platform)) totals.push(rows.reduce((sum, row) => sum + baeminNetPay(row), 0));
+    if (hasNetPay(platform)) {
+      totals.push(rows.reduce((sum, row) => sum + baeminInsuranceSum(row), 0));
+      totals.push(rows.reduce((sum, row) => sum + baeminNetPay(row), 0));
+    }
     const weekStart = ensureWeek(platform);
     const ok = writeWorkbook(`계산서_${platformLabel(platform)}_${weekStart}.xlsx`, [{
       name: platformLabel(platform),
@@ -500,7 +527,7 @@ const BremTaxInvoiceAdmin = (function () {
     const fields = fieldsFor(platform);
     const rows = monthDetailRows(platform, month);
     const weeks = [...new Set(rows.map(row => row.weekStart))].filter(Boolean).sort();
-    const netCol = hasNetPay(platform) ? 1 : 0;
+    const netCol = hasNetPay(platform) ? 2 : 0;
     const colSpan = fields.length + 3 + netCol;
     if (!rows.length) {
       body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">${formatMonthLabel(month)}에 등록된 ${platformLabel(platform)} 계산서가 없습니다.</td></tr>`;
@@ -509,13 +536,19 @@ const BremTaxInvoiceAdmin = (function () {
     const totals = {};
     fields.forEach(field => { totals[field.key] = 0; });
     let netTotal = 0;
+    let insuranceTotal = 0;
     body.innerHTML = rows.map(row => {
       fields.forEach(field => { totals[field.key] += shownAmount(platform, row, field); });
       const net = shownNet(platform, row);
+      const insurance = hasNetPay(platform) ? baeminInsuranceSum(row) : 0;
       netTotal += net;
+      insuranceTotal += insurance;
       const amountCells = fields.map(field => (
         `<td class="weekly-amount-cell">${formatMoney(shownAmount(platform, row, field))}</td>`
       )).join('');
+      const insuranceCell = hasNetPay(platform)
+        ? `<td class="weekly-amount-cell">${formatMoney(insurance)}</td>`
+        : '';
       const netCell = hasNetPay(platform)
         ? `<td class="weekly-amount-cell">${formatMoney(net)}</td>`
         : '';
@@ -524,18 +557,23 @@ const BremTaxInvoiceAdmin = (function () {
         <td>${escapeHtml(row.region || '-')}</td>
         <td>${escapeHtml(row.fileName || '-')}</td>
         ${amountCells}
+        ${insuranceCell}
         ${netCell}
       </tr>`;
     }).join('');
     const totalCells = fields.map(field => (
       `<td class="weekly-amount-cell">${formatMoney(totals[field.key])}</td>`
     )).join('');
+    const insuranceTotalCell = hasNetPay(platform)
+      ? `<td class="weekly-amount-cell">${formatMoney(insuranceTotal)}</td>`
+      : '';
     const netTotalCell = hasNetPay(platform)
       ? `<td class="weekly-amount-cell">${formatMoney(netTotal)}</td>`
       : '';
     body.insertAdjacentHTML('beforeend', `<tr>
       <td colspan="3"><strong>합계 ${rows.length}건</strong></td>
       ${totalCells}
+      ${insuranceTotalCell}
       ${netTotalCell}
     </tr>`);
     return { rows, weeks };
@@ -625,18 +663,21 @@ const BremTaxInvoiceAdmin = (function () {
         '지역',
         '파일',
         ...fields.map(field => excelFieldLabel(platform, field, fee)),
-        ...(hasNetPay(platform) ? ['실지급'] : [])
+        ...(hasNetPay(platform) ? ['보험료합계', '실지급'] : [])
       ]);
       list.forEach(row => {
         rows.push([
           row.region || '',
           row.fileName || '',
           ...fields.map(field => shownAmount(platform, row, field, fee)),
-          ...(hasNetPay(platform) ? [shownNet(platform, row, fee)] : [])
+          ...(hasNetPay(platform) ? [baeminInsuranceSum(row), shownNet(platform, row, fee)] : [])
         ]);
       });
       const totals = fields.map(field => list.reduce((sum, row) => sum + shownAmount(platform, row, field, fee), 0));
-      if (hasNetPay(platform)) totals.push(list.reduce((sum, row) => sum + shownNet(platform, row, fee), 0));
+      if (hasNetPay(platform)) {
+        totals.push(list.reduce((sum, row) => sum + baeminInsuranceSum(row), 0));
+        totals.push(list.reduce((sum, row) => sum + shownNet(platform, row, fee), 0));
+      }
       rows.push(['합계', `${list.length}건`, ...totals]);
     });
     return rows;
