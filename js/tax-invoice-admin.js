@@ -359,6 +359,15 @@ const BremTaxInvoiceAdmin = (function () {
     return line;
   }
 
+  function contentWidth(value) {
+    const text = String(value ?? '');
+    let width = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      width += text.charCodeAt(i) > 255 ? 1.5 : 0.8;
+    }
+    return width;
+  }
+
   function writeWorkbook(filename, sheets) {
     if (!window.XLSX) {
       showToast('엑셀 라이브러리를 불러오지 못했습니다.');
@@ -366,10 +375,16 @@ const BremTaxInvoiceAdmin = (function () {
     }
     const workbook = window.XLSX.utils.book_new();
     sheets.forEach(sheet => {
-      const worksheet = window.XLSX.utils.aoa_to_sheet(sheet.rows);
-      worksheet['!cols'] = (sheet.rows[0] || []).map((cell, index) => {
-        if (index === 0 && String(cell) === '주차') return { wch: 42 };
-        return { wch: index < 3 ? 18 : 16 };
+      const rows = sheet.rows || [];
+      const worksheet = window.XLSX.utils.aoa_to_sheet(rows);
+      const colCount = rows.reduce((max, row) => Math.max(max, row.length), 0);
+      worksheet['!cols'] = Array.from({ length: colCount }, (_, index) => {
+        let max = 4;
+        rows.forEach(row => {
+          const width = contentWidth(row[index]);
+          if (width > max) max = width;
+        });
+        return { wch: Math.min(Math.ceil(max + 0.6), 12) };
       });
       const name = String(sheet.name || '계산서').slice(0, 31);
       window.XLSX.utils.book_append_sheet(workbook, worksheet, name);
@@ -595,38 +610,67 @@ const BremTaxInvoiceAdmin = (function () {
     return [...weeks].sort();
   }
 
-  function weekSheetName(month, index, platform) {
+  function compactWeek(weekStart) {
+    const picker = typeof BremDatePicker !== 'undefined' ? BremDatePicker : null;
+    const start = picker?.applyWeekWednesday?.(weekStart) || weekStart;
+    const end = picker?.weekEndKey?.(start);
+    if (!end) return shortWeek(start);
+    return `${shortWeek(start)}~${shortWeek(end)}`;
+  }
+
+  function excelFieldLabel(platform, field, useFee) {
+    const label = fieldLabel(platform, field, useFee)
+      .replace('(2%적용)', '')
+      .replace('사업주부담 고용보험', '사업주고용')
+      .replace('라이더부담 고용보험', '라이더고용')
+      .replace('사업주부담 산재보험', '사업주산재')
+      .replace('라이더부담 산재보험', '라이더산재')
+      .replace('시간제보험', '시간제');
+    return label;
+  }
+
+  function weekSheetRows(weekStart, month, fee) {
+    const rows = [['주차', compactWeek(weekStart)]];
+    PLATFORMS.forEach(platform => {
+      const list = monthDetailRows(platform, month).filter(row => row.weekStart === weekStart);
+      if (!list.length) return;
+      const fields = fieldsFor(platform);
+      rows.push([]);
+      rows.push([platformLabel(platform)]);
+      rows.push([
+        '지역',
+        '파일',
+        ...fields.map(field => excelFieldLabel(platform, field, fee)),
+        ...(hasNetPay(platform) ? ['실지급'] : [])
+      ]);
+      list.forEach(row => {
+        rows.push([
+          row.region || '',
+          row.fileName || '',
+          ...fields.map(field => shownAmount(platform, row, field, fee)),
+          ...(hasNetPay(platform) ? [shownNet(platform, row, fee)] : [])
+        ]);
+      });
+      const totals = fields.map(field => list.reduce((sum, row) => sum + shownAmount(platform, row, field, fee), 0));
+      if (hasNetPay(platform)) totals.push(list.reduce((sum, row) => sum + shownNet(platform, row, fee), 0));
+      rows.push(['합계', `${list.length}건`, ...totals]);
+    });
+    return rows;
+  }
+
+  function weekSheetName(month, index) {
     const monthNo = Number(String(month).slice(5, 7));
-    return `${monthNo}월${index}주 ${platformLabel(platform)}`;
+    return `${monthNo}월${index}주`;
   }
 
   function exportMonth(useFee) {
     const fee = feeOn(useFee);
     const month = ensureMonth();
     const weeks = monthWeeks(month);
-    const sheets = [];
-    weeks.forEach((weekStart, weekIndex) => {
-      PLATFORMS.forEach(platform => {
-        const rows = monthDetailRows(platform, month).filter(row => row.weekStart === weekStart);
-        if (!rows.length) return;
-        const fields = fieldsFor(platform);
-        const header = ['주차', '지역', '파일', ...fields.map(field => fieldLabel(platform, field, fee))];
-        if (hasNetPay(platform)) header.push('실지급액');
-        const body = rows.map(row => [
-          weekLabel(row.weekStart),
-          row.region || '',
-          row.fileName || '',
-          ...fields.map(field => shownAmount(platform, row, field, fee)),
-          ...(hasNetPay(platform) ? [shownNet(platform, row, fee)] : [])
-        ]);
-        const totals = fields.map(field => rows.reduce((sum, row) => sum + shownAmount(platform, row, field, fee), 0));
-        if (hasNetPay(platform)) totals.push(rows.reduce((sum, row) => sum + shownNet(platform, row, fee), 0));
-        sheets.push({
-          name: weekSheetName(month, weekIndex + 1, platform),
-          rows: [header, ...body, ['합계', `${rows.length}건`, '', ...totals]]
-        });
-      });
-    });
+    const sheets = weeks.map((weekStart, weekIndex) => ({
+      name: weekSheetName(month, weekIndex + 1),
+      rows: weekSheetRows(weekStart, month, fee)
+    })).filter(sheet => sheet.rows.length > 1);
     if (!sheets.length) {
       showToast('이 달에 보낼 계산서가 없습니다.');
       return;
@@ -634,9 +678,7 @@ const BremTaxInvoiceAdmin = (function () {
     const filename = fee ? `계산서월별_2퍼센트_${month}.xlsx` : `계산서월별_${month}.xlsx`;
     const ok = writeWorkbook(filename, sheets);
     if (ok) {
-      showToast(fee
-        ? `${formatMonthLabel(month)} 2% 적용 계산서를 주차 ${weeks.length}개 시트로 보냈습니다.`
-        : `${formatMonthLabel(month)} 계산서를 주차 ${weeks.length}개, 시트 ${sheets.length}개로 보냈습니다.`);
+      showToast(`${formatMonthLabel(month)} 계산서를 주차 ${sheets.length}개 시트로 보냈습니다. 한 시트에 배민·쿠팡이 함께 있습니다.`);
     }
   }
 
