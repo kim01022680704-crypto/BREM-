@@ -6102,7 +6102,7 @@
               <button type="button" class="small-btn" id="taxInvoiceMonthExportBtn" disabled>엑셀보내기</button>
             </div>
           </div>
-          <p class="form-help">정산주(수요일)가 속한 달로 묶습니다. 같은 지역은 그 달의 주차를 더합니다. 배민 <strong>실지급액</strong>은 공급대가 − 시간제보험 − 사업주부담 고용보험 − 라이더부담 고용보험 − 사업주부담 산재보험 − 라이더부담 산재보험입니다.</p>
+          <p class="form-help">정산주(수요일)가 속한 달의 계산서를 <strong>주차·파일마다 그대로</strong> 보여 줍니다. 같은 지역을 더하지 않습니다. 배민 <strong>실지급액</strong>은 공급대가 − 시간제보험 − 사업주부담 고용보험 − 라이더부담 고용보험 − 사업주부담 산재보험 − 라이더부담 산재보험입니다.</p>
           <label class="settlement-week-filter">
             <span class="coupang-week-picker-inline">
               <button type="button" class="small-btn" id="taxInvoiceMonthPrevBtn" title="이전 달">&lt;&lt;</button>
@@ -6121,8 +6121,9 @@
             <table class="weekly-settlement-saved-table">
               <thead>
                 <tr>
-                  <th>지역</th>
                   <th>주차</th>
+                  <th>지역</th>
+                  <th>파일</th>
                   <th class="weekly-amount-cell">공급가액</th>
                   <th class="weekly-amount-cell">부가세액</th>
                   <th class="weekly-amount-cell">공급대가</th>
@@ -6143,8 +6144,9 @@
             <table class="weekly-settlement-saved-table">
               <thead>
                 <tr>
-                  <th>지역</th>
                   <th>주차</th>
+                  <th>지역</th>
+                  <th>파일</th>
                   <th class="weekly-amount-cell">공급가액</th>
                   <th class="weekly-amount-cell">부가세</th>
                   <th class="weekly-amount-cell">합계</th>
@@ -10019,7 +10021,7 @@
   <script src="js/withdrawal-management-admin.js?v=20261003wd2"></script>
   <script src="js/tax-management-admin.js?v=20261001tax1"></script>
   <script src="js/tax-invoice-parse.js?v=20261028invoice5"></script>
-  <script src="js/tax-invoice-admin.js?v=20261028invoice7"></script>
+  <script src="js/tax-invoice-admin.js?v=20261028invoice8"></script>
   <script src="js/coupang-region-match.js?v=20261013zmatch1"></script>
   <script src="js/driver-management-admin.js?v=20261025panel1"></script>
   <script src="js/driver-detail-search.js?v=20261027pw1"></script>

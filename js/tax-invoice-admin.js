@@ -79,10 +79,6 @@ const BremTaxInvoiceAdmin = (function () {
     return Array.isArray(raw) ? raw : [];
   }
 
-  function regionKey(region) {
-    return String(region || '').replace(/\s+/g, '').toLowerCase();
-  }
-
   function fileKey(fileName) {
     return String(fileName || '').replace(/\s+/g, '').toLowerCase();
   }
@@ -438,36 +434,17 @@ const BremTaxInvoiceAdmin = (function () {
     ));
   }
 
-  function monthRegionRows(platform, month) {
-    const fields = fieldsFor(platform);
-    const grouped = new Map();
-    monthSourceRows(platform, month).forEach(row => {
-      const key = regionKey(row.region) || String(row.id || row.fileName || '');
-      if (!grouped.has(key)) {
-        const amounts = {};
-        fields.forEach(field => { amounts[field.key] = 0; });
-        grouped.set(key, {
-          region: row.region || '-',
-          weeks: new Set(),
-          fileCount: 0,
-          amounts
-        });
-      }
-      const bucket = grouped.get(key);
-      bucket.weeks.add(row.weekStart);
-      bucket.fileCount += 1;
-      fields.forEach(field => {
-        bucket.amounts[field.key] += Number(row[field.key] || 0);
-      });
-    });
-    return [...grouped.values()]
-      .map(bucket => ({
-        region: bucket.region,
-        weeks: [...bucket.weeks].filter(Boolean).sort(),
-        fileCount: bucket.fileCount,
-        ...bucket.amounts
-      }))
-      .sort((a, b) => String(a.region).localeCompare(String(b.region), 'ko'));
+  function monthDetailRows(platform, month) {
+    return monthSourceRows(platform, month).slice().sort((a, b) => (
+      String(a.weekStart || '').localeCompare(String(b.weekStart || ''))
+      || String(a.region || '').localeCompare(String(b.region || ''), 'ko')
+      || String(a.fileName || '').localeCompare(String(b.fileName || ''), 'ko')
+    ));
+  }
+
+  function weekLabel(weekStart) {
+    const picker = typeof BremDatePicker !== 'undefined' ? BremDatePicker : null;
+    return picker?.formatWednesdayWeekRange?.(weekStart) || shortWeek(weekStart);
   }
 
   function renderMonthTable(platform) {
@@ -475,10 +452,10 @@ const BremTaxInvoiceAdmin = (function () {
     if (!body) return { rows: [], weeks: [] };
     const month = ensureMonth();
     const fields = fieldsFor(platform);
-    const rows = monthRegionRows(platform, month);
-    const weeks = [...new Set(monthSourceRows(platform, month).map(row => row.weekStart))].filter(Boolean).sort();
+    const rows = monthDetailRows(platform, month);
+    const weeks = [...new Set(rows.map(row => row.weekStart))].filter(Boolean).sort();
     const netCol = hasNetPay(platform) ? 1 : 0;
-    const colSpan = fields.length + 2 + netCol;
+    const colSpan = fields.length + 3 + netCol;
     if (!rows.length) {
       body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">${formatMonthLabel(month)}에 등록된 ${platformLabel(platform)} 계산서가 없습니다.</td></tr>`;
       return { rows, weeks };
@@ -490,7 +467,6 @@ const BremTaxInvoiceAdmin = (function () {
       fields.forEach(field => { totals[field.key] += Number(row[field.key] || 0); });
       const net = hasNetPay(platform) ? baeminNetPay(row) : 0;
       netTotal += net;
-      const weekTitle = row.weeks.map(shortWeek).join(', ');
       const amountCells = fields.map(field => (
         `<td class="weekly-amount-cell">${formatMoney(row[field.key])}</td>`
       )).join('');
@@ -498,8 +474,9 @@ const BremTaxInvoiceAdmin = (function () {
         ? `<td class="weekly-amount-cell">${formatMoney(net)}</td>`
         : '';
       return `<tr>
-        <td>${escapeHtml(row.region)}</td>
-        <td title="${escapeHtml(weekTitle)}">${row.weeks.length}주 · ${row.fileCount}건</td>
+        <td>${escapeHtml(weekLabel(row.weekStart))}</td>
+        <td>${escapeHtml(row.region || '-')}</td>
+        <td>${escapeHtml(row.fileName || '-')}</td>
         ${amountCells}
         ${netCell}
       </tr>`;
@@ -511,7 +488,7 @@ const BremTaxInvoiceAdmin = (function () {
       ? `<td class="weekly-amount-cell">${formatMoney(netTotal)}</td>`
       : '';
     body.insertAdjacentHTML('beforeend', `<tr>
-      <td colspan="2"><strong>합계 ${rows.length}지역</strong></td>
+      <td colspan="3"><strong>합계 ${rows.length}건</strong></td>
       ${totalCells}
       ${netTotalCell}
     </tr>`);
@@ -534,8 +511,8 @@ const BremTaxInvoiceAdmin = (function () {
     }
     const summary = $('#taxInvoiceMonthSummary');
     if (summary) {
-      summary.textContent = `배민 ${baemin.rows.length}지역 · 쿠팡 ${coupang.rows.length}지역`
-        + ' · 같은 지역은 그 달 주차를 더한 값입니다. 배민 실지급액은 공급대가에서 보험 5항목을 뺀 값입니다.';
+      summary.textContent = `배민 ${baemin.rows.length}건 · 쿠팡 ${coupang.rows.length}건`
+        + ' · 등록한 계산서를 주차별로 그대로 보여 줍니다. 배민 실지급액은 공급대가에서 보험 5항목을 뺀 값입니다.';
     }
     const exportBtn = $('#taxInvoiceMonthExportBtn');
     if (exportBtn) exportBtn.disabled = !baemin.rows.length && !coupang.rows.length;
@@ -561,21 +538,22 @@ const BremTaxInvoiceAdmin = (function () {
   function exportMonth() {
     const month = ensureMonth();
     const sheets = PLATFORMS.map(platform => {
-      const rows = monthRegionRows(platform, month);
+      const rows = monthDetailRows(platform, month);
       if (!rows.length) return null;
       const fields = fieldsFor(platform);
-      const header = ['지역', '주차', ...fields.map(field => field.label)];
+      const header = ['주차', '지역', '파일', ...fields.map(field => field.label)];
       if (hasNetPay(platform)) header.push('실지급액');
       const body = rows.map(row => [
-        row.region,
-        row.weeks.map(shortWeek).join(', '),
+        weekLabel(row.weekStart),
+        row.region || '',
+        row.fileName || '',
         ...amountLine(platform, row)
       ]);
       const totals = fields.map(field => rows.reduce((sum, row) => sum + Number(row[field.key] || 0), 0));
       if (hasNetPay(platform)) totals.push(rows.reduce((sum, row) => sum + baeminNetPay(row), 0));
       return {
         name: platformLabel(platform),
-        rows: [header, ...body, ['합계', `${rows.length}지역`, ...totals]]
+        rows: [header, ...body, ['합계', `${rows.length}건`, '', ...totals]]
       };
     }).filter(Boolean);
     if (!sheets.length) {
