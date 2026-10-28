@@ -359,15 +359,6 @@ const BremTaxInvoiceAdmin = (function () {
     return line;
   }
 
-  function contentWidth(value) {
-    const text = String(value ?? '');
-    let width = 0;
-    for (let i = 0; i < text.length; i += 1) {
-      width += text.charCodeAt(i) > 255 ? 1.5 : 0.8;
-    }
-    return width;
-  }
-
   function writeWorkbook(filename, sheets) {
     if (!window.XLSX) {
       showToast('엑셀 라이브러리를 불러오지 못했습니다.');
@@ -378,14 +369,7 @@ const BremTaxInvoiceAdmin = (function () {
       const rows = sheet.rows || [];
       const worksheet = window.XLSX.utils.aoa_to_sheet(rows);
       const colCount = rows.reduce((max, row) => Math.max(max, row.length), 0);
-      worksheet['!cols'] = Array.from({ length: colCount }, (_, index) => {
-        let max = 4;
-        rows.forEach(row => {
-          const width = contentWidth(row[index]);
-          if (width > max) max = width;
-        });
-        return { wch: Math.min(Math.ceil(max + 0.6), 12) };
-      });
+      worksheet['!cols'] = Array.from({ length: colCount }, () => ({ wch: 10 }));
       const name = String(sheet.name || '계산서').slice(0, 31);
       window.XLSX.utils.book_append_sheet(workbook, worksheet, name);
     });
