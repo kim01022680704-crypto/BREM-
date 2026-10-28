@@ -710,7 +710,7 @@ const BremTaxInvoiceAdmin = (function () {
     const totalAmount = totaled || (sumKey(list, 'supplyAmount') + sumKey(list, 'vatAmount'));
     rows.push([]);
     rows.push([platformLabel(platform)]);
-    rows.push(['2%뺀 공급가액', '2%뺀 부가세', '공급대가', '보험료합계', '실지급액']);
+    rows.push(['2%뺀 공급가액', '2%뺀 부가세', '합계금액', '보험료합계', '실지급액']);
     rows.push([supply, vat, totalAmount, insurance, totalAmount - insurance]);
   }
 
