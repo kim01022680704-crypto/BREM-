@@ -416,20 +416,23 @@ const BremTaxInvoiceAdmin = (function () {
       const worksheet = X.utils.aoa_to_sheet(rows);
       const colCount = rows.reduce((max, row) => Math.max(max, row.length), 0);
       worksheet['!cols'] = Array.from({ length: Math.max(colCount, 7) }, () => ({ wch: 10 }));
-      if (Number.isInteger(sheet.titleRow) && sheet.titleRow >= 0) {
-        const ref = X.utils.encode_cell({ r: sheet.titleRow, c: 0 });
-        if (worksheet[ref]) {
-          worksheet[ref].s = {
-            font: { name: '맑은 고딕', sz: 20, bold: true },
-            alignment: { vertical: 'center', horizontal: 'left' }
-          };
-        }
-        worksheet['!merges'] = [{
-          s: { r: sheet.titleRow, c: 0 },
-          e: { r: sheet.titleRow, c: 6 }
-        }];
+      const titleRows = Array.isArray(sheet.titleRows) ? sheet.titleRows : [];
+      if (titleRows.length) {
         const rowMeta = [];
-        rowMeta[sheet.titleRow] = { hpt: 32 };
+        worksheet['!merges'] = titleRows.map(rowIndex => {
+          const ref = X.utils.encode_cell({ r: rowIndex, c: 0 });
+          if (worksheet[ref]) {
+            worksheet[ref].s = {
+              font: { name: '맑은 고딕', sz: 20, bold: true },
+              alignment: { vertical: 'center', horizontal: 'left' }
+            };
+          }
+          rowMeta[rowIndex] = { hpt: 32 };
+          return {
+            s: { r: rowIndex, c: 0 },
+            e: { r: rowIndex, c: 6 }
+          };
+        });
         worksheet['!rows'] = rowMeta;
       }
       const name = String(sheet.name || '계산서').slice(0, 31);
@@ -743,31 +746,33 @@ const BremTaxInvoiceAdmin = (function () {
       }
       rows.push(['합계', `${list.length}건`, ...totals]);
     });
-    let titleRow = -1;
     if (fee && PLATFORMS.some(platform => grouped[platform]?.length)) {
       rows.push([]);
-      titleRow = rows.length;
       rows.push(['2% 계산']);
       PLATFORMS.forEach(platform => appendTwoPercentBlock(rows, platform, grouped[platform] || []));
     }
-    return { rows, titleRow };
+    const titleRows = [];
+    rows.forEach((row, index) => {
+      const label = String(row?.[0] || '');
+      if (label === '배민' || label === '쿠팡' || label === '2% 계산') titleRows.push(index);
+    });
+    return { rows, titleRows };
   }
 
-  function weekSheetName(month, index) {
-    const monthNo = Number(String(month).slice(5, 7));
-    return `${monthNo}월${index}주`;
+  function weekSheetName(weekStart) {
+    return compactWeek(weekStart).replace(/\//g, '.');
   }
 
   async function exportMonth(useFee) {
     const fee = feeOn(useFee);
     const month = ensureMonth();
     const weeks = monthWeeks(month);
-    const sheets = weeks.map((weekStart, weekIndex) => {
+    const sheets = weeks.map(weekStart => {
       const built = weekSheetRows(weekStart, month, fee);
       return {
-        name: weekSheetName(month, weekIndex + 1),
+        name: weekSheetName(weekStart),
         rows: built.rows,
-        titleRow: built.titleRow
+        titleRows: built.titleRows
       };
     }).filter(sheet => sheet.rows.length > 1);
     if (!sheets.length) {
@@ -776,12 +781,10 @@ const BremTaxInvoiceAdmin = (function () {
     }
     const filename = fee ? `계산서월별_2퍼센트_${month}.xlsx` : `계산서월별_${month}.xlsx`;
     let writer = window.XLSX;
-    if (fee) {
-      try {
-        writer = await loadStyleWriter();
-      } catch (error) {
-        writer = window.XLSX;
-      }
+    try {
+      writer = await loadStyleWriter();
+    } catch (error) {
+      writer = window.XLSX;
     }
     const ok = writeWorkbook(filename, sheets, writer);
     if (ok) {
