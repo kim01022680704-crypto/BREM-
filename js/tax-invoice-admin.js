@@ -383,21 +383,59 @@ const BremTaxInvoiceAdmin = (function () {
     return line;
   }
 
-  function writeWorkbook(filename, sheets) {
-    if (!window.XLSX) {
+  function loadStyleWriter() {
+    if (window.BremXlsxStyle?.utils?.book_new) return Promise.resolve(window.BremXlsxStyle);
+    if (loadStyleWriter.pending) return loadStyleWriter.pending;
+    const current = window.XLSX;
+    loadStyleWriter.pending = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js';
+      script.onload = () => {
+        window.BremXlsxStyle = window.XLSX;
+        window.XLSX = current;
+        resolve(window.BremXlsxStyle);
+      };
+      script.onerror = () => {
+        window.XLSX = current || window.XLSX;
+        reject(new Error('xlsx-style'));
+      };
+      document.head.appendChild(script);
+    });
+    return loadStyleWriter.pending;
+  }
+
+  function writeWorkbook(filename, sheets, writer) {
+    const X = writer || window.XLSX;
+    if (!X) {
       showToast('엑셀 라이브러리를 불러오지 못했습니다.');
       return false;
     }
-    const workbook = window.XLSX.utils.book_new();
+    const workbook = X.utils.book_new();
     sheets.forEach(sheet => {
       const rows = sheet.rows || [];
-      const worksheet = window.XLSX.utils.aoa_to_sheet(rows);
+      const worksheet = X.utils.aoa_to_sheet(rows);
       const colCount = rows.reduce((max, row) => Math.max(max, row.length), 0);
-      worksheet['!cols'] = Array.from({ length: colCount }, () => ({ wch: 10 }));
+      worksheet['!cols'] = Array.from({ length: Math.max(colCount, 7) }, () => ({ wch: 10 }));
+      if (Number.isInteger(sheet.titleRow) && sheet.titleRow >= 0) {
+        const ref = X.utils.encode_cell({ r: sheet.titleRow, c: 0 });
+        if (worksheet[ref]) {
+          worksheet[ref].s = {
+            font: { name: '맑은 고딕', sz: 20, bold: true },
+            alignment: { vertical: 'center', horizontal: 'left' }
+          };
+        }
+        worksheet['!merges'] = [{
+          s: { r: sheet.titleRow, c: 0 },
+          e: { r: sheet.titleRow, c: 6 }
+        }];
+        const rowMeta = [];
+        rowMeta[sheet.titleRow] = { hpt: 32 };
+        worksheet['!rows'] = rowMeta;
+      }
       const name = String(sheet.name || '계산서').slice(0, 31);
-      window.XLSX.utils.book_append_sheet(workbook, worksheet, name);
+      X.utils.book_append_sheet(workbook, worksheet, name);
     });
-    window.XLSX.writeFile(workbook, filename);
+    X.writeFile(workbook, filename);
     return true;
   }
 
@@ -651,10 +689,30 @@ const BremTaxInvoiceAdmin = (function () {
     return label;
   }
 
+  function sumKey(list, key) {
+    return list.reduce((sum, row) => sum + Number(row?.[key] || 0), 0);
+  }
+
+  function appendTwoPercentBlock(rows, platform, list) {
+    if (!list.length) return;
+    const deduct = amount => Number(Parse()?.deductTwoPercent?.(amount) || 0);
+    const supply = deduct(sumKey(list, 'supplyAmount'));
+    const vat = deduct(sumKey(list, 'vatAmount'));
+    const insurance = platform === 'baemin'
+      ? list.reduce((sum, row) => sum + baeminInsuranceSum(row), 0)
+      : sumKey(list, 'totalInsurance');
+    rows.push([]);
+    rows.push([platformLabel(platform)]);
+    rows.push(['2%뺀 공급가액', '2%뺀 부가세', '공급대가', '보험료합계']);
+    rows.push([supply, vat, supply + vat, insurance]);
+  }
+
   function weekSheetRows(weekStart, month, fee) {
     const rows = [['주차', compactWeek(weekStart)]];
+    const grouped = {};
     PLATFORMS.forEach(platform => {
       const list = monthDetailRows(platform, month).filter(row => row.weekStart === weekStart);
+      grouped[platform] = list;
       if (!list.length) return;
       const fields = fieldsFor(platform);
       rows.push([]);
@@ -662,25 +720,33 @@ const BremTaxInvoiceAdmin = (function () {
       rows.push([
         '지역',
         '파일',
-        ...fields.map(field => excelFieldLabel(platform, field, fee)),
+        ...fields.map(field => excelFieldLabel(platform, field, false)),
         ...(hasNetPay(platform) ? ['보험료합계', '실지급'] : [])
       ]);
       list.forEach(row => {
         rows.push([
           row.region || '',
           row.fileName || '',
-          ...fields.map(field => shownAmount(platform, row, field, fee)),
-          ...(hasNetPay(platform) ? [baeminInsuranceSum(row), shownNet(platform, row, fee)] : [])
+          ...fields.map(field => shownAmount(platform, row, field, false)),
+          ...(hasNetPay(platform) ? [baeminInsuranceSum(row), shownNet(platform, row, false)] : [])
         ]);
       });
-      const totals = fields.map(field => list.reduce((sum, row) => sum + shownAmount(platform, row, field, fee), 0));
+      if (platform === 'coupang') return;
+      const totals = fields.map(field => list.reduce((sum, row) => sum + shownAmount(platform, row, field, false), 0));
       if (hasNetPay(platform)) {
         totals.push(list.reduce((sum, row) => sum + baeminInsuranceSum(row), 0));
-        totals.push(list.reduce((sum, row) => sum + shownNet(platform, row, fee), 0));
+        totals.push(list.reduce((sum, row) => sum + shownNet(platform, row, false), 0));
       }
       rows.push(['합계', `${list.length}건`, ...totals]);
     });
-    return rows;
+    let titleRow = -1;
+    if (fee && PLATFORMS.some(platform => grouped[platform]?.length)) {
+      rows.push([]);
+      titleRow = rows.length;
+      rows.push(['2% 계산']);
+      PLATFORMS.forEach(platform => appendTwoPercentBlock(rows, platform, grouped[platform] || []));
+    }
+    return { rows, titleRow };
   }
 
   function weekSheetName(month, index) {
@@ -688,22 +754,36 @@ const BremTaxInvoiceAdmin = (function () {
     return `${monthNo}월${index}주`;
   }
 
-  function exportMonth(useFee) {
+  async function exportMonth(useFee) {
     const fee = feeOn(useFee);
     const month = ensureMonth();
     const weeks = monthWeeks(month);
-    const sheets = weeks.map((weekStart, weekIndex) => ({
-      name: weekSheetName(month, weekIndex + 1),
-      rows: weekSheetRows(weekStart, month, fee)
-    })).filter(sheet => sheet.rows.length > 1);
+    const sheets = weeks.map((weekStart, weekIndex) => {
+      const built = weekSheetRows(weekStart, month, fee);
+      return {
+        name: weekSheetName(month, weekIndex + 1),
+        rows: built.rows,
+        titleRow: built.titleRow
+      };
+    }).filter(sheet => sheet.rows.length > 1);
     if (!sheets.length) {
       showToast('이 달에 보낼 계산서가 없습니다.');
       return;
     }
     const filename = fee ? `계산서월별_2퍼센트_${month}.xlsx` : `계산서월별_${month}.xlsx`;
-    const ok = writeWorkbook(filename, sheets);
+    let writer = window.XLSX;
+    if (fee) {
+      try {
+        writer = await loadStyleWriter();
+      } catch (error) {
+        writer = window.XLSX;
+      }
+    }
+    const ok = writeWorkbook(filename, sheets, writer);
     if (ok) {
-      showToast(`${formatMonthLabel(month)} 계산서를 주차 ${sheets.length}개 시트로 보냈습니다. 한 시트에 배민·쿠팡이 함께 있습니다.`);
+      showToast(fee
+        ? `${formatMonthLabel(month)} 계산서를 주차 ${sheets.length}개 시트로 보냈습니다. 쿠팡 아래 2% 계산은 그 주 합계에 공식을 적용한 값입니다.`
+        : `${formatMonthLabel(month)} 계산서를 주차 ${sheets.length}개 시트로 보냈습니다. 한 시트에 배민·쿠팡이 함께 있습니다.`);
     }
   }
 
