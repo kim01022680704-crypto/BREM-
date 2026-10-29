@@ -5,6 +5,7 @@ const BremTaxInvoiceAdmin = (function () {
 
   const PLATFORMS = ['baemin', 'coupang'];
   const monthState = { month: '', feeApplied: false };
+  const weekViewState = { weekStart: '', feeApplied: false };
   let monthPicker = null;
 
   function escapeHtml(value) {
@@ -260,11 +261,17 @@ const BremTaxInvoiceAdmin = (function () {
       }
       throw new Error('공급가액 B31, 부가세액 C31, 공급대가 D31 칸을 읽지 못했습니다.');
     }
+    const lines = platform === 'coupang'
+      ? (parse.extractCoupangLines?.(
+        (sheets.find(sheet => sheet.name === picked.sheetName) || sheets[0])?.cells
+      ) || [])
+      : [];
     return {
       region: guessRegion(file.name, platform),
       fileName: file.name,
       sourceSheet: picked.sheetName,
-      amounts: picked.amounts
+      amounts: picked.amounts,
+      lines
     };
   }
 
@@ -323,6 +330,7 @@ const BremTaxInvoiceAdmin = (function () {
           region: item.region,
           fileName: item.fileName,
           sourceSheet: item.sourceSheet,
+          lines: item.lines || [],
           uploadedAt: new Date().toISOString(),
           ...item.amounts
         };
@@ -337,9 +345,15 @@ const BremTaxInvoiceAdmin = (function () {
         const result = window.BremStorage?.taxInvoices?.saveAll?.(list);
         if (window.BremStorage?.awaitPersist) await window.BremStorage.awaitPersist(result);
         const fresh = parsed.length - replaced;
+        const lineCount = platform === 'coupang'
+          ? parsed.reduce((sum, item) => sum + (item.lines?.length || 0), 0)
+          : 0;
+        const lineNote = platform === 'coupang'
+          ? ` 정산서 이름 ${lineCount}줄을 저장했습니다. 주별·월별은 그 주 주정산과 같은 이름만 매출로 봅니다.`
+          : '';
         showToast(replaced
-          ? `${platformLabel(platform)} 계산서 ${fresh}건 추가, 같은 파일 ${replaced}건만 바꿨습니다. 다른 파일은 그대로입니다.`
-          : `${platformLabel(platform)} 계산서 ${fresh}건을 추가했습니다. 먼저 올린 파일은 그대로입니다.`);
+          ? `${platformLabel(platform)} 계산서 ${fresh}건 추가, 같은 파일 ${replaced}건만 바꿨습니다. 다른 파일은 그대로입니다.${lineNote}`
+          : `${platformLabel(platform)} 계산서 ${fresh}건을 추가했습니다. 먼저 올린 파일은 그대로입니다.${lineNote}`);
       } catch (error) {
         errors.push(error.message || '저장에 실패했습니다.');
       }
@@ -502,12 +516,142 @@ const BremTaxInvoiceAdmin = (function () {
     ));
   }
 
-  function monthDetailRows(platform, month) {
-    return monthSourceRows(platform, month).slice().sort((a, b) => (
+  function settlementParts(value) {
+    const raw = String(value || '').replace(/\.(xlsx|xls)$/i, '').trim();
+    const compact = raw.replace(/[\s_\-–—+]+/g, '').toLowerCase();
+    const tokens = raw
+      .split(/[\s_\-–—+]+/)
+      .map(part => part.trim().toLowerCase())
+      .filter(part => part.length >= 2 && !/^\d+$/.test(part));
+    return { compact, tokens };
+  }
+
+  function addRegionToken(set, value) {
+    settlementParts(value).tokens.forEach(token => {
+      if (/라이더스$/.test(token)) return;
+      if (token === '브램' || token === '쿠팡' || token === '배민' || token === '정산서') return;
+      set.add(token);
+    });
+  }
+
+  function weeklyCoupangKeys(weekStart) {
+    const entries = [];
+    const weekly = window.BremWeeklySettlement;
+    ['bro', 'direct'].forEach(channel => {
+      const list = window.BremStorage?.weeklySettlements?.getAll?.(channel) || [];
+      list.forEach(item => {
+        const platform = String(item?.platform || '').toLowerCase();
+        if (platform && platform !== 'coupang') return;
+        const start = String(
+          item.weekStart
+          || weekly?.baeminWeekStartKey?.(item.startDate || item.baseSettlementDate || '')
+          || ''
+        ).slice(0, 10);
+        if (!weekStart || !start || start !== weekStart) return;
+        const names = [
+          item.fileName,
+          ...(item.fileNames || []),
+          ...(item.sourceParts || []).map(part => part?.fileName)
+        ].filter(Boolean);
+        const regionTokens = new Set();
+        addRegionToken(regionTokens, item.region);
+        names.forEach(name => addRegionToken(regionTokens, weekly?.parseCoupangFileName?.(name)?.region));
+        const compacts = names
+          .map(name => settlementParts(name).compact)
+          .filter(compact => compact.length >= 4);
+        if (!regionTokens.size && !compacts.length) return;
+        entries.push({ regionTokens: [...regionTokens], compacts });
+      });
+    });
+    return entries;
+  }
+
+  function settlementNameMatches(name, entries) {
+    const id = settlementParts(name);
+    if (!id.compact || !entries?.length) return false;
+    return entries.some(entry => {
+      if (entry.compacts.includes(id.compact)) return true;
+      return entry.regionTokens.some(token => id.compact === token || id.tokens.includes(token));
+    });
+  }
+
+  const COUPANG_SALES_FIELDS = [
+    { key: 'supplyAmount', label: '공급가액' },
+    { key: 'vatAmount', label: '부가세' },
+    { key: 'subtotal', label: '합계금액' },
+    { key: 'totalInsurance', label: '보험료합계' },
+    { key: 'netPay', label: '실지급액' }
+  ];
+
+  function salesFields(platform) {
+    return platform === 'coupang' ? COUPANG_SALES_FIELDS : fieldsFor(platform);
+  }
+
+  function coupangLineRows(file, keySet) {
+    const lines = Array.isArray(file?.lines) ? file.lines : [];
+    const matched = lines.filter(line => settlementNameMatches(line?.name, keySet));
+    if (matched.length) {
+      return matched.map(line => ({
+        ...line,
+        platform: 'coupang',
+        weekStart: file.weekStart,
+        region: line.name,
+        fileName: file.fileName || ''
+      }));
+    }
+    if (!lines.length && (
+      settlementNameMatches(file?.region, keySet)
+      || settlementNameMatches(file?.fileName, keySet)
+    )) {
+      return [file];
+    }
+    return [];
+  }
+
+  function coupangSalesRowsForWeek(weekStart) {
+    const keySet = weeklyCoupangKeys(weekStart);
+    return readList()
+      .filter(item => item.platform === 'coupang' && item.weekStart === weekStart)
+      .flatMap(file => coupangLineRows(file, keySet));
+  }
+
+  function sortInvoiceRows(list) {
+    return list.slice().sort((a, b) => (
       String(a.weekStart || '').localeCompare(String(b.weekStart || ''))
       || String(a.region || '').localeCompare(String(b.region || ''), 'ko')
       || String(a.fileName || '').localeCompare(String(b.fileName || ''), 'ko')
     ));
+  }
+
+  function monthDetailRows(platform, month) {
+    if (platform === 'coupang') {
+      const weeks = [...new Set(
+        monthSourceRows(platform, month).map(row => row.weekStart).filter(Boolean)
+      )];
+      return sortInvoiceRows(weeks.flatMap(weekStart => coupangSalesRowsForWeek(weekStart)));
+    }
+    return sortInvoiceRows(monthSourceRows(platform, month));
+  }
+
+  function weekSalesRows(platform, weekStart) {
+    if (platform === 'coupang') return sortInvoiceRows(coupangSalesRowsForWeek(weekStart));
+    return sortInvoiceRows(
+      readList().filter(item => item.platform === platform && item.weekStart === weekStart)
+    );
+  }
+
+  function coupangSkippedCount(weekStart) {
+    const keySet = weeklyCoupangKeys(weekStart);
+    return readList()
+      .filter(item => item.platform === 'coupang' && item.weekStart === weekStart)
+      .reduce((sum, file) => {
+        const lines = Array.isArray(file.lines) ? file.lines : [];
+        if (!lines.length) {
+          const kept = settlementNameMatches(file.region, keySet) || settlementNameMatches(file.fileName, keySet);
+          return sum + (kept ? 0 : 1);
+        }
+        return sum + lines.filter(line => !settlementNameMatches(line.name, keySet)).length;
+      }, 0);
   }
 
   function weekLabel(weekStart) {
@@ -551,9 +695,9 @@ const BremTaxInvoiceAdmin = (function () {
     const baeminTotal = $('#taxInvoiceMonthHead-baemin-supplyTotal');
     if (baeminTotal) baeminTotal.textContent = fee ? '계산서 금액' : '공급대가';
     const coupangSum = $('#taxInvoiceMonthHead-coupang-subtotal');
-    if (coupangSum) coupangSum.textContent = fee ? '계산서 금액' : '합계';
+    if (coupangSum) coupangSum.textContent = fee ? '계산서 금액' : '합계금액';
     const coupangNet = $('#taxInvoiceMonthHead-coupang-netPay');
-    if (coupangNet) coupangNet.textContent = fee ? '실지급액' : '총실지급액';
+    if (coupangNet) coupangNet.textContent = '실지급액';
     const button = $('#taxInvoiceMonthFeeBtn');
     if (button) {
       button.textContent = fee ? '2% 계산식 해제' : '2% 계산식 적용';
@@ -561,17 +705,16 @@ const BremTaxInvoiceAdmin = (function () {
     }
   }
 
-  function renderMonthTable(platform) {
-    const body = $(`#taxInvoiceMonthRows-${platform}`);
+  function renderInvoiceRows(platform, rows, options) {
+    const body = $(options.bodySelector);
     if (!body) return { rows: [], weeks: [] };
-    const month = ensureMonth();
-    const fields = fieldsFor(platform);
-    const rows = monthDetailRows(platform, month);
+    const feeApplied = Boolean(options.feeApplied);
+    const fields = options.fields || fieldsFor(platform);
     const weeks = [...new Set(rows.map(row => row.weekStart))].filter(Boolean).sort();
     const netCol = hasNetPay(platform) ? 2 : 0;
     const colSpan = fields.length + 3 + netCol;
     if (!rows.length) {
-      body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">${formatMonthLabel(month)}에 등록된 ${platformLabel(platform)} 계산서가 없습니다.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">${escapeHtml(options.emptyText || '등록된 계산서가 없습니다.')}</td></tr>`;
       return { rows, weeks };
     }
     const totals = {};
@@ -579,13 +722,13 @@ const BremTaxInvoiceAdmin = (function () {
     let netTotal = 0;
     let insuranceTotal = 0;
     body.innerHTML = rows.map(row => {
-      fields.forEach(field => { totals[field.key] += shownAmount(platform, row, field); });
-      const net = shownNet(platform, row);
+      fields.forEach(field => { totals[field.key] += shownAmount(platform, row, field, feeApplied); });
+      const net = shownNet(platform, row, feeApplied);
       const insurance = hasNetPay(platform) ? baeminInsuranceSum(row) : 0;
       netTotal += net;
       insuranceTotal += insurance;
       const amountCells = fields.map(field => (
-        `<td class="weekly-amount-cell">${formatMoney(shownAmount(platform, row, field))}</td>`
+        `<td class="weekly-amount-cell">${formatMoney(shownAmount(platform, row, field, feeApplied))}</td>`
       )).join('');
       const insuranceCell = hasNetPay(platform)
         ? `<td class="weekly-amount-cell">${formatMoney(insurance)}</td>`
@@ -620,6 +763,18 @@ const BremTaxInvoiceAdmin = (function () {
     return { rows, weeks };
   }
 
+  function renderMonthTable(platform) {
+    const month = ensureMonth();
+    return renderInvoiceRows(platform, monthDetailRows(platform, month), {
+      bodySelector: `#taxInvoiceMonthRows-${platform}`,
+      feeApplied: monthState.feeApplied,
+      fields: salesFields(platform),
+      emptyText: platform === 'coupang'
+        ? `${formatMonthLabel(month)}에 주정산과 맞는 쿠팡 매출이 없습니다.`
+        : `${formatMonthLabel(month)}에 등록된 ${platformLabel(platform)} 계산서가 없습니다.`
+    });
+  }
+
   function renderMonthly() {
     const month = ensureMonth();
     const label = $('#taxInvoiceMonthLabel');
@@ -637,10 +792,15 @@ const BremTaxInvoiceAdmin = (function () {
     }
     const summary = $('#taxInvoiceMonthSummary');
     if (summary) {
+      const weeksInMonth = [...new Set(monthSourceRows('coupang', month).map(row => row.weekStart).filter(Boolean))];
+      const skipped = weeksInMonth.reduce((sum, weekStart) => sum + coupangSkippedCount(weekStart), 0);
       summary.textContent = `배민 ${baemin.rows.length}건 · 쿠팡 ${coupang.rows.length}건`
         + (monthState.feeApplied
           ? ' · 2% 적용 중. 계산서 금액은 공급가액·부가세에서 2%를 뺀 합입니다.'
-          : ' · 등록한 계산서를 주차별로 그대로 보여 줍니다. 배민 실지급액은 공급대가에서 보험 5항목을 뺀 값입니다.');
+          : ' · 등록한 계산서를 주차별로 그대로 보여 줍니다. 배민 실지급액은 공급대가에서 보험 5항목을 뺀 값입니다.')
+        + (skipped
+          ? ` · 쿠팡은 C열 정산서 이름이 주정산과 같은 줄만 넣었습니다. 그 외 ${skipped}줄은 뺐습니다.`
+          : ' · 쿠팡은 주정산서 이름과 맞는 매출만 합산합니다.');
     }
     const exportBtn = $('#taxInvoiceMonthExportBtn');
     if (exportBtn) exportBtn.disabled = !baemin.rows.length && !coupang.rows.length;
@@ -718,7 +878,7 @@ const BremTaxInvoiceAdmin = (function () {
       const list = monthDetailRows(platform, month).filter(row => row.weekStart === weekStart);
       grouped[platform] = list;
       if (!list.length) return;
-      const fields = fieldsFor(platform);
+      const fields = salesFields(platform);
       rows.push([]);
       rows.push([platformLabel(platform)]);
       rows.push([
@@ -735,7 +895,6 @@ const BremTaxInvoiceAdmin = (function () {
           ...(hasNetPay(platform) ? [baeminInsuranceSum(row), shownNet(platform, row, false)] : [])
         ]);
       });
-      if (platform === 'coupang') return;
       const totals = fields.map(field => list.reduce((sum, row) => sum + shownAmount(platform, row, field, false), 0));
       if (hasNetPay(platform)) {
         totals.push(list.reduce((sum, row) => sum + baeminInsuranceSum(row), 0));
@@ -828,6 +987,131 @@ const BremTaxInvoiceAdmin = (function () {
     renderMonthly();
   }
 
+  function paintSalesWeek(value) {
+    const picker = typeof BremDatePicker !== 'undefined' ? BremDatePicker : null;
+    const hidden = $('#taxInvoiceWeekView');
+    const button = $('#taxInvoiceWeekViewBtn');
+    const range = $('#taxInvoiceWeekViewRange');
+    const normalized = picker?.applyWeekWednesday?.(value || picker.weekStartKey()) || String(value || '').slice(0, 10);
+    weekViewState.weekStart = normalized;
+    if (hidden) hidden.value = normalized;
+    if (button) {
+      const weekday = picker?.formatWeekdayKo?.(normalized);
+      button.textContent = weekday && picker.formatDate
+        ? `${picker.formatDate(normalized)}(${weekday})`
+        : (normalized || '수요일 선택');
+    }
+    if (range) range.textContent = picker?.formatWednesdayWeekRangeLong?.(normalized) || weekLabel(normalized);
+    return normalized;
+  }
+
+  function ensureSalesWeek() {
+    const current = weekViewState.weekStart || $('#taxInvoiceWeekView')?.value || '';
+    return paintSalesWeek(current || (typeof BremDatePicker !== 'undefined' ? BremDatePicker.weekStartKey() : ''));
+  }
+
+  function paintWeekViewHeaders() {
+    const fee = weekViewState.feeApplied;
+    const baeminTotal = $('#taxInvoiceWeekViewHead-baemin-supplyTotal');
+    if (baeminTotal) baeminTotal.textContent = fee ? '계산서 금액' : '공급대가';
+    const coupangSum = $('#taxInvoiceWeekViewHead-coupang-subtotal');
+    if (coupangSum) coupangSum.textContent = fee ? '계산서 금액' : '합계금액';
+    const coupangNet = $('#taxInvoiceWeekViewHead-coupang-netPay');
+    if (coupangNet) coupangNet.textContent = '실지급액';
+    const button = $('#taxInvoiceWeekViewFeeBtn');
+    if (button) {
+      button.textContent = fee ? '2% 계산식 해제' : '2% 계산식 적용';
+      button.classList.toggle('active', fee);
+    }
+  }
+
+  function renderWeekly() {
+    const weekStart = ensureSalesWeek();
+    const baemin = renderInvoiceRows('baemin', weekSalesRows('baemin', weekStart), {
+      bodySelector: '#taxInvoiceWeekViewRows-baemin',
+      feeApplied: weekViewState.feeApplied,
+      emptyText: '이 주차에 등록된 배민 계산서가 없습니다.'
+    });
+    const coupang = renderInvoiceRows('coupang', weekSalesRows('coupang', weekStart), {
+      bodySelector: '#taxInvoiceWeekViewRows-coupang',
+      feeApplied: weekViewState.feeApplied,
+      fields: salesFields('coupang'),
+      emptyText: '이 주차에 주정산과 맞는 쿠팡 매출이 없습니다.'
+    });
+    paintWeekViewHeaders();
+    const summary = $('#taxInvoiceWeekViewSummary');
+    if (summary) {
+      const skipped = coupangSkippedCount(weekStart);
+      summary.textContent = `${weekLabel(weekStart)} · 배민 ${baemin.rows.length}건 · 쿠팡 ${coupang.rows.length}건`
+        + (weekViewState.feeApplied
+          ? ' · 2% 적용 중. 계산서 금액은 공급가액·부가세에서 2%를 뺀 합입니다.'
+          : ' · 이 정산주 계산서입니다.')
+        + (skipped
+          ? ` · 쿠팡은 C열 정산서 이름이 주정산과 같은 줄만 넣었습니다. 그 외 ${skipped}줄은 뺐습니다.`
+          : ' · 쿠팡은 주정산서 이름과 맞는 매출만 합산합니다.');
+    }
+    const exportBtn = $('#taxInvoiceWeekViewExportBtn');
+    if (exportBtn) exportBtn.disabled = !baemin.rows.length && !coupang.rows.length;
+  }
+
+  function shiftSalesWeek(delta) {
+    const picker = typeof BremDatePicker !== 'undefined' ? BremDatePicker : null;
+    const current = ensureSalesWeek();
+    const date = new Date(`${current}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return;
+    date.setDate(date.getDate() + (delta * 7));
+    paintSalesWeek(picker?.applyWeekWednesday?.(dateKeyFromDate(date)) || dateKeyFromDate(date));
+    renderWeekly();
+  }
+
+  async function exportSalesWeek(useFee) {
+    const fee = useFee === true || (useFee == null && weekViewState.feeApplied);
+    const weekStart = ensureSalesWeek();
+    const month = String(weekStart || '').slice(0, 7);
+    const built = weekSheetRows(weekStart, month, fee);
+    if (built.rows.length <= 1) {
+      showToast('이 주차에 보낼 계산서가 없습니다.');
+      return;
+    }
+    const filename = fee ? `계산서주별_2퍼센트_${weekStart}.xlsx` : `계산서주별_${weekStart}.xlsx`;
+    let writer = window.XLSX;
+    try {
+      writer = await loadStyleWriter();
+    } catch (error) {
+      writer = window.XLSX;
+    }
+    const ok = writeWorkbook(filename, [{
+      name: weekSheetName(weekStart),
+      rows: built.rows,
+      titleRows: built.titleRows
+    }], writer);
+    if (ok) {
+      showToast(fee
+        ? `${weekLabel(weekStart)} 계산서를 보냈습니다. 쿠팡은 주정산서 이름과 같은 줄만 들어 있고, 2% 계산은 그 주 합계에 공식을 적용한 값입니다.`
+        : `${weekLabel(weekStart)} 계산서를 보냈습니다. 쿠팡은 주정산서 이름과 같은 줄만 들어 있습니다.`);
+    }
+  }
+
+  async function reloadWeekly() {
+    try {
+      await window.BremStorage?.ensureSectionLoaded?.('tax-invoice-weekly', { force: true });
+    } catch (error) {
+      showToast(error.message || '불러오지 못했습니다.');
+    }
+    renderWeekly();
+    showToast('계산서 주별을 불러왔습니다.');
+  }
+
+  function refreshWeekly() {
+    ensureSalesWeek();
+    renderWeekly();
+  }
+
+  function onSalesWeekPicked(value) {
+    paintSalesWeek(value);
+    renderWeekly();
+  }
+
   function bind() {
     if (bind.done) return;
     bind.done = true;
@@ -857,6 +1141,15 @@ const BremTaxInvoiceAdmin = (function () {
       renderMonthly();
     });
     $('#taxInvoiceMonthFeeExportBtn')?.addEventListener('click', () => exportMonth(true));
+    $('#taxInvoiceWeekViewPrevBtn')?.addEventListener('click', () => shiftSalesWeek(-1));
+    $('#taxInvoiceWeekViewNextBtn')?.addEventListener('click', () => shiftSalesWeek(1));
+    $('#taxInvoiceWeekViewReloadBtn')?.addEventListener('click', () => { void reloadWeekly(); });
+    $('#taxInvoiceWeekViewExportBtn')?.addEventListener('click', () => { void exportSalesWeek(false); });
+    $('#taxInvoiceWeekViewFeeBtn')?.addEventListener('click', () => {
+      weekViewState.feeApplied = !weekViewState.feeApplied;
+      renderWeekly();
+    });
+    $('#taxInvoiceWeekViewFeeExportBtn')?.addEventListener('click', () => { void exportSalesWeek(true); });
     setupMonthPicker();
     document.addEventListener('click', event => {
       const button = event.target.closest('[data-tax-invoice-delete]');
@@ -867,7 +1160,7 @@ const BremTaxInvoiceAdmin = (function () {
 
   bind();
 
-  return { refresh, refreshMonthly, onWeekPicked };
+  return { refresh, refreshMonthly, refreshWeekly, onWeekPicked, onSalesWeekPicked };
 })();
 
 window.BremTaxInvoiceAdmin = BremTaxInvoiceAdmin;

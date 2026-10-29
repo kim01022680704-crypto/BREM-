@@ -167,6 +167,7 @@
         <button class="nav-btn" data-section="tax-management">세무관리</button>
         <button class="nav-btn" data-section="tax-invoice-management">계산서 관리</button>
         <button class="nav-btn" data-section="tax-invoice-monthly">계산서 월별</button>
+        <button class="nav-btn" data-section="tax-invoice-weekly">계산서 주별</button>
         <button class="nav-btn" data-section="driver-management">기사관리</button>
         <button class="nav-btn" type="button" data-section="driver-detail-search">기사상세검색</button>
         <button class="nav-btn" data-section="inactive-drivers">비활성기사</button>
@@ -6044,7 +6045,7 @@
                 <button type="button" class="small-btn" id="taxInvoiceReloadBtn-coupang">불러오기</button>
               </div>
             </div>
-            <p class="form-help">수요일 기준 한 주입니다. 파일마다 공급가액 <strong>F19</strong>, 부가세 <strong>G19</strong>, 총합계금액 <strong>H19</strong>, 총보험료 <strong>I19</strong>, 총실지급액 <strong>J19</strong>를 읽습니다. <strong>합계</strong>는 공급가액과 부가세를 더한 값입니다. 비밀번호는 주정산서와 같고, <strong>엑셀은 여러 개를 한 번에</strong> 고를 수 있습니다. 한 지역에 기간이 나뉜 파일이 두 개면 고른 정산주에 둘 다 남고 합계에 더합니다. 같은 파일 이름을 다시 올리면 그 줄만 바뀝니다.</p>
+            <p class="form-help">수요일 기준 한 주입니다. 이 화면 합계는 파일 전체(F19~J19)입니다. 본문 <strong>C열 정산서 이름</strong>과 그 줄의 공급가액·부가세·보험료·실지급액도 같이 저장합니다. 주별·월별 매출은 그 이름이 우리 주정산과 같은 줄만 씁니다. 비밀번호는 주정산서와 같고, <strong>엑셀은 여러 개를 한 번에</strong> 고를 수 있습니다. 같은 파일 이름을 다시 올리면 그 파일만 바뀝니다.</p>
             <form id="taxInvoiceForm-coupang" class="weekly-settlement-form">
               <div class="promotion-form-grid">
                 <label class="settlement-week-filter">
@@ -6105,7 +6106,7 @@
               <button type="button" class="small-btn" id="taxInvoiceMonthFeeExportBtn">엑셀 2%적용보내기</button>
             </div>
           </div>
-          <p class="form-help">정산주(수요일)가 속한 달의 계산서를 <strong>주차·파일마다 그대로</strong> 보여 줍니다. <strong>2% 계산식 적용</strong>을 누르면 공급가액·부가세에서 2%를 뺀 합이 <strong>계산서 금액</strong>이 됩니다. 배민 실지급액은 그 계산서 금액에서 시간제·고용·산재 보험을 뺀 값이고, 쿠팡 실지급액은 계산서 금액에서 총보험료를 뺀 값입니다.</p>
+          <p class="form-help">정산주(수요일)가 속한 달의 계산서를 <strong>주차마다</strong> 보여 줍니다. <strong>2% 계산식 적용</strong>을 누르면 공급가액·부가세에서 2%를 뺀 합이 <strong>계산서 금액</strong>이 됩니다. 배민 실지급액은 그 계산서 금액에서 시간제·고용·산재 보험을 뺀 값이고, 쿠팡 실지급액은 계산서 금액에서 보험료합계를 뺀 값입니다. 쿠팡은 계산서 <strong>C열 정산서 이름</strong>이 그 주 주정산과 같은 줄만 매출에 넣습니다.</p>
           <label class="settlement-week-filter">
             <span class="coupang-week-picker-inline">
               <button type="button" class="small-btn" id="taxInvoiceMonthPrevBtn" title="이전 달">&lt;&lt;</button>
@@ -6153,10 +6154,9 @@
                   <th>파일</th>
                   <th class="weekly-amount-cell">공급가액</th>
                   <th class="weekly-amount-cell">부가세</th>
-                  <th class="weekly-amount-cell" id="taxInvoiceMonthHead-coupang-subtotal">합계</th>
-                  <th class="weekly-amount-cell">총합계금액</th>
-                  <th class="weekly-amount-cell">총보험료</th>
-                  <th class="weekly-amount-cell" id="taxInvoiceMonthHead-coupang-netPay">총실지급액</th>
+                  <th class="weekly-amount-cell" id="taxInvoiceMonthHead-coupang-subtotal">합계금액</th>
+                  <th class="weekly-amount-cell">보험료합계</th>
+                  <th class="weekly-amount-cell" id="taxInvoiceMonthHead-coupang-netPay">실지급액</th>
                 </tr>
               </thead>
               <tbody id="taxInvoiceMonthRows-coupang"></tbody>
@@ -6176,6 +6176,75 @@
           </div>
           <p class="calendar-help">계산서를 합산할 달을 선택하세요. 정산주(수요일)가 이 달인 주차가 들어갑니다.</p>
         </div>
+      </section>
+
+      <section class="section" id="tax-invoice-weekly">
+        <article class="card">
+          <div class="card-header">
+            <h2>계산서 주별</h2>
+            <div class="promotion-form-actions">
+              <button type="button" class="small-btn" id="taxInvoiceWeekViewFeeBtn">2% 계산식 적용</button>
+              <button type="button" class="small-btn" id="taxInvoiceWeekViewReloadBtn">불러오기</button>
+              <button type="button" class="small-btn" id="taxInvoiceWeekViewExportBtn" disabled>엑셀보내기</button>
+              <button type="button" class="small-btn" id="taxInvoiceWeekViewFeeExportBtn">엑셀 2%적용보내기</button>
+            </div>
+          </div>
+          <p class="form-help">고른 정산주(수~화)의 계산서를 배민·쿠팡으로 보여 줍니다. <strong>2% 계산식 적용</strong>은 월별과 같습니다. 쿠팡은 계산서 <strong>C열 정산서 이름</strong>이 그 주 주정산(브로·직계약)과 같은 줄만 넣고, 공급가액·부가세·합계금액·보험료합계·실지급액만 봅니다.</p>
+          <label class="settlement-week-filter">
+            <span>정산주 (수요일)</span>
+            <span class="coupang-week-picker-inline">
+              <button type="button" class="small-btn" id="taxInvoiceWeekViewPrevBtn" title="이전 주">&lt;&lt;</button>
+              <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="tax-invoice-week-view" id="taxInvoiceWeekViewBtn">수요일 선택</button>
+              <button type="button" class="small-btn" id="taxInvoiceWeekViewNextBtn" title="다음 주">&gt;&gt;</button>
+            </span>
+            <input type="hidden" id="taxInvoiceWeekView">
+          </label>
+          <p class="settlement-week-range-label" id="taxInvoiceWeekViewRange"></p>
+          <p class="direct-inline-stats" id="taxInvoiceWeekViewSummary">주를 고르면 그 주 계산서를 보여 줍니다.</p>
+
+          <h3 class="tax-management-step__title">배민</h3>
+          <div class="table-wrap direct-scroll">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>주차</th>
+                  <th>지역</th>
+                  <th>파일</th>
+                  <th class="weekly-amount-cell">공급가액</th>
+                  <th class="weekly-amount-cell">부가세액</th>
+                  <th class="weekly-amount-cell" id="taxInvoiceWeekViewHead-baemin-supplyTotal">공급대가</th>
+                  <th class="weekly-amount-cell">시간제보험</th>
+                  <th class="weekly-amount-cell">사업주부담 고용보험</th>
+                  <th class="weekly-amount-cell">라이더부담 고용보험</th>
+                  <th class="weekly-amount-cell">사업주부담 산재보험</th>
+                  <th class="weekly-amount-cell">라이더부담 산재보험</th>
+                  <th class="weekly-amount-cell">보험료합계</th>
+                  <th class="weekly-amount-cell">실지급액</th>
+                </tr>
+              </thead>
+              <tbody id="taxInvoiceWeekViewRows-baemin"></tbody>
+            </table>
+          </div>
+
+          <h3 class="tax-management-step__title">쿠팡</h3>
+          <div class="table-wrap direct-scroll">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>주차</th>
+                  <th>지역</th>
+                  <th>파일</th>
+                  <th class="weekly-amount-cell">공급가액</th>
+                  <th class="weekly-amount-cell">부가세</th>
+                  <th class="weekly-amount-cell" id="taxInvoiceWeekViewHead-coupang-subtotal">합계금액</th>
+                  <th class="weekly-amount-cell">보험료합계</th>
+                  <th class="weekly-amount-cell" id="taxInvoiceWeekViewHead-coupang-netPay">실지급액</th>
+                </tr>
+              </thead>
+              <tbody id="taxInvoiceWeekViewRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
       </section>
 
       <section class="section" id="promotion-apply">
@@ -9974,7 +10043,7 @@
   <script src="js/storage-supabase-mapper.js?v=20261009missionassign1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20261004rebase1"></script>
-  <script src="js/storage.js?v=20261028invoice4"></script>
+  <script src="js/storage.js?v=20261029week2"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js?v=20261025inq9"></script>
@@ -10024,8 +10093,8 @@
   <script src="js/final-deposit.js?v=20261015regionprepaid1"></script>
   <script src="js/withdrawal-management-admin.js?v=20261003wd2"></script>
   <script src="js/tax-management-admin.js?v=20261001tax1"></script>
-  <script src="js/tax-invoice-parse.js?v=20261028invoice13"></script>
-  <script src="js/tax-invoice-admin.js?v=20261028invoice19"></script>
+  <script src="js/tax-invoice-parse.js?v=20261029week2"></script>
+  <script src="js/tax-invoice-admin.js?v=20261029week2"></script>
   <script src="js/coupang-region-match.js?v=20261013zmatch1"></script>
   <script src="js/driver-management-admin.js?v=20261025panel1"></script>
   <script src="js/driver-detail-search.js?v=20261029search1"></script>
@@ -10042,9 +10111,9 @@
   <script src="js/admin-mission-assignment.js?v=20261010missionkeep1"></script>
   <script src="js/table-sort.js"></script>
     <script src="js/admin-work-requests.js?v=20260927req8"></script>
-    <script src="js/admin.js?v=20261028invoice4"></script>
+    <script src="js/admin.js?v=20261029week2"></script>
   <script src="js/admin-driver-popups.js?v=20261029edit2" defer></script>
-  <script src="js/admin-sidebar-groups.js?v=20261028invoice4" defer></script>
+  <script src="js/admin-sidebar-groups.js?v=20261029week2" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

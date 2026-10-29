@@ -107,6 +107,57 @@ const BremTaxInvoiceParse = (function () {
     return { amounts, found, ok: Boolean(anchor && found > 0) };
   }
 
+  function cellPosition(address) {
+    const match = /^([A-Z]+)(\d+)$/.exec(String(address || ''));
+    if (!match) return null;
+    return { col: match[1], row: Number(match[2]) };
+  }
+
+  function isCoupangTotalLabel(value) {
+    const text = String(value || '').replace(/\s+/g, '');
+    if (!text) return true;
+    return /^(합계|총계|총합계|소계|공급가액합계|부가세합계|정산서|정산서명|이름)$/.test(text);
+  }
+
+  /**
+   * 쿠팡 계산서 본문. C열은 정산서 이름, F~J는 그 줄 금액.
+   * 19행은 파일 전체 합계라 매출 줄에서 뺀다.
+   */
+  function extractCoupangLines(cells) {
+    const rows = new Map();
+    Object.keys(cells || {}).forEach(address => {
+      const pos = cellPosition(address);
+      if (!pos) return;
+      if (!rows.has(pos.row)) rows.set(pos.row, {});
+      rows.get(pos.row)[pos.col] = cells[address];
+    });
+    const lines = [];
+    [...rows.keys()].sort((a, b) => a - b).forEach(rowNo => {
+      if (rowNo === 19) return;
+      const cols = rows.get(rowNo);
+      const name = String(cols.C ?? '').trim();
+      if (isCoupangTotalLabel(name)) return;
+      const supply = parseMoney(cols.F);
+      const vat = parseMoney(cols.G);
+      const insurance = parseMoney(cols.I);
+      const net = parseMoney(cols.J);
+      if (supply == null && vat == null && insurance == null && net == null) return;
+      const supplyAmount = supply || 0;
+      const vatAmount = vat || 0;
+      const totalInsurance = insurance || 0;
+      const subtotal = supplyAmount + vatAmount;
+      lines.push({
+        name,
+        supplyAmount,
+        vatAmount,
+        subtotal,
+        totalInsurance,
+        netPay: net == null ? subtotal - totalInsurance : net
+      });
+    });
+    return lines;
+  }
+
   function extractCoupang(cells) {
     const amounts = {};
     let found = 0;
@@ -154,6 +205,7 @@ const BremTaxInvoiceParse = (function () {
     coupangNetPayAfterFee,
     extractBaemin,
     extractCoupang,
+    extractCoupangLines,
     pickSheet
   };
 })();
