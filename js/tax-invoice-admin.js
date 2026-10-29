@@ -123,6 +123,10 @@ const BremTaxInvoiceAdmin = (function () {
   }
 
   function render(platform) {
+    if (platform === 'coupang') {
+      renderCoupangManagement();
+      return;
+    }
     const body = $(`#taxInvoiceRows-${platform}`);
     const summary = $(`#taxInvoiceSummary-${platform}`);
     if (!body) return;
@@ -184,6 +188,58 @@ const BremTaxInvoiceAdmin = (function () {
     </tr>`);
     if (summary) {
       summary.textContent = `${platformLabel(platform)} ${rows.length}건 · 한 지역에 파일이 여러 개면 전부 남고 합계에 더합니다. 같은 파일 이름만 다시 올리면 그 줄이 바뀝니다.`;
+    }
+  }
+
+  function renderCoupangManagement() {
+    const body = $('#taxInvoiceRows-coupang');
+    const summary = $('#taxInvoiceSummary-coupang');
+    if (!body) return;
+    const fields = salesFields('coupang');
+    const colSpan = fields.length + 3;
+    const weekStart = ensureWeek('coupang');
+    const files = weekRows('coupang');
+    if (!files.length) {
+      body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">이 주차에 등록된 쿠팡 계산서가 없습니다.</td></tr>`;
+      if (summary) summary.textContent = '엑셀을 고르고 비밀번호를 입력한 뒤 「엑셀 등록」을 누르세요.';
+      return;
+    }
+    const rows = coupangSalesRowsForWeek(weekStart);
+    const storedLines = files.reduce((sum, file) => sum + (Array.isArray(file.lines) ? file.lines.length : 0), 0);
+    if (!rows.length) {
+      const note = storedLines
+        ? '올린 계산서에 이 주 주정산과 같은 정산서 이름이 없습니다.'
+        : '지금 등록분은 파일 전체 합계만 있습니다. 쿠팡 계산서를 다시 등록하면 C열 정산서 이름 줄만 읽습니다.';
+      body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">${escapeHtml(note)}</td></tr>`;
+      if (summary) summary.textContent = note;
+      return;
+    }
+    const totals = {};
+    fields.forEach(field => { totals[field.key] = 0; });
+    body.innerHTML = rows.map(row => {
+      fields.forEach(field => { totals[field.key] += Number(row[field.key] || 0); });
+      const amountCells = fields.map(field => (
+        `<td class="weekly-amount-cell">${formatMoney(row[field.key])}</td>`
+      )).join('');
+      return `<tr>
+        <td>${escapeHtml(row.region || '-')}</td>
+        <td>${escapeHtml(row.fileName || '-')}</td>
+        ${amountCells}
+        <td><button type="button" class="small-btn danger-btn" data-tax-invoice-delete="${escapeHtml(row.id)}" title="이 계산서 파일 삭제">삭제</button></td>
+      </tr>`;
+    }).join('');
+    const totalCells = fields.map(field => (
+      `<td class="weekly-amount-cell">${formatMoney(totals[field.key])}</td>`
+    )).join('');
+    body.insertAdjacentHTML('beforeend', `<tr>
+      <td colspan="2"><strong>합계 ${rows.length}줄</strong></td>
+      ${totalCells}
+      <td></td>
+    </tr>`);
+    if (summary) {
+      const skipped = coupangSkippedCount(weekStart);
+      summary.textContent = `주정산과 같은 정산서 ${rows.length}줄`
+        + (skipped ? ` · 그 외 ${skipped}줄은 뺐습니다.` : ' · 파일 전체 합계는 넣지 않습니다.');
     }
   }
 
@@ -261,11 +317,13 @@ const BremTaxInvoiceAdmin = (function () {
       }
       throw new Error('공급가액 B31, 부가세액 C31, 공급대가 D31 칸을 읽지 못했습니다.');
     }
-    const lines = platform === 'coupang'
-      ? (parse.extractCoupangLines?.(
-        (sheets.find(sheet => sheet.name === picked.sheetName) || sheets[0])?.cells
-      ) || [])
-      : [];
+    let lines = [];
+    if (platform === 'coupang') {
+      sheets.forEach(sheet => {
+        const found = parse.extractCoupangLines?.(sheet?.cells) || [];
+        if (found.length > lines.length) lines = found;
+      });
+    }
     return {
       region: guessRegion(file.name, platform),
       fileName: file.name,
@@ -457,20 +515,28 @@ const BremTaxInvoiceAdmin = (function () {
   }
 
   function exportWeek(platform) {
-    const rows = weekRows(platform);
+    const weekStart = ensureWeek(platform);
+    const rows = platform === 'coupang' ? coupangSalesRowsForWeek(weekStart) : weekRows(platform);
     if (!rows.length) {
-      showToast('이 주차에 보낼 계산서가 없습니다.');
+      showToast(platform === 'coupang'
+        ? '이 주차에 주정산과 맞는 쿠팡 정산서가 없습니다. 계산서를 다시 등록해 주세요.'
+        : '이 주차에 보낼 계산서가 없습니다.');
       return;
     }
-    const fields = fieldsFor(platform);
-    const header = amountHeaders(platform);
-    const body = rows.map(row => [row.region || '', row.fileName || '', ...amountLine(platform, row)]);
+    const fields = platform === 'coupang' ? salesFields(platform) : fieldsFor(platform);
+    const header = platform === 'coupang'
+      ? ['정산서', '파일', ...fields.map(field => field.label)]
+      : amountHeaders(platform);
+    const body = rows.map(row => (
+      platform === 'coupang'
+        ? [row.region || '', row.fileName || '', ...fields.map(field => Number(row[field.key] || 0))]
+        : [row.region || '', row.fileName || '', ...amountLine(platform, row)]
+    ));
     const totals = fields.map(field => rows.reduce((sum, row) => sum + Number(row[field.key] || 0), 0));
     if (hasNetPay(platform)) {
       totals.push(rows.reduce((sum, row) => sum + baeminInsuranceSum(row), 0));
       totals.push(rows.reduce((sum, row) => sum + baeminNetPay(row), 0));
     }
-    const weekStart = ensureWeek(platform);
     const ok = writeWorkbook(`계산서_${platformLabel(platform)}_${weekStart}.xlsx`, [{
       name: platformLabel(platform),
       rows: [header, ...body, ['합계', `${rows.length}건`, ...totals]]
@@ -593,17 +659,12 @@ const BremTaxInvoiceAdmin = (function () {
     if (matched.length) {
       return matched.map(line => ({
         ...line,
+        id: file.id,
         platform: 'coupang',
         weekStart: file.weekStart,
         region: line.name,
         fileName: file.fileName || ''
       }));
-    }
-    if (!lines.length && (
-      settlementNameMatches(file?.region, keySet)
-      || settlementNameMatches(file?.fileName, keySet)
-    )) {
-      return [file];
     }
     return [];
   }
@@ -646,10 +707,7 @@ const BremTaxInvoiceAdmin = (function () {
       .filter(item => item.platform === 'coupang' && item.weekStart === weekStart)
       .reduce((sum, file) => {
         const lines = Array.isArray(file.lines) ? file.lines : [];
-        if (!lines.length) {
-          const kept = settlementNameMatches(file.region, keySet) || settlementNameMatches(file.fileName, keySet);
-          return sum + (kept ? 0 : 1);
-        }
+        if (!lines.length) return sum;
         return sum + lines.filter(line => !settlementNameMatches(line.name, keySet)).length;
       }, 0);
   }

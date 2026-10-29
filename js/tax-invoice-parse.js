@@ -123,7 +123,7 @@ const BremTaxInvoiceParse = (function () {
    * 쿠팡 계산서 본문. C열은 정산서 이름, F~J는 그 줄 금액.
    * 19행은 파일 전체 합계라 매출 줄에서 뺀다.
    */
-  function extractCoupangLines(cells) {
+  function rowsFromCells(cells) {
     const rows = new Map();
     Object.keys(cells || {}).forEach(address => {
       const pos = cellPosition(address);
@@ -131,16 +131,48 @@ const BremTaxInvoiceParse = (function () {
       if (!rows.has(pos.row)) rows.set(pos.row, {});
       rows.get(pos.row)[pos.col] = cells[address];
     });
+    return rows;
+  }
+
+  function coupangLineColumns(rows) {
+    const columns = { name: 'C', supply: 'F', vat: 'G', insurance: 'I', net: 'J', headerRow: 0 };
+    const rowNos = [...rows.keys()].sort((a, b) => a - b);
+    for (let i = 0; i < rowNos.length; i += 1) {
+      const cols = rows.get(rowNos[i]);
+      const entries = Object.keys(cols).map(col => ({
+        col,
+        text: String(cols[col] ?? '').replace(/\s+/g, '')
+      }));
+      const nameHit = entries.find(entry => /정산서/.test(entry.text));
+      const supplyHit = entries.find(entry => /공급가액/.test(entry.text));
+      if (!nameHit || !supplyHit) continue;
+      columns.name = nameHit.col;
+      columns.supply = supplyHit.col;
+      columns.headerRow = rowNos[i];
+      const vatHit = entries.find(entry => /부가세/.test(entry.text));
+      const insuranceHit = entries.find(entry => /보험/.test(entry.text));
+      const netHit = entries.find(entry => /실지급/.test(entry.text));
+      if (vatHit) columns.vat = vatHit.col;
+      if (insuranceHit) columns.insurance = insuranceHit.col;
+      if (netHit) columns.net = netHit.col;
+      break;
+    }
+    return columns;
+  }
+
+  function extractCoupangLines(cells) {
+    const rows = rowsFromCells(cells);
+    const columns = coupangLineColumns(rows);
     const lines = [];
     [...rows.keys()].sort((a, b) => a - b).forEach(rowNo => {
-      if (rowNo === 19) return;
+      if (rowNo === 19 || rowNo === columns.headerRow) return;
       const cols = rows.get(rowNo);
-      const name = String(cols.C ?? '').trim();
+      const name = String(cols[columns.name] ?? '').trim();
       if (isCoupangTotalLabel(name)) return;
-      const supply = parseMoney(cols.F);
-      const vat = parseMoney(cols.G);
-      const insurance = parseMoney(cols.I);
-      const net = parseMoney(cols.J);
+      const supply = parseMoney(cols[columns.supply]);
+      const vat = parseMoney(cols[columns.vat]);
+      const insurance = parseMoney(cols[columns.insurance]);
+      const net = parseMoney(cols[columns.net]);
       if (supply == null && vat == null && insurance == null && net == null) return;
       const supplyAmount = supply || 0;
       const vatAmount = vat || 0;
