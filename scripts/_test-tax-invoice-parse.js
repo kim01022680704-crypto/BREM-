@@ -59,6 +59,38 @@ function testCoupangFixedCells() {
   assert.strictEqual(result.amounts.netPay, 900);
 }
 
+function testCoupangLines() {
+  const cells = {
+    C4: '119라이더스_양산_2026_10-4',
+    F4: 1000,
+    G4: 100,
+    I4: 30,
+    J4: 1070,
+    C5: '119라이더스_중구중앙_2026_10-4',
+    F5: 2000,
+    G5: 200,
+    H5: 9999,
+    I5: 50,
+    J5: 2150,
+    C18: '정산서명',
+    F18: '공급가액합계',
+    F19: 3000,
+    G19: 300,
+    I19: 80,
+    J19: 3220
+  };
+  const lines = Parse.extractCoupangLines(cells);
+  assert.strictEqual(lines.length, 2);
+  assert.strictEqual(lines[0].name, '119라이더스_양산_2026_10-4');
+  assert.strictEqual(lines[0].supplyAmount, 1000);
+  assert.strictEqual(lines[0].vatAmount, 100);
+  assert.strictEqual(lines[0].subtotal, 1100);
+  assert.strictEqual(lines[0].totalInsurance, 30);
+  assert.strictEqual(lines[0].netPay, 1070);
+  assert.strictEqual(lines[1].subtotal, 2200);
+  assert.strictEqual(lines[1].netPay, 2150);
+}
+
 function testPickRicherSheet() {
   const sheets = [
     { name: '라이더', cells: { A1: '합계', B1: 999, F19: 1 } },
@@ -121,6 +153,7 @@ async function main() {
   testBaeminNetPay();
   testBaeminL2Fallback();
   testCoupangFixedCells();
+  testCoupangLines();
   testTwoPercentInvoice();
   testPickRicherSheet();
   await testServerCellMap();

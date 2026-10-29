@@ -1617,8 +1617,9 @@ const BremStorage = (function () {
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
     'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts, KEYS.payrollSlipLines],
     'tax-management': [KEYS.drivers, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
-    'tax-invoice-management': [KEYS.taxInvoices],
-    'tax-invoice-monthly': [KEYS.taxInvoices],
+    'tax-invoice-management': [KEYS.taxInvoices, KEYS.weeklySettlements, KEYS.weeklySettlementsDirect],
+    'tax-invoice-monthly': [KEYS.taxInvoices, KEYS.weeklySettlements, KEYS.weeklySettlementsDirect],
+    'tax-invoice-weekly': [KEYS.taxInvoices, KEYS.weeklySettlements, KEYS.weeklySettlementsDirect],
     'withdrawal-management': [KEYS.drivers],
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'inactive-drivers': [KEYS.drivers],
@@ -14233,6 +14234,7 @@ const BremStorage = (function () {
     'tax-management',
     'tax-invoice-management',
     'tax-invoice-monthly',
+    'tax-invoice-weekly',
     'driver-management',
     'inactive-drivers',
     'admin-account',
@@ -14377,6 +14379,9 @@ const BremStorage = (function () {
     }
     if (normalized.includes('tax-invoice-management') && !normalized.includes('tax-invoice-monthly')) {
       normalized.splice(normalized.indexOf('tax-invoice-management') + 1, 0, 'tax-invoice-monthly');
+    }
+    if (normalized.includes('tax-invoice-monthly') && !normalized.includes('tax-invoice-weekly')) {
+      normalized.splice(normalized.indexOf('tax-invoice-monthly') + 1, 0, 'tax-invoice-weekly');
     }
 
     if (!normalized.includes('driver-management')) {
@@ -14528,6 +14533,11 @@ const BremStorage = (function () {
     if (allowed.has('tax-invoice-monthly') && !next.includes('tax-invoice-monthly')
       && next.includes('tax-invoice-management')) {
       next.splice(next.indexOf('tax-invoice-management') + 1, 0, 'tax-invoice-monthly');
+    }
+    if ((allowed.has('tax-invoice-weekly') || allowed.has('tax-invoice-monthly'))
+      && !next.includes('tax-invoice-weekly')
+      && next.includes('tax-invoice-monthly')) {
+      next.splice(next.indexOf('tax-invoice-monthly') + 1, 0, 'tax-invoice-weekly');
     }
     return next;
   }
