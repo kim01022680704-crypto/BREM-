@@ -131,7 +131,8 @@ const BremTaxInvoiceAdmin = (function () {
     const summary = $(`#taxInvoiceSummary-${platform}`);
     if (!body) return;
     const fields = fieldsFor(platform);
-    const rows = weekRows(platform);
+    const files = weekRows(platform);
+    const rows = weekSalesRows(platform, ensureWeek(platform));
     const netCol = hasNetPay(platform) ? 2 : 0;
     const colSpan = fields.length + 3 + netCol;
     if (!rows.length) {
@@ -187,7 +188,10 @@ const BremTaxInvoiceAdmin = (function () {
       <td></td>
     </tr>`);
     if (summary) {
-      summary.textContent = `${platformLabel(platform)} ${rows.length}건 · 한 지역에 파일이 여러 개면 전부 남고 합계에 더합니다. 같은 파일 이름만 다시 올리면 그 줄이 바뀝니다.`;
+      const split = rows.length - files.length;
+      summary.textContent = split > 0
+        ? `배민 ${rows.length}줄 · 주별합계가 나뉜 줄은 각각 더합니다. 이미 올린 파일은 다시 등록해야 두 번째 줄이 나옵니다.`
+        : `${platformLabel(platform)} ${rows.length}건 · 한 지역에 파일이 여러 개면 전부 남고 합계에 더합니다. 주별합계가 두 줄이면 다시 등록할 때 둘 다 읽습니다.`;
     }
   }
 
@@ -318,17 +322,25 @@ const BremTaxInvoiceAdmin = (function () {
       throw new Error('공급가액 B31, 부가세액 C31, 공급대가 D31 칸을 읽지 못했습니다.');
     }
     let lines = [];
+    let amounts = picked.amounts;
     if (platform === 'coupang') {
       sheets.forEach(sheet => {
         const found = parse.extractCoupangLines?.(sheet?.cells) || [];
         if (found.length > lines.length) lines = found;
       });
+    } else {
+      const sheet = sheets.find(item => item?.name === picked.sheetName) || sheets[0];
+      const found = parse.extractBaeminLines?.(sheet?.cells) || [];
+      if (found.length >= 2) {
+        lines = found;
+        amounts = sumBaeminLines(found);
+      }
     }
     return {
       region: guessRegion(file.name, platform),
       fileName: file.name,
       sourceSheet: picked.sheetName,
-      amounts: picked.amounts,
+      amounts,
       lines
     };
   }
@@ -516,7 +528,9 @@ const BremTaxInvoiceAdmin = (function () {
 
   function exportWeek(platform) {
     const weekStart = ensureWeek(platform);
-    const rows = platform === 'coupang' ? coupangSalesRowsForWeek(weekStart) : weekRows(platform);
+    const rows = platform === 'coupang'
+      ? coupangSalesRowsForWeek(weekStart)
+      : weekSalesRows(platform, weekStart);
     if (!rows.length) {
       showToast(platform === 'coupang'
         ? '이 주차에 주정산과 맞는 쿠팡 정산서가 없습니다. 계산서를 다시 등록해 주세요.'
@@ -676,6 +690,47 @@ const BremTaxInvoiceAdmin = (function () {
       .flatMap(file => coupangLineRows(file, keySet));
   }
 
+  function sumBaeminLines(lines) {
+    const keys = [
+      'supplyAmount', 'vatAmount', 'supplyTotal',
+      'hourlyInsurance', 'employerEmploymentIns', 'riderEmploymentIns',
+      'employerIndustrialIns', 'riderIndustrialIns'
+    ];
+    const amounts = {};
+    keys.forEach(key => {
+      amounts[key] = lines.reduce((sum, line) => sum + Number(line[key] || 0), 0);
+    });
+    return amounts;
+  }
+
+  function baeminCompanyTag(fileName) {
+    const name = String(fileName || '');
+    const hasEagles = /이글스/.test(name);
+    const has119 = /119/.test(name);
+    if (hasEagles && !has119) return '이글스';
+    if (has119 && !hasEagles) return '119';
+    return '';
+  }
+
+  function expandBaeminFile(file) {
+    const lines = Array.isArray(file?.lines) ? file.lines : [];
+    if (lines.length >= 2) {
+      return lines.map(line => ({
+        ...line,
+        id: file.id,
+        platform: 'baemin',
+        weekStart: file.weekStart,
+        region: [file.region, line.name].filter(Boolean).join(' · '),
+        fileName: file.fileName || '',
+        sourceSheet: file.sourceSheet || ''
+      }));
+    }
+    const tag = baeminCompanyTag(file?.fileName);
+    const region = String(file?.region || '');
+    if (!tag || region.includes(tag)) return [file];
+    return [{ ...file, region: `${region} · ${tag}`.trim() }];
+  }
+
   function sortInvoiceRows(list) {
     return list.slice().sort((a, b) => (
       String(a.weekStart || '').localeCompare(String(b.weekStart || ''))
@@ -691,13 +746,17 @@ const BremTaxInvoiceAdmin = (function () {
       )];
       return sortInvoiceRows(weeks.flatMap(weekStart => coupangSalesRowsForWeek(weekStart)));
     }
-    return sortInvoiceRows(monthSourceRows(platform, month));
+    return sortInvoiceRows(monthSourceRows(platform, month).flatMap(file => (
+      platform === 'baemin' ? expandBaeminFile(file) : [file]
+    )));
   }
 
   function weekSalesRows(platform, weekStart) {
     if (platform === 'coupang') return sortInvoiceRows(coupangSalesRowsForWeek(weekStart));
     return sortInvoiceRows(
-      readList().filter(item => item.platform === platform && item.weekStart === weekStart)
+      readList()
+        .filter(item => item.platform === platform && item.weekStart === weekStart)
+        .flatMap(file => (platform === 'baemin' ? expandBaeminFile(file) : [file]))
     );
   }
 

@@ -107,6 +107,202 @@ const BremTaxInvoiceParse = (function () {
     return { amounts, found, ok: Boolean(anchor && found > 0) };
   }
 
+  function squashCell(value) {
+    return String(value ?? '').replace(/\s+/g, '');
+  }
+
+  function shortHeaderEntries(cols) {
+    return Object.keys(cols || {}).map(col => ({
+      col,
+      text: squashCell(cols[col])
+    })).filter(entry => entry.text && entry.text.length <= 40);
+  }
+
+  function findHeaderColumn(entries, pattern) {
+    return entries.find(entry => pattern.test(entry.text))?.col || '';
+  }
+
+  function sheetDateLabel(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return `${value.getMonth() + 1}/${value.getDate()}`;
+    }
+    if (typeof value === 'number' && value > 20000 && value < 80000) {
+      const utc = new Date(Date.UTC(1899, 11, 30) + Math.round(value) * 86400000);
+      return `${utc.getUTCMonth() + 1}/${utc.getUTCDate()}`;
+    }
+    const raw = String(value ?? '').trim();
+    const iso = raw.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+    if (!iso) return '';
+    return `${Number(iso[2])}/${Number(iso[3])}`;
+  }
+
+  function companyTag(cols) {
+    const blob = Object.values(cols || {}).map(value => String(value ?? '')).join(' ');
+    if (/이글스/.test(blob)) return '이글스';
+    if (/119/.test(blob)) return '119';
+    return '';
+  }
+
+  function isSectionBreak(cols) {
+    const blob = Object.values(cols || {}).map(squashCell).join(' ');
+    return /공급가액|정산시작일|주별합계|주차별/.test(blob) && !/\d{4}-\d{2}-\d{2}/.test(blob);
+  }
+
+  /**
+   * 주별합계가 두 줄(119·이글스, 월말 분할)이면 각 줄을 매출로 만든다.
+   * 한 줄짜리 파일은 빈 배열을 돌려 기존 B31 읽기를 유지한다.
+   */
+  function extractBaeminLines(cells) {
+    const rows = rowsFromCells(cells);
+    const rowNos = [...rows.keys()].sort((a, b) => a - b);
+    let weekHeader = 0;
+    let weekCols = {
+      start: 'B', end: 'C', delivery: 'D', extra: 'E', fee: 'F', vat: 'G',
+      hourly: 'H', employerEmployment: 'I', riderEmployment: 'J',
+      employerIndustrial: 'K', riderIndustrial: 'L'
+    };
+    let taxHeader = 0;
+    let taxCols = { supply: 'B', vat: 'C', total: 'D' };
+
+    rowNos.forEach(rowNo => {
+      const entries = shortHeaderEntries(rows.get(rowNo));
+      if (!weekHeader && entries.some(entry => entry.text === '정산시작일')) {
+        weekHeader = rowNo;
+        weekCols = {
+          start: findHeaderColumn(entries, /^정산시작일/) || weekCols.start,
+          end: findHeaderColumn(entries, /^정산종료일/) || weekCols.end,
+          delivery: findHeaderColumn(entries, /^배달료/) || weekCols.delivery,
+          extra: findHeaderColumn(entries, /^추가정산/) || weekCols.extra,
+          fee: findHeaderColumn(entries, /^관리비/) || weekCols.fee,
+          vat: findHeaderColumn(entries, /^부가세액/) || weekCols.vat,
+          hourly: findHeaderColumn(entries, /시간제보험/) || weekCols.hourly,
+          employerEmployment: findHeaderColumn(entries, /사업주부담.*고용/) || weekCols.employerEmployment,
+          riderEmployment: findHeaderColumn(entries, /라이더부담.*고용/) || weekCols.riderEmployment,
+          employerIndustrial: findHeaderColumn(entries, /사업주부담.*산재/) || weekCols.employerIndustrial,
+          riderIndustrial: findHeaderColumn(entries, /라이더부담.*산재/) || weekCols.riderIndustrial
+        };
+      }
+      if (!taxHeader && entries.some(entry => entry.text === '공급가액')) {
+        taxHeader = rowNo;
+        taxCols = {
+          supply: findHeaderColumn(entries, /^공급가액/) || taxCols.supply,
+          vat: findHeaderColumn(entries, /^부가세액/) || taxCols.vat,
+          total: findHeaderColumn(entries, /^공급대가/) || taxCols.total
+        };
+      }
+    });
+
+    function followingRows(headerRow, accept) {
+      if (!headerRow) return [];
+      const found = [];
+      let skipped = 0;
+      rowNos.filter(rowNo => rowNo > headerRow).forEach(rowNo => {
+        if (found.length >= 6 || skipped >= 2) return;
+        const cols = rows.get(rowNo);
+        if (isSectionBreak(cols) && found.length) {
+          skipped = 2;
+          return;
+        }
+        if (!accept(cols)) {
+          if (found.length) skipped += 1;
+          return;
+        }
+        skipped = 0;
+        found.push({ rowNo, cols });
+      });
+      return found;
+    }
+
+    const weekRows = followingRows(weekHeader, cols => {
+      const delivery = parseMoney(cols[weekCols.delivery]);
+      const vat = parseMoney(cols[weekCols.vat]);
+      const hourly = parseMoney(cols[weekCols.hourly]);
+      return delivery != null || vat != null || hourly != null || Boolean(sheetDateLabel(cols[weekCols.start]));
+    });
+    const taxRows = followingRows(taxHeader, cols => (
+      parseMoney(cols[taxCols.supply]) != null
+      || parseMoney(cols[taxCols.vat]) != null
+      || parseMoney(cols[taxCols.total]) != null
+    )).filter(row => !/^(합계|총계|총합계|소계)$/.test(squashCell(row.cols.A || row.cols.B)));
+
+    function insuranceOf(cols) {
+      if (!cols) {
+        return {
+          hourlyInsurance: 0,
+          employerEmploymentIns: 0,
+          riderEmploymentIns: 0,
+          employerIndustrialIns: 0,
+          riderIndustrialIns: 0
+        };
+      }
+      const read = col => parseMoney(cols[col]) || 0;
+      return {
+        hourlyInsurance: read(weekCols.hourly),
+        employerEmploymentIns: read(weekCols.employerEmployment),
+        riderEmploymentIns: read(weekCols.riderEmployment),
+        employerIndustrialIns: read(weekCols.employerIndustrial),
+        riderIndustrialIns: read(weekCols.riderIndustrial)
+      };
+    }
+
+    function weekAmount(row) {
+      const cols = row.cols;
+      const delivery = parseMoney(cols[weekCols.delivery]) || 0;
+      const extra = parseMoney(cols[weekCols.extra]) || 0;
+      const fee = parseMoney(cols[weekCols.fee]) || 0;
+      const supplyAmount = delivery + extra + fee;
+      const vatAmount = parseMoney(cols[weekCols.vat]) || 0;
+      const start = sheetDateLabel(cols[weekCols.start]);
+      const end = sheetDateLabel(cols[weekCols.end]);
+      const range = start && end ? `${start}~${end}` : (start || '');
+      let company = companyTag(cols);
+      if (!company) {
+        for (let cursor = row.rowNo - 1; cursor > weekHeader; cursor -= 1) {
+          const above = rows.get(cursor);
+          if (!above) continue;
+          if (parseMoney(above[weekCols.delivery]) != null || sheetDateLabel(above[weekCols.start])) break;
+          company = companyTag(above);
+          if (company) break;
+        }
+      }
+      return {
+        name: [company, range].filter(Boolean).join(' '),
+        supplyAmount,
+        vatAmount,
+        supplyTotal: supplyAmount + vatAmount,
+        ...insuranceOf(cols)
+      };
+    }
+
+    function taxAmount(row, index) {
+      const cols = row.cols;
+      const supplyAmount = parseMoney(cols[taxCols.supply]) || 0;
+      const vatAmount = parseMoney(cols[taxCols.vat]) || 0;
+      const supplyTotal = parseMoney(cols[taxCols.total]);
+      const week = weekRows[index];
+      const weekLine = week ? weekAmount(week) : null;
+      return {
+        name: weekLine?.name || companyTag(cols) || '',
+        supplyAmount,
+        vatAmount,
+        supplyTotal: supplyTotal == null ? supplyAmount + vatAmount : supplyTotal,
+        ...insuranceOf(week?.cols)
+      };
+    }
+
+    let lines = [];
+    if (taxRows.length >= 2) {
+      lines = taxRows.map(taxAmount);
+    } else if (weekRows.length >= 2) {
+      lines = weekRows.map(weekAmount);
+    }
+    if (lines.length < 2) return [];
+    lines.forEach((line, index) => {
+      if (!line.name) line.name = `주별합계 ${index + 1}`;
+    });
+    return lines;
+  }
+
   function cellPosition(address) {
     const match = /^([A-Z]+)(\d+)$/.exec(String(address || ''));
     if (!match) return null;
@@ -236,6 +432,7 @@ const BremTaxInvoiceParse = (function () {
     baeminNetPayAfterFee,
     coupangNetPayAfterFee,
     extractBaemin,
+    extractBaeminLines,
     extractCoupang,
     extractCoupangLines,
     pickSheet
