@@ -478,6 +478,45 @@ check('묶음 실지급은 세로 합', bundle.supplyPaid, 150);
 check('묶음 부가세 20%는 합계에 한 번', bundle.taxFee, 1);
 check('묶음 남은 금액은 합계 공식', bundle.remain, 132);
 
+console.log('\n[7b] 계산서 주별 실지급·부가세를 지역에 붙이기');
+const invoiceGroups = M.groupInvoiceLines([
+  {
+    kind: 'baemin',
+    label: '표준울산남A · 119',
+    fileName: '20261021~20261027_주식회사 119컴퍼니_표준울산남A.xlsx',
+    supplyPaid: 80000,
+    vat: 8000
+  },
+  {
+    kind: 'baemin',
+    label: '표준울산남A · 이글스',
+    fileName: '20261021~20261027_배달 이글스_표준울산남A.xlsx',
+    supplyPaid: 50000,
+    vat: 5000
+  },
+  {
+    kind: 'coupang',
+    label: '울산_남구중앙',
+    fileName: 'coupang.xlsx',
+    supplyPaid: 57685065,
+    vat: 5353208
+  }
+], ['표준울산남A', '남구중앙']);
+const invoiceNam = invoiceGroups.rows.find(row => row.region === '표준울산남A');
+const invoiceSouth = invoiceGroups.rows.find(row => row.region === '남구중앙');
+check('119+이글스는 한 지역', invoiceNam?.supplyPaid, 130000);
+check('119+이글스 부가세 합산', invoiceNam?.vat, 13000);
+check('쿠팡 실지급은 남구중앙', invoiceSouth?.supplyPaid, 57685065);
+check('쿠팡 부가세는 남구중앙', invoiceSouth?.vat, 5353208);
+check('맞춘 계산서는 미매칭 없음', invoiceGroups.missed, 0);
+check('가져온 실지급으로 남은 금액', M.computeRemain({
+  supplyPaid: invoiceNam?.supplyPaid,
+  vat: invoiceNam?.vat,
+  taxFeePercent: 20,
+  finalDeposit: 100000,
+  prepaid: 0
+}), 130000 - Math.round(13000 * 0.2) - 100000);
+
 console.log('\n[8] 소진율 (최종입금+선정산)÷(실지급−부가세)');
 // 실지급 100만, 부가세 10만 → 기준 90만. 최종+선정산 90만 → 정확히 100%
 const u100 = M.usageRatio(1000000, 100000, 850000, 50000);

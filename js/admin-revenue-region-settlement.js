@@ -707,7 +707,8 @@
       await Promise.race([
         Promise.all([
           window.BremStorage?.ensureSectionLoaded?.('revenue-region-settlement'),
-          window.BremStorage?.ensureSectionLoaded?.('final-deposit')
+          window.BremStorage?.ensureSectionLoaded?.('final-deposit'),
+          window.BremStorage?.ensureSectionLoaded?.('tax-invoice-weekly')
         ]),
         timeout
       ]);
@@ -720,10 +721,16 @@
           loadSavedDraft(state.weekStart);
         }
       }
+      const pulled = fillDraftFromInvoices();
       const count = settlementsForWeek(state.weekStart || weekStartKey()).length;
-      setLoadStatus(count
-        ? `정산서 ${count}건 불러옴 · ${formatWeekRange(state.weekStart)}`
-        : `이 주 정산서 없음 · ${formatWeekRange(state.weekStart)}`);
+      if (pulled.used) {
+        const miss = pulled.missed ? ` · 정산서와 안 맞는 ${pulled.missed}줄은 노란 줄` : '';
+        setLoadStatus(`계산서 주별 ${pulled.lines}줄에서 실지급액·부가세 ${pulled.regions}곳 · ${formatWeekRange(state.weekStart)}${miss}`);
+      } else {
+        setLoadStatus(count
+          ? `정산서 ${count}건 · 이 주 계산서 주별이 없습니다. 계산서 관리에 올린 뒤 불러오기를 누르세요. · ${formatWeekRange(state.weekStart)}`
+          : `이 주 정산서 없음 · ${formatWeekRange(state.weekStart)}`);
+      }
     } catch (error) {
       console.warn('[revenue region settlement] load failed:', error);
       setLoadStatus('정산 데이터를 불러오지 못했습니다. 「불러오기」를 다시 눌러주세요.');
@@ -1157,6 +1164,85 @@
         unmatched: !matched
       };
     });
+  }
+
+  function invoiceLinesForWeek(weekStart) {
+    const rows = window.BremTaxInvoiceAdmin?.salesAmountsForWeek?.(weekStartKey(weekStart)) || [];
+    return rows.filter(row => Number(row?.supplyPaid) || Number(row?.vat));
+  }
+
+  // 계산서 주별의 실지급액·부가세를 지역 정산서에 붙인다. 같은 지역은 합친다.
+  function groupInvoiceLines(lines, regionNames) {
+    const names = regionNames || [];
+    const grouped = new Map();
+    let missed = 0;
+    (lines || []).forEach(line => {
+      const label = String(line?.label || '').trim();
+      const fileName = String(line?.fileName || '').trim();
+      const region = (line?.kind === 'baemin'
+        ? (matchRegionByFileName(fileName, names, {}) || matchRegionByLabel(label, names, {}))
+        : matchRegionByLabel(label, names, {})) || '';
+      const canon = region ? (canonicalRegionLabel(region) || region) : '';
+      const supplyPaid = Math.round(Number(line?.supplyPaid) || 0);
+      const vat = Math.round(Number(line?.vat) || 0);
+      if (!canon) {
+        missed += 1;
+        const source = label || fileName || '계산서';
+        const key = `miss:${source}`;
+        const prev = grouped.get(key) || {
+          region: source,
+          source,
+          unmatched: true,
+          kind: line?.kind || '',
+          supplyPaid: 0,
+          vat: 0
+        };
+        prev.supplyPaid += supplyPaid;
+        prev.vat += vat;
+        grouped.set(key, prev);
+        return;
+      }
+      const key = regionCompareKey(canon) || canon;
+      const prev = grouped.get(key) || {
+        region: canon,
+        source: label || canon,
+        unmatched: false,
+        kind: line?.kind || '',
+        supplyPaid: 0,
+        vat: 0
+      };
+      prev.supplyPaid += supplyPaid;
+      prev.vat += vat;
+      if (line?.kind && prev.kind && prev.kind !== line.kind) prev.kind = 'mixed';
+      grouped.set(key, prev);
+    });
+    return { rows: [...grouped.values()], missed };
+  }
+
+  function fillDraftFromInvoices() {
+    const empty = { used: false, lines: 0, regions: 0, missed: 0 };
+    if (state.clearedWeek && state.clearedWeek === weekStartKey(state.weekStart)) return empty;
+    const lines = invoiceLinesForWeek(state.weekStart);
+    if (!lines.length) return empty;
+    const grouped = groupInvoiceLines(lines, settlementRegionNames());
+    const next = {};
+    grouped.rows.forEach(item => {
+      next[item.region] = {
+        supplyPaid: item.supplyPaid,
+        vat: item.vat,
+        source: item.source,
+        unmatched: item.unmatched,
+        kind: item.kind,
+        fromInvoice: true
+      };
+    });
+    state.draftRegions = next;
+    return {
+      used: true,
+      lines: lines.length,
+      regions: grouped.rows.length,
+      missed: grouped.missed
+    };
   }
 
   function rematchDraftToSettlements() {
@@ -1753,7 +1839,10 @@
     });
 
     $('revenueRegionSaveBtn')?.addEventListener('click', () => saveDraft());
-    $('revenueRegionReloadBtn')?.addEventListener('click', () => { void loadSettlementData(); });
+    $('revenueRegionReloadBtn')?.addEventListener('click', () => {
+      state.clearedWeek = '';
+      void loadSettlementData();
+    });
     $('revenueRegionExportBtn')?.addEventListener('click', exportExcel);
     $('revenueRegionGroupBtn')?.addEventListener('click', groupSelected);
     $('revenueRegionUngroupBtn')?.addEventListener('click', () => {
@@ -1958,6 +2047,7 @@
     groupPasteRows,
     baeminUploadGroupKey,
     canonicalRegionLabel,
+    groupInvoiceLines,
     aggregateRegions,
     parsePasteRows,
     splitPasteLine,

@@ -7874,8 +7874,8 @@
             <div class="card-header">
               <div>
                 <h2>지역별 정산</h2>
-                <p class="form-help">A열은 정산서 이름입니다. 그 이름으로 정산서를 찾아 최종입금·선정산을 붙입니다. B열은 배민·쿠팡에서 직접 받는 실지급액, C열은 부가세입니다. 배민은 같은 정산서 이름 두 줄이면 합칩니다.</p>
-                <p class="form-help">남은 금액 = 실지급액 − 최종입금 − 선정산 − 부가세×20%. 정산서에 없는 이름은 노란 줄로 남고, 지역을 고르면 최종입금·선정산이 붙습니다.</p>
+                <p class="form-help">실지급액과 부가세는 <strong>계산서 주별</strong>에서 가져옵니다. 배민 실지급액은 공급대가에서 보험을 뺀 값이고, 쿠팡은 주정산과 같은 정산서 줄의 실지급액·부가세입니다. 같은 지역은 합칩니다. 최종입금·선정산은 직계약 정산서입니다.</p>
+                <p class="form-help">남은 금액 = 실지급액 − 최종입금 − 선정산 − 부가세×20%. 계산서 지역이 정산서와 안 맞으면 노란 줄로 남고, 지역을 고르면 최종입금·선정산이 붙습니다.</p>
                 <p class="form-help" id="revenueRegionWeekHint">-</p>
               </div>
               <div class="revenue-action-group">
@@ -7973,8 +7973,8 @@
                   <tr>
                     <th class="revenue-region-col-check"><input type="checkbox" id="revenueRegionCheckAll" title="전체 선택" aria-label="전체 선택"></th>
                     <th class="revenue-region-col-region">정산서 이름</th>
-                    <th class="revenue-region-col-input">실지급액<br><span class="muted-inline">(배민·쿠팡 실수령)</span></th>
-                    <th class="revenue-region-col-input">부가세<br><span class="muted-inline">(C열)</span></th>
+                    <th class="revenue-region-col-input">실지급액<br><span class="muted-inline">(계산서 주별)</span></th>
+                    <th class="revenue-region-col-input">부가세<br><span class="muted-inline">(계산서 주별)</span></th>
                     <th class="revenue-region-col-money">최종입금<br><span class="muted-inline">(정산서)</span></th>
                     <th class="revenue-region-col-money">선정산<br><span class="muted-inline">(정산서)</span></th>
                     <th class="revenue-region-col-money">부가세 20%<br><span class="muted-inline">(C열×20%)</span></th>
@@ -10079,7 +10079,7 @@
   <script src="js/admin-lease-menus.js?v=20260813g"></script>
   <script src="js/admin-rider-maintenance.js?v=20260924mt4"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-revenue-region-settlement.js?v=20261022regionpay7"></script>
+  <script src="js/admin-revenue-region-settlement.js?v=20261029regioninv1"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
   <script src="js/payroll-slip-utils.js?v=20260922payout1"></script>
@@ -10093,7 +10093,7 @@
   <script src="js/withdrawal-management-admin.js?v=20261003wd2"></script>
   <script src="js/tax-management-admin.js?v=20261001tax1"></script>
   <script src="js/tax-invoice-parse.js?v=20261029week4"></script>
-  <script src="js/tax-invoice-admin.js?v=20261029week4"></script>
+  <script src="js/tax-invoice-admin.js?v=20261029week5"></script>
   <script src="js/coupang-region-match.js?v=20261013zmatch1"></script>
   <script src="js/driver-management-admin.js?v=20261025panel1"></script>
   <script src="js/driver-detail-search.js?v=20261029search1"></script>
