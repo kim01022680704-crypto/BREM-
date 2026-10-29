@@ -171,7 +171,7 @@ html.brem-admin-app-nav .driver-phone {
 }
 
 html.brem-admin-app-nav .driver-popup-modal {
-  z-index: 160;
+  z-index: 220;
   padding: max(12px, env(safe-area-inset-top)) 10px calc(12px + env(safe-area-inset-bottom));
 }
 

@@ -21,6 +21,11 @@
     }
   };
 
+  function editSrc(driverId) {
+    return 'rider-manage.html?edit=' + encodeURIComponent(driverId)
+      + '&embed=1&simple=1&v=20261029edit1&t=' + Date.now();
+  }
+
   var modal, frame, titleEl, expandEl, dialogEl;
   var lastFocus = null;
 
@@ -33,29 +38,48 @@
     return modal && frame;
   }
 
-  function open(type) {
-    if (!els()) return false;
-    var conf = CONFIG[type];
-    if (!conf) return false;
-
+  function show(conf) {
     if (titleEl) titleEl.textContent = conf.title;
     if (expandEl) expandEl.setAttribute('href', conf.full);
-    if (dialogEl) dialogEl.setAttribute('data-popup-type', type);
-
-    // iframe 로드는 열릴 때만(불필요한 사전 로드 방지)
-    if (frame.getAttribute('src') !== conf.src) {
+    if (dialogEl) dialogEl.setAttribute('data-popup-type', conf.type);
+    if (frame) {
+      frame.setAttribute('title', conf.title);
       frame.setAttribute('src', conf.src);
     }
 
     lastFocus = document.activeElement;
     modal.hidden = false;
     document.body.classList.add('driver-popup-open');
-    // 접근성: 닫기 버튼에 포커스
     var closeBtn = modal.querySelector('[data-close-driver-popup]');
     if (closeBtn && closeBtn.focus) {
       try { closeBtn.focus(); } catch (e) {}
     }
     return true;
+  }
+
+  function open(type) {
+    if (!els()) return false;
+    var conf = CONFIG[type];
+    if (!conf) return false;
+    return show({
+      type: type,
+      title: conf.title,
+      src: conf.src,
+      full: conf.full
+    });
+  }
+
+  function openEdit(driverId, driverName) {
+    if (!els()) return false;
+    var id = String(driverId || '').trim();
+    if (!id) return false;
+    var name = String(driverName || '').trim();
+    return show({
+      type: 'edit',
+      title: name ? (name + ' 정보 수정') : '정보 수정',
+      src: editSrc(id),
+      full: 'rider-manage.html?edit=' + encodeURIComponent(id)
+    });
   }
 
   function close() {
@@ -97,12 +121,13 @@
       }
     });
 
-    // ESC 닫기
+    // ESC는 수정/등록 팝업만 닫는다. 뒤에 있는 기사상세는 유지한다.
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && modal && !modal.hidden) {
-        close();
-      }
-    });
+      if (e.key !== 'Escape' || !modal || modal.hidden) return;
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    }, true);
   }
 
   if (document.readyState === 'loading') {
@@ -113,6 +138,7 @@
 
   window.BremDriverPopups = {
     open: open,
+    openEdit: openEdit,
     close: close,
     isOpen: function () {
       var el = document.getElementById('driverPopupModal');

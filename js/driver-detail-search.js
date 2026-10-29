@@ -344,6 +344,13 @@ const BremDriverDetailSearch = (function () {
         <span class="driver-detail-chip${coupangRegion.empty ? ' is-empty' : ''}">쿠팡 지역 · ${escapeHtml(coupangRegion.text)}</span>
       </div>
       <div class="driver-detail-actions">
+        <button type="button" class="driver-detail-mobile-open driver-detail-edit" data-driver-detail-edit>
+          <span>
+            <b>정보 수정</b>
+            <small>근무 상태 · 연락처 · 계좌 · 아이디</small>
+          </span>
+          <em>수정</em>
+        </button>
         <button type="button" class="driver-detail-mobile-open" data-driver-detail-mobile>
           <span>
             <b>모바일 화면 보기</b>
@@ -605,6 +612,17 @@ const BremDriverDetailSearch = (function () {
     return payload.token;
   }
 
+  function openRiderEdit() {
+    const driver = drivers().find(item => String(item.id || '') === state.selectedId);
+    if (!driver?.id) return;
+    const opener = window.BremDriverPopups?.openEdit;
+    if (typeof opener === 'function') {
+      opener(driver.id, driver.name || '');
+      return;
+    }
+    window.open(`rider-manage.html?edit=${encodeURIComponent(driver.id)}`, '_blank', 'noopener');
+  }
+
   async function openPhone() {
     const popup = $('#driverPhonePopup');
     const screen = $('#driverPhoneScreen');
@@ -654,6 +672,10 @@ const BremDriverDetailSearch = (function () {
       document.getElementById('overlay')?.classList.remove('active');
     });
     document.addEventListener('click', event => {
+      if (event.target.closest('[data-driver-detail-edit]')) {
+        openRiderEdit();
+        return;
+      }
       if (event.target.closest('[data-driver-detail-mobile]')) {
         void openPhone();
         return;
@@ -665,8 +687,24 @@ const BremDriverDetailSearch = (function () {
       if (event.target.closest('[data-driver-phone-close]')) closePhone();
       if (event.target.closest('[data-driver-detail-close]')) closePanel();
     });
+    window.addEventListener('message', event => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== 'brem-driver-saved') return;
+      const id = String(event.data.id || '');
+      if (!id || id !== state.selectedId) return;
+      const refresh = window.BremStorage?.drivers?.fetchById;
+      const redraw = () => {
+        if (state.selectedId === id && !$('#driverDetailScreen')?.hidden) void renderDetail();
+      };
+      if (typeof refresh === 'function') {
+        refresh(id, { force: true }).then(redraw).catch(redraw);
+      } else {
+        redraw();
+      }
+    });
     document.addEventListener('keydown', event => {
       if (event.key !== 'Escape') return;
+      if (window.BremDriverPopups?.isOpen?.()) return;
       if ($('#driverPhonePopup')?.classList.contains('is-open')) {
         closePhone();
         return;

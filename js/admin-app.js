@@ -926,13 +926,13 @@
       phone.querySelector('[data-driver-phone-close]')?.click();
       return true;
     }
+    if (window.BremDriverPopups?.isOpen?.()) {
+      window.BremDriverPopups.close();
+      return true;
+    }
     const detail = $('driverDetailPanel');
     if (detail && !detail.hidden) {
       window.BremDriverDetailSearch?.closePanel?.();
-      return true;
-    }
-    if (window.BremDriverPopups?.isOpen?.()) {
-      window.BremDriverPopups.close();
       return true;
     }
     if (typeof previousAppBack === 'function') return previousAppBack();

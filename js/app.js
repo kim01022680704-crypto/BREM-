@@ -535,6 +535,12 @@
 
       if (editingId) {
         showToast('기사 정보가 수정되었습니다.');
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({
+            type: 'brem-driver-saved',
+            id: String(savedDriver.id || editingId)
+          }, window.location.origin);
+        }
         editDriver(savedDriver.id);
         return;
       }
@@ -547,6 +553,10 @@
       submitBtn.disabled = false;
       submitBtn.textContent = previousLabel;
     }
+  }
+
+  function editSubmitLabel() {
+    return document.documentElement.classList.contains('is-embed-edit') ? '정보 저장' : '수정 저장';
   }
 
   function editDriver(id) {
@@ -579,7 +589,7 @@
     statusInput.value = driver.status;
     memoInput.value = driver.memo || '';
     formTitle.textContent = '기사 수정';
-    submitBtn.textContent = '수정 저장';
+    submitBtn.textContent = editSubmitLabel();
     updateLoginIdPreview();
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -617,7 +627,7 @@
     } finally {
       form.classList.remove('is-loading-driver');
       submitBtn.disabled = false;
-      submitBtn.textContent = driverIdInput.value ? '수정 저장' : previousLabel;
+      submitBtn.textContent = driverIdInput.value ? editSubmitLabel() : previousLabel;
     }
   }
 

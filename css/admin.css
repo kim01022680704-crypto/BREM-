@@ -10424,7 +10424,7 @@ body.driver-popup-open {
 .driver-popup-modal {
   position: fixed;
   inset: 0;
-  z-index: 140;
+  z-index: 220;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -10456,7 +10456,8 @@ body.driver-popup-open {
 }
 
 /* 간이 등록: 좁고 컴팩트하게 / 목록: 넓게 */
-.driver-popup-modal__dialog[data-popup-type="register"] {
+.driver-popup-modal__dialog[data-popup-type="register"],
+.driver-popup-modal__dialog[data-popup-type="edit"] {
   width: min(600px, 100%);
   height: min(700px, calc(100vh - 40px));
 }
@@ -10544,6 +10545,11 @@ body.driver-popup-open {
   flex: 1;
   min-height: 0;
   background: #f5f6f8;
+}
+
+.driver-popup-modal__dialog[data-popup-type="register"] .driver-popup-modal__body,
+.driver-popup-modal__dialog[data-popup-type="edit"] .driver-popup-modal__body {
+  background: #0e0e0f;
 }
 
 .driver-popup-modal__frame {

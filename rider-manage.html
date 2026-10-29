@@ -25,11 +25,16 @@
         if (embed) root.classList.add('is-embed-popup');
         if (simple) root.classList.add('is-embed-simple');
         if (simple && !isEdit) root.classList.add('is-embed-new');       // 신규 간이등록
+        if (simple && isEdit) root.classList.add('is-embed-edit');       // 간이 정보수정
         if (embed && isEdit && fromList) root.classList.add('is-embed-detail'); // 목록→상세
         document.addEventListener('DOMContentLoaded', function () {
           // 간이: 은행/계좌 선택입력을 펼쳐서 인라인 노출
           if (simple) {
             document.querySelectorAll('details.form-section--optional').forEach(function (d) { d.open = true; });
+          }
+          if (simple && isEdit) {
+            var submit = document.getElementById('submitBtn');
+            if (submit) submit.textContent = '정보 저장';
           }
           // 목록에서 상세로 들어온 경우 '목록으로' 복귀 버튼
           if (embed && isEdit && fromList) {
@@ -139,6 +144,83 @@
     }
     html.is-embed-new .form-actions .btn.ghost {
       background: #1b1b1c !important; border: 1px solid rgba(255,255,255,0.16) !important; color: #e5e7eb !important;
+    }
+
+    /* 정보 수정 팝업: 간이 등록과 같은 다크 폼. 비밀번호·주민번호·상태는 수정용으로 유지 */
+    html.is-embed-edit { color-scheme: dark; }
+    html.is-embed-edit,
+    html.is-embed-edit body { background: #0e0e0f !important; }
+    html.is-embed-edit .app.index-app,
+    html.is-embed-edit .index-layout,
+    html.is-embed-edit .index-content,
+    html.is-embed-edit .index-content--register,
+    html.is-embed-edit .form-panel,
+    html.is-embed-edit .form-panel--register,
+    html.is-embed-edit .form-section { background: transparent !important; }
+    html.is-embed-edit .register-section-title,
+    html.is-embed-edit .form-note--login,
+    html.is-embed-edit .register-note--desktop,
+    html.is-embed-edit .register-optional-grid { display: none !important; }
+    html.is-embed-edit .field-label { color: #cbd5e1 !important; font-weight: 600; }
+    html.is-embed-edit .field-label em { color: #f87171 !important; font-style: normal; }
+    html.is-embed-edit input,
+    html.is-embed-edit select,
+    html.is-embed-edit textarea,
+    html.is-embed-edit .date-picker-button {
+      background: #17171a !important;
+      border: 1px solid rgba(255,255,255,0.14) !important;
+      color: #f4f4f5 !important;
+    }
+    html.is-embed-edit .date-picker-button { text-align: left; }
+    html.is-embed-edit input::placeholder,
+    html.is-embed-edit textarea::placeholder { color: #6b7280 !important; }
+    html.is-embed-edit input:focus,
+    html.is-embed-edit select:focus,
+    html.is-embed-edit textarea:focus {
+      border-color: #ffd400 !important;
+      box-shadow: 0 0 0 3px rgba(255,212,0,0.18) !important;
+      outline: none !important;
+    }
+    html.is-embed-edit .form-note,
+    html.is-embed-edit .form-note--subtle { color: #8b8f98 !important; }
+    html.is-embed-edit .platform-panel {
+      background: #17171a !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+    }
+    html.is-embed-edit .platform-panel-label { color: #cbd5e1 !important; }
+    html.is-embed-edit .platform-check > span { color: #e5e7eb !important; }
+    html.is-embed-edit .form-actions {
+      position: static !important;
+      margin: 8px 0 0 !important;
+      padding: 0 !important;
+      background: transparent !important;
+      border: 0 !important;
+      backdrop-filter: none !important;
+    }
+    html.is-embed-edit .form-actions .btn.primary {
+      background: #ffd400 !important; border: 0 !important; color: #111 !important;
+    }
+    html.is-embed-edit .form-actions .btn.ghost,
+    html.is-embed-edit .register-inline-btn,
+    html.is-embed-edit .field-hide-btn {
+      background: #1b1b1c !important;
+      border: 1px solid rgba(255,255,255,0.16) !important;
+      color: #e5e7eb !important;
+    }
+    html.is-embed-edit #embedBackToList {
+      background: #1b1b1c;
+      color: #e5e7eb;
+      border-color: rgba(255,255,255,0.16);
+    }
+    html.is-embed-edit .field-privacy-status--off {
+      color: #cbd5e1;
+      background: #1b1b1c;
+      border: 1px solid rgba(255,255,255,0.16);
+    }
+    html.is-embed-edit .field-privacy-status--on {
+      color: #fecaca;
+      background: #3f1d1d;
+      border: 1px solid rgba(248,113,113,0.35);
     }
   </style>
 </head>
@@ -530,7 +612,7 @@
   <script src="js/driver-duplicate-dialog.js?v=20260820c"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/index-nav.js"></script>
-  <script src="js/app.js?v=20260922active1"></script>
+  <script src="js/app.js?v=20261029edit1"></script>
   <script src="js/driver-bulk.js?v=20260922active1"></script>
 </body>
 </html>
