@@ -1277,7 +1277,26 @@ const BremTaxInvoiceAdmin = (function () {
 
   bind();
 
-  return { refresh, refreshMonthly, refreshWeekly, onWeekPicked, onSalesWeekPicked };
+  function salesAmountsForWeek(weekStart) {
+    const parse = Parse();
+    const baemin = weekSalesRows('baemin', weekStart).map(row => ({
+      kind: 'baemin',
+      label: row.region || '',
+      fileName: row.fileName || '',
+      supplyPaid: Math.round(Number(parse?.baeminNetPay?.(row) || baeminNetPay(row) || 0)),
+      vat: Math.round(Number(row.vatAmount || 0))
+    }));
+    const coupang = weekSalesRows('coupang', weekStart).map(row => ({
+      kind: 'coupang',
+      label: row.region || '',
+      fileName: row.fileName || '',
+      supplyPaid: Math.round(Number(row.netPay || 0)),
+      vat: Math.round(Number(row.vatAmount || 0))
+    }));
+    return baemin.concat(coupang);
+  }
+
+  return { refresh, refreshMonthly, refreshWeekly, onWeekPicked, onSalesWeekPicked, salesAmountsForWeek };
 })();
 
 window.BremTaxInvoiceAdmin = BremTaxInvoiceAdmin;
