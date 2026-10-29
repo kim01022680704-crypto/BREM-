@@ -10542,9 +10542,39 @@ body.driver-popup-open {
 }
 
 .driver-popup-modal__body {
+  position: relative;
   flex: 1;
   min-height: 0;
   background: #f5f6f8;
+}
+
+.driver-popup-modal__loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #0e0e0f;
+  color: #f4f4f5;
+  text-align: center;
+  padding: 24px;
+}
+
+.driver-popup-modal__loading[hidden] {
+  display: none;
+}
+
+.driver-popup-modal__loading strong {
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.driver-popup-modal__loading span {
+  color: #9ca3af;
+  font-size: 0.86rem;
 }
 
 .driver-popup-modal__dialog[data-popup-type="register"] .driver-popup-modal__body,

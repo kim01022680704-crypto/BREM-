@@ -25,7 +25,10 @@
         if (embed) root.classList.add('is-embed-popup');
         if (simple) root.classList.add('is-embed-simple');
         if (simple && !isEdit) root.classList.add('is-embed-new');       // 신규 간이등록
-        if (simple && isEdit) root.classList.add('is-embed-edit');       // 간이 정보수정
+        if (simple && isEdit) {
+          root.classList.add('is-embed-edit');
+          root.classList.add('is-embed-loading');
+        }
         if (embed && isEdit && fromList) root.classList.add('is-embed-detail'); // 목록→상세
         document.addEventListener('DOMContentLoaded', function () {
           // 간이: 은행/계좌 선택입력을 펼쳐서 인라인 노출
@@ -221,6 +224,27 @@
       color: #fecaca;
       background: #3f1d1d;
       border: 1px solid rgba(248,113,113,0.35);
+    }
+    html.is-embed-edit.is-embed-loading body::before {
+      content: '불러오는 중';
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0e0e0f;
+      color: #f4f4f5;
+      font-size: 1.25rem;
+      font-weight: 800;
+    }
+    html.is-embed-edit.is-embed-loading.is-embed-load-failed body::before {
+      content: '기사 정보를 불러오지 못했습니다';
+      font-size: 1.05rem;
+    }
+    html.is-embed-edit.is-embed-loading .index-content,
+    html.is-embed-edit.is-embed-loading #embedBackToList {
+      visibility: hidden;
     }
   </style>
 </head>
@@ -612,7 +636,7 @@
   <script src="js/driver-duplicate-dialog.js?v=20260820c"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/index-nav.js"></script>
-  <script src="js/app.js?v=20261029edit1"></script>
+  <script src="js/app.js?v=20261029edit2"></script>
   <script src="js/driver-bulk.js?v=20260922active1"></script>
 </body>
 </html>

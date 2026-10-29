@@ -23,7 +23,7 @@
 
   function editSrc(driverId) {
     return 'rider-manage.html?edit=' + encodeURIComponent(driverId)
-      + '&embed=1&simple=1&v=20261029edit1&t=' + Date.now();
+      + '&embed=1&simple=1&v=20261029edit2&t=' + Date.now();
   }
 
   var modal, frame, titleEl, expandEl, dialogEl;
@@ -38,10 +38,45 @@
     return modal && frame;
   }
 
+  function loadingEl() {
+    var el = document.getElementById('driverPopupLoading');
+    if (el) return el;
+    var body = modal && modal.querySelector('.driver-popup-modal__body');
+    if (!body) return null;
+    el = document.createElement('div');
+    el.id = 'driverPopupLoading';
+    el.className = 'driver-popup-modal__loading';
+    el.hidden = true;
+    el.innerHTML = '<strong>불러오는 중</strong><span>기사 정보를 확인하고 있습니다.</span>';
+    body.appendChild(el);
+    return el;
+  }
+
+  function setLoading(mode) {
+    var el = loadingEl();
+    if (!el) return;
+    var title = el.querySelector('strong');
+    var note = el.querySelector('span');
+    if (mode === 'failed') {
+      if (title) title.textContent = '기사 정보를 불러오지 못했습니다';
+      if (note) note.textContent = '닫고 다시 열어 주세요.';
+      el.hidden = false;
+      return;
+    }
+    if (mode === 'loading') {
+      if (title) title.textContent = '불러오는 중';
+      if (note) note.textContent = '기사 정보를 확인하고 있습니다.';
+      el.hidden = false;
+      return;
+    }
+    el.hidden = true;
+  }
+
   function show(conf) {
     if (titleEl) titleEl.textContent = conf.title;
     if (expandEl) expandEl.setAttribute('href', conf.full);
     if (dialogEl) dialogEl.setAttribute('data-popup-type', conf.type);
+    setLoading(conf.type === 'edit' ? 'loading' : 'hide');
     if (frame) {
       frame.setAttribute('title', conf.title);
       frame.setAttribute('src', conf.src);
@@ -94,6 +129,7 @@
       try { lastFocus.focus(); } catch (e) {}
     }
     lastFocus = null;
+    setLoading('hide');
   }
 
   function onTriggerClick(e) {
@@ -112,6 +148,14 @@
 
     // 트리거(사이드바 기사등록/기사목록) 위임 바인딩
     document.addEventListener('click', onTriggerClick);
+
+    window.addEventListener('message', function (event) {
+      if (event.origin !== window.location.origin) return;
+      if (!frame || event.source !== frame.contentWindow) return;
+      var type = event.data && event.data.type;
+      if (type === 'brem-driver-ready') setLoading('hide');
+      if (type === 'brem-driver-load-failed') setLoading('failed');
+    });
 
     // 닫기(배경/버튼) 위임
     modal.addEventListener('click', function (e) {

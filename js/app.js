@@ -496,7 +496,12 @@
     const data = getFormData();
     if (!validateFormData(data)) return;
 
+    const queryEditId = new URLSearchParams(window.location.search).get('edit');
     const editingId = driverIdInput.value;
+    if (queryEditId && editingId !== queryEditId) {
+      showToast('기사 정보를 아직 불러오는 중입니다.');
+      return;
+    }
     const decision = await askDuplicateDecision(data, editingId);
     if (!decision.proceed) return;
     const previousLabel = submitBtn.textContent;
@@ -596,15 +601,43 @@
     nameInput.focus();
   }
 
-  async function loadEditFromQuery() {
-    const id = new URLSearchParams(window.location.search).get('edit');
-    if (!id) return;
+  function notifyEditLoad(type, id) {
+    if (!window.parent || window.parent === window) return;
+    window.parent.postMessage({ type, id: String(id || '') }, window.location.origin);
+  }
 
+  function beginEditLoading() {
+    document.documentElement.classList.add('is-embed-loading');
+    document.documentElement.classList.remove('is-embed-load-failed');
     form.classList.add('is-loading-driver');
     submitBtn.disabled = true;
-    const previousLabel = submitBtn.textContent;
+    if (resetBtn) resetBtn.disabled = true;
     submitBtn.textContent = '불러오는 중…';
+  }
 
+  function finishEditLoading() {
+    document.documentElement.classList.remove('is-embed-loading', 'is-embed-load-failed');
+    form.classList.remove('is-loading-driver');
+    submitBtn.disabled = false;
+    if (resetBtn) resetBtn.disabled = false;
+    submitBtn.textContent = editSubmitLabel();
+  }
+
+  function failEditLoading() {
+    document.documentElement.classList.add('is-embed-loading', 'is-embed-load-failed');
+    form.classList.add('is-loading-driver');
+    submitBtn.disabled = true;
+    if (resetBtn) resetBtn.disabled = true;
+    submitBtn.textContent = '불러오는 중…';
+  }
+
+  async function loadEditFromQuery(options = {}) {
+    const id = new URLSearchParams(window.location.search).get('edit');
+    if (!id) return;
+    if (options.quiet === true && driverIdInput.value === id) return;
+    beginEditLoading();
+
+    let loaded = false;
     try {
       let driver = null;
       if (BremStorage.drivers.fetchById) {
@@ -624,10 +657,15 @@
         return;
       }
       editDriver(id);
+      loaded = driverIdInput.value === id;
     } finally {
-      form.classList.remove('is-loading-driver');
-      submitBtn.disabled = false;
-      submitBtn.textContent = driverIdInput.value ? editSubmitLabel() : previousLabel;
+      if (loaded) {
+        finishEditLoading();
+        notifyEditLoad('brem-driver-ready', id);
+      } else {
+        failEditLoading();
+        notifyEditLoad('brem-driver-load-failed', id);
+      }
     }
   }
 
@@ -718,7 +756,7 @@
   void BremStorage.reloadDrivers?.(false, { includeInactive: true }).then(async () => {
     refreshHeader();
     await fillRegionSelects();
-    void loadEditFromQuery();
+    void loadEditFromQuery({ quiet: true });
   }).catch(error => {
     showToast(error?.message || '기사 목록을 불러오지 못했습니다.');
   });
