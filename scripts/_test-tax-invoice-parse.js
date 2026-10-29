@@ -126,6 +126,41 @@ async function testServerCellMap() {
   assert.strictEqual(parsed.amounts.supplyTotal, 4753);
 }
 
+function testBaeminTwoWeekTotals() {
+  const cells = {
+    B24: '정산시작일', C24: '정산종료일', D24: '배달료', E24: '추가정산', F24: '관리비',
+    G24: '부가세액', H24: '시간제보험료',
+    I24: '사업주부담고용보험료', J24: '라이더부담고용보험료',
+    K24: '사업주부담산재보험료', L24: '라이더부담산재보험료',
+    A25: '119컴퍼니',
+    B25: '2026-10-21', C25: '2026-10-23',
+    D25: 1000, E25: 0, F25: 0, G25: 100,
+    H25: 1, I25: 2, J25: 3, K25: 4, L25: 5,
+    A26: '배달 이글스',
+    B26: '2026-10-24', C26: '2026-10-27',
+    D26: 2000, E26: 50, F26: 20, G26: 200,
+    H26: 10, I26: 20, J26: 30, K26: 40, L26: 50,
+    B30: '공급가액', C30: '부가세액', D30: '공급대가',
+    B31: 1000, C31: 100, D31: 1100,
+    B32: 2070, C32: 200, D32: 2270
+  };
+  const lines = Parse.extractBaeminLines(cells);
+  assert.strictEqual(lines.length, 2);
+  assert.strictEqual(lines[0].name.includes('119'), true);
+  assert.strictEqual(lines[0].supplyAmount, 1000);
+  assert.strictEqual(lines[0].supplyTotal, 1100);
+  assert.strictEqual(lines[0].hourlyInsurance, 1);
+  assert.strictEqual(lines[0].riderIndustrialIns, 5);
+  assert.strictEqual(lines[1].name.includes('이글스'), true);
+  assert.strictEqual(lines[1].supplyAmount, 2070);
+  assert.strictEqual(lines[1].vatAmount, 200);
+  assert.strictEqual(lines[1].supplyTotal, 2270);
+  assert.strictEqual(lines[1].employerEmploymentIns, 20);
+  assert.strictEqual(lines[1].riderIndustrialIns, 50);
+  const single = Parse.extractBaeminLines({ B31: 10, C31: 1, D31: 11, H25: 4 });
+  assert.strictEqual(single.length, 0);
+}
+
 function testTwoPercentInvoice() {
   assert.strictEqual(Parse.deductTwoPercent(1000000), 980000);
   assert.strictEqual(Parse.invoiceAmountAfterFee({
@@ -154,6 +189,7 @@ async function main() {
   testBaeminL2Fallback();
   testCoupangFixedCells();
   testCoupangLines();
+  testBaeminTwoWeekTotals();
   testTwoPercentInvoice();
   testPickRicherSheet();
   await testServerCellMap();
