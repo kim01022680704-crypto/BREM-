@@ -1,6 +1,6 @@
 /**
  * 친구초대 — 소개자 기본 조건, 친구 연결(조건 고정), 정산주 달성 정리.
- * 콜수는 그 주 주정산서의 배민+쿠팡. 직계약에 행이 있으면 직계약, 없으면 브로.
+ * 소개자·친구는 ERP 기사다. 콜수는 그 기사 콜수(배민+쿠팡, 정산주 수~화)다.
  * 지급액은 이 화면에서만 확인하고 주정산 금액에는 넣지 않는다.
  */
 const BremFriendInviteAdmin = (function () {
@@ -15,6 +15,7 @@ const BremFriendInviteAdmin = (function () {
     friendId: '',
     callIndex: null,
     callIndexWeek: '',
+    callsReady: false,
     searchTokens: { referrer: 0, friend: 0 }
   };
 
@@ -163,50 +164,50 @@ const BremFriendInviteAdmin = (function () {
   }
 
   function buildCallIndex(weekStart) {
+    const end = weekEnd(weekStart);
     const index = new Map();
-    function bump(driverId, platform, channel, count) {
-      if (!driverId || (platform !== 'baemin' && platform !== 'coupang')) return;
-      const row = index.get(driverId) || {
-        baemin: { direct: 0, bro: 0, directRows: 0, broRows: 0 },
-        coupang: { direct: 0, bro: 0, directRows: 0, broRows: 0 }
-      };
-      const slot = row[platform];
-      slot[channel] += count;
-      slot[`${channel}Rows`] += 1;
+    const list = BremStorage.calls?.getAll?.() || [];
+    list.forEach(call => {
+      const driverId = String(call.driverId || '').trim();
+      const day = String(call.date || '').slice(0, 10);
+      if (!driverId || !day || day < weekStart || day > end) return;
+      const platform = platformOf(call);
+      if (platform !== 'baemin' && platform !== 'coupang') return;
+      const row = index.get(driverId) || { baemin: 0, coupang: 0 };
+      row[platform] += Math.round(Number(call.count || 0));
       index.set(driverId, row);
-    }
-    ['direct', 'bro'].forEach(channel => {
-      const list = BremStorage.weeklySettlements?.getAll?.(channel) || [];
-      list.forEach(record => {
-        if (settlementWeek(record) !== weekStart) return;
-        const platform = platformOf(record);
-        (record.riders || []).forEach(rider => {
-          const driverId = String(rider.matchedRiderId || '').trim();
-          bump(driverId, platform, channel, Math.round(Number(rider.weeklyOrderCount || 0)));
-        });
-      });
     });
     return index;
   }
 
   function callsFor(driverId) {
+    if (!state.callsReady) return { calls: null, hasRow: false };
     if (state.callIndexWeek !== state.week) {
       state.callIndex = buildCallIndex(state.week);
       state.callIndexWeek = state.week;
     }
     const row = state.callIndex?.get(String(driverId || ''));
-    if (!row) return { calls: 0, hasRow: false };
-    function pick(slot) {
-      if (slot.directRows > 0) return slot.direct;
-      if (slot.broRows > 0) return slot.bro;
-      return null;
+    const baemin = row?.baemin || 0;
+    const coupang = row?.coupang || 0;
+    return { calls: baemin + coupang, hasRow: true };
+  }
+
+  async function loadWeekCalls() {
+    state.callsReady = false;
+    invalidateCalls();
+    try {
+      if (state.week && BremStorage.ensureCallsSinceDate) {
+        await BremStorage.ensureCallsSinceDate(state.week, {
+          untilDate: weekEnd(state.week),
+          merge: true
+        });
+      }
+      state.callsReady = true;
+    } catch (error) {
+      state.callsReady = false;
+      showToast(error?.message || '이 주 콜수를 불러오지 못했습니다.');
     }
-    const baemin = pick(row.baemin);
-    const coupang = pick(row.coupang);
-    return {
-      calls: (baemin || 0) + (coupang || 0),
-      hasRow: baemin != null || coupang != null
-    };
+    invalidateCalls();
   }
 
   function invalidateCalls() {
@@ -250,7 +251,7 @@ const BremFriendInviteAdmin = (function () {
   function resultLabel(kind) {
     if (kind === 'hit') return '달성';
     if (kind === 'miss') return '미달';
-    if (kind === 'pending') return '정산서 없음';
+    if (kind === 'pending') return '콜수 확인 중';
     if (kind === 'wait') return '시작 전';
     return '종료';
   }
@@ -753,9 +754,8 @@ const BremFriendInviteAdmin = (function () {
     if (target.id === 'friendInviteWeek') {
       const week = weekStartWednesday(target.value);
       state.week = week || weekStartWednesday(todayKey());
-      invalidateCalls();
       renderWeekLabel();
-      renderResults();
+      void loadWeekCalls().then(() => renderResults());
     }
     if (target.id === 'friendInviteJoinWeek') {
       const week = weekStartWednesday(target.value);
@@ -784,6 +784,7 @@ const BremFriendInviteAdmin = (function () {
     if (joinInput && !joinInput.value) joinInput.value = state.week;
     render();
     void hydrateLinkedNames();
+    void loadWeekCalls().then(() => renderResults());
   }
 
   return { refresh };

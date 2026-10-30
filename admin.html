@@ -3794,7 +3794,7 @@
             <h2>친구초대</h2>
           </div>
           <p class="form-help">소개자마다 주간 목표 콜수, 지급액, 지급 주 수를 저장합니다. 친구를 연결하는 순간 그 조건이 친구에게 고정되고, 나중에 소개자 조건을 바꿔도 이미 연결된 친구는 그대로입니다.</p>
-          <p class="form-help">콜은 그 주 주정산서의 배민과 쿠팡을 합칩니다. 직계약 정산서에 그 기사가 있으면 직계약을 쓰고, 없으면 브로를 씁니다. 가입한 정산주부터 지급 주 수만큼 보고, 목표 이상이면 그 주 지급액을 줍니다. 친구만이면 친구에게만, 둘 다이면 친구와 소개자에게 같은 금액을 각각 줍니다. 미달인 주도 주 수에 포함되고, 주 수가 끝나면 종료입니다. 지급액은 여기서 확인하고, 주정산 금액에는 자동으로 넣지 않습니다.</p>
+          <p class="form-help">소개자와 친구는 ERP에 등록된 기사입니다. 콜수는 그 친구에게 입력된 배민·쿠팡 콜을 정산주(수~화)로 합친 값입니다. 가입한 정산주부터 지급 주 수만큼 보고, 목표 이상이면 그 주 지급액을 줍니다. 친구만이면 친구에게만, 둘 다이면 친구와 소개자에게 같은 금액을 각각 줍니다. 미달인 주도 주 수에 포함되고, 주 수가 끝나면 종료입니다. 지급액은 여기서 확인하고, 주정산 금액에는 자동으로 넣지 않습니다.</p>
         </article>
 
         <article class="card">
@@ -3888,7 +3888,7 @@
             <button type="button" class="promotion-tab active" data-friend-invite-filter="all" data-readonly-allow-filter="true">전체</button>
             <button type="button" class="promotion-tab" data-friend-invite-filter="hit" data-readonly-allow-filter="true">달성</button>
             <button type="button" class="promotion-tab" data-friend-invite-filter="miss" data-readonly-allow-filter="true">미달</button>
-            <button type="button" class="promotion-tab" data-friend-invite-filter="pending" data-readonly-allow-filter="true">정산서 없음</button>
+            <button type="button" class="promotion-tab" data-friend-invite-filter="pending" data-readonly-allow-filter="true">콜수 확인 중</button>
             <button type="button" class="promotion-tab" data-friend-invite-filter="wait" data-readonly-allow-filter="true">시작 전</button>
             <button type="button" class="promotion-tab" data-friend-invite-filter="done" data-readonly-allow-filter="true">종료</button>
           </div>
@@ -10151,7 +10151,7 @@
   <script src="js/storage-supabase-mapper.js?v=20261009missionassign1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20261030invite1"></script>
-  <script src="js/storage.js?v=20261030invite2"></script>
+  <script src="js/storage.js?v=20261030invite3"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js?v=20261025inq9"></script>
@@ -10165,7 +10165,7 @@
   <script src="js/promotion-conditions.js?v=20260928step1"></script>
   <script src="js/promotion-engine.js?v=20261009nopperiod1"></script>
   <script src="js/promotion-admin.js?v=20261010promolockvis1"></script>
-  <script src="js/friend-invite-admin.js?v=20261030invite2"></script>
+  <script src="js/friend-invite-admin.js?v=20261030invite3"></script>
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
   <script src="js/weekly-settlement.js?v=20260922part4"></script>
   <script src="js/weekly-settlement-admin.js?v=20260922part5"></script>
