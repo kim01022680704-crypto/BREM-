@@ -352,6 +352,8 @@ const BremDriverDetailSearch = (function () {
         <span>${escapeHtml(driver.status || '근무중')}</span>
         <span>배민ID ${escapeHtml(driver.baeminId || '-')}</span>
         <span>쿠팡ID ${escapeHtml(coupangId(driver) || '-')}</span>
+        <span>계좌 ${escapeHtml(String(driver.bankName || '').trim() || '-')}</span>
+        <span>계좌번호 ${escapeHtml(String(driver.accountNumber || '').trim() || '-')}</span>
       </div>
       <div class="driver-detail-regions">
         <span class="driver-detail-chip${baeminRegion.empty ? ' is-empty' : ''}">배민 지역 · ${escapeHtml(baeminRegion.text)}</span>
