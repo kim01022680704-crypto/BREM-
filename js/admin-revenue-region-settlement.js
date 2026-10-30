@@ -159,9 +159,15 @@
     state.savedAt = saved?.savedAt || '';
     state.taxFeePercent = Math.max(0, Math.min(100, Number(saved?.taxFeePercent ?? 20)));
     const rawRegions = saved?.regions && typeof saved.regions === 'object' ? { ...saved.regions } : {};
-    state.groups = normalizeGroups(rawRegions.__groups);
+    const storedGroups = rawRegions.__groups;
+    const hasStoredGroups = Array.isArray(storedGroups);
+    state.groups = hasStoredGroups ? normalizeGroups(storedGroups) : latestPastGroups(key);
     delete rawRegions.__groups;
     state.draftRegions = migrateDraftRegionKeys(rawRegions);
+    if (!hasStoredGroups && state.groups.length) {
+      persistGroups();
+      showToast('지난 정산의 지역 묶음을 이 주에 적용했습니다.');
+    }
     const taxInput = $('revenueRegionTaxFeePercent');
     if (taxInput) taxInput.value = String(state.taxFeePercent);
     if (state.savedAt) {
@@ -433,6 +439,64 @@
     })).filter(group => group.members.length >= 2);
   }
 
+  function latestPastGroups(weekStart) {
+    const revenue = Revenue();
+    const collection = revenue?.COLLECTIONS?.REGION_SETTLEMENT;
+    const list = collection && revenue.getCollection ? revenue.getCollection(collection) : [];
+    const key = weekStartKey(weekStart);
+    const previous = list
+      .filter(item => String(item?.weekStart || '') && String(item.weekStart) < key)
+      .sort((a, b) => String(b.weekStart).localeCompare(String(a.weekStart)));
+    for (const item of previous) {
+      const stored = item?.regions?.__groups;
+      if (!Array.isArray(stored)) continue;
+      const groups = normalizeGroups(stored);
+      if (!groups.length) continue;
+      return groups.map(group => ({
+        id: groupKey(),
+        members: group.members,
+        expanded: false
+      }));
+    }
+    return [];
+  }
+
+  function persistGroups() {
+    const revenue = Revenue();
+    if (!revenue?.saveRegionSettlement || !state.weekStart) return false;
+    const key = weekStartKey(state.weekStart);
+    const existing = revenue.getRegionSettlementByWeek?.(key);
+    const regions = existing?.regions && typeof existing.regions === 'object'
+      ? { ...existing.regions }
+      : {};
+    regions.__groups = state.groups.map(group => ({
+      id: group.id,
+      members: [...group.members]
+    }));
+    revenue.saveRegionSettlement(key, {
+      taxFeePercent: existing?.taxFeePercent != null ? existing.taxFeePercent : state.taxFeePercent,
+      regions
+    });
+    return true;
+  }
+
+  function sameRegion(left, right) {
+    if (left === right) return true;
+    const a = foldRegionKey(left);
+    const b = foldRegionKey(right);
+    return !!(a && b && a === b);
+  }
+
+  function resolveMemberName(name, regions) {
+    const list = regions || state.rows || [];
+    const exact = list.find(row => row.region === name);
+    if (exact) return exact.region;
+    const folded = foldRegionKey(name);
+    if (!folded) return '';
+    const hit = list.find(row => foldRegionKey(row.region) === folded);
+    return hit ? hit.region : '';
+  }
+
   function sumMoney(rows) {
     return (rows || []).reduce((acc, row) => {
       acc.supplyPaid += Math.round(Number(row?.supplyPaid) || 0);
@@ -457,12 +521,15 @@
   }
 
   function activeGroups(regions) {
-    const names = new Set((regions || []).map(row => row.region));
     return state.groups
-      .map(group => ({
-        ...group,
-        members: group.members.filter(name => names.has(name))
-      }))
+      .map(group => {
+        const members = [];
+        group.members.forEach(name => {
+          const resolved = resolveMemberName(name, regions);
+          if (resolved && !members.includes(resolved)) members.push(resolved);
+        });
+        return { ...group, members };
+      })
       .filter(group => group.members.length >= 2);
   }
 
@@ -499,7 +566,6 @@
     }
 
     const groups = activeGroups(regions);
-    state.groups = groups;
     const groupedNames = new Set(groups.flatMap(group => group.members));
     const byName = new Map(regions.map(row => [row.region, row]));
     const lines = [];
@@ -741,7 +807,7 @@
         state.draftRegions = {};
         state.groups = [];
         Revenue()?.saveRegionSettlement?.(state.weekStart, {
-          regions: {},
+          regions: { __groups: [] },
           taxFeePercent: state.taxFeePercent
         });
       }
@@ -1790,7 +1856,7 @@
     const names = [...document.querySelectorAll('[data-region-check]:checked')].map(el => el.value);
     document.querySelectorAll('[data-group-check]:checked').forEach(el => {
       const group = state.groups.find(item => item.id === el.value);
-      if (group) names.push(...group.members);
+      if (group) group.members.forEach(name => names.push(resolveMemberName(name) || name));
     });
     return [...new Set(names.map(name => String(name || '').trim()).filter(Boolean))];
   }
@@ -1812,10 +1878,11 @@
       showToast('묶을 지역을 2곳 이상 선택하세요.');
       return;
     }
-    state.groups = state.groups.filter(group => !group.members.some(name => members.includes(name)));
+    state.groups = state.groups.filter(group => !group.members.some(name => members.some(member => sameRegion(name, member))));
     state.groups.push({ id: groupKey(), members, expanded: false });
+    persistGroups();
     render();
-    showToast(`${members.length}곳을 묶었습니다. 남은 금액은 합계로 계산됩니다.`);
+    showToast(`${members.length}곳을 묶었습니다. 다음에도 이 묶음이 유지됩니다.`);
   }
 
   function ungroupSelected(ids) {
@@ -1825,6 +1892,7 @@
       return;
     }
     state.groups = state.groups.filter(group => !set.has(group.id));
+    persistGroups();
     render();
   }
 
