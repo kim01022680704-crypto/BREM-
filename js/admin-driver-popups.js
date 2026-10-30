@@ -11,7 +11,7 @@
   var CONFIG = {
     register: {
       title: '기사 간이 등록',
-      src: 'rider-manage.html?register=1&embed=1&simple=1&v=20261030phone1',
+      src: 'rider-manage.html?register=1&embed=1&simple=1&v=20261030kakaoapp1',
       full: 'rider-manage.html?register=1'
     },
     list: {

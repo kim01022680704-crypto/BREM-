@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="css/login.css">
   <link rel="stylesheet" href="css/admin.css?v=20261029edit2">
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261029edit1">
-  <link rel="stylesheet" href="css/admin-app.css?v=20261029edit1">
+  <link rel="stylesheet" href="css/admin-app.css?v=20261030kakaoapp1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
 </head>
@@ -101,6 +101,7 @@
             <strong>기사상세검색</strong>
           </button>
         </div>
+        <button type="button" class="admin-phone-kakao-btn" id="adminAppKakaoRegisterBtn">카톡등록하기</button>
         <div class="admin-phone-stats">
           <button type="button" class="admin-phone-stat" data-admin-app-jump="inquiry">
             <span>미확인 문의</span>
@@ -505,6 +506,22 @@
 
   <div class="toast" id="toast"></div>
 
+  <div class="admin-kakao-paste" id="adminKakaoPasteModal" hidden>
+    <button type="button" class="admin-kakao-paste__backdrop" data-close-admin-kakao-paste aria-label="닫기"></button>
+    <div class="admin-kakao-paste__dialog" role="dialog" aria-modal="true" aria-labelledby="adminKakaoPasteTitle">
+      <div class="admin-kakao-paste__head">
+        <h3 id="adminKakaoPasteTitle">카톡 등록</h3>
+        <button type="button" class="admin-kakao-paste__close" data-close-admin-kakao-paste aria-label="닫기">×</button>
+      </div>
+      <p class="admin-kakao-paste__help">팀장이 보낸 글을 그대로 붙여넣으세요.</p>
+      <textarea id="adminKakaoPasteBox" rows="12" placeholder="이름:&#10;전화번호:&#10;은행명:&#10;계좌번호:&#10;예금주명:&#10;주민번호:&#10;운행지역:&#10;배민 아이디:"></textarea>
+      <div class="admin-kakao-paste__actions">
+        <button type="button" class="small-btn" data-close-admin-kakao-paste>닫기</button>
+        <button type="button" class="small-btn admin-kakao-paste__apply" id="adminKakaoPasteApply">등록칸에 넣기</button>
+      </div>
+    </div>
+  </div>
+
   <div class="driver-popup-modal" id="driverPopupModal" hidden>
     <div class="driver-popup-modal__backdrop" data-close-driver-popup></div>
     <div class="driver-popup-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="driverPopupTitle">
@@ -544,8 +561,8 @@
   <script src="js/admin-work-requests.js?v=20260927req8"></script>
   <script src="js/driver-utils.js?v=20260921off1"></script>
   <script src="js/driver-detail-search.js?v=20261030detailacct1"></script>
-  <script src="js/admin-driver-popups.js?v=20261030phone1"></script>
-  <script src="js/admin-app.js?v=20261029edit1"></script>
+  <script src="js/admin-driver-popups.js?v=20261030kakaoapp1"></script>
+  <script src="js/admin-app.js?v=20261030kakaoapp1"></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
 </html>

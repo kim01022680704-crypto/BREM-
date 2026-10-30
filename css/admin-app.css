@@ -170,6 +170,83 @@ html.brem-admin-app-nav .driver-phone {
   font-weight: 800;
 }
 
+.admin-phone-kakao-btn {
+  width: 100%;
+  margin: -4px 0 12px;
+  padding: 14px 12px;
+  border: 0;
+  border-radius: 16px;
+  background: #ffd400;
+  color: #111;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.admin-kakao-paste[hidden] { display: none !important; }
+.admin-kakao-paste {
+  position: fixed;
+  inset: 0;
+  z-index: 420;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+}
+.admin-kakao-paste__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.72);
+}
+.admin-kakao-paste__dialog {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: #17171a;
+  color: #f4f4f5;
+}
+.admin-kakao-paste__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.admin-kakao-paste__head h3 { margin: 0; font-size: 1.05rem; }
+.admin-kakao-paste__close {
+  border: 0;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.admin-kakao-paste__help { margin: 8px 0 10px; color: #a1a1aa; font-size: 0.86rem; }
+.admin-kakao-paste textarea {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: #0e0e0f;
+  color: #f4f4f5;
+}
+.admin-kakao-paste__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.admin-kakao-paste__apply {
+  background: #ffd400;
+  border: 0;
+  color: #111;
+  font-weight: 800;
+}
+
 html.brem-admin-app-nav .driver-popup-modal {
   z-index: 220;
   padding: max(12px, env(safe-area-inset-top)) 10px calc(12px + env(safe-area-inset-bottom));

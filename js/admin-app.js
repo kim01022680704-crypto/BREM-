@@ -691,8 +691,88 @@
     location.reload();
   }
 
+  let kakaoFrameReady = false;
+  let pendingKakaoText = '';
+
+  function sendKakaoText(text) {
+    const frame = document.getElementById('driverPopupFrame');
+    if (!frame?.contentWindow) return false;
+    frame.contentWindow.postMessage({ type: 'brem-kakao-paste', text }, window.location.origin);
+    return true;
+  }
+
+  function openKakaoPasteSheet() {
+    const modal = $('adminKakaoPasteModal');
+    if (!modal) return;
+    modal.hidden = false;
+    const box = $('adminKakaoPasteBox');
+    if (!box) return;
+    window.setTimeout(() => box.focus(), 60);
+  }
+
+  function closeKakaoPasteSheet() {
+    const modal = $('adminKakaoPasteModal');
+    if (modal) modal.hidden = true;
+  }
+
+  function deliverKakaoText(text) {
+    const value = String(text || '');
+    if (!value.trim()) {
+      showToast('이름: 전화번호: 형식으로 붙여넣어 주세요.');
+      return;
+    }
+    if (kakaoFrameReady && sendKakaoText(value)) {
+      pendingKakaoText = '';
+      closeKakaoPasteSheet();
+      return;
+    }
+    pendingKakaoText = value;
+    closeKakaoPasteSheet();
+  }
+
+  function bindKakaoPaste() {
+    $('adminAppKakaoRegisterBtn')?.addEventListener('click', () => {
+      kakaoFrameReady = false;
+      pendingKakaoText = '';
+      window.BremDriverPopups?.open('register');
+      openKakaoPasteSheet();
+    });
+    $('adminKakaoPasteApply')?.addEventListener('click', () => {
+      deliverKakaoText($('adminKakaoPasteBox')?.value || '');
+    });
+    $('adminKakaoPasteBox')?.addEventListener('paste', event => {
+      const text = event.clipboardData?.getData('text') || '';
+      if (!String(text).trim()) return;
+      event.preventDefault();
+      const box = $('adminKakaoPasteBox');
+      if (box) box.value = text;
+      deliverKakaoText(text);
+    });
+    document.addEventListener('click', event => {
+      if (event.target.closest('[data-close-admin-kakao-paste]')) closeKakaoPasteSheet();
+    });
+    window.addEventListener('message', event => {
+      if (event.origin !== window.location.origin) return;
+      const type = event.data?.type;
+      if (type === 'brem-kakao-ready') {
+        kakaoFrameReady = true;
+        if (!pendingKakaoText) return;
+        sendKakaoText(pendingKakaoText);
+        pendingKakaoText = '';
+      }
+      if (type === 'brem-open-kakao-paste') {
+        if (!window.BremDriverPopups?.isOpen?.()) {
+          kakaoFrameReady = false;
+          window.BremDriverPopups?.open('register');
+        }
+        openKakaoPasteSheet();
+      }
+    });
+  }
+
   function bindEvents() {
     $('adminLoginForm')?.addEventListener('submit', login);
+    bindKakaoPaste();
     $('adminAppDriverDetailBtn')?.addEventListener('click', () => {
       window.BremDriverDetailSearch?.openPanel?.();
     });

@@ -843,10 +843,31 @@
     const modal = document.getElementById('kakaoRegisterModal');
     if (!box || !openBtn || !modal) return;
     const close = () => { modal.hidden = true; };
+    const inAdminAppFrame = () => {
+      try {
+        return window.parent !== window
+          && /admin-app\.html$/i.test(new URL(window.parent.location.href).pathname);
+      } catch (e) {
+        return false;
+      }
+    };
     openBtn.addEventListener('click', () => {
+      if (inAdminAppFrame()) {
+        window.parent.postMessage({ type: 'brem-open-kakao-paste' }, window.location.origin);
+        return;
+      }
       modal.hidden = false;
       box.focus();
     });
+    window.addEventListener('message', event => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== 'brem-kakao-paste') return;
+      box.value = String(event.data.text || '');
+      applyLeaderPaste(box.value);
+    });
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'brem-kakao-ready' }, window.location.origin);
+    }
     modal.querySelectorAll('[data-close-kakao-register]').forEach(el => {
       el.addEventListener('click', close);
     });
