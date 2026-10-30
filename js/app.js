@@ -703,6 +703,142 @@
     showToast('비밀번호를 1234로 설정했습니다.');
   }
 
+  function pasteLabel(raw) {
+    return String(raw || '')
+      .replace(/★/g, '')
+      .replace(/（/g, '(')
+      .replace(/）/g, ')')
+      .replace(/\([^)]*\)/g, '')
+      .replace(/\s/g, '')
+      .toLowerCase();
+  }
+
+  function parseLeaderPaste(text) {
+    const alias = {
+      이름: 'name',
+      전화번호: 'phone',
+      연락처: 'phone',
+      은행명: 'bankName',
+      은행: 'bankName',
+      계좌번호: 'accountNumber',
+      예금주명: 'accountHolder',
+      예금주: 'accountHolder',
+      주민번호: 'residentNumber',
+      주민등록번호: 'residentNumber',
+      운행지역: 'region',
+      지역: 'region',
+      추천인: 'referrer',
+      가입경로: 'source',
+      배민아이디: 'baeminId',
+      배민id: 'baeminId'
+    };
+    const fields = {};
+    String(text || '').split(/\r?\n/).forEach(line => {
+      const match = String(line || '').trim().match(/^([^:：]+)[:：]\s*(.*)$/);
+      if (!match) return;
+      const key = alias[pasteLabel(match[1])];
+      const value = String(match[2] || '').trim();
+      if (!key || !value || value === '-' || value === '없음') return;
+      fields[key] = value;
+    });
+    return fields;
+  }
+
+  function matchRegionOption(selectEl, raw) {
+    if (!selectEl) return '';
+    const wanted = String(raw || '').replace(/\s/g, '');
+    const core = wanted.replace(/(시|군|구)$/, '');
+    if (!wanted) return '';
+    const scored = [...selectEl.options].filter(option => option.value).map(option => {
+      const text = String(option.textContent || '').replace(/\s/g, '');
+      const value = String(option.value || '').replace(/\s/g, '');
+      let score = 0;
+      if (text === wanted || value === wanted) score = 100;
+      else if (text.includes(wanted) || value.includes(wanted)) score = 80;
+      else if (core && core.length >= 2 && (text.includes(core) || value.includes(core))) score = 60;
+      return { value: option.value, score };
+    }).filter(item => item.score > 0);
+    scored.sort((a, b) => b.score - a.score);
+    if (!scored.length) return '';
+    if (scored.length > 1 && scored[0].score === scored[1].score && scored[0].score < 100) return '';
+    return scored[0].value;
+  }
+
+  function applyLeaderPaste(text) {
+    const fields = parseLeaderPaste(text);
+    if (!fields.name && !fields.phone && !fields.baeminId) {
+      showToast('이름: 전화번호: 형식으로 붙여넣어 주세요.');
+      return false;
+    }
+    if (fields.name) nameInput.value = fields.name;
+    if (fields.phone) phoneInput.value = fields.phone;
+    if (fields.bankName && bankNameInput) bankNameInput.value = fields.bankName;
+    if (fields.accountHolder && accountHolderInput) accountHolderInput.value = fields.accountHolder;
+    if (fields.accountNumber && accountNumberInput) accountNumberInput.value = fields.accountNumber.replace(/\s/g, '');
+    if (fields.residentNumber && residentNumberInput) {
+      residentNumberInput.value = formatResidentNumber(fields.residentNumber);
+    }
+    if (fields.baeminId) baeminIdInput.value = fields.baeminId.replace(/\s/g, '');
+    const memoLines = [];
+    if (fields.referrer) memoLines.push(`추천인: ${fields.referrer}`);
+    if (fields.source) memoLines.push(`가입경로: ${fields.source}`);
+    let regionNote = '';
+    if (fields.region) {
+      const baeminRegion = matchRegionOption(regionBaeminInput, fields.region);
+      const coupangRegion = matchRegionOption(regionCoupangInput, fields.region);
+      if (baeminRegion && regionBaeminInput) regionBaeminInput.value = baeminRegion;
+      if (coupangRegion && regionCoupangInput) regionCoupangInput.value = coupangRegion;
+      if (!baeminRegion && !coupangRegion) {
+        memoLines.push(`운행지역: ${fields.region}`);
+        regionNote = ' 운행지역은 목록에서 직접 고르세요.';
+      }
+    }
+    if (memoLines.length && memoInput) {
+      const prev = memoInput.value.trim();
+      memoInput.value = prev ? `${prev}\n${memoLines.join('\n')}` : memoLines.join('\n');
+    }
+    updateLoginIdPreview();
+    syncPlatformChecksFromBaeminId();
+    const filled = [
+      fields.name && '이름',
+      fields.phone && '연락처',
+      fields.bankName && '은행',
+      fields.accountNumber && '계좌번호',
+      fields.baeminId && '배민 아이디'
+    ].filter(Boolean);
+    showToast(`${filled.join('·') || '입력'}을 넣었습니다.${regionNote}`);
+    return true;
+  }
+
+  function bindLeaderPaste() {
+    const box = document.getElementById('driverLeaderPaste');
+    const button = document.getElementById('driverLeaderPasteBtn');
+    const openBtn = document.getElementById('kakaoRegisterOpenBtn');
+    const modal = document.getElementById('kakaoRegisterModal');
+    if (!box || !openBtn || !modal) return;
+    const close = () => { modal.hidden = true; };
+    openBtn.addEventListener('click', () => {
+      modal.hidden = false;
+      box.focus();
+    });
+    modal.querySelectorAll('[data-close-kakao-register]').forEach(el => {
+      el.addEventListener('click', close);
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !modal.hidden) close();
+    });
+    box.addEventListener('paste', event => {
+      const text = event.clipboardData?.getData('text') || '';
+      if (!String(text).trim()) return;
+      event.preventDefault();
+      box.value = text;
+      if (applyLeaderPaste(text)) close();
+    });
+    button?.addEventListener('click', () => {
+      if (applyLeaderPaste(box.value)) close();
+    });
+  }
+
   function init() {
     joinDateInput.value = today();
     if (!driverIdInput.value) passwordInput.value = DEFAULT_DRIVER_PASSWORD;
@@ -737,6 +873,7 @@
       ensurePlatformSelection();
     });
     form.addEventListener('submit', handleSubmit);
+    bindLeaderPaste();
     resetBtn.addEventListener('click', resetForm);
     refreshHeader();
     window.BremDriverIndex = { refresh: refreshHeader };

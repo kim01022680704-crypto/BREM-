@@ -133,7 +133,39 @@
     }
     html.is-embed-new .platform-panel-label { color: #cbd5e1 !important; }
     html.is-embed-new .platform-check > span { color: #e5e7eb !important; }
-    /* 버튼: 기사 등록=옐로, 초기화=고스트(다크) */
+    .kakao-register-bar { margin: 0 0 14px; }
+    .kakao-register-bar .btn { width: 100%; font-weight: 800; }
+    .kakao-register-modal[hidden] { display: none !important; }
+    .kakao-register-modal {
+      position: fixed; inset: 0; z-index: 80;
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .kakao-register-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.62); }
+    .kakao-register-modal__dialog {
+      position: relative; width: min(520px, 100%);
+      background: #17171a; color: #f4f4f5;
+      border: 1px solid rgba(255,255,255,0.14); border-radius: 14px;
+      padding: 16px; box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+    }
+    .kakao-register-modal__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .kakao-register-modal__head h3 { margin: 0; font-size: 1.05rem; }
+    .kakao-register-modal__close {
+      border: 0; background: transparent; color: #e5e7eb; font-size: 1.4rem; line-height: 1; cursor: pointer;
+    }
+    .kakao-register-modal__help { margin: 8px 0 10px; color: #a1a1aa; font-size: 0.86rem; }
+    .kakao-register-modal textarea {
+      width: 100%; min-height: 240px; resize: vertical;
+      background: #0e0e0f; color: #f4f4f5;
+      border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; padding: 10px 12px;
+    }
+    .kakao-register-modal__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    .kakao-register-modal__actions .btn.primary { background: #ffd400; border: 0; color: #111; font-weight: 800; }
+    .kakao-register-modal__actions .btn.ghost {
+      background: #1b1b1c; border: 1px solid rgba(255,255,255,0.16); color: #e5e7eb;
+    }
+    html.is-embed-new .kakao-register-bar .btn {
+      background: #ffd400 !important; border: 0 !important; color: #111 !important;
+    }
     html.is-embed-new .form-actions {
       position: static !important;
       margin: 8px 0 0 !important;
@@ -317,6 +349,10 @@
 
         <form id="driverForm" class="driver-form driver-form--register">
           <input type="hidden" id="driverId">
+
+          <div class="kakao-register-bar" id="kakaoRegisterBar">
+            <button type="button" class="btn primary" id="kakaoRegisterOpenBtn">카톡등록하기</button>
+          </div>
 
           <section class="form-section form-section--core">
             <h3 class="form-section-title register-section-title">기본 정보</h3>
@@ -616,6 +652,22 @@
     <p class="calendar-help">시작일을 클릭하면 선택됩니다.</p>
   </div>
 
+  <div class="kakao-register-modal" id="kakaoRegisterModal" hidden>
+    <div class="kakao-register-modal__backdrop" data-close-kakao-register></div>
+    <div class="kakao-register-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="kakaoRegisterTitle">
+      <div class="kakao-register-modal__head">
+        <h3 id="kakaoRegisterTitle">카톡 등록</h3>
+        <button type="button" class="kakao-register-modal__close" data-close-kakao-register aria-label="닫기">×</button>
+      </div>
+      <p class="kakao-register-modal__help">팀장이 보낸 글을 그대로 붙여넣으세요.</p>
+      <textarea id="driverLeaderPaste" rows="12" placeholder="이름:&#10;전화번호:&#10;은행명:&#10;계좌번호:&#10;예금주명:&#10;주민번호:&#10;운행지역:&#10;배민 아이디:"></textarea>
+      <div class="kakao-register-modal__actions">
+        <button type="button" class="btn ghost" data-close-kakao-register>닫기</button>
+        <button type="button" class="btn primary" id="driverLeaderPasteBtn">등록칸에 넣기</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/brem-env.js"></script>
@@ -636,7 +688,7 @@
   <script src="js/driver-duplicate-dialog.js?v=20260820c"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/index-nav.js"></script>
-  <script src="js/app.js?v=20261029edit2"></script>
+  <script src="js/app.js?v=20261030kakao1"></script>
   <script src="js/driver-bulk.js?v=20260922active1"></script>
 </body>
 </html>
