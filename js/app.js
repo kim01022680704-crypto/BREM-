@@ -67,7 +67,7 @@
     statusEl: field.key === 'residentNumber' ? residentNumberPrivacyStatus : accountNumberPrivacyStatus,
     formatValue(value) {
       if (field.key === 'residentNumber') return formatResidentNumber(value || '');
-      return String(value || '');
+      return stripAccountHyphens(value || '');
     }
   }));
 
@@ -232,6 +232,27 @@
     return String(value || '').replace(/[^0-9]/g, '');
   }
 
+  let phoneKeepAsIs = false;
+
+  function formatPhoneField(value, keepHyphen) {
+    const raw = String(value || '').trim();
+    if (keepHyphen && raw.includes('-')) return raw;
+    const digits = raw.replace(/\D/g, '').slice(0, 11);
+    if (!digits) return '';
+    const tenDigit = digits.length <= 10 && !digits.startsWith('010');
+    if (digits.length <= 3) return digits;
+    if (tenDigit) {
+      if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+    }
+    if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`;
+  }
+
+  function stripAccountHyphens(value) {
+    return String(value || '').replace(/[-\s]/g, '');
+  }
+
   function updateLoginIdPreview() {
     if (!loginIdPreview) return;
     const name = nameInput.value.trim();
@@ -306,6 +327,7 @@
     form.reset();
     driverIdInput.value = '';
     platformAutoSync = true;
+    phoneKeepAsIs = false;
     renderEventOptions('');
     joinDateInput.value = today();
     if (eventStartDatePicker) eventStartDatePicker.setDate('');
@@ -415,12 +437,12 @@
     const baeminId = baeminIdInput.value.trim();
     return {
       name: nameInput.value.trim(),
-      phone: phoneInput.value.trim(),
+      phone: formatPhoneField(phoneInput.value, phoneKeepAsIs),
       residentNumber: normalizeResidentNumber(residentNumberInput?.value || ''),
       password: normalizeLoginPassword(passwordInput.value) || DEFAULT_DRIVER_PASSWORD,
       bankName: bankNameInput ? bankNameInput.value.trim() : '',
       accountHolder: accountHolderInput ? accountHolderInput.value.trim() : '',
-      accountNumber: accountNumberInput ? accountNumberInput.value.trim() : '',
+      accountNumber: accountNumberInput ? stripAccountHyphens(accountNumberInput.value) : '',
       baeminId,
       platformCoupang: platformCoupangInput.checked,
       platformBaemin: platformBaeminInput.checked,
@@ -570,7 +592,8 @@
 
     driverIdInput.value = driver.id;
     nameInput.value = driver.name;
-    phoneInput.value = driver.phone;
+    phoneKeepAsIs = String(driver.phone || '').includes('-');
+    phoneInput.value = formatPhoneField(driver.phone, phoneKeepAsIs);
     baeminIdInput.value = driver.baeminId || '';
     platformAutoSync = false;
     platformCoupangInput.checked = driver.platformCoupang !== false;
@@ -771,10 +794,13 @@
       return false;
     }
     if (fields.name) nameInput.value = fields.name;
-    if (fields.phone) phoneInput.value = fields.phone;
+    if (fields.phone) {
+      phoneKeepAsIs = fields.phone.includes('-');
+      phoneInput.value = formatPhoneField(fields.phone, phoneKeepAsIs);
+    }
     if (fields.bankName && bankNameInput) bankNameInput.value = fields.bankName;
     if (fields.accountHolder && accountHolderInput) accountHolderInput.value = fields.accountHolder;
-    if (fields.accountNumber && accountNumberInput) accountNumberInput.value = fields.accountNumber.replace(/\s/g, '');
+    if (fields.accountNumber && accountNumberInput) accountNumberInput.value = stripAccountHyphens(fields.accountNumber);
     if (fields.residentNumber && residentNumberInput) {
       residentNumberInput.value = formatResidentNumber(fields.residentNumber);
     }
@@ -860,7 +886,34 @@
     unhideAllResidentNumbersBtn?.addEventListener('click', handleUnhideAllResidentNumbers);
     resetDriverPasswordBtn?.addEventListener('click', handleResetDriverPassword);
     nameInput.addEventListener('input', updateLoginIdPreview);
-    phoneInput.addEventListener('input', updateLoginIdPreview);
+    phoneInput.addEventListener('paste', event => {
+      const text = String(event.clipboardData?.getData('text') || '').trim();
+      if (!text) return;
+      event.preventDefault();
+      phoneKeepAsIs = text.includes('-');
+      phoneInput.value = formatPhoneField(text, phoneKeepAsIs);
+      updateLoginIdPreview();
+    });
+    phoneInput.addEventListener('input', () => {
+      if (!phoneInput.value.trim()) phoneKeepAsIs = false;
+      if (!phoneKeepAsIs) {
+        const next = formatPhoneField(phoneInput.value, false);
+        if (next !== phoneInput.value) {
+          const atEnd = phoneInput.selectionStart === phoneInput.value.length;
+          phoneInput.value = next;
+          if (atEnd) phoneInput.setSelectionRange(next.length, next.length);
+        }
+      }
+      updateLoginIdPreview();
+    });
+    accountNumberInput?.addEventListener('input', () => {
+      if (accountNumberInput.disabled) return;
+      const next = stripAccountHyphens(accountNumberInput.value);
+      if (next === accountNumberInput.value) return;
+      const atEnd = accountNumberInput.selectionStart === accountNumberInput.value.length;
+      accountNumberInput.value = next;
+      if (atEnd) accountNumberInput.setSelectionRange(next.length, next.length);
+    });
     baeminIdInput.addEventListener('input', () => {
       if (platformAutoSync) syncPlatformChecksFromBaeminId();
     });
