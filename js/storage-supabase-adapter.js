@@ -247,6 +247,7 @@ window.BremSupabaseStorageAdapter = (function () {
         keys.callEditLogs,
         keys.riderViewPublish,
         keys.promotionSettings,
+        keys.friendInvites,
         keys.promotionSelectorOptions,
         keys.manualNameMappings,
         // [Egress 최적화] 직계약 정산 클러스터(약 7.3MB)는 코어에서 분리한다.

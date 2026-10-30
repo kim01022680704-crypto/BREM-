@@ -34,7 +34,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20261029edit2">
+  <link rel="stylesheet" href="css/admin.css?v=20261030invite2">
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261029edit1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
@@ -156,6 +156,7 @@
         <button class="nav-btn" data-section="rejections">거절율 입력</button>
         <button class="nav-btn" data-section="targets">목표 콜수</button>
         <button class="nav-btn" data-section="promotions">프로모션 관리</button>
+        <button class="nav-btn" data-section="friend-invite">친구초대</button>
         <button class="nav-btn" data-section="promotion-apply">프로모션 적용</button>
         <button class="nav-btn" data-section="promotion-settlement">프로모션정산등록</button>
         <button class="nav-btn" data-section="settlements">일정산서 업로드</button>
@@ -3784,6 +3785,114 @@
               <tbody id="missionBulkUnmatchedRows"></tbody>
             </table>
           </div>
+        </article>
+      </section>
+
+      <section class="section" id="friend-invite">
+        <article class="card">
+          <div class="card-header">
+            <h2>친구초대</h2>
+          </div>
+          <p class="form-help">소개자마다 주간 목표 콜수, 지급액, 지급 주 수를 저장합니다. 친구를 연결하는 순간 그 조건이 친구에게 고정되고, 나중에 소개자 조건을 바꿔도 이미 연결된 친구는 그대로입니다.</p>
+          <p class="form-help">콜은 그 주 주정산서의 배민과 쿠팡을 합칩니다. 직계약 정산서에 그 기사가 있으면 직계약을 쓰고, 없으면 브로를 씁니다. 가입한 정산주부터 지급 주 수만큼 보고, 목표 이상이면 그 주 지급액을 줍니다. 친구만이면 친구에게만, 둘 다이면 친구와 소개자에게 같은 금액을 각각 줍니다. 미달인 주도 주 수에 포함되고, 주 수가 끝나면 종료입니다. 지급액은 여기서 확인하고, 주정산 금액에는 자동으로 넣지 않습니다.</p>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>소개자 기본 조건</h2>
+          </div>
+          <form id="friendInviteProfileForm" class="promotion-rule-form">
+            <div class="promotion-form-grid">
+              <div class="friend-invite-search">
+                <label>
+                  소개자
+                  <input id="friendInviteReferrerQuery" type="search" placeholder="이름 또는 전화번호" autocomplete="off" data-readonly-allow="true">
+                </label>
+                <div id="friendInviteReferrerResults" class="friend-invite-results" hidden></div>
+              </div>
+              <label>
+                주간 목표 콜수
+                <input id="friendInviteGoal" type="number" min="1" max="9999" step="1" placeholder="50">
+              </label>
+              <label>
+                달성 지급액 (원)
+                <input id="friendInvitePay" type="number" min="0" max="10000000" step="1" placeholder="50000">
+              </label>
+              <label>
+                지급 주 수
+                <input id="friendInviteWeeks" type="number" min="1" max="12" step="1" placeholder="3">
+              </label>
+              <label>
+                지급 대상
+                <select id="friendInvitePayTarget">
+                  <option value="">선택</option>
+                  <option value="friend">친구만</option>
+                  <option value="both">친구·소개자 둘 다</option>
+                </select>
+              </label>
+            </div>
+            <p id="friendInviteReferrerPick" class="form-help">소개자를 검색해서 고르세요.</p>
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">조건 저장</button>
+            </div>
+          </form>
+          <div id="friendInviteProfileTable"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>친구 연결</h2>
+          </div>
+          <form id="friendInviteLinkForm" class="promotion-rule-form">
+            <div class="promotion-form-grid">
+              <label>
+                소개자
+                <select id="friendInviteLinkReferrer">
+                  <option value="">소개자 선택</option>
+                </select>
+              </label>
+              <div class="friend-invite-search">
+                <label>
+                  친구
+                  <input id="friendInviteFriendQuery" type="search" placeholder="이름 또는 전화번호" autocomplete="off" data-readonly-allow="true">
+                </label>
+                <div id="friendInviteFriendResults" class="friend-invite-results" hidden></div>
+              </div>
+              <label>
+                가입 정산주 (수요일)
+                <input id="friendInviteJoinWeek" type="date" data-readonly-allow-filter="true">
+              </label>
+            </div>
+            <p id="friendInviteFriendPick" class="form-help">친구를 검색해서 고르세요.</p>
+            <p id="friendInviteLinkHint" class="form-help">소개자 조건을 먼저 저장한 뒤 친구를 연결합니다.</p>
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">친구 연결</button>
+            </div>
+          </form>
+          <div id="friendInviteLinkTable"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>이번 주 정리</h2>
+          </div>
+          <div class="promotion-form-grid">
+            <label>
+              정산주
+              <input id="friendInviteWeek" type="date" data-readonly-allow-filter="true">
+            </label>
+          </div>
+          <p id="friendInviteWeekLabel" class="form-help"></p>
+          <div id="friendInviteStats" class="promotion-summary-grid"></div>
+          <div class="promotion-platform-tabs" role="tablist" aria-label="친구초대 결과 구분">
+            <button type="button" class="promotion-tab active" data-friend-invite-filter="all" data-readonly-allow-filter="true">전체</button>
+            <button type="button" class="promotion-tab" data-friend-invite-filter="hit" data-readonly-allow-filter="true">달성</button>
+            <button type="button" class="promotion-tab" data-friend-invite-filter="miss" data-readonly-allow-filter="true">미달</button>
+            <button type="button" class="promotion-tab" data-friend-invite-filter="pending" data-readonly-allow-filter="true">정산서 없음</button>
+            <button type="button" class="promotion-tab" data-friend-invite-filter="wait" data-readonly-allow-filter="true">시작 전</button>
+            <button type="button" class="promotion-tab" data-friend-invite-filter="done" data-readonly-allow-filter="true">종료</button>
+          </div>
+          <div id="friendInviteResultTable"></div>
         </article>
       </section>
 
@@ -10041,8 +10150,8 @@
   <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js?v=20261009missionassign1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
-  <script src="js/storage-supabase-adapter.js?v=20261004rebase1"></script>
-  <script src="js/storage.js?v=20261029week2"></script>
+  <script src="js/storage-supabase-adapter.js?v=20261030invite1"></script>
+  <script src="js/storage.js?v=20261030invite2"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js?v=20261025inq9"></script>
@@ -10056,6 +10165,7 @@
   <script src="js/promotion-conditions.js?v=20260928step1"></script>
   <script src="js/promotion-engine.js?v=20261009nopperiod1"></script>
   <script src="js/promotion-admin.js?v=20261010promolockvis1"></script>
+  <script src="js/friend-invite-admin.js?v=20261030invite2"></script>
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
   <script src="js/weekly-settlement.js?v=20260922part4"></script>
   <script src="js/weekly-settlement-admin.js?v=20260922part5"></script>
@@ -10110,9 +10220,9 @@
   <script src="js/admin-mission-assignment.js?v=20261010missionkeep1"></script>
   <script src="js/table-sort.js"></script>
     <script src="js/admin-work-requests.js?v=20260927req8"></script>
-    <script src="js/admin.js?v=20261029week2"></script>
+    <script src="js/admin.js?v=20261030invite1"></script>
   <script src="js/admin-driver-popups.js?v=20261029edit2" defer></script>
-  <script src="js/admin-sidebar-groups.js?v=20261029week2" defer></script>
+  <script src="js/admin-sidebar-groups.js?v=20261030invite1" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

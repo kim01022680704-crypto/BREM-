@@ -52,6 +52,7 @@ const BremStorage = (function () {
     deductionLedger: 'brem_deduction_ledger_v1',
     manualNameMappings: 'brem_admin_manual_name_mappings',
     promotionApplyResults: 'brem_admin_promotion_apply_results',
+    friendInvites: 'brem_admin_friend_invites_v1',
     missionDefaults: 'brem_admin_mission_defaults',
     dashboardWeekBasis: 'brem_admin_dashboard_week_basis',
     leaseDashboardWeekBasis: 'brem_lease_dashboard_week_basis',
@@ -1596,6 +1597,7 @@ const BremStorage = (function () {
     'mission-assignment': [KEYS.promotionRules, KEYS.drivers, KEYS.missionDefaults],
     'rider-inquiries': [KEYS.riderInquiries],
     promotions: [KEYS.promotionRules, KEYS.drivers, KEYS.missionDefaults],
+    'friend-invite': [KEYS.friendInvites, KEYS.drivers, KEYS.weeklySettlements, KEYS.weeklySettlementsDirect],
     'promotion-apply': [KEYS.promotionRules, KEYS.drivers, KEYS.weeklySettlements, KEYS.weeklySettlementsDirect, KEYS.promotionApplyResults, KEYS.settlements, KEYS.rejections],
     calls: [KEYS.drivers, KEYS.calls, KEYS.callEditLogs],
     rejections: [KEYS.drivers, KEYS.rejections],
@@ -14223,6 +14225,7 @@ const BremStorage = (function () {
     'rejections',
     'targets',
     'promotions',
+    'friend-invite',
     'promotion-apply',
     'promotion-settlement',
     'settlements',
@@ -14437,6 +14440,14 @@ const BremStorage = (function () {
       normalized.splice(normalized.indexOf('payroll-slips') + 1, 0, 'payroll-slip-search');
     }
 
+    if ((normalized.includes('promotions') || normalized.includes('promotion-apply'))
+      && !normalized.includes('friend-invite')) {
+      const promoIndex = normalized.indexOf('promotions');
+      const applyIndex = normalized.indexOf('promotion-apply');
+      const at = promoIndex >= 0 ? promoIndex + 1 : applyIndex;
+      normalized.splice(at, 0, 'friend-invite');
+    }
+
     if (isExplicitList) {
       return normalized;
     }
@@ -14538,6 +14549,13 @@ const BremStorage = (function () {
       && !next.includes('tax-invoice-weekly')
       && next.includes('tax-invoice-monthly')) {
       next.splice(next.indexOf('tax-invoice-monthly') + 1, 0, 'tax-invoice-weekly');
+    }
+    if (allowed.has('friend-invite') && !next.includes('friend-invite')
+      && (next.includes('promotions') || next.includes('promotion-apply'))) {
+      const promoIndex = next.indexOf('promotions');
+      const applyIndex = next.indexOf('promotion-apply');
+      const at = promoIndex >= 0 ? promoIndex + 1 : applyIndex;
+      next.splice(at, 0, 'friend-invite');
     }
     return next;
   }
@@ -16018,6 +16036,55 @@ const BremStorage = (function () {
     }
   };
 
+  function normalizeFriendInviteStore(raw) {
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const profiles = (Array.isArray(source.profiles) ? source.profiles : []).map(item => ({
+      driverId: String(item?.driverId || '').trim(),
+      goalCalls: Math.round(Number(item?.goalCalls || 0)),
+      payAmount: Math.round(Number(item?.payAmount || 0)),
+      payoutWeeks: Math.round(Number(item?.payoutWeeks || 0)),
+      payTarget: item?.payTarget === 'both' || item?.payTarget === 'friend' ? item.payTarget : '',
+      updatedAt: String(item?.updatedAt || '')
+    })).filter(item => item.driverId && item.goalCalls > 0 && item.payoutWeeks > 0);
+    const seenFriends = new Set();
+    const links = (Array.isArray(source.links) ? source.links : []).map(item => ({
+      id: String(item?.id || '').trim(),
+      referrerId: String(item?.referrerId || '').trim(),
+      friendId: String(item?.friendId || '').trim(),
+      joinWeek: String(item?.joinWeek || '').slice(0, 10),
+      goalCalls: Math.round(Number(item?.goalCalls || 0)),
+      payAmount: Math.round(Number(item?.payAmount || 0)),
+      payoutWeeks: Math.round(Number(item?.payoutWeeks || 0)),
+      payTarget: item?.payTarget === 'both' || item?.payTarget === 'friend' ? item.payTarget : '',
+      createdAt: String(item?.createdAt || '')
+    })).filter(item => {
+      if (!item.id || !item.referrerId || !item.friendId || !item.joinWeek) return false;
+      if (item.friendId === item.referrerId || seenFriends.has(item.friendId)) return false;
+      if (item.goalCalls <= 0 || item.payoutWeeks <= 0) return false;
+      seenFriends.add(item.friendId);
+      return true;
+    });
+    return { profiles, links };
+  }
+
+  const friendInvites = {
+    get() {
+      let raw = storageAdapter.read(KEYS.friendInvites, null);
+      if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch { raw = null; }
+      }
+      return normalizeFriendInviteStore(raw);
+    },
+    save(store) {
+      const next = normalizeFriendInviteStore(store);
+      const persist = storageAdapter.write(KEYS.friendInvites, next);
+      if (persist === undefined) {
+        throw new Error('Supabase 저장 준비가 되지 않았습니다. 로그인 상태를 확인한 뒤 다시 시도하세요.');
+      }
+      return persist;
+    }
+  };
+
   const workRequests = {
     getAll() {
       const raw = storageAdapter.read(KEYS.workRequests, []);
@@ -16033,6 +16100,7 @@ const BremStorage = (function () {
     createId,
     STORAGE_KEYS: KEYS,
     taxInvoices,
+    friendInvites,
     workRequests,
     SCHEMA,
     DATA_GROUPS,

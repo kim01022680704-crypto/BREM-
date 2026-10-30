@@ -221,6 +221,7 @@
     { id: 'rejections', label: '거절율 입력' },
     { id: 'targets', label: '목표 콜수' },
     { id: 'promotions', label: '프로모션 관리' },
+    { id: 'friend-invite', label: '친구초대' },
     { id: 'promotion-apply', label: '프로모션 적용' },
     { id: 'promotion-settlement', label: '프로모션정산등록' },
     { id: 'settlements', label: '일정산서 업로드' },
@@ -7870,6 +7871,9 @@
         break;
       case 'promotions':
         renderPromotions();
+        break;
+      case 'friend-invite':
+        window.BremFriendInviteAdmin?.refresh?.();
         break;
       case 'weekly-settlement':
         if (typeof BremWeeklySettlementAdmin !== 'undefined') BremWeeklySettlementAdmin.refresh('bro');

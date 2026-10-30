@@ -16698,3 +16698,59 @@ tr.is-week-first td {
   color: #64748b;
   padding: 28px 12px !important;
 }
+
+#friend-invite label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.friend-invite-search {
+  position: relative;
+}
+
+.friend-invite-results {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #141414;
+}
+
+.friend-invite-results button {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.friend-invite-results button:hover {
+  background: #1d1d1d;
+}
+
+.friend-invite-empty {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+#friendInviteStats {
+  margin: 12px 0;
+}
+
+.friend-invite-table {
+  min-width: 1120px;
+}
