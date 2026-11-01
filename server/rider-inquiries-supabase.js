@@ -142,6 +142,7 @@ function applyInquiryPatch(raw, patch, row) {
   }
   let nextStatus = patch.status != null ? String(patch.status || 'new') : row.status;
   if (patch.adminReply != null && nextStatus === 'new') nextStatus = 'read';
+  next.status = nextStatus;
   return { raw: next, status: nextStatus };
 }
 

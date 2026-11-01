@@ -612,7 +612,7 @@ window.BremSupabaseMapper = (function () {
       area: row.raw_data?.area ?? row.area ?? '',
       inquiryType: row.raw_data?.inquiryType ?? row.inquiry_type ?? '',
       message: row.raw_data?.message ?? row.message ?? '',
-      status: row.raw_data?.status ?? row.status ?? 'new',
+      status: row.status || row.raw_data?.status || 'new',
       createdAt: row.raw_data?.createdAt ?? row.created_at,
       updatedAt: row.raw_data?.updatedAt ?? row.updated_at
     };

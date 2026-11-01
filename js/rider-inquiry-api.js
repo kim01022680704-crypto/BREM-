@@ -176,7 +176,7 @@
 
   function inquiryMenu(inquiry) {
     if (inquiry?.status === 'done') return 'done';
-    if (replySeen(inquiry)) return 'ack';
+    if (replySeen(inquiry) || inquiry?.adminReply) return 'ack';
     return 'open';
   }
 

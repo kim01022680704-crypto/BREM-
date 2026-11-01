@@ -133,7 +133,16 @@
   const inquirySelectedIds = new Set();
 
   function rememberInquiries(list) {
-    inquiryListCache = Array.isArray(list) ? list : [];
+    const incoming = Array.isArray(list) ? list : [];
+    const previous = new Map((inquiryListCache || []).map(item => [String(item.id), item]));
+    inquiryListCache = incoming.map(item => {
+      const older = previous.get(String(item.id));
+      if (!older || older.status !== 'done' || item.status === 'done') return item;
+      const olderAt = Date.parse(older.updatedAt || '') || 0;
+      const incomingAt = Date.parse(item.updatedAt || '') || 0;
+      if (item.updatedAt && incomingAt >= olderAt) return item;
+      return { ...item, status: older.status, updatedAt: older.updatedAt || item.updatedAt };
+    });
     return inquiryListCache;
   }
 
