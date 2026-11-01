@@ -111,9 +111,10 @@
           ${fact('부가세', money(line.vat))}
           ${fact(`부가세 ${line.taxFeePercent || 20}%`, money(line.taxFee))}
           ${fact('최종입금', money(line.finalDeposit))}
-          ${fact('선정산', money(line.prepaid))}
           ${fact('BREM프로모션', money(line.bremPromo))}
-          ${fact('BREM프로모션원천세', money(line.bremPromoTax))}
+          ${fact('BREM프로모션 3.3%', money(line.bremPromoTax))}
+          ${fact('프로모션 뺀 최종입금', money(line.depositWithoutPromo))}
+          ${fact('선정산', money(line.prepaid))}
           ${fact('프로모션 없을 때 남은 돈', compactMoney(line.pureRemain))}
         </p>
         <p class="hint">${verdict} 칸의 남는 돈은 이 미션 순손해를 뺀 금액입니다.</p>
@@ -132,8 +133,8 @@
                   ${row.map(cell => {
                     const word = cell.status === 'over' ? '적자' : (cell.status === 'ok' ? '가능' : '-');
                     const leftLabel = `남음 ${compactMoney(cell.left)}`;
-                    const title = `${labelOf(cell.start, cell.rate, cell.status)} · 미션 손해 ${money(cell.loss)} · 원천세 이익 ${money(cell.taxProfit)} · 순손해 ${money(cell.net)} · ${leftLabel}`;
-                    return `<td class="is-${cell.status}" title="${escapeHtml(title)}">${word}<br><span>${leftLabel}</span></td>`;
+                    const title = `${labelOf(cell.start, cell.rate, cell.status)} · 미션 ${money(cell.net)} · ${leftLabel}`;
+                    return `<td class="is-${cell.status}" title="${escapeHtml(title)}">${word}<br><span>미션 ${compactMoney(cell.net)}</span><br><span>${leftLabel}</span></td>`;
                   }).join('')}
                 </tr>`).join('')}
             </tbody>
