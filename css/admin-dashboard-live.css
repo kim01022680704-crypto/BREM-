@@ -581,6 +581,26 @@ body.dashboard-week-modal-open {
   color: #ffd400;
 }
 
+#dashboard .dashboard-week-sim__preset.is-active {
+  background: #ffd400;
+  color: #111111;
+  border-color: #ffd400;
+}
+
+#dashboard .dashboard-week-sim__weeks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+#dashboard .dashboard-week-sim__week-range {
+  color: #d4d4d8;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 #dashboard .dashboard-week-sim__note {
   margin-top: 8px;
 }

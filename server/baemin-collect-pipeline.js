@@ -5211,6 +5211,59 @@ function dailyRowOverlapsRange(row = {}, fromDate = '', toDate = '') {
   return Boolean(day && day >= fromDate && day <= toDate);
 }
 
+function dailyParsedSlotSum(parsed = {}) {
+  return Number(parsed.morningCount || 0)
+    + Number(parsed.afternoonCount || 0)
+    + Number(parsed.eveningCount || 0)
+    + Number(parsed.midnightCount || 0);
+}
+
+function indexAggregatedDailyByDate(items = []) {
+  const byDate = new Map();
+  aggregateDailyHistoryByDate(items).forEach(row => {
+    const date = resolveDailyBusinessDate(row);
+    if (date) byDate.set(date, row);
+  });
+  return byDate;
+}
+
+/** 적용 스냅샷에 없는 날은 일별 통계 테이블 값으로 채운다. 둘 다 있으면 콜이 있는 쪽을 쓴다. */
+function mergeDailyHistoryFillGaps(primaryItems = [], fallbackItems = []) {
+  const primary = indexAggregatedDailyByDate(primaryItems);
+  const fallback = indexAggregatedDailyByDate(fallbackItems);
+  const dates = new Set([...primary.keys(), ...fallback.keys()]);
+  return [...dates].sort().map(date => {
+    const saved = primary.get(date);
+    const older = fallback.get(date);
+    if (saved && dailyParsedSlotSum(saved.parsed_json) > 0) return saved;
+    if (older && dailyParsedSlotSum(older.parsed_json) > 0) return older;
+    return saved || older;
+  }).filter(Boolean);
+}
+
+async function loadDailyStatsItemsForRange(partnerId, fromDate, toDate) {
+  const supabase = getServiceClient();
+  if (!supabase || !fromDate || !toDate) return [];
+  let query = supabase
+    .from('baemin_daily_delivery_stats')
+    .select('*')
+    .gte('delivery_date', fromDate)
+    .lte('delivery_date', toDate)
+    .order('delivery_date', { ascending: true })
+    .limit(partnerId ? 400 : 8000);
+  if (partnerId) query = query.like('dedupe_key', `${partnerId}:%`);
+  const { data, error } = await query;
+  if (error || !data?.length) {
+    if (error) console.warn('[BREM][daily-range] stats fallback:', error.message || error);
+    return [];
+  }
+  const rows = dedupeStatsRowsByLatest(data, 'daily_history');
+  const catalog = await loadPartnerDisplayCatalog().catch(() => new Map());
+  const { readPartnerRegionMap } = require('./baemin-partner-region');
+  const regionMap = await readPartnerRegionMap().catch(() => ({}));
+  return rows.map(row => mapDailyStatsRowToAdminItem(row, partnerId, catalog, regionMap));
+}
+
 function aggregateDailyHistoryByDate(items = []) {
   const byDate = new Map();
   (items || []).forEach(row => {
@@ -5366,7 +5419,8 @@ async function getDailyHistoryRangeForAdmin(options = {}) {
     };
   });
 
-  items = aggregateDailyHistoryByDate(items);
+  const statsItems = await loadDailyStatsItemsForRange(partnerId, fromDate, toDate);
+  items = mergeDailyHistoryFillGaps(items, statsItems);
   return {
     ok: true,
     fromDate,
