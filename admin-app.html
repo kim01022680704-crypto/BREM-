@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261029edit1">
   <link rel="stylesheet" href="css/admin-app.css?v=20261030kakaoapp1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
-  <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20260923fit1">
+  <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20261101sim1">
 </head>
 <body>
   <div class="admin-app-boot-splash" id="adminAppBootSplash">
@@ -143,10 +143,14 @@
                 <h3 id="dashboardBaeminWeekTitle">배민 · 이번주 지역별 할당 달성</h3>
                 <p class="form-help dashboard-baemin-live-help">이번 정산주 수~화 · 일별은 다음 날 반영</p>
               </div>
-              <button type="button" class="small-btn dashboard-week-modal__close" data-dashboard-week-close aria-label="닫기">닫기</button>
+              <div class="dashboard-baemin-week-block__actions">
+                <button type="button" class="small-btn dashboard-week-sim-btn" id="dashboardBaeminWeekSimBtn" aria-expanded="false" aria-controls="dashboardBaeminWeekSim">할당 시뮬레이션</button>
+                <button type="button" class="small-btn dashboard-week-modal__close" data-dashboard-week-close aria-label="닫기">닫기</button>
+              </div>
             </div>
             <div class="baemin-region-tabs dashboard-baemin-week-region-tabs" id="dashboardBaeminWeekRegionBar" hidden></div>
             <p class="admin-table-summary" id="dashboardBaeminWeekSummary" aria-live="polite">마지막 주간 현황 불러오는 중…</p>
+            <div class="dashboard-week-sim" id="dashboardBaeminWeekSim" hidden></div>
             <div class="dashboard-baemin-table-wrap dashboard-baemin-phone-wrap">
               <table class="admin-table dashboard-baemin-compact-table dashboard-baemin-phone-table">
                 <thead>
@@ -553,7 +557,7 @@
   <script src="js/date-picker.js?v=20260715a"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20261026bizday1"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20261101sim1"></script>
   <script src="js/coupang-status-admin.js?v=20260923peak14"></script>
   <script src="js/payroll-slip-utils.js?v=20260814match1"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>

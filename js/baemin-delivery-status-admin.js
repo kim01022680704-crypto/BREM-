@@ -19,6 +19,7 @@
     dashboardBaeminRegions: [],
     dashboardWeekPartnerId: '',
     dashboardWeekCache: {},
+    dashboardWeekSim: null,
     dashboardLivePollTimer: null,
     dashboardLiveBusy: false,
     dashboardLiveFetchedAt: 0,
@@ -6062,6 +6063,7 @@
     let lastTrigger = null;
     const close = (modal) => {
       if (!modal || modal.hidden) return;
+      if (modal.id === 'dashboardBaeminWeekModal') closeDashboardWeekSimulation();
       modal.hidden = true;
       if (!host.querySelector('.dashboard-week-modal:not([hidden])')) {
         document.body.classList.remove('dashboard-week-modal-open');
@@ -6088,8 +6090,14 @@
     });
     document.addEventListener('keydown', event => {
       if (event.key !== 'Escape') return;
-      close(host.querySelector('.dashboard-week-modal:not([hidden])'));
+      const modal = host.querySelector('.dashboard-week-modal:not([hidden])');
+      if (modal?.id === 'dashboardBaeminWeekModal' && state.dashboardWeekSim?.open) {
+        closeDashboardWeekSimulation();
+        return;
+      }
+      close(modal);
     });
+    bindDashboardWeekSimulation();
   }
 
   function bindDashboardWeekRegionBarClicks(partnerIds = []) {
@@ -6399,8 +6407,9 @@
     const empty = prog.target <= 0 && prog.actual <= 0;
     const achieved = prog.target > 0 ? prog.actual >= prog.target : prog.actual > 0;
     const currentClass = options.current ? ' is-current' : '';
+    const extraClass = options.extraClass ? ` ${options.extraClass}` : '';
     if (!empty && options.upcoming && prog.actual <= 0) {
-      return `<td class="dashboard-baemin-qcell is-upcoming${currentClass}">
+      return `<td class="dashboard-baemin-qcell is-upcoming${currentClass}${extraClass}">
       <div class="dashboard-baemin-qcell__stack">
         <div class="dashboard-baemin-qcell__bar" aria-hidden="true"><span class="dashboard-baemin-qcell__bar-fill" style="width:0%"></span></div>
         <span class="dashboard-baemin-qcell__ratio">0/${escapeHtml(formatNumber(prog.target))}</span>
@@ -6417,7 +6426,7 @@
       : ' baemin-quota-cell__percent--missed';
     const width = empty ? 0 : Math.max(0, Math.min(100, prog.percent));
     const stateClass = empty ? ' is-empty' : (achieved ? ' is-achieved' : (near ? ' is-missed is-near' : ' is-missed'));
-    return `<td class="dashboard-baemin-qcell${stateClass}${currentClass}">
+    return `<td class="dashboard-baemin-qcell${stateClass}${currentClass}${extraClass}">
       <div class="dashboard-baemin-qcell__stack">
         <div class="dashboard-baemin-qcell__bar" aria-hidden="true"><span class="dashboard-baemin-qcell__bar-fill" style="width:${width}%"></span></div>
         <span class="dashboard-baemin-qcell__ratio">${escapeHtml(empty ? '-' : prog.label)}</span>
@@ -6519,16 +6528,27 @@
     bindDashboardWeekRegionBarClicks(ids);
   }
 
-  function renderDashboardWeekRowsForPartner(partnerId, items = [], weekRange) {
-    const rowsEl = $('dashboardBaeminWeekRows');
-    const summaryEl = $('dashboardBaeminWeekSummary');
-    if (!rowsEl) return;
+  const DASHBOARD_SLOT_LABELS = {
+    morning: '아점',
+    afternoon: '오후',
+    evening: '저녁',
+    midnight: '심야'
+  };
 
-    const pid = normalizePartnerId(partnerId);
-    const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === pid)?.regionName
-      || partnerLabelById(pid)
-      || pid;
-    const setCount = getPartnerSetCount(pid);
+  function dashboardSlotSum(row) {
+    return Number(row?.morning || 0) + Number(row?.afternoon || 0) + Number(row?.evening || 0) + Number(row?.midnight || 0);
+  }
+
+  /** 이미 끝난 시간대만. 진행 중·대기는 세트 한도에서 뺀다. */
+  function isFinishedBaeminSlot(key, date) {
+    const today = baeminOperatingDate();
+    const day = String(date || '').slice(0, 10);
+    if (!day || day > today) return false;
+    if (day < today) return true;
+    return BAEMIN_SLOT_ORDER.indexOf(key) < BAEMIN_SLOT_ORDER.indexOf(currentBaeminSlotKey());
+  }
+
+  function aggregateWeekActualsByDate(items, weekRange) {
     const byDate = new Map();
     (items || []).forEach(row => {
       const p = row.parsed_json || {};
@@ -6541,43 +6561,374 @@
       hit.midnight += Number(p.midnightCount || 0);
       byDate.set(date, hit);
     });
+    return byDate;
+  }
 
+  function buildDashboardWeekModel(partnerId, items, weekRange) {
+    const pid = normalizePartnerId(partnerId);
+    const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === pid)?.regionName
+      || partnerLabelById(pid)
+      || pid;
+    const savedSets = getPartnerSetCount(pid);
+    const byDate = aggregateWeekActualsByDate(items, weekRange);
     const dates = listDatesInclusive(weekRange.fromDate, weekRange.toDate);
-    const filledDays = dates.filter(date => byDate.has(date)).length;
-    if (!dates.length) {
+    const today = baeminOperatingDate();
+    const liveToday = state.dashboardTodayLive?.date === today
+      ? state.dashboardTodayLive.byPartner?.[pid] || null
+      : null;
+    const usesLive = Boolean(liveToday) && dates.includes(today) && dashboardSlotSum(byDate.get(today)) <= 0;
+    const missingDates = [];
+    const slots = [];
+    dates.forEach(date => {
+      const stored = byDate.get(date);
+      const live = usesLive && date === today;
+      const hasData = live || Boolean(stored);
+      if (date < today && !hasData) missingDates.push(date);
+      const actual = (live ? liveToday : null) || stored || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
+      const units = computeSlotTargets(1, date);
+      BAEMIN_SLOT_ORDER.forEach(key => {
+        slots.push({
+          date,
+          key,
+          actual: Number(actual[key] || 0),
+          unit: units[key],
+          finished: isFinishedBaeminSlot(key, date) && hasData,
+          live,
+          label: formatDeliveryDateShort(date),
+          slotLabel: DASHBOARD_SLOT_LABELS[key] || key
+        });
+      });
+    });
+    return {
+      pid,
+      regionName,
+      savedSets,
+      dates,
+      slots,
+      missingDates,
+      weekRange,
+      byDate,
+      usesLive,
+      today,
+      filledDays: dates.filter(date => byDate.has(date)).length
+    };
+  }
+
+  /** 1세트 할당으로 나눈 값. 끝난 칸 중 가장 낮은 세트가 더 칠 수 있는 한도. */
+  function analyzeWeekSetCapacity(model) {
+    const ranked = (model?.slots || [])
+      .filter(slot => slot.finished && slot.unit > 0)
+      .map(slot => {
+        const sets = Math.floor(slot.actual / slot.unit);
+        return {
+          ...slot,
+          sets,
+          nextNeed: (sets + 1) * slot.unit
+        };
+      })
+      .sort((a, b) => a.sets - b.sets
+        || a.date.localeCompare(b.date)
+        || BAEMIN_SLOT_ORDER.indexOf(a.key) - BAEMIN_SLOT_ORDER.indexOf(b.key));
+    const maxSets = ranked.length ? ranked[0].sets : null;
+    const bottlenecks = maxSets == null ? [] : ranked.filter(slot => slot.sets === maxSets);
+    const current = model?.savedSets || 1;
+    return {
+      maxSets,
+      extra: maxSets == null ? null : Math.max(0, maxSets - current),
+      current,
+      bottlenecks,
+      ranked,
+      counted: ranked.length
+    };
+  }
+
+  function describeWeekSim(analysis) {
+    if (analysis.maxSets == null) {
+      return {
+        title: '끝난 시간대가 없습니다',
+        tight: true,
+        detail: '진행 중인 시간대와 대기(아직 안 온 날)는 빼 두었습니다. 시간대가 끝나면 몇 세트까지 더 칠 수 있는지 계산됩니다.'
+      };
+    }
+    const head = analysis.bottlenecks[0];
+    const limitText = analysis.bottlenecks.length > 1
+      ? `가장 빠듯한 칸 ${formatNumber(analysis.bottlenecks.length)}개 · 예: ${head.label} ${head.slotLabel}`
+      : `가장 빠듯한 칸은 ${head.label} ${head.slotLabel}`;
+    const headDetail = `${limitText} · 실적 ${formatNumber(head.actual)}콜 · 1세트 ${formatNumber(head.unit)}콜 · ${formatNumber(head.sets)}세트까지 (한 세트 더 치려면 ${formatNumber(head.nextNeed)}콜)`;
+    const scope = `끝난 시간대 ${formatNumber(analysis.counted)}칸 · 저장된 1세트 할당 기준. `;
+    if (analysis.extra > 0) {
+      return {
+        title: `추가 ${formatNumber(analysis.extra)}세트`,
+        tight: false,
+        detail: `${scope}최대 ${formatNumber(analysis.maxSets)}세트까지는 끝난 칸이 전부 달성입니다. 지금은 ${formatNumber(analysis.current)}세트. ${headDetail}`
+      };
+    }
+    if (analysis.maxSets < analysis.current) {
+      return {
+        title: '추가 0세트',
+        tight: true,
+        detail: `${scope}저장은 ${formatNumber(analysis.current)}세트인데, 끝난 칸을 전부 달성하려면 ${formatNumber(analysis.maxSets)}세트까지입니다. ${headDetail}`
+      };
+    }
+    return {
+      title: '추가 0세트',
+      tight: true,
+      detail: `${scope}최대가 지금 세트수(${formatNumber(analysis.current)})와 같습니다. ${headDetail}`
+    };
+  }
+
+  function renderWeekSimPanel(model, analysis) {
+    const panel = $('dashboardBaeminWeekSim');
+    if (!panel || !state.dashboardWeekSim?.open) return;
+    const simSets = normalizeSetCount(state.dashboardWeekSim.sets || model.savedSets);
+    state.dashboardWeekSim.maxSets = analysis.maxSets;
+    const copy = describeWeekSim(analysis);
+    const simMiss = analysis.ranked.filter(slot => slot.actual < slot.unit * simSets).length;
+    const shown = analysis.ranked.slice(0, 8);
+    const hiddenCount = Math.max(0, analysis.ranked.length - shown.length);
+    const rows = shown.map(slot => {
+      const target = slot.unit * simSets;
+      const miss = slot.actual < target;
+      const limit = slot.sets === analysis.maxSets;
+      const rowClass = `${miss ? ' is-miss' : ''}${limit ? ' is-limit' : ''}`;
+      return `<tr class="${rowClass.trim()}">
+        <td>${escapeHtml(slot.label)} ${escapeHtml(slot.slotLabel)}</td>
+        <td>${formatNumber(slot.actual)}</td>
+        <td>${formatNumber(slot.unit)}</td>
+        <td>${formatNumber(target)}</td>
+        <td>${formatNumber(slot.sets)}세트</td>
+      </tr>`;
+    }).join('');
+    const missingNote = model.missingDates.length
+      ? `실적이 없는 ${model.missingDates.map(date => formatDeliveryDateShort(date)).join(', ')}은 계산에서 뺐습니다. `
+      : '';
+    const simLine = analysis.ranked.length
+      ? `아래 표는 ${formatNumber(simSets)}세트 목표입니다. 끝난 ${formatNumber(analysis.ranked.length)}칸 중 ${formatNumber(simMiss)}칸이 미달입니다.`
+      : `아래 표는 ${formatNumber(simSets)}세트 목표입니다.`;
+    const maxLabel = analysis.maxSets >= 1 ? `최대 ${formatNumber(analysis.maxSets)}세트` : '달성 최대';
+    panel.hidden = false;
+    panel.innerHTML = `
+      <p class="dashboard-week-sim__kicker">${escapeHtml(model.regionName)} · 저장 ${formatNumber(model.savedSets)}세트 · 요일별 할당 × 세트</p>
+      <p class="dashboard-week-sim__answer${copy.tight ? ' is-tight' : ''}" aria-live="polite">${escapeHtml(copy.title)}</p>
+      <p class="dashboard-week-sim__detail">${escapeHtml(copy.detail)}</p>
+      <div class="dashboard-week-sim__controls">
+        <span class="dashboard-week-sim__control-label">시뮬레이션 세트</span>
+        <div class="dashboard-week-sim__stepper">
+          <button type="button" data-week-sim-step="-1" aria-label="세트 줄이기">−</button>
+          <input type="number" id="dashboardBaeminWeekSimSets" min="1" max="99" step="1" inputmode="numeric" value="${simSets}" aria-label="시뮬레이션 세트수">
+          <button type="button" data-week-sim-step="1" aria-label="세트 늘리기">+</button>
+        </div>
+        <button type="button" class="dashboard-week-sim__preset" data-week-sim-max>${escapeHtml(maxLabel)}</button>
+        <button type="button" class="dashboard-week-sim__preset" data-week-sim-current>저장 ${formatNumber(model.savedSets)}세트</button>
+      </div>
+      <p class="dashboard-week-sim__note">${escapeHtml(missingNote + simLine)} 저장 세트수는 바뀌지 않습니다. 노란 테두리가 한도를 막는 칸입니다.</p>
+      ${rows ? `<table class="dashboard-week-sim__table">
+        <thead>
+          <tr>
+            <th>끝난 시간대</th>
+            <th>실적</th>
+            <th>1세트</th>
+            <th>${formatNumber(simSets)}세트 목표</th>
+            <th>이 칸 한도</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>` : ''}
+      ${hiddenCount ? `<p class="dashboard-week-sim__note">여유 있는 칸 ${formatNumber(hiddenCount)}개는 표에서 생략했습니다.</p>` : ''}
+    `;
+  }
+
+  function refreshDashboardWeekSimTable() {
+    const pid = normalizePartnerId(state.dashboardWeekSim?.partnerId || state.dashboardWeekPartnerId);
+    const cached = state.dashboardWeekCache[pid];
+    if (!cached?.items || !cached.weekRange) return;
+    renderDashboardWeekRowsForPartner(pid, cached.items, cached.weekRange);
+  }
+
+  function setDashboardWeekSimSets(value) {
+    if (!state.dashboardWeekSim?.open) return;
+    const next = normalizeSetCount(value);
+    if (next === normalizeSetCount(state.dashboardWeekSim.sets)) return;
+    state.dashboardWeekSim.sets = next;
+    refreshDashboardWeekSimTable();
+  }
+
+  function shiftDashboardWeekSimSets(delta) {
+    if (!state.dashboardWeekSim?.open) return;
+    const input = $('dashboardBaeminWeekSimSets');
+    const typed = Number(input?.value);
+    const base = input && input.value !== '' && Number.isFinite(typed)
+      ? typed
+      : state.dashboardWeekSim.sets;
+    setDashboardWeekSimSets(base + delta);
+  }
+
+  function applyDashboardWeekSimPreset(kind) {
+    if (!state.dashboardWeekSim?.open) return;
+    const pid = normalizePartnerId(state.dashboardWeekSim.partnerId);
+    const cached = state.dashboardWeekCache[pid];
+    if (!cached?.items || !cached.weekRange) return;
+    const model = buildDashboardWeekModel(pid, cached.items, cached.weekRange);
+    if (kind === 'current') {
+      setDashboardWeekSimSets(model.savedSets);
+      return;
+    }
+    const analysis = analyzeWeekSetCapacity(model);
+    if (analysis.maxSets == null) {
+      showToast('끝난 시간대 실적이 없어 최대 세트를 계산할 수 없습니다.');
+      return;
+    }
+    if (analysis.maxSets < 1) {
+      showToast('끝난 시간대 기준으로는 1세트도 전부 달성이 안 됩니다.');
+      return;
+    }
+    setDashboardWeekSimSets(analysis.maxSets);
+  }
+
+  function closeDashboardWeekSimulation() {
+    const wasOpen = Boolean(state.dashboardWeekSim?.open);
+    const pid = normalizePartnerId(state.dashboardWeekSim?.partnerId || state.dashboardWeekPartnerId);
+    if (state.dashboardWeekSim) state.dashboardWeekSim.open = false;
+    const panel = $('dashboardBaeminWeekSim');
+    if (panel) {
+      panel.hidden = true;
+      panel.innerHTML = '';
+    }
+    const btn = $('dashboardBaeminWeekSimBtn');
+    btn?.classList.remove('is-active');
+    btn?.setAttribute('aria-expanded', 'false');
+    if (!wasOpen) return;
+    const cached = state.dashboardWeekCache[pid];
+    if (cached?.items && cached.weekRange) {
+      renderDashboardWeekRowsForPartner(pid, cached.items, cached.weekRange);
+    }
+  }
+
+  async function openDashboardWeekSimulation() {
+    const btn = $('dashboardBaeminWeekSimBtn');
+    const pid = normalizePartnerId(state.dashboardWeekPartnerId);
+    if (!pid) {
+      showToast('지역을 먼저 선택하세요.');
+      return;
+    }
+    if (btn) btn.disabled = true;
+    try {
+      await Promise.all([
+        ensureWeekdayQuotaLoaded(true),
+        loadPartnerSetCountMap()
+      ]);
+      const weekRange = dashboardSettlementWeekRange();
+      let cached = state.dashboardWeekCache[pid];
+      const cacheMatches = cached?.items
+        && cached.weekRange?.fromDate === weekRange.fromDate
+        && cached.weekRange?.toDate === weekRange.toDate;
+      if (!cacheMatches) {
+        await queryDashboardBaeminWeek([pid], { selectedOnly: true });
+        cached = state.dashboardWeekCache[pid];
+      }
+      if (!cached?.items || !cached.weekRange) {
+        showToast('이번주 실적을 아직 불러오지 못했습니다.');
+        return;
+      }
+      state.dashboardWeekSim = {
+        open: true,
+        partnerId: pid,
+        sets: getPartnerSetCount(pid),
+        maxSets: null
+      };
+      btn?.classList.add('is-active');
+      btn?.setAttribute('aria-expanded', 'true');
+      refreshDashboardWeekSimTable();
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function bindDashboardWeekSimulation() {
+    const btn = $('dashboardBaeminWeekSimBtn');
+    const panel = $('dashboardBaeminWeekSim');
+    if (!btn || !panel || btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', () => {
+      if (state.dashboardWeekSim?.open) closeDashboardWeekSimulation();
+      else void openDashboardWeekSimulation();
+    });
+    panel.addEventListener('mousedown', event => {
+      if (event.target.closest('[data-week-sim-step], [data-week-sim-max], [data-week-sim-current]')) {
+        event.preventDefault();
+      }
+    });
+    panel.addEventListener('click', event => {
+      const stepBtn = event.target.closest('[data-week-sim-step]');
+      if (stepBtn) {
+        shiftDashboardWeekSimSets(Number(stepBtn.dataset.weekSimStep) || 0);
+        return;
+      }
+      if (event.target.closest('[data-week-sim-max]')) {
+        applyDashboardWeekSimPreset('max');
+        return;
+      }
+      if (event.target.closest('[data-week-sim-current]')) {
+        applyDashboardWeekSimPreset('current');
+      }
+    });
+    panel.addEventListener('change', event => {
+      if (event.target.id !== 'dashboardBaeminWeekSimSets') return;
+      setDashboardWeekSimSets(event.target.value);
+    });
+    panel.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || event.target.id !== 'dashboardBaeminWeekSimSets') return;
+      event.preventDefault();
+      setDashboardWeekSimSets(event.target.value);
+    });
+  }
+
+  function renderDashboardWeekRowsForPartner(partnerId, items = [], weekRange) {
+    const rowsEl = $('dashboardBaeminWeekRows');
+    const summaryEl = $('dashboardBaeminWeekSummary');
+    if (!rowsEl) return;
+
+    const pid = normalizePartnerId(partnerId);
+    if (state.dashboardWeekSim?.open && normalizePartnerId(state.dashboardWeekSim.partnerId) !== pid) {
+      state.dashboardWeekSim.partnerId = pid;
+      state.dashboardWeekSim.sets = getPartnerSetCount(pid);
+    }
+    const model = buildDashboardWeekModel(pid, items, weekRange);
+    const simOn = Boolean(state.dashboardWeekSim?.open);
+    const setCount = simOn ? normalizeSetCount(state.dashboardWeekSim.sets) : model.savedSets;
+    const analysis = simOn ? analyzeWeekSetCapacity(model) : null;
+    const limitKeys = new Set((analysis?.bottlenecks || []).map(slot => `${slot.date}:${slot.key}`));
+    if (!model.dates.length) {
       rowsEl.innerHTML = '<tr><td colspan="6" class="form-help">이번주 조회 기간이 없습니다.</td></tr>';
       if (summaryEl) summaryEl.textContent = '조회 기간 없음';
       return;
     }
 
-    const today = baeminOperatingDate();
-    const liveToday = state.dashboardTodayLive?.date === today
-      ? state.dashboardTodayLive.byPartner?.[pid] || null
-      : null;
-    const slotSum = (row) => Number(row?.morning || 0) + Number(row?.afternoon || 0) + Number(row?.evening || 0) + Number(row?.midnight || 0);
-    // 06시 전 운영일 일별은 아직 안 들어온다. 0으로 쌓인 행이 있어도 실시간 숫자를 그 날에 붙인다.
-    const usesLive = Boolean(liveToday) && dates.includes(today) && slotSum(byDate.get(today)) <= 0;
-    rowsEl.innerHTML = dates.map(date => {
-      const stored = byDate.get(date);
-      const live = usesLive && date === today;
-      const actual = (live ? liveToday : null) || stored || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
+    rowsEl.innerHTML = model.dates.map(date => {
+      const stored = model.byDate.get(date);
+      const live = model.usesLive && date === model.today;
+      const actual = (live ? (state.dashboardTodayLive?.byPartner?.[pid] || null) : null)
+        || stored
+        || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
       const targets = computeSlotTargets(setCount, date);
-      // 배민 일별은 다음 날 들어온다. 오늘은 실시간 숫자, 없으면 미달이 아니라 아직 안 들어온 것.
-      const notYet = !live && date >= today && slotSum(stored) <= 0;
+      const notYet = !live && date >= model.today && dashboardSlotSum(stored) <= 0;
       return `<tr>
-        <td><strong class="dashboard-baemin-region-name" title="${escapeHtml(regionName)}">${escapeHtml(regionName)}</strong></td>
+        <td><strong class="dashboard-baemin-region-name" title="${escapeHtml(model.regionName)}">${escapeHtml(model.regionName)}</strong></td>
         <td class="dashboard-baemin-date-cell" title="${escapeHtml(formatDeliveryDateWithWeekday(date))}">${escapeHtml(formatDeliveryDateShort(date))}${live ? '<span class="dashboard-baemin-region-meta">실시간</span>' : ''}</td>
         ${BAEMIN_SLOT_ORDER.map(key => renderCompactQuotaCell(actual[key], targets[key], {
           current: currentBaeminSlotKey() === key,
-          upcoming: notYet || isUpcomingBaeminSlot(key, date)
+          upcoming: notYet || isUpcomingBaeminSlot(key, date),
+          extraClass: simOn && limitKeys.has(`${date}:${key}`) ? 'is-sim-bottleneck' : ''
         })).join('')}
       </tr>`;
     }).join('');
 
     if (summaryEl) {
-      summaryEl.textContent = `${regionName} · ${weekRange.fromDate}(수) ~ ${weekRange.toDate}(화) · 데이터 ${formatNumber(filledDays + (usesLive ? 1 : 0))}/${formatNumber(dates.length)}일${usesLive ? ' · 오늘은 실시간' : ''}`;
+      const simNote = simOn ? ` · 시뮬레이션 ${formatNumber(setCount)}세트 (저장 ${formatNumber(model.savedSets)}세트)` : '';
+      summaryEl.textContent = `${model.regionName} · ${weekRange.fromDate}(수) ~ ${weekRange.toDate}(화) · 데이터 ${formatNumber(model.filledDays + (model.usesLive ? 1 : 0))}/${formatNumber(model.dates.length)}일${model.usesLive ? ' · 오늘은 실시간' : ''}${simNote}`;
     }
-    persistWeekDashboardCache();
+    if (simOn) renderWeekSimPanel(model, analysis);
+    else persistWeekDashboardCache();
   }
 
   async function queryDashboardBaeminWeek(partnerIds = [], options = {}) {
