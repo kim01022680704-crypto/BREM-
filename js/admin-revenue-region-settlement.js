@@ -2157,7 +2157,7 @@
     };
   }
 
-  function sumMissionLines(title, memberLines) {
+  function sumMissionLines(title, memberLines, riders) {
     const sumOf = key => memberLines.reduce((sum, line) => sum + (Math.round(Number(line[key]) || 0)), 0);
     return {
       title,
@@ -2173,8 +2173,8 @@
       bremPromoTax: sumOf('bremPromoTax'),
       base: sumOf('base'),
       pureRemain: sumOf('pureRemain'),
-      riderCount: sumOf('riderCount'),
-      riders: [],
+      riderCount: riders.length,
+      riders: (riders || []).map(rider => ({ calls: rider.calls })),
       memberLines
     };
   }
@@ -2188,6 +2188,7 @@
     const lines = [];
     groups.forEach(group => {
       const members = group.members.map(name => byName.get(name)).filter(Boolean);
+      const riders = mergeRiderCalls(members.flatMap(row => ridersByRegion.get(regionCompareKey(row.region)) || []));
       const memberLines = members.map(row => missionLine(
         row.region,
         'region',
@@ -2195,7 +2196,7 @@
         row,
         mergeRiderCalls(ridersByRegion.get(regionCompareKey(row.region)) || [])
       ));
-      lines.push(sumMissionLines(group.members.join(' + '), memberLines));
+      lines.push(sumMissionLines(group.members.join(' + '), memberLines, riders));
     });
     regions.forEach(row => {
       if (grouped.has(row.region)) return;

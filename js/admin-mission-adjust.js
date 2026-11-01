@@ -45,9 +45,6 @@
   }
 
   function lineCost(line, start, rate) {
-    if (line.kind === 'group' && Array.isArray(line.memberLines) && line.memberLines.length) {
-      return line.memberLines.reduce((sum, member) => sum + lineCost(member, start, rate), 0);
-    }
     return (line.riders || []).reduce((sum, rider) => sum + missionAmount(rider.calls, start, rate), 0);
   }
 
@@ -58,15 +55,6 @@
   }
 
   function cellQuote(line, start, rate) {
-    if (line.kind === 'group' && Array.isArray(line.memberLines) && line.memberLines.length) {
-      const parts = line.memberLines.map(member => cellQuote(member, start, rate));
-      const loss = parts.reduce((sum, part) => sum + part.loss, 0);
-      const taxProfit = parts.reduce((sum, part) => sum + part.taxProfit, 0);
-      const net = parts.reduce((sum, part) => sum + part.net, 0);
-      const left = Math.round(Number(line.pureRemain) || 0) - net;
-      const status = line.base <= 0 ? 'empty' : (left < 0 ? 'over' : 'ok');
-      return { start, rate, loss, taxProfit, net, left, status };
-    }
     const net = missionNet(lineCost(line, start, rate));
     const left = Math.round(Number(line.pureRemain) || 0) - net.net;
     const status = line.base <= 0 ? 'empty' : (left < 0 ? 'over' : 'ok');
@@ -109,7 +97,7 @@
     const members = opened
       ? `<div class="mission-adjust-members">${(line.memberLines || []).map(member => renderLine(member)).join('')}</div>`
       : '';
-    const kindLabel = line.kind === 'group' ? '묶음 합산' : '지역 따로';
+    const kindLabel = line.kind === 'group' ? '묶음 합산미션' : '지역 따로';
     return `
       <article class="mission-adjust-card${line.kind === 'group' ? ' is-group' : ''}">
         <header>
