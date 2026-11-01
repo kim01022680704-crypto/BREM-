@@ -6,6 +6,11 @@ function completeOf(row) {
   return Math.max(0, Number(parsed.completeCount ?? row?.complete_count) || 0);
 }
 
+function baeminDayComplete(row) {
+  const parsed = row?.parsed_json && typeof row.parsed_json === 'object' ? row.parsed_json : {};
+  return Math.max(0, Number(parsed.totalComplete ?? parsed.allDayComplete ?? parsed.completeCount ?? 0) || 0);
+}
+
 async function fetchPages(build) {
   const rows = [];
   const size = 1000;
@@ -68,14 +73,44 @@ async function loadCoupangWeekCalls(supabase, weekStart, today) {
     }
   });
   const byMatchKey = {};
+  const dailyByMatchKey = {};
   latest.forEach(row => {
     const key = String(row.match_key || '').replace(/\s+/g, '').trim();
-    byMatchKey[key] = (byMatchKey[key] || 0) + completeOf(row);
+    const day = String(row.collect_date || '').slice(0, 10);
+    const calls = Math.max(0, Math.round(completeOf(row)));
+    byMatchKey[key] = (byMatchKey[key] || 0) + calls;
+    if (!dailyByMatchKey[key]) dailyByMatchKey[key] = {};
+    dailyByMatchKey[key][day] = calls;
   });
-  Object.keys(byMatchKey).forEach(key => {
-    byMatchKey[key] = Math.max(0, Math.round(byMatchKey[key]));
+  return { byMatchKey, dailyByMatchKey };
+}
+
+async function loadBaeminDailyCalls(supabase, weekStart, today) {
+  const rows = await fetchPages(() => supabase
+    .from('baemin_delivery_applied_items')
+    .select('collect_date,rider_user_id,parsed_json')
+    .eq('source_menu', 'rider_history')
+    .gte('collect_date', weekStart)
+    .lte('collect_date', today));
+  const best = new Map();
+  rows.forEach(row => {
+    const user = String(row.rider_user_id || '').trim();
+    const day = String(row.collect_date || '').slice(0, 10);
+    if (!user || !day) return;
+    const calls = Math.max(0, Math.round(baeminDayComplete(row)));
+    const slot = `${user}|${day}`;
+    const prev = best.get(slot);
+    if (prev == null || calls > prev) best.set(slot, calls);
   });
-  return byMatchKey;
+  const byUserId = {};
+  best.forEach((calls, slot) => {
+    const splitAt = slot.lastIndexOf('|');
+    const user = slot.slice(0, splitAt);
+    const day = slot.slice(splitAt + 1);
+    if (!byUserId[user]) byUserId[user] = {};
+    byUserId[user][day] = calls;
+  });
+  return byUserId;
 }
 
 async function listMissionForecastCalls(accessToken) {
@@ -90,19 +125,25 @@ async function listMissionForecastCalls(accessToken) {
   const week = require('./baemin-settlement-week');
   const today = week.businessTodayKST();
   const weekStart = week.settlementWeekStart(today);
-  const [baemin, coupangByMatchKey] = await Promise.all([
+  const days = [];
+  for (let offset = 0; offset < 7; offset += 1) days.push(week.addDays(weekStart, offset));
+  const [baemin, coupang, baeminDailyByUserId] = await Promise.all([
     loadBaeminWeekCalls(supabase, weekStart),
-    loadCoupangWeekCalls(supabase, weekStart, today)
+    loadCoupangWeekCalls(supabase, weekStart, today),
+    loadBaeminDailyCalls(supabase, weekStart, today)
   ]);
 
   return {
     ok: true,
     weekStart,
     today,
+    days,
     fetchedAt: new Date().toISOString(),
     baeminByDriverId: baemin.byDriverId,
     baeminByUserId: baemin.byUserId,
-    coupangByMatchKey
+    baeminDailyByUserId,
+    coupangByMatchKey: coupang.byMatchKey,
+    coupangDailyByMatchKey: coupang.dailyByMatchKey
   };
 }
 

@@ -109,6 +109,148 @@
     return { driver, calls, lines, amount, assigned: lines.length > 0 };
   }
 
+  function amountForCalls(driver, baeminCalls, coupangCalls) {
+    const assignment = window.BremMissionPromotionCatalog?.getDriverAssignment?.(driver)
+      || { baemin: '', coupang: '', combined: '' };
+    let amount = 0;
+    if (assignment.combined) {
+      const quote = quoteOne(missionOf(assignment.combined), baeminCalls + coupangCalls);
+      if (quote.countable) amount += quote.amount;
+    } else {
+      if (assignment.baemin && driver.platformBaemin) {
+        const quote = quoteOne(missionOf(assignment.baemin), baeminCalls);
+        if (quote.countable) amount += quote.amount;
+      }
+      if (assignment.coupang && driver.platformCoupang !== false) {
+        const quote = quoteOne(missionOf(assignment.coupang), coupangCalls);
+        if (quote.countable) amount += quote.amount;
+      }
+    }
+    return amount;
+  }
+
+  function coupangKeys(driver) {
+    const keys = [];
+    const login = window.BremDriverUtils?.makeDriverLoginId?.(driver);
+    if (login) keys.push(String(login).replace(/\s+/g, ''));
+    const stored = driver.coupangId || driver.raw_data?.coupangLoginKey || driver.raw_data?.coupangId;
+    if (stored) keys.push(String(stored).replace(/\s+/g, ''));
+    return keys;
+  }
+
+  function dailyBag(map, keys) {
+    if (!map) return {};
+    for (const key of keys) {
+      if (key && map[key]) return map[key];
+    }
+    return {};
+  }
+
+  function cumulativeCalls(bag, days, throughDay, today, liveTotal) {
+    let sum = 0;
+    days.forEach(day => {
+      if (day > throughDay || day > today) return;
+      sum += Number(bag[day] || 0);
+    });
+    if (today && throughDay >= today) return Math.max(sum, liveTotal);
+    return sum;
+  }
+
+  function dayLabel(dateKey) {
+    const names = ['일', '월', '화', '수', '목', '금', '토'];
+    const date = new Date(`${dateKey}T00:00:00`);
+    const name = Number.isNaN(date.getTime()) ? '' : names[date.getDay()];
+    return `${name} ${dateKey.slice(5).replace('-', '/')}`;
+  }
+
+  function compactMoney(value) {
+    const amount = Math.round(Number(value) || 0);
+    if (Math.abs(amount) >= 100000000) return `${(amount / 100000000).toFixed(1)}억`;
+    if (Math.abs(amount) >= 10000) return `${Math.round(amount / 10000).toLocaleString('ko-KR')}만`;
+    return amount.toLocaleString('ko-KR');
+  }
+
+  function trendPoints(rows, live) {
+    const days = Array.isArray(live?.days) ? live.days : [];
+    const today = String(live?.today || '');
+    if (!days.length) return [];
+    return days.map(day => {
+      if (today && day > today) return { day, amount: null, delta: null };
+      const amount = rows.reduce((sum, row) => {
+        const baemin = cumulativeCalls(
+          dailyBag(live.baeminDailyByUserId, baeminIdVariants(row.driver.baeminId || row.driver.raw_data?.baeminId)),
+          days,
+          day,
+          today,
+          row.calls.baemin
+        );
+        const coupang = cumulativeCalls(
+          dailyBag(live.coupangDailyByMatchKey, coupangKeys(row.driver)),
+          days,
+          day,
+          today,
+          row.calls.coupang
+        );
+        return sum + amountForCalls(row.driver, baemin, coupang);
+      }, 0);
+      return { day, amount, delta: null };
+    }).map((point, index, list) => {
+      if (point.amount == null) return point;
+      const prev = index > 0 ? list[index - 1].amount : 0;
+      return { ...point, delta: point.amount - (prev || 0) };
+    });
+  }
+
+  function renderChart(rows, live) {
+    const host = $('missionForecastChart');
+    if (!host) return;
+    const points = trendPoints(rows, live).filter(point => point.day);
+    const drawn = points.filter(point => point.amount != null);
+    if (!live || !drawn.length) {
+      host.innerHTML = '<p class="hint">그래프는 이번 주 콜수를 받은 뒤 표시됩니다.</p>';
+      return;
+    }
+    const width = 720;
+    const height = 240;
+    const left = 72;
+    const right = 16;
+    const top = 28;
+    const bottom = 36;
+    const max = Math.max(1, ...drawn.map(point => point.amount));
+    const slot = (width - left - right) / Math.max(points.length - 1, 1);
+    const yOf = amount => top + (height - top - bottom) * (1 - amount / max);
+    const coords = points.map((point, index) => ({
+      ...point,
+      x: left + slot * index,
+      y: point.amount == null ? null : yOf(point.amount)
+    }));
+    const line = coords.filter(point => point.y != null);
+    const linePath = line.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+    const area = line.length
+      ? `${linePath} L${line[line.length - 1].x.toFixed(1)},${height - bottom} L${line[0].x.toFixed(1)},${height - bottom} Z`
+      : '';
+    const last = line[line.length - 1];
+    const rise = last ? last.delta : 0;
+    host.innerHTML = `
+      <p class="mission-forecast-chart__rise">오늘까지 <strong>${compactMoney(last?.amount || 0)}</strong>${rise ? ` · 직전보다 <strong>+${compactMoney(rise)}</strong>` : ''}</p>
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="이번 주 예상미션금액 추이">
+        <line x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}" stroke="#3a3a3a"></line>
+        <line x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}" stroke="#3a3a3a"></line>
+        <line x1="${left}" y1="${yOf(max).toFixed(1)}" x2="${width - right}" y2="${yOf(max).toFixed(1)}" stroke="#2a2a2a" stroke-dasharray="4 4"></line>
+        <text x="${left - 8}" y="${yOf(max) + 4}" text-anchor="end" class="mission-forecast-chart__axis">${compactMoney(max)}</text>
+        <text x="${left - 8}" y="${height - bottom}" text-anchor="end" class="mission-forecast-chart__axis">0</text>
+        <path d="${area}" fill="rgba(245,197,24,0.18)"></path>
+        <path d="${linePath}" fill="none" stroke="#f5c518" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></path>
+        ${coords.map(point => {
+          const label = dayLabel(point.day);
+          const dot = point.y == null
+            ? ''
+            : `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4.5" fill="#f5c518"><title>${label} ${money(point.amount)} · 전일 대비 +${money(point.delta || 0)}</title></circle>`;
+          return `${dot}<text x="${point.x.toFixed(1)}" y="${height - 12}" text-anchor="middle" class="mission-forecast-chart__axis">${label}</text>`;
+        }).join('')}
+      </svg>`;
+  }
+
   async function loadLive() {
     const token = await window.BremStorage?.resolveAdminAccessToken?.();
     if (!token) throw new Error('관리자 로그인 세션이 없습니다.');
@@ -163,6 +305,7 @@
         ? `정산주 ${live.weekStart} ~ ${live.today} · 갱신 ${when} · 기사앱과 같은 이번 주 완료콜 · 거절율·미지급 조건은 빼고 건당만 계산`
         : '';
     }
+    renderChart(rows, live);
     if (!rows.length) {
       body.innerHTML = '<tr><td colspan="5" class="empty">표시할 기사가 없습니다.</td></tr>';
       return;

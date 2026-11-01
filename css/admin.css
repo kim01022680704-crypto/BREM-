@@ -16754,3 +16754,31 @@ tr.is-week-first td {
 .friend-invite-table {
   min-width: 1120px;
 }
+
+.mission-forecast-chart {
+  margin: 4px 0 16px;
+  padding: 8px 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #121212;
+}
+
+.mission-forecast-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.mission-forecast-chart__rise {
+  margin: 8px 12px 0;
+  color: #f3f3f3;
+}
+
+.mission-forecast-chart__rise strong {
+  color: #f5c518;
+}
+
+.mission-forecast-chart__axis {
+  fill: #bdbdbd;
+  font-size: 12px;
+}
