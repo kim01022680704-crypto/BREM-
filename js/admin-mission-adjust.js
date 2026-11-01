@@ -5,7 +5,8 @@
   const state = {
     week: '',
     snap: null,
-    loading: false
+    loading: false,
+    open: {}
   };
 
   function $(id) {
@@ -47,9 +48,15 @@
     return (line.riders || []).reduce((sum, rider) => sum + missionAmount(rider.calls, start, rate), 0);
   }
 
+  function missionNet(cost) {
+    const loss = Math.max(0, Math.round(Number(cost) || 0));
+    const taxProfit = Math.floor(loss * 0.033);
+    return { loss, taxProfit, net: loss - taxProfit };
+  }
+
   function cellState(line, cost) {
     if (line.base <= 0) return 'empty';
-    if (cost > line.headroom) return 'over';
+    if (missionNet(cost).net > line.pureRemain) return 'over';
     return 'ok';
   }
 
@@ -84,15 +91,22 @@
     const best = flat.filter(cell => cell.status === 'ok')
       .sort((a, b) => b.rate - a.rate || a.start - b.start)[0];
     const verdict = line.base <= 0
-      ? '실지급액에서 부가세 20%를 뺀 100% 기준이 없습니다.'
-      : (line.headroom < 0
-        ? `정산서 미션과 프로모션원천세를 빼도 이미 ${compactMoney(Math.abs(line.headroom))} 넘습니다. 이 범위는 전부 적자입니다.`
-        : `미션으로 넣을 수 있는 돈 ${compactMoney(line.headroom)} · 가능 ${okCount}칸 · 적자 ${overCount}칸${best ? ` · 가장 높은 가능 단가 ${best.start}건 ${best.rate.toLocaleString('ko-KR')}원` : ''}`);
+      ? '실지급액에서 부가세 20%를 뺀 기준이 없습니다.'
+      : (line.pureRemain < 0
+        ? `BREM프로모션을 빼도 이미 ${compactMoney(Math.abs(line.pureRemain))} 부족합니다. 이 범위는 전부 적자입니다.`
+        : `프로모션 없을 때 남은 돈 ${compactMoney(line.pureRemain)} · 가능 ${okCount}칸 · 적자 ${overCount}칸${best ? ` · 가장 높은 가능 단가 ${best.start}건 ${best.rate.toLocaleString('ko-KR')}원` : ''}`);
+    const opened = line.kind === 'group' && state.open[line.title];
+    const toggle = line.kind === 'group'
+      ? `<button type="button" class="small-btn" data-adjust-toggle="${escapeHtml(line.title)}">${opened ? '접기' : '펼치기'}</button>`
+      : '';
+    const members = opened
+      ? `<div class="mission-adjust-members">${(line.memberLines || []).map(member => renderLine(member)).join('')}</div>`
+      : '';
     return `
-      <article class="mission-adjust-card">
+      <article class="mission-adjust-card${line.kind === 'group' ? ' is-group' : ''}">
         <header>
           <div>
-            <h3>${escapeHtml(line.title)}</h3>
+            <h3>${escapeHtml(line.title)} ${toggle}</h3>
             <p class="hint">${line.kind === 'group' ? '묶음' : '지역'} · 기사 ${line.riderCount}명 · ${corners.join(' · ')}</p>
           </div>
         </header>
@@ -100,14 +114,13 @@
           ${fact('실지급액', money(line.supplyPaid))}
           ${fact('부가세', money(line.vat))}
           ${fact(`부가세 ${line.taxFeePercent || 20}%`, money(line.taxFee))}
-          ${fact('100% 기준', money(line.base))}
           ${fact('최종입금', money(line.finalDeposit))}
           ${fact('선정산', money(line.prepaid))}
-          ${fact('정산서 미션', money(line.missionPay))}
-          ${fact('프로모션원천세', money(line.promotionTax))}
-          ${fact('미션 한도', line.base > 0 ? compactMoney(line.headroom) : '-')}
+          ${fact('BREM프로모션', money(line.bremPromo))}
+          ${fact('BREM프로모션원천세', money(line.bremPromoTax))}
+          ${fact('프로모션 없을 때 남은 돈', compactMoney(line.pureRemain))}
         </p>
-        <p class="hint">${verdict}</p>
+        <p class="hint">${verdict} 칸 금액은 미션 손해에서 3.3% 이익을 뺀 순손해입니다.</p>
         <div class="table-wrap">
           <table class="mission-adjust-table">
             <thead>
@@ -121,13 +134,16 @@
                 <tr>
                   <th>${row[0].start}건</th>
                   ${row.map(cell => {
+                    const net = missionNet(cell.cost);
                     const word = cell.status === 'over' ? '적자' : (cell.status === 'ok' ? '가능' : '-');
-                    return `<td class="is-${cell.status}" title="${escapeHtml(labelOf(cell.start, cell.rate, cell.status))} ${money(cell.cost)}">${word}<br><span>${compactMoney(cell.cost)}</span></td>`;
+                    const title = `${labelOf(cell.start, cell.rate, cell.status)} · 미션 손해 ${money(net.loss)} · 원천세 이익 ${money(net.taxProfit)} · 순손해 ${money(net.net)}`;
+                    return `<td class="is-${cell.status}" title="${escapeHtml(title)}">${word}<br><span>${compactMoney(net.net)}</span></td>`;
                   }).join('')}
                 </tr>`).join('')}
             </tbody>
           </table>
         </div>
+        ${members}
       </article>`;
   }
 
@@ -198,6 +214,16 @@
       week.addEventListener('change', () => {
         state.week = week.value || '';
         void refresh();
+      });
+    }
+    if (document.documentElement.dataset.missionAdjustToggle !== '1') {
+      document.documentElement.dataset.missionAdjustToggle = '1';
+      document.addEventListener('click', event => {
+        const toggle = event.target.closest('[data-adjust-toggle]');
+        if (!toggle) return;
+        const key = toggle.getAttribute('data-adjust-toggle') || '';
+        state.open[key] = !state.open[key];
+        render();
       });
     }
   }

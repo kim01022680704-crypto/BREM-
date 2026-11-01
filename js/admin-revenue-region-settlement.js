@@ -2094,8 +2094,7 @@
           id,
           platform: String(row.platform || ''),
           calls: Math.max(0, Math.round(Number(row.callCount) || 0)),
-          missionPay: Math.max(0, Math.round(Number(row.missionPay) || 0)),
-          promotionTax: Math.max(0, Math.round(Number(row.promotionWithholdingTax) || 0))
+          promo: Math.max(0, Math.round(Number(row.promo) || 0))
         });
         byRegion.set(key, list);
       });
@@ -2108,18 +2107,18 @@
     (rows || []).forEach(row => {
       const slot = `${row.id}|${row.platform}`;
       const prev = bySlot.get(slot);
-      if (!prev || row.calls > prev.calls) bySlot.set(slot, { ...row });
-      else {
-        prev.missionPay = Math.max(prev.missionPay, row.missionPay || 0);
-        prev.promotionTax = Math.max(prev.promotionTax, row.promotionTax || 0);
+      if (!prev || row.calls > prev.calls) {
+        const promo = Math.max(prev?.promo || 0, row.promo || 0);
+        bySlot.set(slot, { ...row, promo });
+      } else {
+        prev.promo = Math.max(prev.promo || 0, row.promo || 0);
       }
     });
     const byPerson = new Map();
     bySlot.forEach(row => {
-      const prev = byPerson.get(row.id) || { calls: 0, missionPay: 0, promotionTax: 0 };
+      const prev = byPerson.get(row.id) || { calls: 0, promo: 0 };
       prev.calls += row.calls;
-      prev.missionPay += row.missionPay;
-      prev.promotionTax += row.promotionTax;
+      prev.promo += row.promo;
       byPerson.set(row.id, prev);
     });
     return [...byPerson.values()];
@@ -2130,14 +2129,14 @@
     const vat = Math.round(Number(money.vat) || 0);
     const finalDeposit = Math.round(Number(money.finalDeposit) || 0);
     const prepaid = Math.round(Number(money.prepaid) || 0);
-    const missionPay = riders.reduce((sum, rider) => sum + (rider.missionPay || 0), 0);
-    const promotionTax = riders.reduce((sum, rider) => sum + (rider.promotionTax || 0), 0);
+    const bremPromo = riders.reduce((sum, rider) => sum + (rider.promo || 0), 0);
+    const bremPromoTax = riders.reduce((sum, rider) => sum + Math.floor((rider.promo || 0) * 0.033), 0);
     const taxFeePercent = Math.max(0, Math.min(100, Number(state.taxFeePercent ?? 20)));
     const taxFee = Math.round(vat * taxFeePercent / 100);
     const base = supplyPaid - taxFee;
-    // 최종입금에는 정산서 미션이 들어 있고, 프로모션원천세도 그 지급액 쪽에 묶여 있다.
-    // 미션을 다시 넣는 계산이므로 둘 다 뺀 뒤 남은 돈으로 한도를 본다.
-    const spentWithoutMission = finalDeposit + prepaid - missionPay - promotionTax;
+    // BREM프로모션이 없을 때의 순수 남은 돈.
+    // 실지급액 - 부가세 20% - (선정산 + 최종입금) - BREM프로모션 + BREM프로모션 원천세
+    const pureRemain = base - (prepaid + finalDeposit) - bremPromo + bremPromoTax;
     return {
       title,
       kind,
@@ -2148,11 +2147,10 @@
       taxFeePercent,
       finalDeposit,
       prepaid,
-      missionPay,
-      promotionTax,
+      bremPromo,
+      bremPromoTax,
       base,
-      spentWithoutMission,
-      headroom: base - spentWithoutMission,
+      pureRemain,
       riderCount: riders.length,
       riders: riders.map(rider => ({ calls: rider.calls }))
     };
@@ -2168,7 +2166,15 @@
     groups.forEach(group => {
       const members = group.members.map(name => byName.get(name)).filter(Boolean);
       const riders = mergeRiderCalls(members.flatMap(row => ridersByRegion.get(regionCompareKey(row.region)) || []));
-      lines.push(missionLine(group.members.join(' + '), 'group', group.members.slice(), summarizeBundle(members), riders));
+      const line = missionLine(group.members.join(' + '), 'group', group.members.slice(), summarizeBundle(members), riders);
+      line.memberLines = members.map(row => missionLine(
+        row.region,
+        'region',
+        [row.region],
+        row,
+        mergeRiderCalls(ridersByRegion.get(regionCompareKey(row.region)) || [])
+      ));
+      lines.push(line);
     });
     regions.forEach(row => {
       if (grouped.has(row.region)) return;
