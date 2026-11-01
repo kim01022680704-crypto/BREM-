@@ -93,7 +93,7 @@
     const verdict = line.base <= 0
       ? '실지급액에서 부가세 20%를 뺀 기준이 없습니다.'
       : (line.pureRemain < 0
-        ? `BREM프로모션을 빼도 이미 ${compactMoney(Math.abs(line.pureRemain))} 부족합니다. 이 범위는 전부 적자입니다.`
+        ? `프로모션을 되돌린 뒤에도 이미 ${compactMoney(Math.abs(line.pureRemain))} 부족합니다. 이 범위는 전부 적자입니다.`
         : `프로모션 없을 때 남은 돈 ${compactMoney(line.pureRemain)} · 가능 ${okCount}칸 · 적자 ${overCount}칸${best ? ` · 가장 높은 가능 단가 ${best.start}건 ${best.rate.toLocaleString('ko-KR')}원` : ''}`);
     const opened = line.kind === 'group' && state.open[line.title];
     const toggle = line.kind === 'group'

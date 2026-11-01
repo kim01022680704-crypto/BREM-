@@ -2134,9 +2134,10 @@
     const taxFeePercent = Math.max(0, Math.min(100, Number(state.taxFeePercent ?? 20)));
     const taxFee = Math.round(vat * taxFeePercent / 100);
     const base = supplyPaid - taxFee;
-    // BREM프로모션이 없을 때의 순수 남은 돈.
-    // 실지급액 - 부가세 20% - (선정산 + 최종입금) - BREM프로모션 + BREM프로모션 원천세
-    const pureRemain = base - (prepaid + finalDeposit) - bremPromo + bremPromoTax;
+    // BREM프로모션이 안 나갔을 때의 남은 돈.
+    // 최종입금에 프로모션이 들어 있으므로 그 금액을 되돌리고, 그때 생겼던 원천세 이익은 뺀다.
+    // 실지급액 - 부가세 20% - (선정산 + 최종입금) + BREM프로모션 - BREM프로모션 원천세
+    const pureRemain = base - (prepaid + finalDeposit) + bremPromo - bremPromoTax;
     return {
       title,
       kind,
