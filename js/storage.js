@@ -1595,6 +1595,7 @@ const BremStorage = (function () {
     notices: [KEYS.notices],
     'mission-management': [KEYS.promotionRules, KEYS.drivers],
     'mission-assignment': [KEYS.promotionRules, KEYS.drivers, KEYS.missionDefaults],
+    'mission-forecast': [KEYS.promotionRules, KEYS.drivers],
     'rider-inquiries': [KEYS.riderInquiries],
     promotions: [KEYS.promotionRules, KEYS.drivers, KEYS.missionDefaults],
     'friend-invite': [KEYS.friendInvites, KEYS.drivers],
@@ -2037,6 +2038,7 @@ const BremStorage = (function () {
         || sectionId === 'inactive-drivers'
         || sectionId === 'mission-management'
         || sectionId === 'mission-assignment'
+        || sectionId === 'mission-forecast'
         || sectionId === 'lease-management'
         || sectionId === 'coupang-rider-status'
         || sectionId === 'rejections'
@@ -14214,6 +14216,7 @@ const BremStorage = (function () {
     'missions',
     'mission-management',
     'mission-assignment',
+    'mission-forecast',
     'lease-management',
     'rider-maintenance',
     'calls',
@@ -14317,6 +14320,13 @@ const BremStorage = (function () {
 
     if (normalized.includes('mission-management') && !normalized.includes('mission-assignment')) {
       normalized.splice(normalized.indexOf('mission-management') + 1, 0, 'mission-assignment');
+    }
+
+    if (normalized.includes('mission-management') && !normalized.includes('mission-forecast')) {
+      const after = normalized.includes('mission-assignment')
+        ? normalized.indexOf('mission-assignment')
+        : normalized.indexOf('mission-management');
+      normalized.splice(after + 1, 0, 'mission-forecast');
     }
 
     const legacyBaeminIndex = normalized.indexOf('baemin-delivery-status');

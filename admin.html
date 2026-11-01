@@ -3595,6 +3595,7 @@
         <nav class="mission-subnav" aria-label="미션 관리 소메뉴">
           <a href="#" class="mission-subnav-link is-active" data-section-link="mission-management">개별 배정</a>
           <a href="#" class="mission-subnav-link" data-section-link="mission-assignment">미션 배정</a>
+          <a href="#" class="mission-subnav-link" data-section-link="mission-forecast">예상미션금액</a>
         </nav>
         <article class="card">
           <div class="card-header mission-catalog-header">
@@ -3687,6 +3688,7 @@
         <nav class="mission-subnav" aria-label="미션 관리 소메뉴">
           <a href="#" class="mission-subnav-link" data-section-link="mission-management">개별 배정</a>
           <a href="#" class="mission-subnav-link is-active" data-section-link="mission-assignment">미션 배정</a>
+          <a href="#" class="mission-subnav-link" data-section-link="mission-forecast">예상미션금액</a>
         </nav>
         <article class="card">
           <div class="card-header">
@@ -3787,6 +3789,56 @@
                 </tr>
               </thead>
               <tbody id="missionBulkUnmatchedRows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="mission-forecast">
+        <nav class="mission-subnav" aria-label="미션 관리 소메뉴">
+          <a href="#" class="mission-subnav-link" data-section-link="mission-management">개별 배정</a>
+          <a href="#" class="mission-subnav-link" data-section-link="mission-assignment">미션 배정</a>
+          <a href="#" class="mission-subnav-link is-active" data-section-link="mission-forecast">예상미션금액</a>
+        </nav>
+        <article class="card">
+          <div class="card-header mission-catalog-header">
+            <div>
+              <h2>예상미션금액</h2>
+              <p class="hint" id="missionForecastSummary">이번 주 실시간 완료콜로 기사별 개인미션 예상금액을 계산합니다.</p>
+              <p class="hint" id="missionForecastStamp"></p>
+            </div>
+            <div class="mission-catalog-actions">
+              <button type="button" class="small-btn" id="missionForecastRefreshBtn">새로고침</button>
+            </div>
+          </div>
+          <div class="mission-assignment-toolbar">
+            <label class="driver-search-field">
+              <span>기사 검색</span>
+              <input type="search" id="missionForecastSearch" placeholder="이름 · 전화" autocomplete="off">
+            </label>
+            <label>
+              보기
+              <select id="missionForecastFilter">
+                <option value="assigned">배정된 기사</option>
+                <option value="paying">금액 있는 기사</option>
+                <option value="all">근무중 전체</option>
+              </select>
+            </label>
+          </div>
+          <div class="table-wrap mission-assignment-table-wrap">
+            <table class="dashboard-table">
+              <thead>
+                <tr>
+                  <th>기사</th>
+                  <th>배민 콜</th>
+                  <th>쿠팡 콜</th>
+                  <th>개인미션</th>
+                  <th>예상금액</th>
+                </tr>
+              </thead>
+              <tbody id="missionForecastRows">
+                <tr><td colspan="5" class="empty">불러오는 중입니다.</td></tr>
+              </tbody>
             </table>
           </div>
         </article>
@@ -10155,7 +10207,7 @@
   <script src="js/storage-supabase-mapper.js?v=20261101inq1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20261030invite1"></script>
-  <script src="js/storage.js?v=20261030invite3"></script>
+  <script src="js/storage.js?v=20261101forecast1"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js?v=20261101inq1"></script>
@@ -10221,10 +10273,12 @@
   <script src="js/admin-payroll-daily-settlement.js?v=20260923comp3"></script>
   <script src="js/mission-promotion-catalog.js?v=20261009missionassign1"></script>
   <script src="js/admin-missions.js?v=20261010missionwork1"></script>
+  <script src="js/promotion-count-sim.js?v=20261101forecast1"></script>
+  <script src="js/admin-mission-forecast.js?v=20261101forecast1"></script>
   <script src="js/admin-mission-assignment.js?v=20261010missionkeep1"></script>
   <script src="js/table-sort.js"></script>
     <script src="js/admin-work-requests.js?v=20260927req8"></script>
-    <script src="js/admin.js?v=20261101inq1"></script>
+    <script src="js/admin.js?v=20261101forecast1"></script>
   <script src="js/admin-driver-popups.js?v=20261030kakaoapp1" defer></script>
   <script src="js/admin-sidebar-groups.js?v=20261101menu1" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>

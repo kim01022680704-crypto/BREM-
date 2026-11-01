@@ -192,6 +192,32 @@ app.get('/api/admin/driver-app-preview-token', async (req, res) => {
   }
 });
 
+app.get('/api/admin/mission-forecast', async (req, res) => {
+  try {
+    const result = await require('./mission-forecast').listMissionForecastCalls(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error || '예상미션금액을 불러오지 못했습니다.' });
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '예상미션금액을 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/admin/mission-forecast', async (req, res) => {
+  try {
+    const result = await require('./mission-forecast').listMissionForecastCalls(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error || '예상미션금액을 불러오지 못했습니다.' });
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '예상미션금액을 불러오지 못했습니다.' });
+  }
+});
+
 app.get('/api/admin/driver-mobile-preview', async (req, res) => {
   try {
     const result = await adminDriverMobile.getDriverMobilePreview(getBearerToken(req), req.query.driverId);
