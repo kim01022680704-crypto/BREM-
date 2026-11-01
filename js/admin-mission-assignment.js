@@ -97,14 +97,16 @@
     return `<span class="mission-now-chip mission-now-chip--${chip.kind}">${escapeHtml(chip.text)}</span>`;
   }
 
-  function shortCoupangRegion(name) {
-    let raw = String(name || '').replace(/\s+/g, '').trim();
+  function displayCoupangRegion(name) {
+    const api = window.BremCoupangRegion;
+    if (api?.displayCoupangRegionLabel) return api.displayCoupangRegionLabel(name);
+    const raw = String(name || '').replace(/\s+/g, '').trim();
     if (!raw) return '';
-    raw = raw.replace(/\(\d+\)$/g, '');
-    const hangul = raw.replace(/[^가-힣]/g, '');
+    const hangul = raw.replace(/\(\d+\)$/g, '').replace(/[^가-힣]/g, '');
     const base = hangul || raw;
-    if (!base) return '';
-    return base.length <= 4 ? base : base.slice(-4);
+    const short = !base ? '' : (base.length <= 4 ? base : base.slice(-4));
+    if (/\(Z\)/i.test(raw) && short && !/\(Z\)/i.test(short)) return `${short}(Z)`;
+    return short || raw;
   }
 
   function driverRegionValue(driver, platform) {
@@ -191,24 +193,20 @@
   function driversMatchingRegion(region) {
     if (!region) return [];
     const platform = region.platform === 'coupang' ? 'coupang' : 'baemin';
-    const aliasScore = (left, right) => window.BremPromotionApply?.scoreRegionAliasMatch?.(left, right) || 0;
     return allDrivers().filter((driver) => {
       const value = driverRegionValue(driver, platform);
       if (!value) return false;
       if (platform === 'baemin') {
         return value === region.label
           || value === region.partnerId
-          || value === region.key
-          || (region.partnerId && String(region.partnerId).length >= 6 && value.includes(region.partnerId))
-          || aliasScore(value, region.label) >= 60;
+          || value === region.key;
       }
+      const riderLabel = displayCoupangRegion(value);
+      const regionLabel = displayCoupangRegion(region.vendorName || region.label);
       return value === region.vendorId
         || value === region.key
-        || value === region.vendorName
-        || shortCoupangRegion(value) === region.label
-        || shortCoupangRegion(value) === shortCoupangRegion(region.vendorName)
-        || aliasScore(value, region.label) >= 60
-        || aliasScore(value, region.vendorName) >= 60;
+        || (region.vendorName && value === region.vendorName)
+        || (riderLabel && regionLabel && riderLabel === regionLabel);
     });
   }
 
@@ -363,16 +361,19 @@
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || '쿠팡 지역을 불러오지 못했습니다.');
       const seen = new Set();
+      const seenLabel = new Set();
       state.coupangRegions = (payload.allItems || payload.items || []).map((item) => {
         const vendorId = String(item.vendorId || '').trim();
         const vendorName = String(item.vendorName || '').trim();
-        if (!vendorId || seen.has(vendorId)) return null;
+        const label = displayCoupangRegion(vendorName) || vendorId;
+        if (!vendorId || seen.has(vendorId) || seenLabel.has(label)) return null;
         seen.add(vendorId);
+        seenLabel.add(label);
         return {
           key: vendorId,
           vendorId,
           vendorName,
-          label: shortCoupangRegion(vendorName) || vendorId,
+          label,
           platform: 'coupang'
         };
       }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label, 'ko'));
@@ -439,7 +440,7 @@
     const rowsEl = $('missionBulkRows');
     if (!rowsEl) return;
     if (!state.preview.length) {
-      rowsEl.innerHTML = '<tr><td colspan="10" class="empty">검색된 기사가 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="11" class="empty">검색된 기사가 없습니다.</td></tr>';
       updateSummary();
       renderUnmatched();
       return;
@@ -460,7 +461,8 @@
         <td class="mission-now-cell">${missionChipHtml('baemin', '배민', rawMissionId(driver, 'baemin'))}</td>
         <td class="mission-now-cell">${missionChipHtml('coupang', '쿠팡', rawMissionId(driver, 'coupang'))}</td>
         <td class="mission-now-cell">${missionChipHtml('combined', '합산', rawMissionId(driver, 'combined'))}</td>
-        <td>${escapeHtml(row.rawId || selectedRegion()?.label || '-')}</td>
+        <td>${escapeHtml(driver.regionBaemin || '-')}</td>
+        <td>${escapeHtml(driver.regionCoupang || '-')}</td>
         <td>
           <button type="button" class="small-btn ${locked ? 'primary-btn' : ''}" data-bulk-lock="${escapeHtml(driver.id)}">
             ${locked ? '잠금 해제' : '잠금'}
