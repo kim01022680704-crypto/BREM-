@@ -86,7 +86,7 @@
     const verdict = line.base <= 0
       ? '실지급액에서 부가세를 뺀 100% 기준이 없습니다.'
       : (line.headroom < 0
-        ? `미션을 빼도 이미 ${compactMoney(Math.abs(line.headroom))} 넘습니다. 이 범위는 전부 적자입니다.`
+        ? `정산서 미션과 프로모션원천세를 빼도 이미 ${compactMoney(Math.abs(line.headroom))} 넘습니다. 이 범위는 전부 적자입니다.`
         : `미션으로 넣을 수 있는 돈 ${compactMoney(line.headroom)} · 가능 ${okCount}칸 · 적자 ${overCount}칸${best ? ` · 가장 높은 가능 단가 ${best.start}건 ${best.rate.toLocaleString('ko-KR')}원` : ''}`);
     return `
       <article class="mission-adjust-card">
@@ -103,6 +103,7 @@
           ${fact('최종입금', money(line.finalDeposit))}
           ${fact('선정산', money(line.prepaid))}
           ${fact('정산서 미션', money(line.missionPay))}
+          ${fact('프로모션원천세', money(line.promotionTax))}
           ${fact('미션 한도', line.base > 0 ? compactMoney(line.headroom) : '-')}
         </p>
         <p class="hint">${verdict}</p>

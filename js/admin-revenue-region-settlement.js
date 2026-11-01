@@ -2094,7 +2094,8 @@
           id,
           platform: String(row.platform || ''),
           calls: Math.max(0, Math.round(Number(row.callCount) || 0)),
-          missionPay: Math.max(0, Math.round(Number(row.missionPay) || 0))
+          missionPay: Math.max(0, Math.round(Number(row.missionPay) || 0)),
+          promotionTax: Math.max(0, Math.round(Number(row.promotionWithholdingTax) || 0))
         });
         byRegion.set(key, list);
       });
@@ -2108,13 +2109,17 @@
       const slot = `${row.id}|${row.platform}`;
       const prev = bySlot.get(slot);
       if (!prev || row.calls > prev.calls) bySlot.set(slot, { ...row });
-      else prev.missionPay = Math.max(prev.missionPay, row.missionPay || 0);
+      else {
+        prev.missionPay = Math.max(prev.missionPay, row.missionPay || 0);
+        prev.promotionTax = Math.max(prev.promotionTax, row.promotionTax || 0);
+      }
     });
     const byPerson = new Map();
     bySlot.forEach(row => {
-      const prev = byPerson.get(row.id) || { calls: 0, missionPay: 0 };
+      const prev = byPerson.get(row.id) || { calls: 0, missionPay: 0, promotionTax: 0 };
       prev.calls += row.calls;
       prev.missionPay += row.missionPay;
+      prev.promotionTax += row.promotionTax;
       byPerson.set(row.id, prev);
     });
     return [...byPerson.values()];
@@ -2126,8 +2131,11 @@
     const finalDeposit = Math.round(Number(money.finalDeposit) || 0);
     const prepaid = Math.round(Number(money.prepaid) || 0);
     const missionPay = riders.reduce((sum, rider) => sum + (rider.missionPay || 0), 0);
+    const promotionTax = riders.reduce((sum, rider) => sum + (rider.promotionTax || 0), 0);
     const base = supplyPaid - vat;
-    const spentWithoutMission = finalDeposit + prepaid - missionPay;
+    // 최종입금에는 정산서 미션이 들어 있고, 프로모션원천세도 그 지급액 쪽에 묶여 있다.
+    // 미션을 다시 넣는 계산이므로 둘 다 뺀 뒤 남은 돈으로 한도를 본다.
+    const spentWithoutMission = finalDeposit + prepaid - missionPay - promotionTax;
     return {
       title,
       kind,
@@ -2137,6 +2145,7 @@
       finalDeposit,
       prepaid,
       missionPay,
+      promotionTax,
       base,
       spentWithoutMission,
       headroom: base - spentWithoutMission,
