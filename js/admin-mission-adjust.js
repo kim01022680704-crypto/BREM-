@@ -45,6 +45,9 @@
   }
 
   function lineCost(line, start, rate) {
+    if (line.kind === 'group' && Array.isArray(line.memberLines) && line.memberLines.length) {
+      return line.memberLines.reduce((sum, member) => sum + lineCost(member, start, rate), 0);
+    }
     return (line.riders || []).reduce((sum, rider) => sum + missionAmount(rider.calls, start, rate), 0);
   }
 
@@ -54,10 +57,20 @@
     return { loss, taxProfit, net: loss - taxProfit };
   }
 
-  function cellState(line, cost) {
-    if (line.base <= 0) return 'empty';
-    if (missionNet(cost).net > line.pureRemain) return 'over';
-    return 'ok';
+  function cellQuote(line, start, rate) {
+    if (line.kind === 'group' && Array.isArray(line.memberLines) && line.memberLines.length) {
+      const parts = line.memberLines.map(member => cellQuote(member, start, rate));
+      const loss = parts.reduce((sum, part) => sum + part.loss, 0);
+      const taxProfit = parts.reduce((sum, part) => sum + part.taxProfit, 0);
+      const net = parts.reduce((sum, part) => sum + part.net, 0);
+      const left = Math.round(Number(line.pureRemain) || 0) - net;
+      const status = line.base <= 0 ? 'empty' : (left < 0 ? 'over' : 'ok');
+      return { start, rate, loss, taxProfit, net, left, status };
+    }
+    const net = missionNet(lineCost(line, start, rate));
+    const left = Math.round(Number(line.pureRemain) || 0) - net.net;
+    const status = line.base <= 0 ? 'empty' : (left < 0 ? 'over' : 'ok');
+    return { start, rate, loss: net.loss, taxProfit: net.taxProfit, net: net.net, left, status };
   }
 
   function labelOf(start, rate, status) {
@@ -72,10 +85,7 @@
   }
 
   function renderLine(line) {
-    const cells = STARTS.map(start => RATES.map(rate => {
-      const cost = lineCost(line, start, rate);
-      return { start, rate, cost, status: cellState(line, cost) };
-    }));
+    const cells = STARTS.map(start => RATES.map(rate => cellQuote(line, start, rate)));
     const flat = cells.flat();
     const overCount = flat.filter(cell => cell.status === 'over').length;
     const okCount = flat.filter(cell => cell.status === 'ok').length;
@@ -84,10 +94,7 @@
       [50, 1500],
       [150, 1000],
       [150, 1500]
-    ].map(([start, rate]) => {
-      const cost = lineCost(line, start, rate);
-      return labelOf(start, rate, cellState(line, cost));
-    });
+    ].map(([start, rate]) => labelOf(start, rate, cellQuote(line, start, rate).status));
     const best = flat.filter(cell => cell.status === 'ok')
       .sort((a, b) => b.rate - a.rate || a.start - b.start)[0];
     const verdict = line.base <= 0
@@ -102,12 +109,13 @@
     const members = opened
       ? `<div class="mission-adjust-members">${(line.memberLines || []).map(member => renderLine(member)).join('')}</div>`
       : '';
+    const kindLabel = line.kind === 'group' ? '묶음 합산' : '지역 따로';
     return `
       <article class="mission-adjust-card${line.kind === 'group' ? ' is-group' : ''}">
         <header>
           <div>
             <h3>${escapeHtml(line.title)} ${toggle}</h3>
-            <p class="hint">${line.kind === 'group' ? '묶음' : '지역'} · 기사 ${line.riderCount}명 · ${corners.join(' · ')}</p>
+            <p class="hint">${kindLabel} · 기사 ${line.riderCount}명 · ${corners.join(' · ')}</p>
           </div>
         </header>
         <p class="mission-adjust-facts">
@@ -120,7 +128,7 @@
           ${fact('BREM프로모션원천세', money(line.bremPromoTax))}
           ${fact('프로모션 없을 때 남은 돈', compactMoney(line.pureRemain))}
         </p>
-        <p class="hint">${verdict} 칸 금액은 미션 손해에서 3.3% 이익을 뺀 순손해입니다.</p>
+        <p class="hint">${verdict} 칸의 남는 돈은 이 미션 순손해를 뺀 금액입니다.</p>
         <div class="table-wrap">
           <table class="mission-adjust-table">
             <thead>
@@ -134,10 +142,10 @@
                 <tr>
                   <th>${row[0].start}건</th>
                   ${row.map(cell => {
-                    const net = missionNet(cell.cost);
                     const word = cell.status === 'over' ? '적자' : (cell.status === 'ok' ? '가능' : '-');
-                    const title = `${labelOf(cell.start, cell.rate, cell.status)} · 미션 손해 ${money(net.loss)} · 원천세 이익 ${money(net.taxProfit)} · 순손해 ${money(net.net)}`;
-                    return `<td class="is-${cell.status}" title="${escapeHtml(title)}">${word}<br><span>${compactMoney(net.net)}</span></td>`;
+                    const leftLabel = `남음 ${compactMoney(cell.left)}`;
+                    const title = `${labelOf(cell.start, cell.rate, cell.status)} · 미션 손해 ${money(cell.loss)} · 원천세 이익 ${money(cell.taxProfit)} · 순손해 ${money(cell.net)} · ${leftLabel}`;
+                    return `<td class="is-${cell.status}" title="${escapeHtml(title)}">${word}<br><span>${leftLabel}</span></td>`;
                   }).join('')}
                 </tr>`).join('')}
             </tbody>

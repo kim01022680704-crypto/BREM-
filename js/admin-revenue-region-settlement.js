@@ -2157,6 +2157,28 @@
     };
   }
 
+  function sumMissionLines(title, memberLines) {
+    const sumOf = key => memberLines.reduce((sum, line) => sum + (Math.round(Number(line[key]) || 0)), 0);
+    return {
+      title,
+      kind: 'group',
+      members: memberLines.map(line => line.title),
+      supplyPaid: sumOf('supplyPaid'),
+      vat: sumOf('vat'),
+      taxFee: sumOf('taxFee'),
+      taxFeePercent: memberLines[0]?.taxFeePercent || 20,
+      finalDeposit: sumOf('finalDeposit'),
+      prepaid: sumOf('prepaid'),
+      bremPromo: sumOf('bremPromo'),
+      bremPromoTax: sumOf('bremPromoTax'),
+      base: sumOf('base'),
+      pureRemain: sumOf('pureRemain'),
+      riderCount: sumOf('riderCount'),
+      riders: [],
+      memberLines
+    };
+  }
+
   function missionAdjustSnapshot() {
     const { regions } = aggregateRegions(state.weekStart);
     const ridersByRegion = collectRegionRiders(state.weekStart);
@@ -2166,16 +2188,14 @@
     const lines = [];
     groups.forEach(group => {
       const members = group.members.map(name => byName.get(name)).filter(Boolean);
-      const riders = mergeRiderCalls(members.flatMap(row => ridersByRegion.get(regionCompareKey(row.region)) || []));
-      const line = missionLine(group.members.join(' + '), 'group', group.members.slice(), summarizeBundle(members), riders);
-      line.memberLines = members.map(row => missionLine(
+      const memberLines = members.map(row => missionLine(
         row.region,
         'region',
         [row.region],
         row,
         mergeRiderCalls(ridersByRegion.get(regionCompareKey(row.region)) || [])
       ));
-      lines.push(line);
+      lines.push(sumMissionLines(group.members.join(' + '), memberLines));
     });
     regions.forEach(row => {
       if (grouped.has(row.region)) return;
