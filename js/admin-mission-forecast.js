@@ -146,52 +146,54 @@
     return {};
   }
 
-  function cumulativeCalls(bag, days, throughDay, today, liveTotal) {
-    let sum = 0;
-    days.forEach(day => {
-      if (day > throughDay || day > today) return;
-      sum += Number(bag[day] || 0);
-    });
-    if (today && throughDay >= today) return Math.max(sum, liveTotal);
-    return sum;
-  }
-
-  function dayLabel(dateKey) {
-    const names = ['일', '월', '화', '수', '목', '금', '토'];
+  function addDays(dateKey, days) {
     const date = new Date(`${dateKey}T00:00:00`);
-    const name = Number.isNaN(date.getTime()) ? '' : names[date.getDay()];
-    return `${name} ${dateKey.slice(5).replace('-', '/')}`;
+    date.setDate(date.getDate() + days);
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${date.getFullYear()}-${month}-${day}`;
   }
 
-  function compactMoney(value) {
-    const amount = Math.round(Number(value) || 0);
-    if (Math.abs(amount) >= 100000000) return `${(amount / 100000000).toFixed(1)}억`;
-    if (Math.abs(amount) >= 10000) return `${Math.round(amount / 10000).toLocaleString('ko-KR')}만`;
-    return amount.toLocaleString('ko-KR');
+  function weekTitle(offset) {
+    if (offset === 0) return '이번주';
+    if (offset === -1) return '저번주';
+    return '2주 전';
   }
 
-  function trendPoints(rows, live) {
-    const days = Array.isArray(live?.days) ? live.days : [];
+  function weekDays(start) {
+    const days = [];
+    for (let offset = 0; offset < 7; offset += 1) days.push(addDays(start, offset));
+    return days;
+  }
+
+  function callsThrough(row, live, days, throughDay, isCurrent) {
     const today = String(live?.today || '');
-    if (!days.length) return [];
+    const baeminBag = dailyBag(live?.baeminDailyByUserId, baeminIdVariants(row.driver.baeminId || row.driver.raw_data?.baeminId));
+    const coupangBag = dailyBag(live?.coupangDailyByMatchKey, coupangKeys(row.driver));
+    let baemin = 0;
+    let coupang = 0;
+    days.forEach(day => {
+      if (day > throughDay) return;
+      baemin += Number(baeminBag[day] || 0);
+      coupang += Number(coupangBag[day] || 0);
+    });
+    if (isCurrent && today && throughDay >= today) {
+      baemin = Math.max(baemin, row.calls.baemin);
+      coupang = Math.max(coupang, row.calls.coupang);
+    }
+    return { baemin, coupang };
+  }
+
+  function seriesForWeek(rows, live, week) {
+    const days = weekDays(week.start);
+    const today = String(live?.today || '');
+    const isCurrent = week.offset === 0;
+    const cap = isCurrent ? today : week.end;
     return days.map(day => {
-      if (today && day > today) return { day, amount: null, delta: null };
+      if (cap && day > cap) return { day, amount: null, delta: null };
       const amount = rows.reduce((sum, row) => {
-        const baemin = cumulativeCalls(
-          dailyBag(live.baeminDailyByUserId, baeminIdVariants(row.driver.baeminId || row.driver.raw_data?.baeminId)),
-          days,
-          day,
-          today,
-          row.calls.baemin
-        );
-        const coupang = cumulativeCalls(
-          dailyBag(live.coupangDailyByMatchKey, coupangKeys(row.driver)),
-          days,
-          day,
-          today,
-          row.calls.coupang
-        );
-        return sum + amountForCalls(row.driver, baemin, coupang);
+        const calls = callsThrough(row, live, days, day, isCurrent);
+        return sum + amountForCalls(row.driver, calls.baemin, calls.coupang);
       }, 0);
       return { day, amount, delta: null };
     }).map((point, index, list) => {
@@ -201,22 +203,21 @@
     });
   }
 
-  function renderChart(rows, live) {
-    const host = $('missionForecastChart');
-    if (!host) return;
-    const points = trendPoints(rows, live).filter(point => point.day);
-    const drawn = points.filter(point => point.amount != null);
-    if (!live || !drawn.length) {
-      host.innerHTML = '<p class="hint">그래프는 이번 주 콜수를 받은 뒤 표시됩니다.</p>';
-      return;
-    }
-    const width = 720;
-    const height = 240;
-    const left = 72;
-    const right = 16;
-    const top = 28;
-    const bottom = 36;
-    const max = Math.max(1, ...drawn.map(point => point.amount));
+  function dayLabel(dateKey) {
+    const names = ['일', '월', '화', '수', '목', '금', '토'];
+    const date = new Date(`${dateKey}T00:00:00`);
+    const name = Number.isNaN(date.getTime()) ? '' : names[date.getDay()];
+    return `${name} ${dateKey.slice(5).replace('-', '/')}`;
+  }
+
+  function chartSvg(points, scaleMax) {
+    const width = 240;
+    const height = 132;
+    const left = 8;
+    const right = 8;
+    const top = 12;
+    const bottom = 22;
+    const max = Math.max(1, scaleMax);
     const slot = (width - left - right) / Math.max(points.length - 1, 1);
     const yOf = amount => top + (height - top - bottom) * (1 - amount / max);
     const coords = points.map((point, index) => ({
@@ -229,26 +230,60 @@
     const area = line.length
       ? `${linePath} L${line[line.length - 1].x.toFixed(1)},${height - bottom} L${line[0].x.toFixed(1)},${height - bottom} Z`
       : '';
-    const last = line[line.length - 1];
-    const rise = last ? last.delta : 0;
-    host.innerHTML = `
-      <p class="mission-forecast-chart__rise">오늘까지 <strong>${compactMoney(last?.amount || 0)}</strong>${rise ? ` · 직전보다 <strong>+${compactMoney(rise)}</strong>` : ''}</p>
-      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="이번 주 예상미션금액 추이">
-        <line x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}" stroke="#3a3a3a"></line>
+    return `
+      <svg viewBox="0 0 ${width} ${height}" role="img">
         <line x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}" stroke="#3a3a3a"></line>
-        <line x1="${left}" y1="${yOf(max).toFixed(1)}" x2="${width - right}" y2="${yOf(max).toFixed(1)}" stroke="#2a2a2a" stroke-dasharray="4 4"></line>
-        <text x="${left - 8}" y="${yOf(max) + 4}" text-anchor="end" class="mission-forecast-chart__axis">${compactMoney(max)}</text>
-        <text x="${left - 8}" y="${height - bottom}" text-anchor="end" class="mission-forecast-chart__axis">0</text>
-        <path d="${area}" fill="rgba(245,197,24,0.18)"></path>
-        <path d="${linePath}" fill="none" stroke="#f5c518" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></path>
+        <path d="${area}" fill="rgba(245,197,24,0.16)"></path>
+        <path d="${linePath}" fill="none" stroke="#f5c518" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"></path>
         ${coords.map(point => {
-          const label = dayLabel(point.day);
+          const label = dayLabel(point.day).split(' ')[0];
           const dot = point.y == null
             ? ''
-            : `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4.5" fill="#f5c518"><title>${label} ${money(point.amount)} · 전일 대비 +${money(point.delta || 0)}</title></circle>`;
-          return `${dot}<text x="${point.x.toFixed(1)}" y="${height - 12}" text-anchor="middle" class="mission-forecast-chart__axis">${label}</text>`;
+            : `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3" fill="#f5c518"><title>${dayLabel(point.day)} ${money(point.amount)} · 전일 대비 +${money(point.delta || 0)}</title></circle>`;
+          return `${dot}<text x="${point.x.toFixed(1)}" y="${height - 6}" text-anchor="middle" class="mission-forecast-chart__axis">${label}</text>`;
         }).join('')}
       </svg>`;
+  }
+
+  function renderChart(rows, live) {
+    const host = $('missionForecastChart');
+    if (!host) return;
+    const weeks = Array.isArray(live?.weeks) && live.weeks.length
+      ? live.weeks
+      : (live?.weekStart ? [{ start: live.weekStart, end: addDays(live.weekStart, 6), offset: 0 }] : []);
+    if (!live || !weeks.length) {
+      host.innerHTML = '<p class="hint">그래프는 이번 주 콜수를 받은 뒤 표시됩니다.</p>';
+      return;
+    }
+    const series = weeks.map(week => ({ week, points: seriesForWeek(rows, live, week) }));
+    const scaleMax = Math.max(1, ...series.flatMap(item => item.points.map(point => point.amount || 0)));
+    const current = series.find(item => item.week.offset === 0);
+    const previous = series.find(item => item.week.offset === -1);
+    const currentTotal = [...(current?.points || [])].reverse().find(point => point.amount != null)?.amount || 0;
+    const previousTotal = [...(previous?.points || [])].reverse().find(point => point.amount != null)?.amount || 0;
+    const gap = currentTotal - previousTotal;
+    host.innerHTML = `
+      <p class="mission-forecast-chart__rise">최근 3주 비교 · 이번주 <strong>${compactMoney(currentTotal)}</strong> · 저번주보다 <strong>${gap >= 0 ? '+' : ''}${compactMoney(gap)}</strong></p>
+      <div class="mission-forecast-weeks">
+        ${series.map(item => {
+          const total = [...item.points].reverse().find(point => point.amount != null)?.amount || 0;
+          const range = `${item.week.start.slice(5).replace('-', '/')}~${item.week.end.slice(5).replace('-', '/')}`;
+          return `
+            <article class="mission-forecast-week${item.week.offset === 0 ? ' is-current' : ''}">
+              <p class="mission-forecast-week__title">${weekTitle(item.week.offset)} <strong>${compactMoney(total)}</strong></p>
+              <p class="mission-forecast-week__range">${range}</p>
+              ${chartSvg(item.points, scaleMax)}
+            </article>`;
+        }).join('')}
+      </div>
+      <p class="hint">세 그래프 높이는 같습니다. 지금 배정된 개인미션으로 그 주 콜수를 계산한 예상금액입니다.</p>`;
+  }
+
+  function compactMoney(value) {
+    const amount = Math.round(Number(value) || 0);
+    if (Math.abs(amount) >= 100000000) return `${(amount / 100000000).toFixed(1)}억`;
+    if (Math.abs(amount) >= 10000) return `${Math.round(amount / 10000).toLocaleString('ko-KR')}만`;
+    return amount.toLocaleString('ko-KR');
   }
 
   async function loadLive() {

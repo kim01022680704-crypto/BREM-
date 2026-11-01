@@ -16757,10 +16757,48 @@ tr.is-week-first td {
 
 .mission-forecast-chart {
   margin: 4px 0 16px;
-  padding: 8px 8px 0;
+  padding: 8px 8px 4px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #121212;
+}
+
+.mission-forecast-weeks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 8px 8px 4px;
+}
+
+.mission-forecast-week {
+  min-width: 0;
+  padding: 8px 6px 2px;
+  border: 1px solid #2c2c2c;
+  border-radius: 10px;
+  background: #0e0e0e;
+}
+
+.mission-forecast-week.is-current {
+  border-color: #f5c518;
+}
+
+.mission-forecast-week__title,
+.mission-forecast-week__range {
+  margin: 0 6px;
+}
+
+.mission-forecast-week__title {
+  color: #f3f3f3;
+  font-size: 0.92rem;
+}
+
+.mission-forecast-week__title strong {
+  color: #f5c518;
+}
+
+.mission-forecast-week__range {
+  color: #9a9a9a;
+  font-size: 0.75rem;
 }
 
 .mission-forecast-chart svg {

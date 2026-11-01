@@ -14,7 +14,7 @@ function baeminDayComplete(row) {
 async function fetchPages(build) {
   const rows = [];
   const size = 1000;
-  for (let from = 0; from < 20000; from += size) {
+  for (let from = 0; from < 50000; from += size) {
     const { data, error } = await build().range(from, from + size - 1);
     if (error) {
       if (/does not exist|Could not find the table/i.test(String(error.message || ''))) return rows;
@@ -125,24 +125,36 @@ async function listMissionForecastCalls(accessToken) {
   const week = require('./baemin-settlement-week');
   const today = week.businessTodayKST();
   const weekStart = week.settlementWeekStart(today);
+  const historyFrom = week.addDays(weekStart, -14);
   const days = [];
   for (let offset = 0; offset < 7; offset += 1) days.push(week.addDays(weekStart, offset));
+  const weeks = [-2, -1, 0].map(offset => {
+    const start = week.addDays(weekStart, offset * 7);
+    return { start, end: week.addDays(start, 6), offset };
+  });
   const [baemin, coupang, baeminDailyByUserId] = await Promise.all([
     loadBaeminWeekCalls(supabase, weekStart),
-    loadCoupangWeekCalls(supabase, weekStart, today),
-    loadBaeminDailyCalls(supabase, weekStart, today)
+    loadCoupangWeekCalls(supabase, historyFrom, today),
+    loadBaeminDailyCalls(supabase, historyFrom, today)
   ]);
+  const coupangByMatchKey = {};
+  Object.entries(coupang.dailyByMatchKey).forEach(([key, bag]) => {
+    coupangByMatchKey[key] = Object.entries(bag).reduce((sum, [day, calls]) => (
+      day >= weekStart && day <= today ? sum + calls : sum
+    ), 0);
+  });
 
   return {
     ok: true,
     weekStart,
     today,
     days,
+    weeks,
     fetchedAt: new Date().toISOString(),
     baeminByDriverId: baemin.byDriverId,
     baeminByUserId: baemin.byUserId,
     baeminDailyByUserId,
-    coupangByMatchKey: coupang.byMatchKey,
+    coupangByMatchKey,
     coupangDailyByMatchKey: coupang.dailyByMatchKey
   };
 }
