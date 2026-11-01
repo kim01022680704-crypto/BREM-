@@ -34,7 +34,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20261101forecast3">
+  <link rel="stylesheet" href="css/admin.css?v=20261101adjust1">
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261029edit1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20261101sim3">
@@ -3596,6 +3596,7 @@
           <a href="#" class="mission-subnav-link is-active" data-section-link="mission-management">개별 배정</a>
           <a href="#" class="mission-subnav-link" data-section-link="mission-assignment">미션 배정</a>
           <a href="#" class="mission-subnav-link" data-section-link="mission-forecast">예상미션금액</a>
+          <a href="#" class="mission-subnav-link" data-section-link="mission-adjust">미션조정</a>
         </nav>
         <article class="card">
           <div class="card-header mission-catalog-header">
@@ -3689,6 +3690,7 @@
           <a href="#" class="mission-subnav-link" data-section-link="mission-management">개별 배정</a>
           <a href="#" class="mission-subnav-link is-active" data-section-link="mission-assignment">미션 배정</a>
           <a href="#" class="mission-subnav-link" data-section-link="mission-forecast">예상미션금액</a>
+          <a href="#" class="mission-subnav-link" data-section-link="mission-adjust">미션조정</a>
         </nav>
         <article class="card">
           <div class="card-header">
@@ -3799,6 +3801,7 @@
           <a href="#" class="mission-subnav-link" data-section-link="mission-management">개별 배정</a>
           <a href="#" class="mission-subnav-link" data-section-link="mission-assignment">미션 배정</a>
           <a href="#" class="mission-subnav-link is-active" data-section-link="mission-forecast">예상미션금액</a>
+          <a href="#" class="mission-subnav-link" data-section-link="mission-adjust">미션조정</a>
         </nav>
         <article class="card">
           <div class="card-header mission-catalog-header">
@@ -3843,6 +3846,35 @@
                 <tr><td colspan="5" class="empty">불러오는 중입니다.</td></tr>
               </tbody>
             </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="mission-adjust">
+        <nav class="mission-subnav" aria-label="미션 관리 소메뉴">
+          <a href="#" class="mission-subnav-link" data-section-link="mission-management">개별 배정</a>
+          <a href="#" class="mission-subnav-link" data-section-link="mission-assignment">미션 배정</a>
+          <a href="#" class="mission-subnav-link" data-section-link="mission-forecast">예상미션금액</a>
+          <a href="#" class="mission-subnav-link is-active" data-section-link="mission-adjust">미션조정</a>
+        </nav>
+        <article class="card">
+          <div class="card-header mission-catalog-header">
+            <div>
+              <h2>미션조정</h2>
+              <p class="hint">수익관리 지역별 정산을 묶음 그대로 가져옵니다. 실지급액에서 부가세를 뺀 금액을 100%로 보고, 건당 1,000~1,500원 · 시작 50~150건을 올렸을 때 넘는 칸은 적자입니다.</p>
+              <p class="hint" id="missionAdjustStamp"></p>
+            </div>
+            <div class="mission-catalog-actions">
+              <label>
+                정산주
+                <input type="date" id="missionAdjustWeek">
+              </label>
+              <button type="button" class="small-btn" id="missionAdjustRefreshBtn">새로고침</button>
+            </div>
+          </div>
+          <p class="hint">기사 콜수는 그 주 직계약 정산서입니다. 한 사람의 배민·쿠팡 콜은 합칩니다. 정산서에 이미 들어 있는 미션지급은 빼고, 이 표의 미션만 다시 넣습니다.</p>
+          <div id="missionAdjustBody">
+            <p class="hint">지역별 정산을 불러오는 중입니다.</p>
           </div>
         </article>
       </section>
@@ -10210,7 +10242,7 @@
   <script src="js/storage-supabase-mapper.js?v=20261101inq1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20261030invite1"></script>
-  <script src="js/storage.js?v=20261101forecast4"></script>
+  <script src="js/storage.js?v=20261101adjust1"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js?v=20261101inq1"></script>
@@ -10248,7 +10280,7 @@
   <script src="js/admin-lease-menus.js?v=20260813g"></script>
   <script src="js/admin-rider-maintenance.js?v=20260924mt4"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-revenue-region-settlement.js?v=20261030regiongroup1"></script>
+  <script src="js/admin-revenue-region-settlement.js?v=20261101adjust1"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
   <script src="js/payroll-slip-utils.js?v=20260922payout1"></script>
@@ -10278,10 +10310,11 @@
   <script src="js/admin-missions.js?v=20261010missionwork1"></script>
   <script src="js/promotion-count-sim.js?v=20261101forecast1"></script>
   <script src="js/admin-mission-forecast.js?v=20261101forecast4"></script>
+  <script src="js/admin-mission-adjust.js?v=20261101adjust1"></script>
   <script src="js/admin-mission-assignment.js?v=20261010missionkeep1"></script>
   <script src="js/table-sort.js"></script>
     <script src="js/admin-work-requests.js?v=20260927req8"></script>
-    <script src="js/admin.js?v=20261101forecast1"></script>
+    <script src="js/admin.js?v=20261101adjust1"></script>
   <script src="js/admin-driver-popups.js?v=20261030kakaoapp1" defer></script>
   <script src="js/admin-sidebar-groups.js?v=20261101menu1" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>

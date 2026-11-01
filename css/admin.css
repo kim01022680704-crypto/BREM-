@@ -16820,3 +16820,47 @@ tr.is-week-first td {
   fill: #bdbdbd;
   font-size: 12px;
 }
+
+.mission-adjust-card {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2a2a;
+}
+.mission-adjust-card h3 {
+  margin: 0 0 4px;
+}
+.mission-adjust-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 8px 0;
+  color: #c8c8c8;
+  font-size: 13px;
+}
+.mission-adjust-facts em {
+  font-style: normal;
+  color: #8d8d8d;
+  margin-right: 4px;
+}
+.mission-adjust-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.mission-adjust-table th,
+.mission-adjust-table td {
+  padding: 6px 8px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid #2a2a2a;
+}
+.mission-adjust-table td span {
+  color: #9a9a9a;
+}
+.mission-adjust-table td.is-ok {
+  color: #d5e7a3;
+}
+.mission-adjust-table td.is-over {
+  color: #ff9b9b;
+  background: rgba(180, 48, 48, 0.16);
+}

@@ -8072,6 +8072,9 @@
     if (sectionId === 'mission-forecast' && window.BremAdminMissionForecast?.refresh) {
       pendingRefresh = window.BremAdminMissionForecast.refresh();
     }
+    if (sectionId === 'mission-adjust' && window.BremAdminMissionAdjust?.refresh) {
+      pendingRefresh = window.BremAdminMissionAdjust.refresh();
+    }
     if (sectionId === 'baemin-biz-status' || sectionId === 'baemin-status') {
       void window.BremBaeminDeliveryStatusAdmin.refresh(sectionId);
     }

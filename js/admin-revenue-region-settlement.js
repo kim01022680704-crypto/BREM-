@@ -2070,6 +2070,120 @@
     });
   }
 
+  function collectRegionRiders(weekStart) {
+    const calc = Calc();
+    const normalized = weekStartKey(weekStart);
+    const settlements = calc && normalized ? settlementsForWeek(normalized) : [];
+    const rowOptions = calc && normalized ? buildPayoutComputeOptions(settlements, normalized) : {};
+    const byRegion = new Map();
+    (settlements || []).forEach(settlement => {
+      let rows = [];
+      try {
+        rows = calc.computeRows(settlement, rowOptions) || [];
+      } catch (error) {
+        console.warn('[revenue region] mission adjust rows failed', error);
+        rows = [];
+      }
+      rows.forEach(row => {
+        const region = canonicalRegionLabel(row.region || settlement.region) || '미지정';
+        const key = regionCompareKey(region);
+        const id = String(row.driverId || row.name || '').trim();
+        if (!key || !id) return;
+        const list = byRegion.get(key) || [];
+        list.push({
+          id,
+          platform: String(row.platform || ''),
+          calls: Math.max(0, Math.round(Number(row.callCount) || 0)),
+          missionPay: Math.max(0, Math.round(Number(row.missionPay) || 0))
+        });
+        byRegion.set(key, list);
+      });
+    });
+    return byRegion;
+  }
+
+  function mergeRiderCalls(rows) {
+    const bySlot = new Map();
+    (rows || []).forEach(row => {
+      const slot = `${row.id}|${row.platform}`;
+      const prev = bySlot.get(slot);
+      if (!prev || row.calls > prev.calls) bySlot.set(slot, { ...row });
+      else prev.missionPay = Math.max(prev.missionPay, row.missionPay || 0);
+    });
+    const byPerson = new Map();
+    bySlot.forEach(row => {
+      const prev = byPerson.get(row.id) || { calls: 0, missionPay: 0 };
+      prev.calls += row.calls;
+      prev.missionPay += row.missionPay;
+      byPerson.set(row.id, prev);
+    });
+    return [...byPerson.values()];
+  }
+
+  function missionLine(title, kind, members, money, riders) {
+    const supplyPaid = Math.round(Number(money.supplyPaid) || 0);
+    const vat = Math.round(Number(money.vat) || 0);
+    const finalDeposit = Math.round(Number(money.finalDeposit) || 0);
+    const prepaid = Math.round(Number(money.prepaid) || 0);
+    const missionPay = riders.reduce((sum, rider) => sum + (rider.missionPay || 0), 0);
+    const base = supplyPaid - vat;
+    const spentWithoutMission = finalDeposit + prepaid - missionPay;
+    return {
+      title,
+      kind,
+      members,
+      supplyPaid,
+      vat,
+      finalDeposit,
+      prepaid,
+      missionPay,
+      base,
+      spentWithoutMission,
+      headroom: base - spentWithoutMission,
+      riderCount: riders.length,
+      riders: riders.map(rider => ({ calls: rider.calls }))
+    };
+  }
+
+  function missionAdjustSnapshot() {
+    const { regions } = aggregateRegions(state.weekStart);
+    const ridersByRegion = collectRegionRiders(state.weekStart);
+    const groups = activeGroups(regions);
+    const grouped = new Set(groups.flatMap(group => group.members));
+    const byName = new Map(regions.map(row => [row.region, row]));
+    const lines = [];
+    groups.forEach(group => {
+      const members = group.members.map(name => byName.get(name)).filter(Boolean);
+      const riders = mergeRiderCalls(members.flatMap(row => ridersByRegion.get(regionCompareKey(row.region)) || []));
+      lines.push(missionLine(group.members.join(' + '), 'group', group.members.slice(), summarizeBundle(members), riders));
+    });
+    regions.forEach(row => {
+      if (grouped.has(row.region)) return;
+      const riders = mergeRiderCalls(ridersByRegion.get(regionCompareKey(row.region)) || []);
+      lines.push(missionLine(row.region, 'region', [row.region], row, riders));
+    });
+    return {
+      weekStart: state.weekStart,
+      weekEnd: weekEndKey(state.weekStart),
+      lines
+    };
+  }
+
+  async function loadMissionAdjust(weekValue) {
+    if (weekValue) {
+      collectDraftFromInputs();
+      state.weekStart = weekStartKey(weekValue);
+      state.followLatestIfEmpty = false;
+      state.lockedWeek = state.weekStart;
+    } else if (!state.weekStart) {
+      state.weekStart = weekStartKey();
+      state.followLatestIfEmpty = true;
+    }
+    loadSavedDraft(state.weekStart);
+    await loadSettlementData();
+    return missionAdjustSnapshot();
+  }
+
   async function refresh() {
     if (!$('revenueRegionBody')) return;
     bindEvents();
@@ -2122,6 +2236,8 @@
     parseMoneyText,
     computeRemain,
     usageRatio,
+    loadMissionAdjust,
+    missionAdjustSnapshot,
     summarizeBundle,
     clearAmounts,
     handlePaste,
