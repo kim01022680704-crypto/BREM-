@@ -595,10 +595,21 @@ body.dashboard-week-modal-open {
   margin-bottom: 10px;
 }
 
-#dashboard .dashboard-week-sim__week-range {
+#dashboard .dashboard-week-sim__week-range,
+#dashboard .dashboard-week-sim__week-label {
   color: #d4d4d8;
   font-size: 0.8rem;
   font-weight: 700;
+}
+
+#dashboard .dashboard-week-sim__week-label {
+  color: #ffd400;
+  font-size: 0.92rem;
+}
+
+#dashboard .dashboard-week-sim__preset:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 #dashboard .dashboard-week-sim__note {

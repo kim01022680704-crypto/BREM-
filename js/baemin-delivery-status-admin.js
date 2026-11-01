@@ -6712,8 +6712,8 @@
     const missingNote = model.missingDates.length
       ? `실적이 없는 ${model.missingDates.map(date => formatDeliveryDateShort(date)).join(', ')}은 계산에서 뺐습니다. `
       : '';
-    const pastWeekNote = state.dashboardWeekSim?.weekOffset === -1
-      ? '저번주 수~화 전체입니다. '
+    const pastWeekNote = (state.dashboardWeekSim?.weekOffset || 0) < 0
+      ? `${dashboardWeekSimOffsetLabel(state.dashboardWeekSim.weekOffset)} 수~화 전체입니다. `
       : '';
     const simLine = analysis.ranked.length
       ? `아래 표는 ${formatNumber(simSets)}세트 목표입니다. 끝난 ${formatNumber(analysis.ranked.length)}칸 중 ${formatNumber(simMiss)}칸이 미달입니다.`
@@ -6722,11 +6722,12 @@
     panel.hidden = false;
     panel.innerHTML = `
       <div class="dashboard-week-sim__weeks" role="group" aria-label="시뮬레이션 주">
-        <button type="button" class="dashboard-week-sim__preset${(state.dashboardWeekSim?.weekOffset || 0) === 0 ? ' is-active' : ''}" data-week-sim-offset="0">이번주</button>
-        <button type="button" class="dashboard-week-sim__preset${state.dashboardWeekSim?.weekOffset === -1 ? ' is-active' : ''}" data-week-sim-offset="-1">저번주</button>
+        <button type="button" class="dashboard-week-sim__preset" data-week-sim-shift="-1" ${(state.dashboardWeekSim?.weekOffset || 0) <= DASHBOARD_WEEK_SIM_MIN_OFFSET ? 'disabled' : ''}>이전 주</button>
+        <span class="dashboard-week-sim__week-label">${escapeHtml(dashboardWeekSimOffsetLabel(state.dashboardWeekSim?.weekOffset || 0))}</span>
+        <button type="button" class="dashboard-week-sim__preset" data-week-sim-shift="1" ${(state.dashboardWeekSim?.weekOffset || 0) >= 0 ? 'disabled' : ''}>다음 주</button>
         <span class="dashboard-week-sim__week-range">${escapeHtml(formatDeliveryDateShort(model.weekRange.fromDate))} ~ ${escapeHtml(formatDeliveryDateShort(model.weekRange.toDate))}</span>
       </div>
-      <p class="dashboard-week-sim__kicker">${escapeHtml(model.regionName)} · ${state.dashboardWeekSim?.weekOffset === -1 ? '저번주' : '이번주'} · 저장 ${formatNumber(model.savedSets)}세트 · 요일별 할당 × 세트</p>
+      <p class="dashboard-week-sim__kicker">${escapeHtml(model.regionName)} · ${escapeHtml(dashboardWeekSimOffsetLabel(state.dashboardWeekSim?.weekOffset || 0))} · 저장 ${formatNumber(model.savedSets)}세트 · 요일별 할당 × 세트</p>
       <p class="dashboard-week-sim__answer${copy.tight ? ' is-tight' : ''}" aria-live="polite">${escapeHtml(copy.title)}</p>
       <p class="dashboard-week-sim__detail">${escapeHtml(copy.detail)}</p>
       <div class="dashboard-week-sim__controls">
@@ -6756,6 +6757,20 @@
     `;
   }
 
+  const DASHBOARD_WEEK_SIM_MIN_OFFSET = -20;
+
+  function clampDashboardWeekSimOffset(offset) {
+    const n = Math.trunc(Number(offset) || 0);
+    return Math.max(DASHBOARD_WEEK_SIM_MIN_OFFSET, Math.min(0, n));
+  }
+
+  function dashboardWeekSimOffsetLabel(offset) {
+    const n = clampDashboardWeekSimOffset(offset);
+    if (n === 0) return '이번주';
+    if (n === -1) return '저번주';
+    return `${Math.abs(n)}주 전`;
+  }
+
   function dashboardWeekSimBundle() {
     const sim = state.dashboardWeekSim;
     const pid = normalizePartnerId(sim?.partnerId || state.dashboardWeekPartnerId);
@@ -6778,7 +6793,8 @@
     if (!sim?.open) return;
     const pid = normalizePartnerId(sim.partnerId || state.dashboardWeekPartnerId);
     if (!pid) return;
-    const offset = sim.weekOffset === -1 ? -1 : 0;
+    const offset = clampDashboardWeekSimOffset(sim.weekOffset);
+    const weekLabel = dashboardWeekSimOffsetLabel(offset);
     sim.weekOffset = offset;
     sim.partnerId = pid;
     const weekRange = dashboardSettlementWeekRange(offset);
@@ -6794,6 +6810,7 @@
         cached = state.dashboardWeekCache[pid];
       }
       if (!sim.open || sim.weekOffset !== 0) return;
+      sim.loadedOffset = 0;
       refreshDashboardWeekSimTable();
       return;
     }
@@ -6802,25 +6819,26 @@
     let cached = sim.rangeCache[cacheKey];
     if (!cached) {
       const summaryEl = $('dashboardBaeminWeekSummary');
-      if (summaryEl) summaryEl.textContent = `${weekRange.fromDate} ~ ${weekRange.toDate} · 저번주 불러오는 중…`;
+      if (summaryEl) summaryEl.textContent = `${weekRange.fromDate} ~ ${weekRange.toDate} · ${weekLabel} 불러오는 중…`;
       const result = await adminApi(
         `/api/admin/baemin-delivery/view-daily-range?partnerId=${encodeURIComponent(pid)}&fromDate=${encodeURIComponent(weekRange.fromDate)}&toDate=${encodeURIComponent(weekRange.fetchTo)}`
       );
-      if (!sim.open || sim.weekOffset !== -1 || normalizePartnerId(sim.partnerId) !== pid) return;
+      if (!sim.open || sim.weekOffset !== offset || normalizePartnerId(sim.partnerId) !== pid) return;
       if (!result.ok || result.notApplied) {
-        showToast(result.message || '저번주 일별을 불러오지 못했습니다.');
-        sim.weekOffset = 0;
+        showToast(result.message || `${weekLabel} 일별을 불러오지 못했습니다.`);
+        sim.weekOffset = clampDashboardWeekSimOffset(sim.loadedOffset || 0);
         refreshDashboardWeekSimTable();
         return;
       }
       cached = { items: result.items || [], weekRange };
       sim.rangeCache[cacheKey] = cached;
     }
-    if (!sim.open || sim.weekOffset !== -1) return;
+    if (!sim.open || sim.weekOffset !== offset) return;
     sim.items = cached.items;
     sim.weekRange = cached.weekRange;
+    sim.loadedOffset = offset;
     if (!cached.items.length) {
-      showToast('저번주 일별 데이터가 없습니다.');
+      showToast(`${weekLabel} 일별 데이터가 없습니다.`);
     }
     refreshDashboardWeekSimTable();
   }
@@ -6915,6 +6933,7 @@
         sets: getPartnerSetCount(pid),
         maxSets: null,
         weekOffset: 0,
+        loadedOffset: 0,
         items: null,
         weekRange: null,
         rangeCache: {}
@@ -6937,16 +6956,17 @@
       else void openDashboardWeekSimulation();
     });
     panel.addEventListener('mousedown', event => {
-      if (event.target.closest('[data-week-sim-step], [data-week-sim-max], [data-week-sim-current], [data-week-sim-offset]')) {
+      if (event.target.closest('[data-week-sim-step], [data-week-sim-max], [data-week-sim-current], [data-week-sim-shift]')) {
         event.preventDefault();
       }
     });
     panel.addEventListener('click', event => {
-      const weekBtn = event.target.closest('[data-week-sim-offset]');
+      const weekBtn = event.target.closest('[data-week-sim-shift]');
       if (weekBtn) {
-        const offset = Number(weekBtn.dataset.weekSimOffset) === -1 ? -1 : 0;
-        if (!state.dashboardWeekSim?.open || state.dashboardWeekSim.weekOffset === offset) return;
-        state.dashboardWeekSim.weekOffset = offset;
+        if (!state.dashboardWeekSim?.open || weekBtn.disabled) return;
+        const next = clampDashboardWeekSimOffset((state.dashboardWeekSim.weekOffset || 0) + Number(weekBtn.dataset.weekSimShift || 0));
+        if (next === state.dashboardWeekSim.weekOffset) return;
+        state.dashboardWeekSim.weekOffset = next;
         void loadDashboardWeekSimHistory();
         return;
       }
@@ -7016,7 +7036,9 @@
 
     if (summaryEl) {
       const simNote = simOn ? ` · 시뮬레이션 ${formatNumber(setCount)}세트 (저장 ${formatNumber(model.savedSets)}세트)` : '';
-      const weekName = simOn && state.dashboardWeekSim?.weekOffset === -1 ? '저번주 · ' : '';
+      const weekName = simOn && (state.dashboardWeekSim?.weekOffset || 0) < 0
+        ? `${dashboardWeekSimOffsetLabel(state.dashboardWeekSim.weekOffset)} · `
+        : '';
       summaryEl.textContent = `${weekName}${model.regionName} · ${weekRange.fromDate}(수) ~ ${weekRange.toDate}(화) · 데이터 ${formatNumber(model.filledDays + (model.usesLive ? 1 : 0))}/${formatNumber(model.dates.length)}일${model.usesLive ? ' · 오늘은 실시간' : ''}${simNote}`;
     }
     if (simOn) renderWeekSimPanel(model, analysis);
@@ -7056,7 +7078,7 @@
       renderDashboardWeekRegionTabs(ids);
     }
 
-    const simPast = state.dashboardWeekSim?.open && state.dashboardWeekSim.weekOffset === -1;
+    const simPast = state.dashboardWeekSim?.open && (state.dashboardWeekSim.weekOffset || 0) < 0;
     if (simPast && normalizePartnerId(state.dashboardWeekSim.partnerId) !== selectedId) {
       state.dashboardWeekSim.partnerId = selectedId;
       state.dashboardWeekSim.sets = getPartnerSetCount(selectedId);
@@ -7097,7 +7119,7 @@
     state.dashboardWeekCache[selectedId] = { items, weekRange };
     }
 
-    if (!(state.dashboardWeekSim?.open && state.dashboardWeekSim.weekOffset === -1)) {
+    if (!(state.dashboardWeekSim?.open && (state.dashboardWeekSim.weekOffset || 0) < 0)) {
       renderDashboardWeekRowsForPartner(selectedId, items, weekRange);
     }
 
