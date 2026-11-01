@@ -2074,7 +2074,7 @@ const BremStorage = (function () {
         );
         // 기사관리·미션관리는 전원 로드를 기다리면 화면이 수 분 멈춘다.
         // 있는 목록으로 먼저 열고, 나머지는 백그라운드 페이지로 이어 받는다.
-        if (sectionId === 'driver-management' || sectionId === 'mission-management' || sectionId === 'mission-assignment') {
+        if (sectionId === 'driver-management' || sectionId === 'mission-management' || sectionId === 'mission-assignment' || sectionId === 'mission-forecast') {
           tasks.push(reload);
         } else {
           tasks.push(reload.then(() => awaitDriversFullyLoaded(

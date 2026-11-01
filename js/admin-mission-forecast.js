@@ -370,9 +370,12 @@
     state.loading = true;
     const button = $('missionForecastRefreshBtn');
     if (button) button.disabled = true;
+    if (!state.live) render();
     try {
-      await window.BremStorage?.ensureSectionLoaded?.('mission-forecast');
-      await loadLive();
+      await Promise.all([
+        window.BremStorage?.ensureSectionLoaded?.('mission-forecast'),
+        loadLive()
+      ]);
       render();
     } catch (error) {
       showToast(error.message || '예상미션금액을 불러오지 못했습니다.');
@@ -415,6 +418,14 @@
       button.addEventListener('click', () => { void refresh(); });
     }
     ensureTimer();
+    if (document.documentElement.dataset.missionForecastBound !== '1') {
+      document.documentElement.dataset.missionForecastBound = '1';
+      document.addEventListener('brem-drivers-sync-ready', () => {
+        const section = document.getElementById('mission-forecast');
+        if (!section || !section.classList.contains('active') || !state.live) return;
+        render();
+      });
+    }
   }
 
   window.BremAdminMissionForecast = {
