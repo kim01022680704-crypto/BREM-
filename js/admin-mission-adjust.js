@@ -84,7 +84,7 @@
     const best = flat.filter(cell => cell.status === 'ok')
       .sort((a, b) => b.rate - a.rate || a.start - b.start)[0];
     const verdict = line.base <= 0
-      ? '실지급액에서 부가세를 뺀 100% 기준이 없습니다.'
+      ? '실지급액에서 부가세 20%를 뺀 100% 기준이 없습니다.'
       : (line.headroom < 0
         ? `정산서 미션과 프로모션원천세를 빼도 이미 ${compactMoney(Math.abs(line.headroom))} 넘습니다. 이 범위는 전부 적자입니다.`
         : `미션으로 넣을 수 있는 돈 ${compactMoney(line.headroom)} · 가능 ${okCount}칸 · 적자 ${overCount}칸${best ? ` · 가장 높은 가능 단가 ${best.start}건 ${best.rate.toLocaleString('ko-KR')}원` : ''}`);
@@ -99,6 +99,7 @@
         <p class="mission-adjust-facts">
           ${fact('실지급액', money(line.supplyPaid))}
           ${fact('부가세', money(line.vat))}
+          ${fact(`부가세 ${line.taxFeePercent || 20}%`, money(line.taxFee))}
           ${fact('100% 기준', money(line.base))}
           ${fact('최종입금', money(line.finalDeposit))}
           ${fact('선정산', money(line.prepaid))}

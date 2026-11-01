@@ -2132,7 +2132,9 @@
     const prepaid = Math.round(Number(money.prepaid) || 0);
     const missionPay = riders.reduce((sum, rider) => sum + (rider.missionPay || 0), 0);
     const promotionTax = riders.reduce((sum, rider) => sum + (rider.promotionTax || 0), 0);
-    const base = supplyPaid - vat;
+    const taxFeePercent = Math.max(0, Math.min(100, Number(state.taxFeePercent ?? 20)));
+    const taxFee = Math.round(vat * taxFeePercent / 100);
+    const base = supplyPaid - taxFee;
     // 최종입금에는 정산서 미션이 들어 있고, 프로모션원천세도 그 지급액 쪽에 묶여 있다.
     // 미션을 다시 넣는 계산이므로 둘 다 뺀 뒤 남은 돈으로 한도를 본다.
     const spentWithoutMission = finalDeposit + prepaid - missionPay - promotionTax;
@@ -2142,6 +2144,8 @@
       members,
       supplyPaid,
       vat,
+      taxFee,
+      taxFeePercent,
       finalDeposit,
       prepaid,
       missionPay,
