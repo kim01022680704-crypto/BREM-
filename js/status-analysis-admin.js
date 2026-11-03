@@ -1472,8 +1472,12 @@
       return `${controls(`${regionSelect}${weekSelect(true)}${searchBox()}`)}${kpiStrip(list, platform)}<p class="sa-note">${esc(region || '지역 없음')} · ${weekLabel(week)}</p>${ratioNote}<section class="sa-region">${tableHtml(list, platform, { withRegion: false, weekStart: week })}</section>`;
     }
 
-    // 상황추이
-    const trendRegions = ['전체'].concat(regions);
+    // 상황추이: 지역 목록은 선택 주가 비어도 뜨도록 불러온 전체 기간에서 뽑는다.
+    const trendRangeWeeks = weekOptions();
+    const trendRangeRegions = trendRangeWeeks.length
+      ? regionBuckets(platform, trendRangeWeeks[0], addDays(trendRangeWeeks[trendRangeWeeks.length - 1], 6)).map(([name]) => name)
+      : regions;
+    const trendRegions = ['전체'].concat(trendRangeRegions.length ? trendRangeRegions : regions);
     const trendRegion = trendRegions.includes(state.trendRegion) ? state.trendRegion : '전체';
     state.trendRegion = trendRegion;
     const weeks = weekOptions();
