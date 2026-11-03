@@ -6509,11 +6509,48 @@
     if (Object.keys(next).length) state.dashboardOperatingByPartner = next;
   }
 
+  function dashboardRegionRiderSort() {
+    return $('dashboardRegionRidersModal')?.dataset.ridersSort === 'calls' ? 'calls' : 'name';
+  }
+
+  function dashboardRegionRiderQuery() {
+    return String($('dashboardRegionRidersSearch')?.value || '').trim().toLowerCase();
+  }
+
+  function syncDashboardRegionRiderSort() {
+    const sort = dashboardRegionRiderSort();
+    document.querySelectorAll('[data-region-riders-sort]').forEach(button => {
+      const on = button.getAttribute('data-region-riders-sort') === sort;
+      button.classList.toggle('is-active', on);
+      button.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function filterDashboardOperatingRiders(riders, keys) {
+    const query = dashboardRegionRiderQuery();
+    const sort = dashboardRegionRiderSort();
+    const indexed = (riders || []).map((rider, index) => ({ rider, index }));
+    const filtered = query
+      ? indexed.filter(({ rider }) => (keys || []).some(key => String(rider?.[key] || '').toLowerCase().includes(query)))
+      : indexed.slice();
+    filtered.sort((a, b) => {
+      if (sort === 'calls') {
+        return b.rider.complete - a.rider.complete || String(a.rider.name).localeCompare(String(b.rider.name), 'ko');
+      }
+      return String(a.rider.name).localeCompare(String(b.rider.name), 'ko');
+    });
+    return { filtered, query, sort, total: (riders || []).length };
+  }
+
   function renderDashboardRegionRiderList(partnerId, riders) {
-    if (!riders.length) {
+    const view = filterDashboardOperatingRiders(riders, ['name', 'userId', 'phone']);
+    if (!view.total) {
       return '<p class="form-help">운행중 기사가 없습니다.</p>';
     }
-    return `<ul class="dashboard-region-riders">${riders.map((rider, index) => {
+    if (!view.filtered.length) {
+      return '<p class="form-help">검색 결과가 없습니다.</p>';
+    }
+    return `<ul class="dashboard-region-riders">${view.filtered.map(({ rider, index }) => {
       const accept = formatAcceptRatePercent(rider.acceptRate);
       const reject = formatAcceptRatePercent(rider.rejectRate);
       const acceptClass = rider.acceptRate == null ? '' : (rider.acceptRate >= 95 ? ' is-good' : ' is-bad');
@@ -6549,10 +6586,18 @@
       body.innerHTML = '<p class="form-help">스냅샷 조회가 끝난 뒤 지역 줄을 다시 눌러 주세요.</p>';
       return;
     }
+    syncDashboardRegionRiderSort();
+    const view = filterDashboardOperatingRiders(riders, ['name', 'userId', 'phone']);
+    const sortLabel = view.sort === 'calls' ? '콜 많은 순' : '가나다순';
     if (summary) {
-      summary.textContent = riders.length
-        ? `운행중 ${formatNumber(riders.length)}명 · 오늘 완료콜 · 수락율 · 거절율. 기사를 누르면 상세가 열립니다.`
-        : '지금 운행중인 기사가 없습니다.';
+      if (!riders.length) summary.textContent = '지금 운행중인 기사가 없습니다.';
+      else if (view.query) {
+        summary.textContent = view.filtered.length
+          ? `운행중 ${formatNumber(riders.length)}명 중 ${formatNumber(view.filtered.length)}명 · ${sortLabel}`
+          : `운행중 ${formatNumber(riders.length)}명 중 검색 결과 없음`;
+      } else {
+        summary.textContent = `운행중 ${formatNumber(riders.length)}명 · ${sortLabel} · 기사를 누르면 상세가 열립니다.`;
+      }
     }
     body.innerHTML = renderDashboardRegionRiderList(pid, riders);
   }
@@ -6564,6 +6609,9 @@
     if (!modal) return;
     state.dashboardRegionRiderPartnerId = pid;
     modal.dataset.ridersSource = 'baemin';
+    if (!modal.dataset.ridersSort) modal.dataset.ridersSort = 'name';
+    const search = $('dashboardRegionRidersSearch');
+    if (search) search.value = '';
     paintDashboardRegionRiders(pid);
     modal.hidden = false;
     document.body.classList.add('dashboard-week-modal-open');
@@ -6645,6 +6693,20 @@
       if (document.getElementById('driverPhonePopup')?.classList.contains('is-open')) return;
       if (document.getElementById('driverDetailPanel')?.classList.contains('is-open')) return;
       closeDashboardRegionRiders();
+    });
+    modal?.addEventListener('input', event => {
+      if (event.target?.id !== 'dashboardRegionRidersSearch') return;
+      if (modal.dataset.ridersSource === 'coupang') return;
+      if (!state.dashboardRegionRiderPartnerId) return;
+      paintDashboardRegionRiders(state.dashboardRegionRiderPartnerId);
+    });
+    modal?.addEventListener('click', event => {
+      const sortBtn = event.target.closest?.('[data-region-riders-sort]');
+      if (!sortBtn || !modal.contains(sortBtn)) return;
+      modal.dataset.ridersSort = sortBtn.getAttribute('data-region-riders-sort') === 'calls' ? 'calls' : 'name';
+      if (modal.dataset.ridersSource === 'coupang') return;
+      if (!state.dashboardRegionRiderPartnerId) return;
+      paintDashboardRegionRiders(state.dashboardRegionRiderPartnerId);
     });
   }
 

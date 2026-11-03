@@ -1115,6 +1115,64 @@ body.dashboard-week-modal-open {
   color: #ffffff;
 }
 
+#dashboard .dashboard-region-riders-modal__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#dashboard .dashboard-region-riders-modal__search {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid #333333;
+  border-radius: 10px;
+  background: #111111;
+  color: #ffffff;
+  font: inherit;
+}
+
+#dashboard .dashboard-region-riders-modal__search::placeholder {
+  color: #71717a;
+}
+
+#dashboard .dashboard-region-riders-modal__search:focus {
+  outline: none;
+  border-color: rgba(255, 212, 0, 0.7);
+}
+
+#dashboard .dashboard-region-riders-modal__sort {
+  display: flex;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid #333333;
+  border-radius: 10px;
+}
+
+#dashboard .dashboard-region-riders-modal__sort button {
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  background: #111111;
+  color: #a1a1aa;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#dashboard .dashboard-region-riders-modal__sort button + button {
+  border-left: 1px solid #333333;
+}
+
+#dashboard .dashboard-region-riders-modal__sort button.is-active {
+  background: #ffd400;
+  color: #111111;
+}
+
 #dashboard .dashboard-region-riders-modal__body {
   overflow: auto;
   padding: 8px 12px 16px;
@@ -1218,6 +1276,14 @@ body.dashboard-week-modal-open {
   width: 100%;
   max-height: 88vh;
   border-radius: 16px 16px 0 0;
+}
+
+#dashboard.dashboard-fit .dashboard-region-riders-modal__tools {
+  padding: 10px 14px 12px;
+}
+
+#dashboard.dashboard-fit .dashboard-region-riders-modal__sort button {
+  padding: 0 10px;
 }
 
 #dashboard.dashboard-fit .dashboard-region-riders-modal__body {

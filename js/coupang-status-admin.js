@@ -662,9 +662,45 @@
     }
   }
 
+  function coupangRegionRiderSort() {
+    return $('dashboardRegionRidersModal')?.dataset.ridersSort === 'calls' ? 'calls' : 'name';
+  }
+
+  function coupangRegionRiderQuery() {
+    return String($('dashboardRegionRidersSearch')?.value || '').trim().toLowerCase();
+  }
+
+  function syncCoupangRegionRiderSort() {
+    const sort = coupangRegionRiderSort();
+    document.querySelectorAll('[data-region-riders-sort]').forEach(button => {
+      const on = button.getAttribute('data-region-riders-sort') === sort;
+      button.classList.toggle('is-active', on);
+      button.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function filterCoupangOperatingRiders(riders) {
+    const query = coupangRegionRiderQuery();
+    const sort = coupangRegionRiderSort();
+    const keys = ['name', 'phone', 'matchKey', 'courierId'];
+    const indexed = (riders || []).map((rider, index) => ({ rider, index }));
+    const filtered = query
+      ? indexed.filter(({ rider }) => keys.some(key => String(rider?.[key] || '').toLowerCase().includes(query)))
+      : indexed.slice();
+    filtered.sort((a, b) => {
+      if (sort === 'calls') {
+        return b.rider.complete - a.rider.complete || String(a.rider.name).localeCompare(String(b.rider.name), 'ko');
+      }
+      return String(a.rider.name).localeCompare(String(b.rider.name), 'ko');
+    });
+    return { filtered, query, sort, total: (riders || []).length };
+  }
+
   function renderCoupangRegionRiderList(vendorId, riders) {
-    if (!riders.length) return '<p class="form-help">운행중 기사가 없습니다.</p>';
-    return `<ul class="dashboard-region-riders">${riders.map((rider, index) => {
+    const view = filterCoupangOperatingRiders(riders);
+    if (!view.total) return '<p class="form-help">운행중 기사가 없습니다.</p>';
+    if (!view.filtered.length) return '<p class="form-help">검색 결과가 없습니다.</p>';
+    return `<ul class="dashboard-region-riders">${view.filtered.map(({ rider, index }) => {
       const acceptClass = rider.acceptRate == null ? '' : (rider.acceptRate >= 95 ? ' is-good' : ' is-bad');
       const rejectClass = rider.rejectRate == null ? '' : (rider.rejectRate <= 5 ? ' is-good' : ' is-bad');
       const idLine = rider.matchKey || rider.courierId
@@ -699,13 +735,22 @@
       return;
     }
     const riders = bag.riders || [];
+    syncCoupangRegionRiderSort();
+    const view = filterCoupangOperatingRiders(riders);
+    const sortLabel = view.sort === 'calls' ? '콜 많은 순' : '가나다순';
+    const head = bag.statusKnown === false ? '오늘 콜' : '운행중';
     if (summary) {
-      const head = bag.statusKnown === false ? '운행 상태가 없어 오늘 콜이 있는 기사' : '운행중';
-      summary.textContent = riders.length
-        ? `${head} ${n(riders.length)}명 · 오늘 완료콜 · 수락율 · 거절율. 기사를 누르면 상세가 열립니다.`
-        : (bag.statusKnown === false
+      if (!riders.length) {
+        summary.textContent = bag.statusKnown === false
           ? '오늘 콜이 있는 기사가 없습니다.'
-          : '지금 운행중인 기사가 없습니다.');
+          : '지금 운행중인 기사가 없습니다.';
+      } else if (view.query) {
+        summary.textContent = view.filtered.length
+          ? `${head} ${n(riders.length)}명 중 ${n(view.filtered.length)}명 · ${sortLabel}`
+          : `${head} ${n(riders.length)}명 중 검색 결과 없음`;
+      } else {
+        summary.textContent = `${head} ${n(riders.length)}명 · ${sortLabel} · 기사를 누르면 상세가 열립니다.`;
+      }
     }
     body.innerHTML = renderCoupangRegionRiderList(id, riders);
   }
@@ -716,6 +761,9 @@
     if (!id || !modal) return;
     dash.openVendorId = id;
     modal.dataset.ridersSource = 'coupang';
+    if (!modal.dataset.ridersSort) modal.dataset.ridersSort = 'name';
+    const search = $('dashboardRegionRidersSearch');
+    if (search) search.value = '';
     paintCoupangRegionRiders(id);
     modal.hidden = false;
     document.body.classList.add('dashboard-week-modal-open');
@@ -784,6 +832,18 @@
       if (event.key !== 'Escape') return;
       if ($('dashboardRegionRidersModal')?.dataset.ridersSource !== 'coupang') return;
       dash.openVendorId = '';
+    });
+    const modal = $('dashboardRegionRidersModal');
+    modal?.addEventListener('input', event => {
+      if (event.target?.id !== 'dashboardRegionRidersSearch') return;
+      if (modal.dataset.ridersSource !== 'coupang' || !dash.openVendorId) return;
+      paintCoupangRegionRiders(dash.openVendorId);
+    });
+    modal?.addEventListener('click', event => {
+      const sortBtn = event.target.closest?.('[data-region-riders-sort]');
+      if (!sortBtn || modal.dataset.ridersSource !== 'coupang' || !dash.openVendorId) return;
+      modal.dataset.ridersSort = sortBtn.getAttribute('data-region-riders-sort') === 'calls' ? 'calls' : 'name';
+      paintCoupangRegionRiders(dash.openVendorId);
     });
   }
 
