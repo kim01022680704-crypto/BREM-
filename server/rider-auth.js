@@ -29,6 +29,53 @@ function getRiderCallsSinceDate() {
   return date.toISOString().slice(0, 10);
 }
 
+async function attachDeliveryDistanceToCalls(supabase, riderId, calls) {
+  const list = Array.isArray(calls) ? calls : [];
+  if (!supabase || !riderId || !list.length) return list;
+  const dates = [...new Set(list.map(item => String(item.date || '').slice(0, 10)).filter(Boolean))];
+  if (!dates.length) return list;
+  const from = dates.reduce((min, day) => (day < min ? day : min), dates[0]);
+  const to = dates.reduce((max, day) => (day > max ? day : max), dates[0]);
+  try {
+    const { data, error } = await supabase
+      .from('daily_settlements')
+      .select('period,platform,delivery_distance_m,applied_at')
+      .eq('driver_id', riderId)
+      .gte('period', from)
+      .lte('period', to);
+    if (error) {
+      const message = error.message || String(error);
+      if (!/delivery_distance/i.test(message)) {
+        console.warn('[BREM] rider delivery distance skipped:', message);
+      }
+      return list;
+    }
+    const latest = new Map();
+    (data || []).forEach(row => {
+      if (String(row.platform || '') !== 'coupang') return;
+      const day = String(row.period || '').slice(0, 10);
+      if (!day) return;
+      const appliedAt = String(row.applied_at || '');
+      const prev = latest.get(day);
+      if (prev && appliedAt < prev.appliedAt) return;
+      latest.set(day, {
+        appliedAt,
+        meters: Math.max(0, Math.round(Number(row.delivery_distance_m) || 0))
+      });
+    });
+    return list.map(item => {
+      if (String(item.platform || 'coupang') === 'baemin') return item;
+      const day = String(item.date || '').slice(0, 10);
+      const found = latest.get(day);
+      if (!found) return item;
+      return { ...item, delivery_distance_m: found.meters };
+    });
+  } catch (error) {
+    console.warn('[BREM] rider delivery distance skipped:', error?.message || error);
+    return list;
+  }
+}
+
 function buildRiderCallsQuery(supabase, riderId, options = {}) {
   let query = supabase
     .from('admin_calls')
@@ -1013,7 +1060,11 @@ async function getRiderAppBundle(accessToken) {
   }
 
   const allCalls = callsResult.data || [];
-  const publishedCalls = allCalls.filter(item => item.rider_published_at != null);
+  const publishedCalls = await attachDeliveryDistanceToCalls(
+    supabase,
+    riderId,
+    allCalls.filter(item => item.rider_published_at != null)
+  );
   const rejections = rejectionsResult.data || [];
   const settingsRows = settingsResult.data || [];
   const snapshotSettings = settingsRows.filter(item => RIDER_SNAPSHOT_SETTING_KEYS.includes(item.key));
@@ -1103,7 +1154,7 @@ async function getRiderSnapshot(accessToken) {
   }
 
   const settingsRows = settingsResult.data || [];
-  const calls = callsResult.data || [];
+  const calls = await attachDeliveryDistanceToCalls(supabase, riderId, callsResult.data || []);
   const rejections = rejectionsResult.data || [];
   const missionRows = missionsResult.error ? [] : (missionsResult.rows || []);
   const byId = new Map(missionRows.map(item => [item.id, item]));
@@ -1769,7 +1820,7 @@ async function getRiderDashboard(accessToken) {
   return {
     ok: true,
     riderId,
-    calls: callsResult.data || [],
+    calls: await attachDeliveryDistanceToCalls(supabase, riderId, callsResult.data || []),
     rejections: rejectionsResult.data || [],
     targets: targetsResult.data || [],
     weeklyTargets,
