@@ -2253,6 +2253,26 @@ html.brem-app-nav[data-driver-tab="maint"] #driverMaintPanel { display: grid !im
   background: rgba(232, 197, 71, 0.05);
 }
 
+.mission-dist-notes {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.mission-dist-notes li {
+  color: #e8c547;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.mission-dist-notes li.is-hit { color: #86efac; }
+
+.mission-sim__dist {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(232, 197, 71, 0.3);
+}
+
 .mission-sim__label {
   margin: 0 0 8px;
   color: #e8c547;

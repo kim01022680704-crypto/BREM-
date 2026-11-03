@@ -149,6 +149,12 @@
     return Number(value || 0).toLocaleString('ko-KR');
   }
 
+  function formatDistanceKm(meters) {
+    const value = Math.max(0, Math.round(Number(meters) || 0));
+    const km = value / 1000;
+    return `${km.toLocaleString('ko-KR', { maximumFractionDigits: 1, minimumFractionDigits: value ? 1 : 0 })}km`;
+  }
+
   function formatPercent(value) {
     if (value == null) return '미집계';
     const rate = Number(value);
@@ -212,6 +218,41 @@
         unmeasured: perf.rate == null
       }
     };
+  }
+
+  function coupangOpsWeekBucket(weekStart) {
+    const ops = BremStorage.getRiderCoupangOps?.();
+    const key = String(weekStart || '').slice(0, 10);
+    const week = ops?.weeks && key ? ops.weeks[key] : null;
+    if (!week) return null;
+    const complete = Number(week.complete || 0);
+    const reject = Number(week.reject || 0);
+    const cancel = Number(week.cancel || 0);
+    if (complete + reject + cancel <= 0) return null;
+    return week;
+  }
+
+  function coupangWeekEntryFor(driverId, weekStart) {
+    const week = coupangOpsWeekBucket(weekStart);
+    if (week) {
+      const rate = Number.isFinite(Number(week.rejectionRate))
+        ? Number(week.rejectionRate)
+        : calcCoupangRejectRate(week.complete, week.reject, week.cancel);
+      return {
+        rate,
+        stats: {
+          completeCount: Number(week.complete || 0),
+          rejectCount: Number(week.reject || 0),
+          cancelCount: Number(week.cancel || 0),
+          unmeasured: rate == null
+        }
+      };
+    }
+    if (String(weekStart || '').slice(0, 10) === weekStartKey()) {
+      const live = coupangLiveWeekEntry(BremStorage.getRiderCoupangOps?.());
+      if (live) return live;
+    }
+    return weeklyEntryForPlatform(driverId, weekStart, 'coupang');
   }
 
   function baeminLiveWeekEntry(ops) {
@@ -845,13 +886,6 @@
     const task = (async () => {
       let loadResult = null;
       try {
-        let freshDriver = driver;
-        if (options.refreshProfile !== false) {
-          const next = await refreshCurrentRiderFromServer(driver);
-          if (!next) return loadResult;
-          freshDriver = next;
-        }
-
         loadResult = await BremStorage.loadDriverAppBundle?.({
           force: Boolean(options.force),
           riderId: driverId
@@ -860,7 +894,12 @@
           riderId: driverId
         });
 
-        if (loadResult?.rider?.id) {
+        let freshDriver = driver;
+        if (options.refreshProfile !== false) {
+          const next = await refreshCurrentRiderFromServer(driver);
+          if (!next) return loadResult;
+          freshDriver = next;
+        } else if (loadResult?.rider?.id) {
           freshDriver = BremStorage.drivers.getById(loadResult.rider.id) || freshDriver;
         }
 
@@ -1064,7 +1103,7 @@
       })
       .forEach(call => {
         if (!byDate.has(call.date)) {
-          byDate.set(call.date, { coupang: 0, baemin: 0 });
+          byDate.set(call.date, { coupang: 0, baemin: 0, distance: 0, hasDistance: false });
         }
         const bucket = byDate.get(call.date);
         const count = Number(call.count || 0);
@@ -1072,6 +1111,10 @@
           bucket.baemin += count;
         } else {
           bucket.coupang += count;
+          if (call.deliveryDistanceM != null && call.deliveryDistanceM !== '') {
+            bucket.distance += Math.max(0, Math.round(Number(call.deliveryDistanceM) || 0));
+            bucket.hasDistance = true;
+          }
         }
       });
 
@@ -1081,9 +1124,13 @@
 
     let sumCoupang = 0;
     let sumBaemin = 0;
+    let sumDistance = 0;
+    let hasDistance = false;
     entries.forEach(([, counts]) => {
       sumCoupang += counts.coupang;
       sumBaemin += counts.baemin;
+      sumDistance += counts.distance;
+      if (counts.hasDistance) hasDistance = true;
     });
     const sumTotal = sumCoupang + sumBaemin;
 
@@ -1110,6 +1157,7 @@
               <span class="dc-row__sub">
                 <span class="dc-row__sub--coupang">쿠 ${counts.coupang ? number(counts.coupang) : '-'}</span>
                 <span class="dc-row__sub--baemin">배 ${counts.baemin ? number(counts.baemin) : '-'}</span>
+                ${counts.hasDistance ? `<span class="dc-row__sub--distance">${formatDistanceKm(counts.distance)}</span>` : ''}
               </span>
             </span>
             <span class="dc-row__total">${number(total)}<i>콜</i></span>
@@ -1119,6 +1167,7 @@
       .join('');
 
     setText('dailyRange', `${formatDate(dateKey(start))} ~ ${formatDate(dateKey(end))}`);
+    setText('coupangWeekDistance', hasDistance ? formatDistanceKm(sumDistance) : '-');
 
     const summary = entries.length
       ? `
@@ -1360,14 +1409,101 @@
     return window.BremPromotionCountSim?.extract?.(mission) || null;
   }
 
+  function missionDistConfig(mission) {
+    return window.BremPromotionDistanceSim?.extract?.(mission) || null;
+  }
+
+  const missionDistGuess = { baemin: '', coupang: '', combined: '' };
+
+  function distanceSimHtml(key, distConfig) {
+    const dsim = window.BremPromotionDistanceSim;
+    if (!dsim || !distConfig) return '';
+    const unitLabel = dsim.unitLabel(distConfig.unit);
+    if (missionDistGuess[key] === '') missionDistGuess[key] = String(distConfig.startKm || 100);
+    const guessKm = Math.max(0, Math.round(Number(missionDistGuess[key] || 0)));
+    const guess = dsim.simulate(distConfig, guessKm);
+    const rows = dsim.breakpoints(distConfig);
+    const guessHint = distConfig.startKm > 0 ? `${number(distConfig.startKm)}km부터 지급` : `${unitLabel}당 지급`;
+    return `
+      <div class="mission-sim__dist">
+        <p class="mission-sim__label">거리 예상 (쿠팡 거리 기준)</p>
+        <label class="mission-sim__guess">
+          <span>몇 km면</span>
+          <input type="number" min="0" step="1" inputmode="numeric" data-mission-dist-input="${key}" value="${guessKm}">
+          <strong data-mission-dist-amount="${key}">${guess.started ? moneyWon(guess.amount) : '0원'}</strong>
+        </label>
+        <p class="mission-sim__note" data-mission-dist-hint="${key}">${guessHint}</p>
+        <ul class="mission-sim__rows">
+          ${rows.map(row => `
+            <li>
+              <span>${number(row.km)}km</span>
+              <strong>${row.started ? moneyWon(row.amount) : '0원'}</strong>
+            </li>
+          `).join('')}
+        </ul>
+        <p class="mission-sim__note">쿠팡 일정산 배달거리 기준 추정치입니다. 거절율·미지급 조건은 빼고 계산했습니다.</p>
+      </div>`;
+  }
+
+  function distanceAddonsOf(mission) {
+    const raw = mission?.base?.distanceAddons
+      || mission?.promotionRule?.base?.distanceAddons
+      || mission?.distanceAddons
+      || [];
+    return (Array.isArray(raw) ? raw : [])
+      .map(row => ({
+        minKm: Number(row?.minKm || 0),
+        amount: Number(row?.amount || 0),
+        conditionName: String(row?.conditionName || '').trim()
+      }))
+      .filter(row => row.minKm > 0 && row.amount > 0)
+      .sort((a, b) => a.minKm - b.minKm);
+  }
+
+  function weekCoupangDistanceKm(driverId) {
+    if (!driverId) return 0;
+    const { start, end } = weekRange();
+    let meters = 0;
+    driverCalls(driverId).forEach(call => {
+      const callDate = dateValue(call.date);
+      if (callDate < start || callDate > end) return;
+      if (normalizePlatform(call.platform) === 'baemin') return;
+      meters += Math.max(0, Math.round(Number(call.deliveryDistanceM) || 0));
+    });
+    return meters / 1000;
+  }
+
+  function distanceAddonView(mission, key) {
+    const addons = distanceAddonsOf(mission);
+    if (!addons.length || key === 'baemin') return { html: '', extra: 0 };
+    const km = weekCoupangDistanceKm(state.currentDriver?.id);
+    const extra = addons.reduce((sum, row) => sum + (km + 0.0001 >= row.minKm ? row.amount : 0), 0);
+    const html = `<ul class="mission-dist-notes">${addons.map(row => {
+      const hit = km + 0.0001 >= row.minKm;
+      const label = row.conditionName || `${number(row.minKm)}km 이상 달성 시 ${moneyWon(row.amount)} 지급`;
+      return `<li class="${hit ? 'is-hit' : ''}">+추가(쿠팡) ${label}</li>`;
+    }).join('')}</ul>`;
+    return { html, extra };
+  }
+
   function renderMissionSim(prefix, mission, currentCalls) {
     const el = document.getElementById(`riderMission${prefix}Sim`);
     if (!el) return;
     const key = prefix === 'Baemin' ? 'baemin' : prefix === 'Coupang' ? 'coupang' : 'combined';
     const config = missionSimConfig(mission);
-    if (!config) {
+    const distConfig = missionDistConfig(mission);
+    const addon = distanceAddonView(mission, key);
+    if (!config && !distConfig && !addon.html) {
       el.hidden = true;
       el.innerHTML = '';
+      return;
+    }
+    if (!config) {
+      const nowLine = addon.extra > 0
+        ? `<p class="mission-sim__now">이번 주 거리 가산 → 약 ${moneyWon(addon.extra)}</p>`
+        : '';
+      el.hidden = false;
+      el.innerHTML = `${nowLine}${addon.html}${distanceSimHtml(key, distConfig)}`;
       return;
     }
 
@@ -1378,8 +1514,10 @@
     const now = sim.simulate(config, nowCalls);
     const guess = sim.simulate(config, guessCalls);
     const rows = sim.breakpoints(config);
-    const nowText = now.started
-      ? `이번 주 ${number(nowCalls)}콜 → 약 ${moneyWon(now.amount)} (${number(now.paidCallCount)}건 × ${moneyWon(now.payPerCall)})`
+    const shownAmount = (now.started ? now.amount : 0) + addon.extra;
+    const distanceNote = addon.extra > 0 ? ` · 거리 ${moneyWon(addon.extra)} 포함` : '';
+    const nowText = shownAmount > 0
+      ? `이번 주 ${number(nowCalls)}콜 → 약 ${moneyWon(shownAmount)}${now.started ? ` (${number(now.paidCallCount)}건 × ${moneyWon(now.payPerCall)})` : ''}${distanceNote}`
       : `이번 주 ${number(nowCalls)}콜 → 아직 지급 시작(${number(config.payStartCallCount)}콜) 전 · ${number(now.remainToStart)}콜 남음`;
     const guessHint = guess.started
       ? `${number(guess.paidCallCount)}건 × ${moneyWon(guess.payPerCall)}`
@@ -1406,6 +1544,8 @@
       <p class="mission-sim__note">거절율·미지급 조건은 빼고, 실시간 현황 주간 콜수 기준으로만 본 예상 금액입니다.${
         config.type === 'both' ? ' 단가보장은 배달료에 따라 달라서 여기에 넣지 않았습니다.' : ''
       }</p>
+      ${distanceSimHtml(key, distConfig)}
+      ${addon.html}
     `;
   }
 
@@ -1414,6 +1554,26 @@
     if (!box || bindMissionSimInput.bound) return;
     bindMissionSimInput.bound = true;
     box.addEventListener('input', event => {
+      const distInput = event.target.closest('[data-mission-dist-input]');
+      if (distInput) {
+        const dkey = distInput.dataset.missionDistInput;
+        missionDistGuess[dkey] = String(distInput.value || '');
+        const dwrap = distInput.closest('.mission-platform-block');
+        const mission = dwrap?.__bremMission || null;
+        const distConfig = missionDistConfig(mission);
+        const dsim = window.BremPromotionDistanceSim;
+        const amountEl = dwrap?.querySelector(`[data-mission-dist-amount="${dkey}"]`);
+        const hintEl = dwrap?.querySelector(`[data-mission-dist-hint="${dkey}"]`);
+        if (!distConfig || !dsim || !amountEl) return;
+        const guess = dsim.simulate(distConfig, distInput.value);
+        amountEl.textContent = guess.started ? moneyWon(guess.amount) : '0원';
+        if (hintEl) {
+          hintEl.textContent = guess.started
+            ? `${number(guess.payableKm)}km × ${moneyWon(guess.rate)}/${dsim.unitLabel(distConfig.unit)}`
+            : `${number(distConfig.startKm)}km부터 지급`;
+        }
+        return;
+      }
       const input = event.target.closest('[data-mission-sim-input]');
       if (!input) return;
       const key = input.dataset.missionSimInput;
@@ -1523,9 +1683,9 @@
       }
     }
 
-    const resolvedBaeminId = String(baeminMissionId || assigned?.baemin?.id || '').trim();
-    const resolvedCoupangId = String(coupangMissionId || assigned?.coupang?.id || '').trim();
-    const resolvedCombinedId = String(combinedMissionId || assigned?.combined?.id || '').trim();
+    const resolvedBaeminId = String(assigned?.baemin?.id || baeminMissionId || '').trim();
+    const resolvedCoupangId = String(assigned?.coupang?.id || coupangMissionId || '').trim();
+    const resolvedCombinedId = String(assigned?.combined?.id || combinedMissionId || '').trim();
 
     const combinedMission = assigned?.combined || (resolvedCombinedId
       ? (window.BremMissionPromotionCatalog?.getById?.(resolvedCombinedId)
@@ -1744,12 +1904,12 @@
       todayRate == null ? '-' : formatPercent(todayRate)
     );
     const selectedWeek = state.selectedWeekStart || weekStartKey();
-    if (available && selectedWeek === weekStartKey()) {
-      const liveWeek = coupangLiveWeekEntry(ops);
-      if (liveWeek) {
-        setText('weeklyRejectionRateCoupang', liveWeek.rate == null ? '-' : formatPercent(liveWeek.rate));
-        renderRateDetail('coupang', liveWeek);
-      }
+    const selectedWeekEntry = driver
+      ? coupangWeekEntryFor(driver.id, selectedWeek)
+      : (selectedWeek === weekStartKey() ? coupangLiveWeekEntry(ops) : null);
+    if (selectedWeekEntry) {
+      setText('weeklyRejectionRateCoupang', selectedWeekEntry.rate == null ? '-' : formatPercent(selectedWeekEntry.rate));
+      renderRateDetail('coupang', selectedWeekEntry);
     }
     setText(
       'driverCoupangLiveOpsUpdated',
@@ -1857,19 +2017,15 @@
     const weeklyAcceptanceBaemin = liveBaeminEntry
       ? liveBaeminEntry.rate
       : weeklyRateForPlatform(driver.id, weekStart, 'baemin');
-    const storedCoupangEntry = weeklyEntryForPlatform(driver.id, weekStart, 'coupang');
-    const liveCoupangEntry = weekStart === weekStartKey()
-      ? coupangLiveWeekEntry(BremStorage.getRiderCoupangOps?.())
-      : null;
-    const coupangRateEntry = liveCoupangEntry || storedCoupangEntry;
-    const weeklyRejectionCoupang = liveCoupangEntry
-      ? liveCoupangEntry.rate
+    const coupangRateEntry = coupangWeekEntryFor(driver.id, weekStart);
+    const weeklyRejectionCoupang = coupangRateEntry
+      ? coupangRateEntry.rate
       : weeklyRateForPlatform(driver.id, weekStart, 'coupang');
     const coupangWeekLabel = document.getElementById('coupangWeekRangeLabel');
     if (coupangWeekLabel) {
-      const ops = weekStart === weekStartKey() ? BremStorage.getRiderCoupangOps?.() : null;
-      const ws = String(ops?.weekStart || weekStart || '').slice(0, 10);
-      const we = String(ops?.weekEnd || weekEndKey(ws) || '').slice(0, 10);
+      const week = coupangOpsWeekBucket(weekStart);
+      const ws = String(week?.weekStart || weekStart || '').slice(0, 10);
+      const we = String(week?.weekEnd || weekEndKey(ws) || '').slice(0, 10);
       coupangWeekLabel.textContent = ws && we
         ? `수~화 ${formatDate(ws)}~${formatDate(we)}`
         : '수~화';

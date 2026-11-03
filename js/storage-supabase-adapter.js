@@ -162,8 +162,27 @@ window.BremSupabaseStorageAdapter = (function () {
   const DAILY_SETTLEMENT_SELECT = `${DAILY_SETTLEMENT_SELECT_BASE.replace(',applied_at', '')},call_fee,call_fee_unit,applied_at`;
   let dailySettlementCallFeeColumnsOk = true;
 
+  let dailySettlementDistanceColumnOk = true;
+
   function getDailySettlementSelect() {
-    return dailySettlementCallFeeColumnsOk ? DAILY_SETTLEMENT_SELECT : DAILY_SETTLEMENT_SELECT_BASE;
+    const core = dailySettlementCallFeeColumnsOk ? DAILY_SETTLEMENT_SELECT : DAILY_SETTLEMENT_SELECT_BASE;
+    if (!dailySettlementDistanceColumnOk) return core;
+    return core.replace(/,applied_at$/, ',delivery_distance_m,applied_at');
+  }
+
+  function isMissingDailySettlementDistanceColumnError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    if (!message.includes('delivery_distance')) return false;
+    return message.includes('schema cache')
+      || message.includes('could not find')
+      || message.includes('does not exist')
+      || message.includes('column');
+  }
+
+  function stripOptionalDailySettlementDistanceColumn(row) {
+    const next = { ...row };
+    delete next.delivery_distance_m;
+    return next;
   }
 
   function isMissingDailySettlementCallFeeColumnError(error) {
@@ -353,9 +372,14 @@ window.BremSupabaseStorageAdapter = (function () {
           payload = chunk.map(stripOptionalLeaseVehicleColumns);
           ({ error } = await client.from(tableName).upsert(payload, { onConflict: 'id' }));
         }
+        if (error && tableName === 'daily_settlements' && isMissingDailySettlementDistanceColumnError(error)) {
+          dailySettlementDistanceColumnOk = false;
+          payload = payload.map(stripOptionalDailySettlementDistanceColumn);
+          ({ error } = await client.from(tableName).upsert(payload, { onConflict: 'id' }));
+        }
         if (error && tableName === 'daily_settlements' && isMissingDailySettlementCallFeeColumnError(error)) {
           dailySettlementCallFeeColumnsOk = false;
-          payload = chunk.map(stripOptionalDailySettlementCallFeeColumns);
+          payload = payload.map(stripOptionalDailySettlementCallFeeColumns);
           ({ error } = await client.from(tableName).upsert(payload, { onConflict: 'id' }));
         }
         if (error) throw error;
@@ -513,7 +537,10 @@ window.BremSupabaseStorageAdapter = (function () {
       try {
         value = await fetchCollection(resolveSelectColumns(getDailySettlementSelect()));
       } catch (error) {
-        if (table === 'daily_settlements' && isMissingDailySettlementCallFeeColumnError(error)) {
+        if (table === 'daily_settlements' && isMissingDailySettlementDistanceColumnError(error)) {
+          dailySettlementDistanceColumnOk = false;
+          value = await fetchCollection(resolveSelectColumns(getDailySettlementSelect()));
+        } else if (table === 'daily_settlements' && isMissingDailySettlementCallFeeColumnError(error)) {
           dailySettlementCallFeeColumnsOk = false;
           value = await fetchCollection(resolveSelectColumns(DAILY_SETTLEMENT_SELECT_BASE));
         } else {

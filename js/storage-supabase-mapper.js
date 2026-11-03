@@ -276,6 +276,7 @@ window.BremSupabaseMapper = (function () {
       deduction_base: Math.abs(Number(item.deductionBase || 0)),
       delivery_amount: Number(item.deliveryAmount ?? item.settlementAmount ?? 0),
       settlement_amount: Number(item.settlementAmount ?? item.deliveryAmount ?? 0),
+      delivery_distance_m: Math.max(0, Math.round(Number(item.deliveryDistanceM) || 0)),
       call_fee: item.callFee == null || item.callFee === ''
         ? null
         : Math.max(0, Math.round(Number(item.callFee) || 0)),
@@ -299,6 +300,7 @@ window.BremSupabaseMapper = (function () {
       deductionBase: Math.abs(Number(row.deduction_base || 0)),
       deliveryAmount: Number(row.delivery_amount ?? row.settlement_amount ?? 0),
       settlementAmount: Number(row.settlement_amount ?? row.delivery_amount ?? 0),
+      deliveryDistanceM: Math.max(0, Math.round(Number(row.delivery_distance_m) || 0)),
       callFee: row.call_fee == null || row.call_fee === '' ? undefined : Number(row.call_fee),
       callFeeUnit: row.call_fee_unit == null || row.call_fee_unit === '' ? undefined : Number(row.call_fee_unit),
       appliedAt: row.applied_at

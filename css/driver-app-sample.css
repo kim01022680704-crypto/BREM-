@@ -412,6 +412,7 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .dc-row__sub { display: flex; gap: 10px; font-size: var(--rd-fs-100); font-weight: 700; font-variant-numeric: tabular-nums; }
 .dc-row__sub--coupang { color: var(--rd-warning); }
 .dc-row__sub--baemin { color: var(--rd-teal); }
+.dc-row__sub--distance { color: var(--rd-text-muted); margin-left: auto; }
 
 .dc-row__total { font-size: var(--rd-fs-500); font-weight: 800; color: var(--rd-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dc-row__total i { font-size: var(--rd-fs-100); font-weight: 700; color: var(--rd-text-muted); font-style: normal; margin-left: 2px; }
@@ -1720,10 +1721,41 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .rider-ds .ds-statcard__head { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; }
 .rider-ds .ds-statcard__title { display: flex; align-items: center; gap: 8px; color: var(--rd-text); font-size: var(--rd-fs-400); font-weight: 700; }
 .rider-ds .ds-statcard__when { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
-.rider-ds .ds-stats { display: flex; flex-wrap: wrap; padding: 4px 15px 12px; gap: 8px 4px; }
-.rider-ds .ds-stat { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 56px; }
-.rider-ds .ds-stat span { color: var(--rd-text-muted); font-size: var(--rd-fs-100); }
-.rider-ds .ds-stat strong { color: var(--rd-text); font-size: var(--rd-fs-600); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rider-ds .ds-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: end;
+  padding: 2px 8px 12px;
+  column-gap: 8px;
+  row-gap: 8px;
+}
+.rider-ds .ds-statcard--baemin .ds-stats {
+  grid-template-columns: 0.95fr 1.35fr 0.8fr 0.8fr 0.95fr;
+}
+.rider-ds .ds-stat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 3px;
+}
+.rider-ds .ds-stat span {
+  width: 100%;
+  color: var(--rd-text-muted);
+  font-size: var(--rd-fs-100);
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+.rider-ds .ds-stat strong {
+  color: var(--rd-text);
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .rider-ds .ds-stat--complete strong { color: var(--rd-success); }
 .rider-ds .ds-stat--slaout strong { color: var(--rd-accent-strong); }
 .rider-ds .ds-stat--reject strong { color: var(--rd-danger); }
@@ -1928,6 +1960,15 @@ html.rider-ds.brem-app-nav[data-driver-tab]:not([data-driver-tab="home"]) .drive
   white-space: nowrap;
 }
 .rider-ds .ds-mission-item__body span { color: var(--rd-text-subtle); font-size: var(--rd-fs-100); }
+.rider-ds .ds-mission-notes { display: grid; gap: 2px; margin-top: 4px; }
+.rider-ds .ds-mission-notes i {
+  display: block;
+  font-style: normal;
+  color: #e8c547;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
 .rider-ds .ds-mission-item em {
   font-style: normal;
   color: var(--rd-text);

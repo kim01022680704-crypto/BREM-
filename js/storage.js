@@ -3509,6 +3509,9 @@ const BremStorage = (function () {
         date: String(row.date || '').slice(0, 10),
         platform: row.platform || 'coupang',
         count: Number(row.count) || 0,
+        ...(row.delivery_distance_m != null && row.delivery_distance_m !== ''
+          ? { deliveryDistanceM: Math.max(0, Math.round(Number(row.delivery_distance_m) || 0)) }
+          : {}),
         riderPublishedAt: row.rider_published_at || null
       }));
       stageRiderScopedCache(KEYS.calls, callRows, { tableLoaded: true });
@@ -10830,12 +10833,18 @@ const BremStorage = (function () {
       orderCount: 0,
       settlementAmount: 0,
       deductionBase: 0,
-      hourlyInsurance: 0
+      hourlyInsurance: 0,
+      deliveryDistanceM: 0,
+      hasDeliveryDistance: false
     };
     cur.orderCount += Number(record.orderCount ?? record.callCount ?? 0) || 0;
     cur.settlementAmount += Number(record.settlementAmount ?? record.deliveryAmount ?? 0) || 0;
     cur.deductionBase += Math.abs(Number(record.deductionBase || 0)) || 0;
     cur.hourlyInsurance += Math.abs(Number(record.hourlyInsurance || 0)) || 0;
+    if (record.deliveryDistanceM != null && record.deliveryDistanceM !== '') {
+      cur.deliveryDistanceM += Math.max(0, Math.round(Number(record.deliveryDistanceM) || 0));
+      cur.hasDeliveryDistance = true;
+    }
     if (!cur.riderId && record.riderId) cur.riderId = String(record.riderId);
     if (!cur.driverName && (record.driverName || record.name)) cur.driverName = String(record.driverName || record.name);
     map.set(driverId, cur);
@@ -10867,7 +10876,8 @@ const BremStorage = (function () {
       hourlyInsurance: share.hourlyInsurance,
       deductionBase: share.deductionBase,
       deliveryAmount: share.settlementAmount,
-      settlementAmount: share.settlementAmount
+      settlementAmount: share.settlementAmount,
+      ...(share.hasDeliveryDistance ? { deliveryDistanceM: Math.max(0, Math.round(Number(share.deliveryDistanceM) || 0)) } : {})
     };
   }
 
@@ -10972,7 +10982,9 @@ const BremStorage = (function () {
           orderCount: share.orderCount + other.orderCount,
           settlementAmount: share.settlementAmount + other.settlementAmount,
           deductionBase: share.deductionBase + other.deductionBase,
-          hourlyInsurance: share.hourlyInsurance + other.hourlyInsurance
+          hourlyInsurance: share.hourlyInsurance + other.hourlyInsurance,
+          deliveryDistanceM: (Number(share.deliveryDistanceM) || 0) + (Number(other.deliveryDistanceM) || 0),
+          hasDeliveryDistance: Boolean(share.hasDeliveryDistance || other.hasDeliveryDistance)
         });
       });
       return { records: out, mergedDrivers };
@@ -11013,6 +11025,10 @@ const BremStorage = (function () {
           deductionBase: incomingBase > 0 ? incomingBase : existingBase,
           settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
           deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
+          // 쿠팡 오더별 상세 L열 합. 이번 업로드에 거리가 없으면 이미 저장된 거리를 유지한다.
+          deliveryDistanceM: record.deliveryDistanceM != null && record.deliveryDistanceM !== ''
+            ? Math.max(0, Math.round(Number(record.deliveryDistanceM) || 0))
+            : Math.max(0, Math.round(Number(existing?.deliveryDistanceM) || 0)),
           // 콜수수료는 업로드 시 콜수×단가로 고정. 단가 변경이 과거 주를 소급하지 않게 한다.
           // 재매칭처럼 단가가 안 넘어오면 이미 저장된 값을 유지한다.
           ...(computed

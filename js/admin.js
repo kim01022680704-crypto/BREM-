@@ -7332,7 +7332,10 @@
         // → 실지급액이 부풀고 초과출금으로 이어진다. 반드시 같이 넘긴다.
         deductionBase: Math.abs(Number(record.deductionBase || 0)),
         deliveryAmount: settlementAmountValue(record),
-        settlementAmount: settlementAmountValue(record)
+        settlementAmount: settlementAmountValue(record),
+        ...(record.deliveryDistanceM != null && record.deliveryDistanceM !== ''
+          ? { deliveryDistanceM: Math.max(0, Math.round(Number(record.deliveryDistanceM) || 0)) }
+          : {})
       });
       let verifyResult = null;
       let mergedDrivers = [];

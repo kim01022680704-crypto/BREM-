@@ -15,9 +15,9 @@
   function txt(id) { const el = $(id); return el ? (el.textContent || '').trim() : ''; }
   function setTxt(id, value) { const el = $(id); if (el) el.textContent = value; }
 
-  // "1,234콜" / "512건" / " 38 " → 정수
+  // "1,234콜" / "19.2콜" / "512건" → 숫자. 점은 유지한다(19.2 → 192 방지).
   function toInt(s) {
-    const n = parseInt(String(s == null ? '' : s).replace(/[^0-9-]/g, ''), 10);
+    const n = parseFloat(String(s == null ? '' : s).replace(/,/g, '').replace(/[^0-9.-]/g, ''));
     return Number.isFinite(n) ? n : 0;
   }
   // 숫자에서 단위(건/콜/공백) 제거 → "512건" → "512", "-" → "-"
@@ -46,6 +46,9 @@
     const won = t.match(/약\s*([\d,]+)\s*원/);
     const calls = t.match(/이번\s*주\s*([\d,]+)\s*콜/);
     const remain = t.match(/([\d,]+)\s*콜 남음/);
+    const notes = Array.from(wrap.querySelectorAll('.mission-dist-notes li'))
+      .map(function (li) { return (li.textContent || '').trim(); })
+      .filter(Boolean);
     return {
       title,
       amount: won ? toInt(won[1]) : 0,
@@ -53,6 +56,7 @@
         ? (comma(toInt(won[1])) + '원')
         : (remain ? ('시작까지 ' + comma(toInt(remain[1])) + '콜') : '배정됨'),
       callsText: calls ? (comma(toInt(calls[1])) + '콜') : '',
+      notes: notes,
       started: !!won
     };
   }
@@ -190,6 +194,16 @@
             ? (data.callsText ? ('이번 주 ' + data.callsText) : '콜수 집계 전')
             : '미션관리에서 배정되면 표시됩니다');
           setTxt('hv2Mission' + prefix + 'Amt', data ? data.amountText : '-');
+          const notesEl = $('hv2Mission' + prefix + 'Notes');
+          if (notesEl) {
+            const lines = data && data.notes ? data.notes : [];
+            notesEl.hidden = !lines.length;
+            notesEl.innerHTML = lines.map(function (line) {
+              return '<i>' + line.replace(/[&<>]/g, function (ch) {
+                return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch];
+              }) + '</i>';
+            }).join('');
+          }
           return data ? Number(data.amount || 0) : 0;
         }
 
