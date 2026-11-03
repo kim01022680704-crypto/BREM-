@@ -10,7 +10,7 @@
   // data-section 기준 그룹. 'baemin-status:calls_rejection_sync' = data-baemin-menu-focus 버튼.
   // ※ ops에서 'baemin-status'(배민현황)를 focus 버튼보다 먼저 두어 pageTitle 기본값 보존.
   var GROUPS = [
-    { key: 'home',   title: '홈 · 대시보드',     icon: 'home',   items: ['dashboard', 'admin-schedule'] },
+    { key: 'home',   title: '홈 · 대시보드',     icon: 'home',   items: ['dashboard', 'admin-schedule', 'status-analysis'] },
     { key: 'work',   title: '업무',               icon: 'doc',    items: ['work-requests'] },
     { key: 'comm',   title: '소통 · 공지',        icon: 'bell',   items: ['notices', 'urgent-missions', 'rider-push', 'rider-inquiries'] },
     { key: 'ops',    title: '콜 · 현황',          icon: 'chart',  items: ['calls', 'rejections', 'targets', 'contribution', 'baemin-biz-status', 'baemin-status', 'baemin-status:calls_rejection_sync', 'coupang-rider-status', 'coupang-status'] },

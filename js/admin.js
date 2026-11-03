@@ -207,6 +207,7 @@
     { id: 'rider-inquiries', label: '라이더 문의' },
     { id: 'dashboard', label: '대시보드' },
     { id: 'admin-schedule', label: '관리자 스케줄표' },
+    { id: 'status-analysis', label: '지사데이터 분석' },
     { id: 'work-requests', label: '업무' },
     { id: 'mission-results', label: '장기근속이벤트 결과' },
     { id: 'missions', label: '장기근속이벤트' },
@@ -7911,6 +7912,9 @@
     switch (sectionId) {
       case 'dashboard':
         renderDashboard();
+        break;
+      case 'status-analysis':
+        window.BremStatusAnalysis?.render?.();
         break;
       case 'mission-results':
         renderMissionResults();

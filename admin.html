@@ -36,6 +36,7 @@
   <link rel="stylesheet" href="css/login.css">
   <script>try{var t=localStorage.getItem('bremAdminTheme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}</script>
   <link rel="stylesheet" href="css/admin.css?v=20261104theme1">
+  <link rel="stylesheet" href="css/status-analysis.css?v=20261104branch1">
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261029edit1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
   <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20261103riders5">
@@ -140,6 +141,7 @@
         <button class="nav-btn" data-section="rider-inquiries">라이더 문의</button>
         <button class="nav-btn active" data-section="dashboard">대시보드</button>
         <button class="nav-btn" data-section="admin-schedule">관리자 스케줄표</button>
+        <button class="nav-btn" data-section="status-analysis">지사데이터 분석</button>
         <button class="nav-btn" data-section="work-requests">업무</button>
         <button class="nav-btn" data-section="mission-results">장기근속이벤트 결과</button>
         <button class="nav-btn" data-section="friend-invite">친구초대</button>
@@ -467,6 +469,18 @@
 
       <section class="section" id="work-requests">
         <div data-wr-root></div>
+      </section>
+
+      <section class="section" id="status-analysis">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>지사데이터 분석</h2>
+              <p class="form-help">일정산 기준입니다. 쿠팡 배달비는 수수료를 뺀 정산금액, 배달처리비는 수수료를 빼기 전 정산금액입니다. 평균단가·50m·100m 단가는 배달처리비 ÷ 콜수·거리입니다. 배민은 배달처리비 정산금액만 있고 배달거리는 없습니다. 지역 이름은 ERP 지역명입니다.</p>
+            </div>
+          </div>
+          <div id="statusAnalysisRoot"></div>
+        </article>
       </section>
 
       <section class="section" id="admin-schedule">
@@ -10311,6 +10325,7 @@
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="js/platforms.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/brem-env.js"></script>
@@ -10324,7 +10339,7 @@
   <script src="js/storage-supabase-mapper.js?v=20261103dist2"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20261103dist2"></script>
-  <script src="js/storage.js?v=20261103dist2"></script>
+  <script src="js/storage.js?v=20261104branch1"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js?v=20261101inq1"></script>
@@ -10396,10 +10411,11 @@
   <script src="js/admin-mission-assignment.js?v=20261101region1"></script>
   <script src="js/table-sort.js"></script>
     <script src="js/admin-work-requests.js?v=20260927req8"></script>
-    <script src="js/admin.js?v=20261103dist3"></script>
+    <script src="js/status-analysis-admin.js?v=20261104branch1"></script>
+    <script src="js/admin.js?v=20261104branch1"></script>
     <script src="js/admin-theme.js?v=20261104theme1"></script>
   <script src="js/admin-driver-popups.js?v=20261030kakaoapp1" defer></script>
-  <script src="js/admin-sidebar-groups.js?v=20261101menu1" defer></script>
+  <script src="js/admin-sidebar-groups.js?v=20261104branch1" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
