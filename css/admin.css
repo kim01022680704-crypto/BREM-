@@ -447,6 +447,42 @@
   --radius: 16px;
 }
 
+/* ===== 테마: 기본 다크 / [data-theme="light"] 라이트 ===== */
+:root { color-scheme: dark; }
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --black: #eef1f5;      /* 페이지 배경 */
+  --black-2: #ffffff;    /* 살짝 올라온 면 */
+  --card: #ffffff;       /* 카드 */
+  --line: #d7dde6;       /* 테두리 */
+  --text: #15181e;       /* 본문 */
+  --muted: #5b6472;      /* 보조 텍스트 */
+}
+
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.theme-toggle-btn:hover { border-color: var(--yellow); }
+
+.theme-toggle-btn [data-theme-icon] {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
 .topbar-actions {
   display: flex;
   gap: 8px;

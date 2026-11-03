@@ -17,7 +17,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20261029edit2">
+  <script>try{var t=localStorage.getItem('bremAdminTheme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}</script>
+  <link rel="stylesheet" href="css/admin.css?v=20261104theme1">
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261029edit1">
   <link rel="stylesheet" href="css/admin-app.css?v=20261030kakaoapp1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
@@ -84,6 +85,7 @@
           <p class="eyebrow">BREM ADMIN</p>
           <h1 id="adminAppTitle">대시보드</h1>
         </div>
+        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-pressed="false" title="다크 모드 (클릭 시 라이트)"><span data-theme-icon aria-hidden="true">&#9790;</span><span data-theme-label>다크</span></button>
         <button class="logout-btn" type="button" id="adminLogoutBtn">로그아웃</button>
       </div>
       <p class="hero-desc" id="adminAppHeroDesc">관리자앱 · 대시보드 · 스케줄 · 명세서 · 문의</p>
@@ -587,6 +589,7 @@
   <script src="js/driver-detail-search.js?v=20261103riders2"></script>
   <script src="js/admin-driver-popups.js?v=20261030kakaoapp1"></script>
   <script src="js/admin-app.js?v=20261101inq1"></script>
+  <script src="js/admin-theme.js?v=20261104theme1"></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
 </html>
