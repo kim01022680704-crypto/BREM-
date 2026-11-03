@@ -457,7 +457,8 @@
   --card: #ffffff;       /* 카드 */
   --line: #d7dde6;       /* 테두리 */
   --text: #15181e;       /* 본문 */
-  --muted: #5b6472;      /* 보조 텍스트 */
+  --muted: #4b5563;      /* 보조 텍스트 (흰 배경에서 또렷하게) */
+  --text-secondary: #4b5563;
 }
 
 .theme-toggle-btn {
@@ -481,6 +482,61 @@
 .theme-toggle-btn [data-theme-icon] {
   font-size: 0.95rem;
   line-height: 1;
+}
+
+/* ===== 라이트 테마 컴포넌트 보정 (하드코딩 다크/노랑 가독성 대응) ===== */
+[data-theme="light"] .topbar {
+  background: linear-gradient(135deg, #ffffff, #eceff4);
+}
+[data-theme="light"] .topbar p {
+  color: #9a7700;
+}
+[data-theme="light"] .brand strong {
+  color: #9a7700;
+}
+[data-theme="light"] .brand-home-link {
+  color: #8a6d12;
+  border-color: #d8b43a;
+}
+/* 노란 버튼 위 글자는 라이트에서도 어둡게 (var(--black)이 밝아져 안 보이는 문제) */
+[data-theme="light"] .nav-btn.active,
+[data-theme="light"] .nav-btn:hover,
+[data-theme="light"] .driver-link,
+[data-theme="light"] .top-link,
+[data-theme="light"] .brand-home-link:hover {
+  color: #15181e;
+}
+/* 외곽선 보조버튼: 흰 배경에 노랑 글자가 안 보여 어두운 금색으로 */
+[data-theme="light"] .driver-link.secondary,
+[data-theme="light"] .top-link.secondary {
+  color: #8a6d12;
+  border-color: #d8b43a;
+}
+[data-theme="light"] .top-link.danger {
+  color: #ffffff;
+}
+/* 카드 제목: 노랑 → 어둡게 (흰 배경 가독성) */
+[data-theme="light"] .card-header h2,
+[data-theme="light"] .card-header .week-nav span {
+  color: #15181e;
+}
+/* 사이드바 메뉴 글자 또렷하게 */
+[data-theme="light"] .sb-item .nav-btn {
+  color: #2b3139 !important;
+}
+[data-theme="light"] .sb-fav-item {
+  color: #2b3139;
+}
+[data-theme="light"] .sb-fav-title,
+[data-theme="light"] .sb-fav-empty,
+[data-theme="light"] .sb-gcount,
+[data-theme="light"] .sb-chev,
+[data-theme="light"] .sb-empty {
+  color: #52606d;
+}
+[data-theme="light"] .sb-item .nav-btn::before,
+[data-theme="light"] .sb-fav-item .dot {
+  background: #b4bcc7;
 }
 
 .topbar-actions {
