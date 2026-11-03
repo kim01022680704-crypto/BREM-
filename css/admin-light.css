@@ -3023,6 +3023,95 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] html.brem-admin-app-nav,
+[data-theme="light"] html.brem-admin-app-nav body {
+  background: #e4e8ee;
+}
+
+[data-theme="light"] .admin-phone-app .eyebrow {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .admin-phone-app .logout-btn {
+  border-color: var(--line);
+  color: var(--text);
+}
+
+[data-theme="light"] .admin-phone-app .hero-desc {
+  color: var(--muted);
+}
+
+[data-theme="light"] .admin-phone-stat {
+  background: #eef1f6;
+}
+
+[data-theme="light"] .admin-phone-stat span {
+  color: var(--muted);
+}
+
+[data-theme="light"] .admin-phone-stat strong {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .admin-phone-shortcut span {
+  color: var(--muted);
+}
+
+[data-theme="light"] .admin-phone-shortcut strong {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .admin-kakao-paste__backdrop {
+  background: #e4e8ee;
+}
+
+[data-theme="light"] .admin-kakao-paste__dialog {
+  border-color: var(--line);
+}
+
+[data-theme="light"] .admin-kakao-paste__close {
+  color: var(--text);
+}
+
+[data-theme="light"] .admin-kakao-paste__help {
+  color: var(--muted);
+}
+
+[data-theme="light"] .admin-kakao-paste textarea {
+  border-color: var(--line);
+  background: #e4e8ee;
+  color: var(--text);
+}
+
+[data-theme="light"] html.brem-admin-app-nav .driver-popup-modal__dialog {
+  border-color: var(--line);
+}
+
+[data-theme="light"] .admin-phone-today-item {
+  border-color: var(--line);
+  background: #eef1f6;
+}
+
+[data-theme="light"] .admin-phone-today-item span {
+  color: var(--muted);
+}
+
+[data-theme="light"] .admin-app-nav {
+  background: #ffffff;
+}
+
+[data-theme="light"] .admin-app-nav__item {
+  color: var(--muted);
+}
+
+[data-theme="light"] .admin-app-boot-splash {
+  background: #e4e8ee;
+}
+
+[data-theme="light"] .brem-native-push-banner span {
+  color: #8a6d12;
+}
+
 
 /* ============================================================
    공통 표/본문 가독성 (가장 마지막 적용)
