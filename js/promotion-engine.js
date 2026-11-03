@@ -458,6 +458,19 @@ const BremPromotionEngine = (function () {
           minWorkingDays
         };
       }
+      case 'weekly_distance_km': {
+        const min = Number(condition.minDistanceKm || 0);
+        const meters = Number(riderData.totalDistanceMeters || 0);
+        if (!(meters > 0)) {
+          return { passed: false, reasons: [`${label} (쿠팡 거리 데이터 없음)`] };
+        }
+        const km = meters / 1000;
+        const passed = km + 0.0001 >= min;
+        return {
+          passed,
+          reasons: passed ? [] : [`${label} (${km.toFixed(1)}/${min}km)`]
+        };
+      }
       case 'daily_min_days': {
         const dailyMin = Number(condition.dailyMinOrders ?? 30);
         const minDays = Number(condition.minDailyOrderDays ?? 6);
@@ -676,6 +689,17 @@ const BremPromotionEngine = (function () {
       }
       case 'percent_bonus':
         return Math.round(basePay * Number(condition.bonusPercent ?? 0) / 100);
+      case 'distance_per_km': {
+        const section = rule?.base?.distance;
+        if (section && (section.enabled === true || rule?.type === 'distance')) return 0;
+        const meters = Number(riderData?.totalDistanceMeters || 0);
+        if (!(meters > 0)) return 0;
+        const km = meters / 1000;
+        const start = Number(condition.minDistanceKm || 0);
+        const rate = Number(condition.distancePayPerKm || 0);
+        if (rate <= 0 || km < start) return 0;
+        return Math.round((km - start) * rate);
+      }
       default:
         return 0;
     }
@@ -794,6 +818,97 @@ const BremPromotionEngine = (function () {
     });
   }
 
+  // 거리 프로모션: riderData.totalDistanceMeters(쿠팡 배달거리 합) 기준.
+  // 거리 데이터가 없으면 0원이라 기존 정산에는 영향이 없다.
+  function calculateDistancePay(rule, riderData) {
+    const base = rule?.base || rule || {};
+    const d = base.distance && typeof base.distance === 'object' ? base.distance : null;
+    const type = rule?.type || 'count_per_order';
+    const enabled = d && (d.enabled === true || type === 'distance');
+    if (!enabled) return { distanceBonus: 0, failureReasons: [] };
+
+    const meters = Number(riderData?.totalDistanceMeters || 0);
+    if (!(meters > 0)) return { distanceBonus: 0, failureReasons: ['거리 데이터 없음'] };
+
+    const distanceKm = meters / 1000;
+    const startKm = Number(d.startKm || 0);
+    const unitKm = String(d.unit) === '100m' ? 0.1 : 1;
+    const unitLabel = String(d.unit) === '100m' ? '100m' : 'km';
+    const baseRate = Number(d.payPerUnit || 0);
+    const tiers = (Array.isArray(d.tiers) ? d.tiers : [])
+      .map(tier => ({ minKm: Number(tier.minKm || 0), rate: Number(tier.payPerUnit || 0) }))
+      .filter(tier => tier.minKm > 0 && tier.rate > 0)
+      .sort((a, b) => a.minKm - b.minKm);
+
+    if (distanceKm < startKm) {
+      return { distanceBonus: 0, failureReasons: [`지급 시작 거리 ${startKm}km 미달 (${distanceKm.toFixed(1)}km)`] };
+    }
+    const payableKm = Math.max(0, distanceKm - startKm);
+    if (payableKm <= 0) return { distanceBonus: 0, failureReasons: [] };
+
+    const stepMode = String(d.tierMode) === 'step' && tiers.length > 0;
+    let bonus = 0;
+    let appliedRate = baseRate;
+    let label = '';
+
+    if (stepMode) {
+      const cuts = [{ from: startKm, rate: baseRate }];
+      tiers.filter(tier => tier.minKm > startKm).forEach(tier => {
+        if (cuts[cuts.length - 1].from !== tier.minKm) cuts.push({ from: tier.minKm, rate: tier.rate });
+      });
+      cuts.sort((a, b) => a.from - b.from);
+      for (let i = 0; i < cuts.length; i += 1) {
+        const from = cuts[i].from;
+        const to = i + 1 < cuts.length ? cuts[i + 1].from : Infinity;
+        const segKm = Math.max(0, Math.min(distanceKm, to) - from);
+        if (segKm > 0) bonus += (segKm / unitKm) * cuts[i].rate;
+      }
+      label = `거리 구간 적용 (${distanceKm.toFixed(1)}km)`;
+    } else {
+      const reached = tiers.filter(tier => distanceKm >= tier.minKm);
+      appliedRate = reached.length ? reached[reached.length - 1].rate : baseRate;
+      bonus = (payableKm / unitKm) * appliedRate;
+      label = reached.length
+        ? `${reached[reached.length - 1].minKm}km 달성 → ${appliedRate.toLocaleString('ko-KR')}원/${unitLabel}`
+        : (appliedRate > 0 ? `${appliedRate.toLocaleString('ko-KR')}원/${unitLabel}` : '');
+    }
+
+    bonus = Math.max(0, Math.round(bonus));
+    return {
+      distanceBonus: bonus,
+      appliedRate,
+      payableKm,
+      distanceKm,
+      label,
+      failureReasons: bonus > 0 ? [] : ['거리 단가 설정 없음']
+    };
+  }
+
+  function calculateDistanceAddonPay(rule, riderData) {
+    const addons = Array.isArray(rule?.base?.distanceAddons) ? rule.base.distanceAddons : [];
+    const valid = addons
+      .map(row => ({
+        minKm: Number(row?.minKm || 0),
+        amount: Number(row?.amount || 0),
+        conditionName: String(row?.conditionName || '').trim()
+      }))
+      .filter(row => row.minKm > 0 && row.amount > 0)
+      .sort((a, b) => a.minKm - b.minKm);
+    if (!valid.length) return { amount: 0, labels: [] };
+    const meters = Number(riderData?.totalDistanceMeters || 0);
+    if (!(meters > 0)) return { amount: 0, labels: [] };
+    const km = meters / 1000;
+    let amount = 0;
+    const labels = [];
+    valid.forEach(row => {
+      if (km + 0.0001 < row.minKm) return;
+      amount += row.amount;
+      const named = String(row.conditionName || '').trim();
+      labels.push(named || `+추가(쿠팡) ${row.minKm.toLocaleString('ko-KR')}km 이상 달성 시 ${row.amount.toLocaleString('ko-KR')}원 지급`);
+    });
+    return { amount: Math.round(amount), labels };
+  }
+
   function calculatePromotionForRider(rule, riderData, settings) {
     const settingsValue = settings || BremStorage.promotionSettings.get();
     const block = evaluateBlockConditions(rule, riderData, settingsValue);
@@ -829,6 +944,7 @@ const BremPromotionEngine = (function () {
         bonusPay: 0,
         perCallBonus: 0,
         guaranteeBonus: 0,
+        distanceBonus: 0,
         totalBonus: 0,
         paidCallCount: 0,
         appliedBonusConditions: [],
@@ -921,7 +1037,15 @@ const BremPromotionEngine = (function () {
       });
     }
 
-    const totalBonus = basePay + bonusPay + guaranteeBonus;
+    const distanceResult = calculateDistancePay(rule, riderData);
+    const addonResult = calculateDistanceAddonPay(rule, riderData);
+    const distanceBonus = (distanceResult.distanceBonus || 0) + (addonResult.amount || 0);
+    if (distanceBonus > 0 && distanceResult.label) {
+      appliedBlockConditions.push({ name: `거리 ${distanceResult.label}` });
+    }
+    (addonResult.labels || []).forEach(name => appliedBlockConditions.push({ name }));
+
+    const totalBonus = basePay + bonusPay + guaranteeBonus + distanceBonus;
     const baseFailureReasons = baseResult.failureReasons || [];
     const guaranteeFailureReasons = guaranteeResult.failureReasons || [];
 
@@ -934,6 +1058,9 @@ const BremPromotionEngine = (function () {
     } else if (type === 'guaranteed_unit_price') {
       eligible = guaranteeBonus > 0;
       if (!eligible) combinedReasons = guaranteeFailureReasons;
+    } else if (type === 'distance') {
+      eligible = distanceBonus > 0;
+      if (!eligible) combinedReasons = distanceResult.failureReasons || [];
     } else {
       eligible = totalBonus > 0;
       if (!eligible) {
@@ -962,6 +1089,9 @@ const BremPromotionEngine = (function () {
       bonusPay,
       perCallBonus: basePay,
       guaranteeBonus,
+      distanceBonus,
+      distanceLabel: distanceResult.label || '',
+      distancePayableKm: distanceResult.payableKm || 0,
       totalBonus,
       paidCallCount: baseResult.paidCallCount || 0,
       appliedPayPerCall: baseResult.appliedPayPerCall || 0,
@@ -1161,6 +1291,8 @@ const BremPromotionEngine = (function () {
     calculateCountPerOrderPromotion,
     calculateGuaranteedUnitPricePromotion,
     calculatePromotionForRider,
+    calculateDistancePay,
+    calculateDistanceAddonPay,
     getPromotionFailureReasons,
     evaluateRule,
     evaluateRuleForDrivers,

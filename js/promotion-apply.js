@@ -13,6 +13,7 @@ const BremPromotionApply = (function () {
     return {
       callCount: stats.callCount,
       deliveryAmount: stats.deliveryAmount,
+      deliveryDistanceM: Math.max(0, Math.round(Number(stats.deliveryDistanceM) || 0)),
       byDay: stats.byDay,
       uploadDays: stats.uploadDays
     };
@@ -37,6 +38,7 @@ const BremPromotionApply = (function () {
     return {
       callCount: weeklyCalls,
       deliveryAmount: sheetDelivery > 0 ? sheetDelivery : daily.deliveryAmount,
+      deliveryDistanceM: daily.deliveryDistanceM,
       byDay: daily.byDay,
       uploadDays: daily.uploadDays
     };
@@ -226,8 +228,20 @@ const BremPromotionApply = (function () {
       return BremWeeklySettlement.resolveBaeminDriver(rider)
         || findDriverByBaeminIdLoose(rider?.baeminUserId);
     }
-    const driverId = String(rider?.matchedRiderId || '').trim();
-    return driverId ? BremStorage.drivers.getById(driverId) || null : null;
+    const storedId = String(rider?.matchedRiderId || '').trim();
+    const stored = storedId ? BremStorage.drivers.getById(storedId) || null : null;
+    if (stored) return stored;
+    return window.BremWeeklySettlement?.resolveCoupangDriver?.(rider) || null;
+  }
+
+  function enrichCoupangRider(rider, driver) {
+    if (!driver) return rider;
+    return {
+      ...rider,
+      matched: true,
+      matchedRiderId: driver.id,
+      driverName: driver.name || rider.driverName || rider.riderName
+    };
   }
 
   function enrichBaeminRider(rider, driver) {
@@ -723,11 +737,20 @@ const BremPromotionApply = (function () {
     return 'other';
   }
 
-  function collectPromotionSetupGaps(result) {
+  function isDriverMissionLocked(driver) {
+    if (!driver) return false;
+    if (typeof window !== 'undefined' && window.BremMissionPromotionCatalog?.isAssignmentLocked?.(driver)) {
+      return true;
+    }
+    return Boolean(driver.missionAssignmentLocked || driver.raw_data?.missionAssignmentLocked);
+  }
+
+  function collectPromotionSetupGaps(result, context = {}) {
     const rows = Array.isArray(result?.results) ? result.results : [];
     const platform = normalizePlatform(result?.platform);
     const seen = new Set();
     const gaps = [];
+    const isLocked = context.isAssignmentLocked || isDriverMissionLocked;
 
     rows.forEach((row, index) => {
       if (Number(row?.totalPromotionAmount || 0) > 0) return;
@@ -743,6 +766,7 @@ const BremPromotionApply = (function () {
 
       const driverId = String(row?.matchedRiderId || '').trim();
       const driver = driverId ? BremStorage.drivers.getById?.(driverId) || null : null;
+      if (driver && isLocked(driver)) return;
       const rowPlatform = normalizePlatform(row?.appliedPlatform || platform);
       if (driver) {
         const needBaemin = rowPlatform === 'baemin' || rowPlatform === 'combined';
@@ -935,7 +959,9 @@ const BremPromotionApply = (function () {
     const baeminMap = new Map();
 
     (coupangSettlement?.riders || []).forEach(rider => {
-      if (rider.matchedRiderId) coupangMap.set(String(rider.matchedRiderId), rider);
+      const driver = resolveDriverForWeeklyRider(rider, 'coupang');
+      if (!driver?.id) return;
+      coupangMap.set(String(driver.id), enrichCoupangRider(rider, driver));
     });
     (baeminSettlement?.riders || []).forEach(rider => {
       const driver = resolveDriverForWeeklyRider(rider, 'baemin');
@@ -1113,6 +1139,7 @@ const BremPromotionApply = (function () {
       rateLabel: BremPlatforms.rateLabel(statsPlatform),
       dailyOrders: stats.byDay,
       deliveryAmount: stats.deliveryAmount,
+      totalDistanceMeters: statsPlatform === 'coupang' ? Number(stats.deliveryDistanceM || 0) : 0,
       deliveryFees: rainAdjusted.fees,
       selectedPromotionRuleId: rule.id,
       selectedPromotionName: rule.name,
@@ -1148,7 +1175,8 @@ const BremPromotionApply = (function () {
       ruleId: rule.id,
       ruleName: rule.name,
       basePromotionAmount: Number(result.basePay || result.perCallBonus || 0),
-      extraPromotionAmount: Number(result.bonusPay || 0),
+      extraPromotionAmount: Number(result.bonusPay || 0) + Number(result.distanceBonus || 0),
+      distancePromotionAmount: Number(result.distanceBonus || 0),
       totalPromotionAmount: Number(result.totalBonus || 0),
       appliedConditions: mergeAppliedConditionNames(result),
       failedConditions: (result.failedBonusConditions || []).map(item => item.name || item.reason),
@@ -1367,6 +1395,7 @@ const BremPromotionApply = (function () {
       ruleName: parts.map(row => row.ruleName).filter(Boolean).join(' + '),
       basePromotionAmount: parts.reduce((sum, row) => sum + Number(row.basePromotionAmount || 0), 0),
       extraPromotionAmount: parts.reduce((sum, row) => sum + Number(row.extraPromotionAmount || 0), 0),
+      distancePromotionAmount: parts.reduce((sum, row) => sum + Number(row.distancePromotionAmount || 0), 0),
       totalPromotionAmount,
       appliedConditions: [...new Set(parts.flatMap(row => row.appliedConditions || []))],
       failedConditions: [...new Set(parts.flatMap(row => row.failedConditions || []))],
@@ -1466,6 +1495,7 @@ const BremPromotionApply = (function () {
       rateLabel: BremPlatforms.rateLabel('coupang'),
       dailyOrders: stats.byDay,
       deliveryAmount: stats.deliveryAmount,
+      totalDistanceMeters: Number(stats.deliveryDistanceM || 0),
       deliveryFees: fees,
       selectedPromotionRuleId: rule.id,
       selectedPromotionName: rule.name,
@@ -1509,7 +1539,8 @@ const BremPromotionApply = (function () {
       ruleId: rule.id,
       ruleName: rule.name,
       basePromotionAmount: Number(result.basePay || result.perCallBonus || 0),
-      extraPromotionAmount: Number(result.bonusPay || 0),
+      extraPromotionAmount: Number(result.bonusPay || 0) + Number(result.distanceBonus || 0),
+      distancePromotionAmount: Number(result.distanceBonus || 0),
       totalPromotionAmount,
       appliedConditions: mergeAppliedConditionNames(result),
       failedConditions: (result.failedBonusConditions || []).map(item => item.name || item.reason),
@@ -1809,6 +1840,7 @@ const BremPromotionApply = (function () {
       rateLabel: BremPlatforms.rateLabel(ratePlatform),
       dailyOrders: mergeDailyOrders(coupangStats.byDay, baeminStats.byDay),
       deliveryAmount: deliveryAmountTotal,
+      totalDistanceMeters: Number(coupangStats.deliveryDistanceM || 0),
       deliveryFees: [...coupangFees, ...baeminFees],
       selectedPromotionRuleId: rule.id,
       selectedPromotionName: rule.name,
@@ -1844,8 +1876,9 @@ const BremPromotionApply = (function () {
 
     // 엔진 totalBonus 에서 엔진 보장액을 빼고 분리 보장액으로 교체
     const engineTotal = Number(result.totalBonus || 0);
+    const distancePromotionAmount = Number(result.distanceBonus || 0);
     const basePromotionAmount = Number(result.basePay || result.perCallBonus || 0);
-    const extraPromotionAmount = Number(result.bonusPay || 0);
+    const extraPromotionAmount = Number(result.bonusPay || 0) + distancePromotionAmount;
     const totalPromotionAmount = Math.max(0, engineTotal - engineGuarantee + finalGuarantee);
 
     return {
@@ -1875,6 +1908,7 @@ const BremPromotionApply = (function () {
       ruleName: rule.name,
       basePromotionAmount,
       extraPromotionAmount,
+      distancePromotionAmount,
       totalPromotionAmount,
       appliedConditions: mergeAppliedConditionNames(result),
       failedConditions: (result.failedBonusConditions || []).map(item => item.name || item.reason),
@@ -2494,9 +2528,11 @@ const BremPromotionApply = (function () {
     getResultRowCoupangId,
     getResultRowBaeminId,
     isUnpaidConditionReason,
+    isDriverMissionLocked,
     collectPromotionSetupGaps,
     assignmentDiffersFromRegionDefault,
     collectRegionMissionMismatches,
+    resolveDriverForWeeklyRider,
     pickBestRegion,
     normalizeSettlementRegionAlias,
     scoreRegionAliasMatch,

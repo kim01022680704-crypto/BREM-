@@ -1063,6 +1063,7 @@ const BremWeeklySettlement = (function () {
       const next = {
         callCount: Number(record.orderCount || 0),
         deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
+        deliveryDistanceM: Math.max(0, Math.round(Number(record.deliveryDistanceM) || 0)),
         source: 'settlement',
         appliedAt: String(record.appliedAt || ''),
         recordId: String(record.id || '')
@@ -1089,14 +1090,17 @@ const BremWeeklySettlement = (function () {
 
     let callCount = 0;
     let deliveryAmount = 0;
+    let deliveryDistanceM = 0;
     Object.values(byDay).forEach(day => {
       callCount += Number(day.callCount || 0);
       deliveryAmount += Number(day.deliveryAmount || 0);
+      deliveryDistanceM += Math.max(0, Math.round(Number(day.deliveryDistanceM) || 0));
     });
 
     return {
       callCount,
       deliveryAmount,
+      deliveryDistanceM,
       byDay,
       uploadDays: Object.keys(byDay).length,
       hasData: Object.keys(byDay).length > 0
@@ -2680,6 +2684,7 @@ const BremWeeklySettlement = (function () {
     saveManualNameMapping,
     loadManualNameMappings,
     resolveBaeminDriver,
+    resolveCoupangDriver,
     processWeeklyUpload
   };
 })();

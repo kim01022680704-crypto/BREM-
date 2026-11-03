@@ -825,7 +825,10 @@ const BremSettlementParser = (function () {
         hourlyInsurance: Math.abs(Number(row.hourlyInsurance || 0)),
         deductionBase: Math.abs(Number(row.deductionBase || 0)),
         deliveryAmount: Number(row.deliveryAmount ?? row.settlementAmount ?? 0),
-        settlementAmount: Number(row.settlementAmount ?? row.deliveryAmount ?? 0)
+        settlementAmount: Number(row.settlementAmount ?? row.deliveryAmount ?? 0),
+        ...(row.deliveryDistanceM != null && row.deliveryDistanceM !== ''
+          ? { deliveryDistanceM: Math.max(0, Math.round(Number(row.deliveryDistanceM) || 0)) }
+          : {})
       };
 
       if (driver) {
@@ -842,17 +845,87 @@ const BremSettlementParser = (function () {
     return { matched, unmatched };
   }
 
+  function coupangDistanceKey(value) {
+    return String(value || '')
+      .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '')
+      .replace(/\s+/g, '')
+      .trim();
+  }
+
+  function parseDistanceMeters(value) {
+    if (value == null || String(value).trim() === '') return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    const text = String(value).trim();
+    if (!text || text === '-' || text === '—') return null;
+    const parsed = Number(text.replace(/,/g, '').replace(/m$/i, ''));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  // 오더별 상세내역: B열 이름별로 L열 배달거리(m)를 더한다. L이 빈 행은 취소콜이라 빼니다.
+  function sumCoupangOrderDistances(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    let header = -1;
+    const scan = Math.min(list.length, 25);
+    for (let i = 0; i < scan; i += 1) {
+      const name = coupangDistanceKey(readCell(list[i] || [], 1));
+      const distanceHeader = coupangDistanceKey(readCell(list[i] || [], 11));
+      if ((name === '성함' || name === '이름') && distanceHeader.includes('배달거리')) {
+        header = i;
+        break;
+      }
+    }
+    const sums = new Map();
+    for (let i = (header < 0 ? 0 : header + 1); i < list.length; i += 1) {
+      const key = coupangDistanceKey(readCell(list[i] || [], 1));
+      if (!key || key === '성함' || key === '이름') continue;
+      const meters = parseDistanceMeters(readCell(list[i] || [], 11));
+      if (meters == null) continue;
+      sums.set(key, (sums.get(key) || 0) + meters);
+    }
+    return sums;
+  }
+
+  async function readCoupangOrderDistanceSums(buffer, password, sheetIndex) {
+    const rows = await openWorkbookSheetRows(buffer, normalizePassword(password), {
+      sheetName: '오더별',
+      sheetMatcher: (name) => {
+        const text = String(name || '');
+        return text.includes('오더별') && text.includes('상세');
+      },
+      sheetIndex
+    });
+    return sumCoupangOrderDistances(rows);
+  }
+
+  function attachCoupangDeliveryDistances(parsedRows, sums) {
+    if (!sums || !sums.size) return parsedRows;
+    (Array.isArray(parsedRows) ? parsedRows : []).forEach(row => {
+      const key = coupangDistanceKey(row.rawName || row.name);
+      row.deliveryDistanceM = Math.max(0, Math.round(sums.get(key) || 0));
+    });
+    return parsedRows;
+  }
+
   async function parseSettlementFile({ file, password, drivers, period, formatId }) {
     const format = SettlementFormats.getFormat(formatId);
     const arrayBuffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
     const filenamePeriod = parseSettlementDateFromFilename(file.name);
     const rows = await openWorkbookRows(
-      new Uint8Array(arrayBuffer),
+      bytes,
       normalizePassword(password),
       format
     );
     const parsed = parseRowsWithFormat(rows, format);
     const parsedRows = parsed.parsedRows;
+    if (format?.platform === 'coupang' && format?.mode === 'driver-row') {
+      try {
+        const sums = await readCoupangOrderDistanceSums(bytes.slice(), password, 1);
+        attachCoupangDeliveryDistances(parsedRows, sums);
+      } catch (error) {
+        console.warn('[BREM] 쿠팡 일정산 배달거리 시트를 읽지 못했습니다.', error?.message || error);
+      }
+    }
     const resolvedPeriod = period || filenamePeriod || '';
     const { matched, unmatched } = matchDrivers(parsedRows, drivers, format);
     const totalDeliveryAmount = parsed.totalDeliveryAmount ?? parsedRows.reduce(
@@ -1360,6 +1433,8 @@ const BremSettlementParser = (function () {
     parseBaeminHourlyInsuranceFile,
     parseSettlementDateFromFilename,
     parseRowsWithFormat,
+    sumCoupangOrderDistances,
+    readCoupangOrderDistanceSums,
     matchDrivers,
     openWorkbookRows,
     openWorkbookSheetRows,

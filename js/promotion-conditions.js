@@ -49,6 +49,11 @@ const BremPromotionConditions = (function () {
       label: '일일 최소 콜 달성일',
       platforms: ['coupang', 'baemin'],
       fields: ['dailyMinOrders', 'minDailyOrderDays']
+    },
+    weekly_distance_km: {
+      label: '주간 거리 달성',
+      platforms: ['coupang'],
+      fields: ['minDistanceKm']
     }
   };
 
@@ -56,7 +61,8 @@ const BremPromotionConditions = (function () {
     add_pay_per_order: '건당 추가 지급',
     fixed_bonus: '정액 추가 지급',
     guarantee_unit_add: '보장단가 추가',
-    percent_bonus: '프로모션 비율 추가'
+    percent_bonus: '프로모션 비율 추가',
+    distance_per_km: '거리당 지급'
   };
 
   function createId() {
@@ -86,7 +92,30 @@ const BremPromotionConditions = (function () {
       fixedBonus: Number(raw.fixedBonus ?? 0),
       bonusPercent: Number(raw.bonusPercent ?? 0),
       guaranteeUnitAdd: Number(raw.guaranteeUnitAdd ?? 0),
+      minDistanceKm: Number(raw.minDistanceKm ?? 0),
+      distancePayPerKm: Number(raw.distancePayPerKm ?? 0),
       sortOrder: Number(raw.sortOrder ?? index)
+    };
+  }
+
+  function normalizeDistance(raw) {
+    const d = raw && typeof raw === 'object' ? raw : {};
+    const tiers = Array.isArray(d.tiers) ? d.tiers : [];
+    return {
+      enabled: d.enabled === true,
+      unit: String(d.unit) === '100m' ? '100m' : 'km',
+      startKm: Number(d.startKm || 0),
+      payPerUnit: Number(d.payPerUnit || 0),
+      tierMode: String(d.tierMode) === 'step' ? 'step' : 'retroactive',
+      tiers: tiers
+        .map((tier, index) => ({
+          id: tier.id || '',
+          minKm: Number(tier.minKm || 0),
+          payPerUnit: Number(tier.payPerUnit || 0),
+          sortOrder: Number(tier.sortOrder ?? index)
+        }))
+        .filter(tier => tier.minKm > 0 && tier.payPerUnit > 0)
+        .sort((a, b) => a.minKm - b.minKm)
     };
   }
 
@@ -104,8 +133,26 @@ const BremPromotionConditions = (function () {
         : 'retroactive',
       payPerCallTiers: Array.isArray(raw.payPerCallTiers ?? legacy.payPerCallTiers)
         ? (raw.payPerCallTiers ?? legacy.payPerCallTiers)
-        : []
+        : [],
+      distance: normalizeDistance(raw.distance ?? legacy.distance),
+      distanceAddons: normalizeDistanceAddons(raw.distanceAddons ?? legacy.distanceAddons)
     };
+  }
+
+  function normalizeDistanceAddons(raw) {
+    const list = Array.isArray(raw) ? raw : [];
+    return list
+      .map((row, index) => ({
+        id: row?.id || '',
+        conditionName: String(row?.conditionName || '').trim(),
+        conditionType: 'weekly_distance_km',
+        minKm: Number(row?.minKm || 0),
+        amount: Number(row?.amount || 0),
+        sortOrder: Number(row?.sortOrder ?? index)
+      }))
+      .filter(row => row.minKm > 0 && row.amount > 0)
+      .sort((a, b) => a.minKm - b.minKm)
+      .slice(0, 3);
   }
 
   function splitConditionsByMode(conditions = []) {
@@ -285,6 +332,10 @@ const BremPromotionConditions = (function () {
         ? `수락률 ${threshold}% 이상`
         : `수락률 ${threshold}% 이상`;
     }
+    if (type === 'weekly_distance_km') {
+      const min = Number(resolved.minDistanceKm ?? condition.minDistanceKm ?? 0);
+      return `주간 ${min}km 이상`;
+    }
 
     const custom = String(resolved.conditionName || condition.conditionName || '').trim();
     if (custom) return custom;
@@ -317,6 +368,10 @@ const BremPromotionConditions = (function () {
       const dailyMin = Number(condition.dailyMinOrders ?? 30);
       const minDays = Number(condition.minDailyOrderDays ?? 6);
       return `하루 ${dailyMin}건 이상 ${minDays}일`;
+    }
+    if (type === 'weekly_distance_km') {
+      const min = Number(condition.minDistanceKm ?? resolved.minDistanceKm ?? 0);
+      return `주간 ${min}km 이상`;
     }
 
     const custom = String(condition.conditionName || '').trim();
@@ -358,6 +413,9 @@ const BremPromotionConditions = (function () {
       const daily = Number(normalized.dailyMinOrders ?? 30);
       const days = Number(normalized.minDailyOrderDays ?? 6);
       return `하루 ${daily}건 이상 ${days}일`;
+    }
+    if (type === 'weekly_distance_km') {
+      return `주간 ${Number(normalized.minDistanceKm ?? 0)}km 이상`;
     }
     return CONDITION_TYPES[type]?.label || '조건';
   }

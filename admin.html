@@ -4088,6 +4088,7 @@
                   <option value="count_per_order">건당 프로모션</option>
                   <option value="guaranteed_unit_price">단가보장</option>
                   <option value="both">건당 + 단가보장</option>
+                  <option value="distance">거리당 프로모션 (주간 km)</option>
                 </select>
               </label>
               <label>
@@ -4157,6 +4158,50 @@
               <div id="promotionPayTierRows" class="promotion-tier-rows"></div>
             </div>
 
+            <div class="promotion-form-section" id="promotionDistanceSection">
+              <div class="promotion-condition-toolbar">
+                <h3>거리 프로모션</h3>
+                <label class="promotion-checkbox-field">
+                  <input type="checkbox" id="promotionDistanceEnabled">
+                  <span>거리 보너스 함께 지급</span>
+                </label>
+              </div>
+              <p class="form-help">쿠팡 배달거리 기준입니다. 배민은 거리 데이터가 없어 지급되지 않습니다. 유형이 「거리당 프로모션」이면 자동으로 켜집니다. 거리 임계값은 km, 단가는 선택한 단위(km·100m)당 금액입니다.</p>
+              <div id="promotionDistanceBody">
+                <div class="promotion-form-grid">
+                  <label>
+                    기준 단위
+                    <select id="promotionDistanceUnit">
+                      <option value="km">km (1,000m)</option>
+                      <option value="100m">100m</option>
+                    </select>
+                  </label>
+                  <label>
+                    지급 시작 거리 (km 달성 시 지급)
+                    <input type="number" id="promotionDistanceStart" min="0" step="1" value="0">
+                  </label>
+                  <label>
+                    단위당 지급액 (원)
+                    <input type="number" id="promotionDistancePayPerUnit" min="0" step="10" value="0">
+                  </label>
+                </div>
+                <p class="form-help">지급거리 = 총 거리 − 지급 시작 거리. 예) 320km, 시작 200km → 120km × 단위당 금액. 「N km 달성 시 지급」이면 시작 거리를 N으로 두세요.</p>
+                <div class="promotion-tier-toolbar">
+                  <strong>거리 구간 (선택)</strong>
+                  <label>
+                    적용 방식
+                    <select id="promotionDistanceTierMode">
+                      <option value="retroactive">소급 (달성하면 시작부터 전부)</option>
+                      <option value="step">구간 (그 거리부터만)</option>
+                    </select>
+                  </label>
+                  <button type="button" class="small-btn" id="promotionAddDistanceTierBtn">구간 추가</button>
+                </div>
+                <p class="form-help" id="promotionDistanceTierHelp">소급은 300km를 넘으면 시작 거리부터 전부 그 단가입니다. 구간은 구간별로만 그 단가를 적용합니다.</p>
+                <div id="promotionDistanceTierRows" class="promotion-tier-rows"></div>
+              </div>
+            </div>
+
             <div class="promotion-form-section" id="promotionBlockConditionsSection">
               <div class="promotion-condition-toolbar">
                 <h3>미지급 조건</h3>
@@ -4171,8 +4216,17 @@
                 <h3>추가 가산 조건</h3>
                 <button type="button" class="small-btn" id="promotionAddBonusConditionBtn">조건 추가</button>
               </div>
-              <p class="form-help">조건 충족 시 기본 지급액에 추가 지급 (건당 추가, 정액, 보장단가, 비율)</p>
+              <p class="form-help">조건 충족 시 기본 지급액에 추가 지급 (건당 추가, 정액, 보장단가, 비율, 거리당). 쿠팡은 「주간 거리 달성」으로 N km를 넘긴 뒤 km당 금액을 더할 수 있습니다. 정산주는 수요일~화요일입니다.</p>
               <div id="promotionBonusConditionsList" class="promotion-conditions-list"></div>
+            </div>
+
+            <div class="promotion-form-section" id="promotionDistanceAddonSection">
+              <div class="promotion-condition-toolbar">
+                <h3>추가 가산조건2 (거리)</h3>
+                <button type="button" class="small-btn" id="promotionAddDistanceAddonBtn">거리 가산 추가</button>
+              </div>
+              <p class="form-help">추가 가산 조건과 같은 칸입니다. 조건명 · 조건 유형(주간 거리 이상) · 몇 km 이상 · 달성 시 지급 금액을 넣습니다. km와 금액을 바꾸면 조건명이 「800km 이상 달성 시 30,000원 지급」으로 자동으로 바뀝니다. 최대 3개, 그 주를 넘긴 금액만 예정 금액에 더합니다.</p>
+              <div id="promotionDistanceAddonRows" class="promotion-tier-rows"></div>
             </div>
 
             <div class="promotion-form-section" id="promotionReferenceConditionsSection">
@@ -10271,15 +10325,15 @@
   <script src="js/driver-utils.js?v=20260921off1"></script>
   <script src="js/driver-duplicate-dialog.js?v=20260820c"></script>
   <script src="js/settlement-formats.js?v=20260917ai1"></script>
-  <script src="js/settlement-client.js?v=20261028invoice1"></script>
+  <script src="js/settlement-client.js?v=20261103dist1"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
-  <script src="js/promotion-conditions.js?v=20260928step1"></script>
-  <script src="js/promotion-engine.js?v=20261009nopperiod1"></script>
-  <script src="js/promotion-admin.js?v=20261010promolockvis1"></script>
+  <script src="js/promotion-conditions.js?v=20261103dist1"></script>
+  <script src="js/promotion-engine.js?v=20261103dist1"></script>
+  <script src="js/promotion-admin.js?v=20261103dist1"></script>
   <script src="js/friend-invite-admin.js?v=20261030invite3"></script>
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
-  <script src="js/weekly-settlement.js?v=20260922part4"></script>
+  <script src="js/weekly-settlement.js?v=20261103dist1"></script>
   <script src="js/weekly-settlement-admin.js?v=20260922part5"></script>
   <script src="js/baemin-delivery-fee.js?v=20260917ai1"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
@@ -10289,7 +10343,7 @@
     <script src="js/contribution-admin.js?v=20260924peak20"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
-  <script src="js/promotion-apply.js?v=20261025settle2"></script>
+  <script src="js/promotion-apply.js?v=20261103dist1"></script>
   <script src="js/promotion-apply-admin.js?v=20261025settle2"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
@@ -10327,7 +10381,7 @@
   <script src="js/admin-urgent-missions.js?v=20260816push6"></script>
   <script src="js/admin-rider-push.js?v=20260816push7"></script>
   <script src="js/admin-payroll-daily-settlement.js?v=20260923comp3"></script>
-  <script src="js/mission-promotion-catalog.js?v=20261009missionassign1"></script>
+  <script src="js/mission-promotion-catalog.js?v=20261103dist1"></script>
   <script src="js/admin-missions.js?v=20261010missionwork1"></script>
   <script src="js/promotion-count-sim.js?v=20261101forecast1"></script>
   <script src="js/admin-mission-forecast.js?v=20261101forecast4"></script>

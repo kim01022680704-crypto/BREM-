@@ -6,7 +6,8 @@ window.BremMissionPromotionCatalog = (function () {
   const TYPE_LABELS = {
     count_per_order: '건당',
     guaranteed_unit_price: '단가보장',
-    both: '건당+단가보장'
+    both: '건당+단가보장',
+    distance: '거리당'
   };
 
   function normalizePlatform(platform) {
@@ -24,6 +25,13 @@ window.BremMissionPromotionCatalog = (function () {
     }
     if (rule?.guaranteedUnitPrice) {
       parts.push(`보장단가 ${Number(rule.guaranteedUnitPrice).toLocaleString('ko-KR')}원`);
+    }
+    const distance = rule?.base?.distance || rule?.distance;
+    if (distance && (distance.enabled || rule?.type === 'distance')) {
+      const unit = distance.unit === '100m' ? '100m' : 'km';
+      if (Number(distance.payPerUnit) > 0) parts.push(`거리 ${unit}당 ${Number(distance.payPerUnit).toLocaleString('ko-KR')}원`);
+      else if (Array.isArray(distance.tiers) && distance.tiers.length) parts.push(`거리 구간 ${distance.tiers.length}개`);
+      if (Number(distance.startKm) > 0) parts.push(`${Number(distance.startKm).toLocaleString('ko-KR')}km부터`);
     }
     const block = Array.isArray(rule?.blockConditions) ? rule.blockConditions : [];
     const bonus = Array.isArray(rule?.bonusConditions) ? rule.bonusConditions : [];
@@ -207,7 +215,7 @@ window.BremMissionPromotionCatalog = (function () {
   }
 
   function isAssignmentLocked(driver) {
-    return Boolean(driver?.missionAssignmentLocked);
+    return Boolean(driver?.missionAssignmentLocked || driver?.raw_data?.missionAssignmentLocked);
   }
 
   return {

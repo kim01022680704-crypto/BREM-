@@ -6,6 +6,8 @@ const BremPromotionAdmin = (function () {
     rulesPlatformTab: 'coupang',
     tierDraft: [],
     payTierDraft: [],
+    distanceTierDraft: [],
+    distanceAddonDraft: [],
     globalSelectedRuleIds: [],
     conditionDrafts: {
       block: [],
@@ -113,7 +115,9 @@ const BremPromotionAdmin = (function () {
 
   function bonusActionFieldsMarkup(condition) {
     const action = condition.actionType || 'add_pay_per_order';
-    const actions = Object.entries(BremPromotionConditions.BONUS_ACTION_TYPES).map(([value, label]) => (
+    const actions = Object.entries(BremPromotionConditions.BONUS_ACTION_TYPES)
+      .filter(([value]) => value !== 'distance_per_km')
+      .map(([value, label]) => (
       `<option value="${value}"${value === action ? ' selected' : ''}>${escapeHtml(label)}</option>`
     )).join('');
 
@@ -126,6 +130,8 @@ const BremPromotionAdmin = (function () {
       valueFields = `<label><span>보장단가 (원)</span><input type="number" data-field="guaranteeUnitAdd" min="0" step="100" value="${condition.guaranteeUnitAdd ?? 0}"></label>`;
     } else if (action === 'percent_bonus') {
       valueFields = `<label><span>비율 (%)</span><input type="number" data-field="bonusPercent" min="0" max="100" step="0.1" value="${condition.bonusPercent ?? 0}"></label>`;
+    } else if (action === 'distance_per_km') {
+      valueFields = `<label><span>km당 지급 (원)</span><input type="number" data-field="distancePayPerKm" min="0" step="10" value="${condition.distancePayPerKm ?? 0}" placeholder="예: 100"></label>`;
     }
 
     return `
@@ -156,6 +162,9 @@ const BremPromotionAdmin = (function () {
         <label><span>일일 최소 콜수</span><input type="number" data-field="dailyMinOrders" min="0" step="1" value="${condition.dailyMinOrders ?? 30}"></label>
         <label><span>최소 달성일</span><input type="number" data-field="minDailyOrderDays" min="0" max="7" step="1" value="${condition.minDailyOrderDays ?? 6}"></label>
       `;
+    }
+    if (type === 'weekly_distance_km') {
+      fields += `<label><span>달성 거리 (km)</span><input type="number" data-field="minDistanceKm" min="0" step="10" value="${condition.minDistanceKm ?? ''}" placeholder="예: 800"></label>`;
     }
     if (processingMode === 'bonus') {
       fields += bonusActionFieldsMarkup(condition);
@@ -192,7 +201,8 @@ const BremPromotionAdmin = (function () {
       minTotalOrders: Number(readField('minTotalOrders') || 0),
       minWorkingDays: Number(readField('minWorkingDays') || 6),
       dailyMinOrders: Number(readField('dailyMinOrders') || 30),
-      minDailyOrderDays: Number(readField('minDailyOrderDays') || 6)
+      minDailyOrderDays: Number(readField('minDailyOrderDays') || 6),
+      minDistanceKm: Number(readField('minDistanceKm') || 0)
     };
     return BremPromotionConditions.fallbackConditionName
       ? BremPromotionConditions.fallbackConditionName(draft, platform)
@@ -278,6 +288,8 @@ const BremPromotionAdmin = (function () {
         fixedBonus: Number(readField('fixedBonus') || 0),
         bonusPercent: Number(readField('bonusPercent') || 0),
         guaranteeUnitAdd: Number(readField('guaranteeUnitAdd') || 0),
+        minDistanceKm: Number(readField('minDistanceKm') || 0),
+        distancePayPerKm: Number(readField('distancePayPerKm') || 0),
         sortOrder: index
       }, index);
       return condition;
@@ -429,7 +441,16 @@ const BremPromotionAdmin = (function () {
         guaranteedUnitPrice: 0,
         callTiers: [],
         payPerCallTiers: [],
-        payPerCallTierMode: 'retroactive'
+        payPerCallTierMode: 'retroactive',
+        distance: {
+          enabled: false,
+          unit: 'km',
+          startKm: 0,
+          payPerUnit: 0,
+          tiers: [],
+          tierMode: 'retroactive'
+        },
+        distanceAddons: []
       },
       blockConditions: [],
       bonusConditions: [],
@@ -517,6 +538,136 @@ const BremPromotionAdmin = (function () {
     `).join('');
   }
 
+  function readDistanceTierRowsFromForm({ includeEmpty = false } = {}) {
+    const rows = $$('#promotionDistanceTierRows .promotion-tier-row').map((row, index) => ({
+      id: row.dataset.tierId || '',
+      minKm: row.querySelector('[data-dist-tier-min-km]')?.value ?? '',
+      payPerUnit: row.querySelector('[data-dist-tier-pay-per-unit]')?.value ?? '',
+      sortOrder: index
+    }));
+    if (includeEmpty) return rows;
+    return rows
+      .filter(tier => Number(tier.minKm) > 0 || Number(tier.payPerUnit) > 0)
+      .map(tier => ({
+        ...tier,
+        minKm: Number(tier.minKm) || 0,
+        payPerUnit: Number(tier.payPerUnit) || 0
+      }));
+  }
+
+  function renderDistanceTierRows(tiers = []) {
+    const container = $('#promotionDistanceTierRows');
+    if (!container) return;
+    const unit = $('#promotionDistanceUnit')?.value === '100m' ? '100m' : 'km';
+    const stepMode = $('#promotionDistanceTierMode')?.value === 'step';
+    const rows = tiers.length ? tiers : [{ id: '', minKm: '', payPerUnit: '' }];
+    container.innerHTML = rows.map((tier, index) => `
+      <div class="promotion-tier-row" data-tier-id="${escapeHtml(tier.id || '')}">
+        <label>
+          <span>${index + 1}구간 · ${stepMode ? 'N km부터' : 'N km 달성'}</span>
+          <input type="number" min="0" step="1" data-dist-tier-min-km value="${tier.minKm ?? ''}" placeholder="예: 300">
+        </label>
+        <label>
+          <span>${unit}당 지급액 (원)</span>
+          <input type="number" min="0" step="10" data-dist-tier-pay-per-unit value="${tier.payPerUnit ?? ''}" placeholder="예: 150">
+        </label>
+        <button type="button" class="small-btn danger-btn" data-remove-dist-tier aria-label="구간 삭제">삭제</button>
+      </div>
+    `).join('');
+  }
+
+  function distanceAddonAutoName(minKm, amount) {
+    const km = Number(minKm || 0);
+    const pay = Number(amount || 0);
+    if (!(km > 0)) return '주간 거리 이상';
+    const payText = pay > 0 ? `${Math.round(pay).toLocaleString('ko-KR')}원 지급` : '지급';
+    return `${Math.round(km).toLocaleString('ko-KR')}km 이상 달성 시 ${payText}`;
+  }
+
+  function readDistanceAddonRows({ includeEmpty = false } = {}) {
+    const rows = $$('#promotionDistanceAddonRows .promotion-condition-row').map((row, index) => ({
+      id: row.dataset.conditionId || '',
+      conditionName: row.querySelector('[data-dist-addon-name]')?.value ?? '',
+      conditionType: 'weekly_distance_km',
+      minKm: row.querySelector('[data-dist-addon-km]')?.value ?? '',
+      amount: row.querySelector('[data-dist-addon-amount]')?.value ?? '',
+      sortOrder: index
+    }));
+    if (includeEmpty) return rows;
+    return rows
+      .filter(row => Number(row.minKm) > 0 || Number(row.amount) > 0 || String(row.conditionName || '').trim())
+      .map(row => {
+        const minKm = Number(row.minKm) || 0;
+        const amount = Number(row.amount) || 0;
+        const typed = String(row.conditionName || '').trim();
+        return {
+          ...row,
+          minKm,
+          amount,
+          conditionName: typed || distanceAddonAutoName(minKm, amount)
+        };
+      });
+  }
+
+  function renderDistanceAddonRows(rows = []) {
+    const container = $('#promotionDistanceAddonRows');
+    if (!container) return;
+    if (!rows.length) {
+      container.innerHTML = '<p class="form-help">거리 가산이 없습니다. 조건 추가처럼 조건명·몇 km 이상·지급 금액을 넣으면 라이더 앱에 그대로 보입니다.</p>';
+      return;
+    }
+    container.innerHTML = rows.map((row, index) => {
+      const autoName = distanceAddonAutoName(row.minKm, row.amount);
+      const name = String(row.conditionName || '').trim() || autoName;
+      return `
+      <div class="promotion-condition-row" data-condition-id="${escapeHtml(row.id || '')}">
+        <div class="promotion-condition-row-header">
+          <strong>거리 가산 ${index + 1}</strong>
+          <button type="button" class="small-btn danger-btn" data-remove-dist-addon>삭제</button>
+        </div>
+        <div class="promotion-condition-fields">
+          <label>
+            <span>조건명</span>
+            <input type="text" data-dist-addon-name data-auto-name="${escapeHtml(autoName)}" value="${escapeHtml(name)}" placeholder="예: 800km 이상 달성 시 30,000원 지급">
+          </label>
+          <label>
+            <span>조건 유형</span>
+            <select data-dist-addon-type>
+              <option value="weekly_distance_km" selected>주간 거리 이상</option>
+            </select>
+          </label>
+          <label>
+            <span>몇 km 이상</span>
+            <input type="number" min="0" step="10" data-dist-addon-km value="${row.minKm ?? ''}" placeholder="예: 800">
+          </label>
+          <label>
+            <span>달성 시 지급 (원)</span>
+            <input type="number" min="0" step="1000" data-dist-addon-amount value="${row.amount ?? ''}" placeholder="예: 30000">
+          </label>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function syncTypeSections() {
+    const type = $('#promotionRuleType')?.value || 'count_per_order';
+    const platform = normalizePlatform($('#promotionRulePlatform')?.value || 'coupang');
+    const distanceOnly = type === 'distance';
+    const distanceSection = $('#promotionDistanceSection');
+    if (distanceSection) distanceSection.hidden = platform === 'baemin';
+    const addonSection = $('#promotionDistanceAddonSection');
+    if (addonSection) addonSection.hidden = platform === 'baemin';
+    const enabledBox = $('#promotionDistanceEnabled');
+    if (enabledBox && distanceOnly) enabledBox.checked = true;
+    const distanceOn = platform !== 'baemin' && (distanceOnly || enabledBox?.checked);
+    const body = $('#promotionDistanceBody');
+    if (body) body.hidden = !distanceOn;
+    const baseSection = $('#promotionBaseSection');
+    if (baseSection) baseSection.hidden = distanceOnly;
+    const guaranteeSection = $('#promotionGuaranteeSection');
+    if (guaranteeSection) guaranteeSection.hidden = distanceOnly;
+  }
+
   function fillRuleForm(rule) {
     const draft = rule || emptyRuleDraft();
     const base = draft.base || {
@@ -529,6 +680,9 @@ const BremPromotionAdmin = (function () {
     };
     state.tierDraft = base.callTiers || draft.callTiers || [];
     state.payTierDraft = base.payPerCallTiers || draft.payPerCallTiers || [];
+    const distance = base.distance || draft.distance || {};
+    state.distanceTierDraft = Array.isArray(distance.tiers) ? distance.tiers : [];
+    state.distanceAddonDraft = Array.isArray(base.distanceAddons) ? base.distanceAddons : (draft.base?.distanceAddons || []);
     state.editingRuleId = rule?.id || '';
     const platformValue = setPromotionRulePlatformField(
       rule?.id
@@ -556,8 +710,17 @@ const BremPromotionAdmin = (function () {
     $('#promotionRuleAllowDuplicate').checked = Boolean(draft.allowDuplicate);
     $('#promotionRuleDuplicateStrategy').value = draft.duplicateStrategy || 'highest_priority';
     $('#promotionRuleNoPayConditions').value = draft.noPayConditions || '';
+    if ($('#promotionDistanceEnabled')) $('#promotionDistanceEnabled').checked = distance.enabled === true || draft.type === 'distance';
+    if ($('#promotionDistanceUnit')) $('#promotionDistanceUnit').value = distance.unit === '100m' ? '100m' : 'km';
+    if ($('#promotionDistanceStart')) $('#promotionDistanceStart').value = distance.startKm ?? 0;
+    if ($('#promotionDistancePayPerUnit')) $('#promotionDistancePayPerUnit').value = distance.payPerUnit ?? 0;
+    if ($('#promotionDistanceTierMode')) $('#promotionDistanceTierMode').value = distance.tierMode === 'step' ? 'step' : 'retroactive';
+
     renderTierRows(state.tierDraft);
     renderPayTierRows(state.payTierDraft);
+    renderDistanceTierRows(state.distanceTierDraft);
+    renderDistanceAddonRows(state.distanceAddonDraft);
+    syncTypeSections();
     renderConditionLists(platformValue);
     updateRateFieldLabels(platformValue);
 
@@ -572,6 +735,8 @@ const BremPromotionAdmin = (function () {
     state.editingRuleId = '';
     state.tierDraft = [];
     state.payTierDraft = [];
+    state.distanceTierDraft = [];
+    state.distanceAddonDraft = [];
     state.conditionDrafts = { block: [], bonus: [], reference: [] };
     const formCard = $('#promotionRuleFormCard');
     if (formCard) formCard.hidden = true;
@@ -582,6 +747,8 @@ const BremPromotionAdmin = (function () {
   function readRuleForm() {
     const platform = normalizePlatform($('#promotionRulePlatform').value || getActiveRulesPlatformTab());
     const callTiers = readTierRowsFromForm();
+    const type = $('#promotionRuleType').value;
+    const distanceEnabled = $('#promotionDistanceEnabled')?.checked === true || type === 'distance';
     const base = {
       baseCallCount: Number($('#promotionRuleBaseCallCount').value || 0),
       payStartCallCount: Number($('#promotionRulePayStartCallCount').value || 0),
@@ -589,7 +756,16 @@ const BremPromotionAdmin = (function () {
       guaranteedUnitPrice: 0,
       callTiers,
       payPerCallTiers: readPayTierRowsFromForm(),
-      payPerCallTierMode: $('#promotionPayTierMode')?.value === 'step' ? 'step' : 'retroactive'
+      payPerCallTierMode: $('#promotionPayTierMode')?.value === 'step' ? 'step' : 'retroactive',
+      distance: {
+        enabled: distanceEnabled,
+        unit: $('#promotionDistanceUnit')?.value === '100m' ? '100m' : 'km',
+        startKm: Number($('#promotionDistanceStart')?.value || 0),
+        payPerUnit: Number($('#promotionDistancePayPerUnit')?.value || 0),
+        tiers: readDistanceTierRowsFromForm(),
+        tierMode: $('#promotionDistanceTierMode')?.value === 'step' ? 'step' : 'retroactive'
+      },
+      distanceAddons: readDistanceAddonRows()
     };
 
     return {
@@ -660,6 +836,65 @@ const BremPromotionAdmin = (function () {
         : `소급 단가 구간의 달성 콜수(${tooEarly.minCalls}건)는 지급 시작 콜수(${payload.base.payStartCallCount}건) 이상이어야 합니다.`;
     }
 
+    const distance = payload.base.distance || {};
+    const distanceActive = distance.enabled === true || payload.type === 'distance';
+    if (distanceActive) {
+      const distTiers = (distance.tiers || []).filter(tier => tier.minKm > 0 || tier.payPerUnit > 0);
+      const distHalf = distTiers.find(tier => !(tier.minKm > 0) || !(tier.payPerUnit > 0));
+      if (distHalf) {
+        return '거리 구간은 N km와 단위당 지급액을 모두 입력하세요.';
+      }
+      const validDistTiers = distTiers.filter(tier => tier.minKm > 0 && tier.payPerUnit > 0);
+      if (!(distance.payPerUnit > 0) && !validDistTiers.length) {
+        return '거리 프로모션은 단위당 지급액이나 거리 구간을 입력하세요.';
+      }
+      const distMins = validDistTiers.map(tier => tier.minKm);
+      if (new Set(distMins).size !== distMins.length) {
+        return '거리 구간의 N km가 중복되면 안 됩니다.';
+      }
+      const distStepMode = distance.tierMode === 'step';
+      const distTooEarly = validDistTiers.find(tier => tier.minKm < distance.startKm
+        || (distStepMode && tier.minKm <= distance.startKm));
+      if (distTooEarly) {
+        return `거리 구간의 N km(${distTooEarly.minKm}km)는 지급 시작 거리(${distance.startKm}km) 이상이어야 합니다.`;
+      }
+      if (payload.platform === 'baemin') {
+        return '배민은 거리 데이터가 없어 거리 프로모션을 쓸 수 없습니다. 쿠팡 또는 합산으로 만드세요.';
+      }
+    }
+
+    const bonusDistance = (payload.bonusConditions || []).filter(item =>
+      item.conditionType === 'weekly_distance_km' || item.actionType === 'distance_per_km'
+    );
+    if (payload.platform === 'baemin' && bonusDistance.length) {
+      return '배민은 거리 데이터가 없어 추가 가산에 주간 거리를 넣을 수 없습니다.';
+    }
+    if (distanceActive && bonusDistance.some(item => item.actionType === 'distance_per_km')) {
+      return '거리 금액은 거리 프로모션 칸이나 추가 가산의 거리당 지급 중 한곳에만 넣으세요.';
+    }
+    const bonusRateMissing = bonusDistance.find(item =>
+      item.actionType === 'distance_per_km' && !(item.distancePayPerKm > 0)
+    );
+    if (bonusRateMissing) {
+      return '추가 가산의 거리당 지급은 km당 금액을 입력하세요.';
+    }
+
+    const addons = payload.base.distanceAddons || [];
+    if (addons.length && payload.platform === 'baemin') {
+      return '배민은 거리 데이터가 없어 거리 가산을 넣을 수 없습니다.';
+    }
+    if (addons.length > 3) {
+      return '거리 가산은 최대 3개까지입니다.';
+    }
+    const addonHalf = addons.find(row => !(row.minKm > 0) || !(row.amount > 0));
+    if (addonHalf) {
+      return '거리 가산은 달성 km와 지급 금액을 모두 입력하세요.';
+    }
+    const addonKms = addons.map(row => row.minKm);
+    if (new Set(addonKms).size !== addonKms.length) {
+      return '거리 가산의 달성 km가 중복되면 안 됩니다.';
+    }
+
     const allConditions = [
       ...payload.blockConditions,
       ...payload.bonusConditions,
@@ -683,7 +918,15 @@ const BremPromotionAdmin = (function () {
     return '';
   }
 
-  function saveRuleForm(event) {
+  async function persistPromotionWrite(work) {
+    const result = await Promise.resolve(work());
+    if (typeof BremStorage.flush === 'function') {
+      await BremStorage.flush();
+    }
+    return result;
+  }
+
+  async function saveRuleForm(event) {
     event.preventDefault();
     const payload = readRuleForm();
     const error = validateRuleForm(payload);
@@ -694,16 +937,17 @@ const BremPromotionAdmin = (function () {
 
     try {
       if (state.editingRuleId) {
-        BremStorage.promotionRules.update(state.editingRuleId, payload);
-        state.previewRuleId = state.editingRuleId;
-        showToast('프로모션 조건이 수정되었습니다. 미리보기에 적용되었습니다.');
+        const id = state.editingRuleId;
+        await persistPromotionWrite(() => BremStorage.promotionRules.update(id, payload));
+        state.previewRuleId = id;
+        showToast('프로모션 조건이 저장되었습니다.');
       } else {
-        const created = BremStorage.promotionRules.create(payload);
+        const created = await persistPromotionWrite(() => BremStorage.promotionRules.create(payload));
         state.previewRuleId = created.id;
-        showToast('프로모션 조건이 추가되었습니다. 미리보기에 적용되었습니다.');
+        showToast('프로모션 조건이 추가되었습니다.');
       }
-    } catch (error) {
-      showToast(error.message || '프로모션 조건 저장에 실패했습니다.');
+    } catch (saveError) {
+      showToast(saveError.message || '프로모션 조건 저장에 실패했습니다. 새로고침 후 다시 저장하세요.');
       return;
     }
 
@@ -929,9 +1173,14 @@ const BremPromotionAdmin = (function () {
     const ids = unlocked.map(rule => rule.id);
     if (ids.includes(state.previewRuleId)) state.previewRuleId = '';
     if (ids.includes(state.editingRuleId)) hideRuleForm();
-    BremStorage.promotionRules.removeMany(ids);
-    showToast(`${label} 잠금 제외 ${ids.length}개를 삭제했습니다.`);
-    refresh();
+    void persistPromotionWrite(() => BremStorage.promotionRules.removeMany(ids))
+      .then(() => {
+        showToast(`${label} 잠금 제외 ${ids.length}개를 삭제했습니다.`);
+        refresh();
+      })
+      .catch(error => {
+        showToast(error.message || '삭제 저장에 실패했습니다.');
+      });
   }
 
   function renderDriverSelectors() {
@@ -1125,6 +1374,66 @@ const BremPromotionAdmin = (function () {
     $('#promotionRuleType')?.addEventListener('change', () => {
       const platform = normalizePlatform($('#promotionRulePlatform')?.value || getActiveRulesPlatformTab());
       updateRateFieldLabels(platform);
+      syncTypeSections();
+    });
+    $('#promotionDistanceEnabled')?.addEventListener('change', syncTypeSections);
+    $('#promotionDistanceUnit')?.addEventListener('change', () => {
+      renderDistanceTierRows(readDistanceTierRowsFromForm({ includeEmpty: true }));
+    });
+    $('#promotionDistanceTierMode')?.addEventListener('change', () => {
+      renderDistanceTierRows(readDistanceTierRowsFromForm({ includeEmpty: true }));
+    });
+    $('#promotionAddDistanceAddonBtn')?.addEventListener('click', () => {
+      const rows = readDistanceAddonRows({ includeEmpty: true });
+      if (rows.length >= 3) {
+        showToast('거리 가산은 최대 3개까지입니다.');
+        return;
+      }
+      rows.push({ id: '', minKm: '', amount: '' });
+      renderDistanceAddonRows(rows);
+    });
+    $('#promotionDistanceAddonRows')?.addEventListener('input', event => {
+      const field = event.target.closest('[data-dist-addon-km], [data-dist-addon-amount]');
+      if (!field) return;
+      const row = field.closest('.promotion-condition-row');
+      const nameInput = row?.querySelector('[data-dist-addon-name]');
+      if (!nameInput) return;
+      const km = row.querySelector('[data-dist-addon-km]')?.value;
+      const amount = row.querySelector('[data-dist-addon-amount]')?.value;
+      const next = distanceAddonAutoName(km, amount);
+      const current = nameInput.value.trim();
+      const previous = nameInput.dataset.autoName || '';
+      if (!current || current === previous) nameInput.value = next;
+      nameInput.dataset.autoName = next;
+    });
+    $('#promotionDistanceAddonRows')?.addEventListener('click', event => {
+      const removeBtn = event.target.closest('[data-remove-dist-addon]');
+      if (!removeBtn) return;
+      const row = removeBtn.closest('.promotion-condition-row');
+      const rows = readDistanceAddonRows({ includeEmpty: true }).filter((_, index) => {
+        const currentRow = $$('#promotionDistanceAddonRows .promotion-condition-row')[index];
+        return currentRow !== row;
+      });
+      renderDistanceAddonRows(rows);
+    });
+    $('#promotionAddDistanceTierBtn')?.addEventListener('click', () => {
+      const tiers = readDistanceTierRowsFromForm({ includeEmpty: true });
+      if (tiers.length >= maxCallTiers()) {
+        showToast(`거리 구간은 최대 ${maxCallTiers()}개까지 추가할 수 있습니다.`);
+        return;
+      }
+      tiers.push({ id: '', minKm: '', payPerUnit: '' });
+      renderDistanceTierRows(tiers);
+    });
+    $('#promotionDistanceTierRows')?.addEventListener('click', event => {
+      const removeBtn = event.target.closest('[data-remove-dist-tier]');
+      if (!removeBtn) return;
+      const row = removeBtn.closest('.promotion-tier-row');
+      const tiers = readDistanceTierRowsFromForm({ includeEmpty: true }).filter((_, index) => {
+        const currentRow = $$('#promotionDistanceTierRows .promotion-tier-row')[index];
+        return currentRow !== row;
+      });
+      renderDistanceTierRows(tiers.length ? tiers : [{ id: '', minKm: '', payPerUnit: '' }]);
     });
     $('#promotionRulePlatform')?.addEventListener('change', event => {
       syncConditionDraftsFromForm();
@@ -1132,6 +1441,7 @@ const BremPromotionAdmin = (function () {
       renderConditionLists(platform);
       updateRateFieldLabels(platform);
       syncSlaApplyField(platform);
+      syncTypeSections();
     });
 
     $('#promotionAddBlockConditionBtn')?.addEventListener('click', () => addConditionDraft('block'));
@@ -1258,18 +1568,28 @@ const BremPromotionAdmin = (function () {
 
       const copyBtn = event.target.closest('[data-copy-promotion]');
       if (copyBtn) {
-        const copied = BremStorage.promotionRules.duplicate(copyBtn.dataset.copyPromotion);
-        state.previewRuleId = copied.id;
-        showToast('프로모션 조건이 복사되었습니다.');
-        refresh();
+        void persistPromotionWrite(() => BremStorage.promotionRules.duplicate(copyBtn.dataset.copyPromotion))
+          .then(copied => {
+            state.previewRuleId = copied.id;
+            showToast('프로모션 조건이 복사되었습니다.');
+            refresh();
+          })
+          .catch(error => {
+            showToast(error.message || '복사 저장에 실패했습니다.');
+          });
         return;
       }
 
       const lockBtn = event.target.closest('[data-toggle-promotion-lock]');
       if (lockBtn) {
-        const rule = BremStorage.promotionRules.toggleLocked(lockBtn.dataset.togglePromotionLock);
-        showToast(rule.locked ? '이 조건을 잠갔습니다. 잠금 제외 삭제에서 빠집니다.' : '잠금을 해제했습니다.');
-        refresh();
+        void persistPromotionWrite(() => BremStorage.promotionRules.toggleLocked(lockBtn.dataset.togglePromotionLock))
+          .then(rule => {
+            showToast(rule.locked ? '이 조건을 잠갔습니다. 잠금 제외 삭제에서 빠집니다.' : '잠금을 해제했습니다.');
+            refresh();
+          })
+          .catch(error => {
+            showToast(error.message || '잠금 저장에 실패했습니다. 새로고침 후 다시 눌러주세요.');
+          });
         return;
       }
 
@@ -1280,9 +1600,14 @@ const BremPromotionAdmin = (function () {
 
       const toggleBtn = event.target.closest('[data-toggle-promotion]');
       if (toggleBtn) {
-        BremStorage.promotionRules.toggleEnabled(toggleBtn.dataset.togglePromotion);
-        showToast('사용 여부가 변경되었습니다.');
-        refresh();
+        void persistPromotionWrite(() => BremStorage.promotionRules.toggleEnabled(toggleBtn.dataset.togglePromotion))
+          .then(() => {
+            showToast('사용 여부가 변경되었습니다.');
+            refresh();
+          })
+          .catch(error => {
+            showToast(error.message || '사용 여부 저장에 실패했습니다.');
+          });
         return;
       }
 
@@ -1296,11 +1621,16 @@ const BremPromotionAdmin = (function () {
           return;
         }
         const next = rule.slaApply !== true;
-        BremStorage.promotionRules.update(rule.id, { slaApply: next });
-        showToast(next
-          ? '이 미션에 SLA시간을 적용합니다. 프로모션 적용 때 총완료 − 시간외완료로 계산합니다.'
-          : '이 미션의 SLA시간적용을 껐습니다.');
-        refresh();
+        void persistPromotionWrite(() => BremStorage.promotionRules.update(rule.id, { slaApply: next }))
+          .then(() => {
+            showToast(next
+              ? '이 미션에 SLA시간을 적용합니다. 프로모션 적용 때 총완료 − 시간외완료로 계산합니다.'
+              : '이 미션의 SLA시간적용을 껐습니다.');
+            refresh();
+          })
+          .catch(error => {
+            showToast(error.message || 'SLA 저장에 실패했습니다.');
+          });
         return;
       }
 
@@ -1314,9 +1644,14 @@ const BremPromotionAdmin = (function () {
         if (!window.confirm('이 프로모션 조건을 삭제할까요?')) return;
         if (state.previewRuleId === deleteBtn.dataset.deletePromotion) state.previewRuleId = '';
         if (state.editingRuleId === deleteBtn.dataset.deletePromotion) hideRuleForm();
-        BremStorage.promotionRules.remove(deleteBtn.dataset.deletePromotion);
-        showToast('프로모션 조건이 삭제되었습니다.');
-        refresh();
+        void persistPromotionWrite(() => BremStorage.promotionRules.remove(deleteBtn.dataset.deletePromotion))
+          .then(() => {
+            showToast('프로모션 조건이 삭제되었습니다.');
+            refresh();
+          })
+          .catch(error => {
+            showToast(error.message || '삭제 저장에 실패했습니다.');
+          });
       }
     });
   }
