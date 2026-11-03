@@ -22,7 +22,7 @@
 }
 
 [data-theme="light"] .contribution-region-group__head span {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .contribution-progress-section__head span {
@@ -295,6 +295,10 @@
   color: var(--text);
 }
 
+[data-theme="light"] .settlement-call-fee-log-badge {
+  color: #8a6d12;
+}
+
 [data-theme="light"] .baemin-collect-result--error {
   color: #b91c1c;
 }
@@ -317,7 +321,7 @@
 }
 
 [data-theme="light"] .baemin-rider-day-results__item--empty .baemin-rider-day-results__status {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .baemin-rider-day-results__meta {
@@ -325,7 +329,7 @@
 }
 
 [data-theme="light"] .form-help--warn {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .baemin-json-dialog {
@@ -414,7 +418,7 @@
 }
 
 [data-theme="light"] .baemin-view-hero__title {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .baemin-view-hero__desc {
@@ -450,7 +454,7 @@
 }
 
 [data-theme="light"] .baemin-partner-map-table__region {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .baemin-partner-map-table__dp {
@@ -500,7 +504,7 @@
 }
 
 [data-theme="light"] .dashboard-baemin-compact-table th {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .dashboard-baemin-region-name {
@@ -534,7 +538,7 @@
 }
 
 [data-theme="light"] .baemin-partner-map-chip strong {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .baemin-partner-map-chip button {
@@ -555,7 +559,7 @@
 }
 
 [data-theme="light"] .baemin-view-meta__value--accent {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .baemin-view-refresh-meta {
@@ -594,7 +598,7 @@
 
 [data-theme="light"] .baemin-grand-totals__percent--over,
 [data-theme="light"] .baemin-quota-cell__percent--over {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .baemin-quota-cell__percent--missed {
@@ -640,7 +644,7 @@
 }
 
 [data-theme="light"] .baemin-partner-tab-bar .promotion-tab.is-contaminated {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .settlement-preview-table.unmatched td:first-child,
@@ -823,7 +827,7 @@
 }
 
 [data-theme="light"] .bulk-result-warn {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .promotion-platform-tabs {
@@ -888,7 +892,19 @@
   background: #ffffff;
 }
 
+[data-theme="light"] .promotion-rate-missing-header strong {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .promotion-rate-missing-summary {
+  color: #8a6d12;
+}
+
 [data-theme="light"] .promotion-row-rate-missing td {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .promotion-gap-summary {
   color: #8a6d12;
 }
 
@@ -902,7 +918,7 @@
 }
 
 [data-theme="light"] .promotion-gap-popup__eyebrow {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .promotion-gap-popup__meta {
@@ -928,7 +944,7 @@
 }
 
 [data-theme="light"] .promotion-gap-reason {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .promotion-gap-toolbar p {
@@ -1054,7 +1070,7 @@
 }
 
 [data-theme="light"] .promotion-channel-badge.is-direct {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .direct-erp-badge.latest {
@@ -1082,7 +1098,7 @@
 }
 
 [data-theme="light"] #directRegionReportTable .direct-region-mission.is-extra {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .settle-grouped-table thead .settle-group-th.settle-group-pay {
@@ -1105,8 +1121,16 @@
   color: var(--muted);
 }
 
+[data-theme="light"] .weekly-call-audit-stale {
+  color: #8a6d12;
+}
+
 [data-theme="light"] .settlement-negative-table td.settlement-negative-net {
   color: #b91c1c;
+}
+
+[data-theme="light"] .settlement-negative-table td.settlement-negative-owe {
+  color: #8a6d12;
 }
 
 [data-theme="light"] .settlement-retro-row--no-unpaid td.settlement-retro-name {
@@ -1118,6 +1142,14 @@
 }
 
 [data-theme="light"] .weekly-call-audit-insight-list {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .weekly-call-audit-delta-warn {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .weekly-call-audit-tag {
   color: #8a6d12;
 }
 
@@ -1134,7 +1166,7 @@
 }
 
 [data-theme="light"] .lease-hero-card--warning .lease-hero-card__value {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-erp-counts {
@@ -1154,7 +1186,7 @@
 }
 
 [data-theme="light"] .lease-erp-summary__item--warning strong {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-erp-summary__item--profit strong {
@@ -1262,7 +1294,7 @@
 }
 
 [data-theme="light"] .lease-dash-tile--warning strong {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-dash-tile--deficit strong {
@@ -1274,7 +1306,7 @@
 }
 
 [data-theme="light"] .lease-dash-tile--cost strong {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-dash-tile--cost em,
@@ -1284,11 +1316,11 @@
 }
 
 [data-theme="light"] .lease-dash-weekly-lease {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-dash-vehicle-row--unpaid td:first-child strong {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-dash-vehicle-row--empty td:first-child strong {
@@ -1324,7 +1356,7 @@
 }
 
 [data-theme="light"] .lease-status-badge--empty {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-status-badge--unpaid {
@@ -1356,7 +1388,7 @@
 }
 
 [data-theme="light"] .lease-week-summary__empty strong {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-weekly-days--rental {
@@ -1364,7 +1396,7 @@
 }
 
 [data-theme="light"] .lease-weekly-days--empty {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-weekly-days--unpaid {
@@ -1402,7 +1434,7 @@
 }
 
 [data-theme="light"] .lease-money--warning {
-  color: #92600a !important;
+  color: #8a6d12 !important;
 }
 
 [data-theme="light"] .lease-status--done {
@@ -1474,15 +1506,15 @@
 }
 
 [data-theme="light"] .lease-filter-btn--empty.active {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-filter-status--empty {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-list-badge--empty {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .lease-list-badge--operating {
@@ -1696,7 +1728,7 @@
 }
 
 [data-theme="light"] .mission-limit-note {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .mission-default-block {
@@ -1786,7 +1818,7 @@
 }
 
 [data-theme="light"] .payroll-notice-pending {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .notice-menu-tab {
@@ -1883,7 +1915,7 @@
 }
 
 [data-theme="light"] .payroll-payslip-group--deduct {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .payroll-payslip-rownum {
@@ -1900,7 +1932,7 @@
 
 [data-theme="light"] .payroll-bulk-preview .text-warning,
 [data-theme="light"] .payroll-upload-card .text-warning {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .payroll-match-issues-head {
@@ -1912,7 +1944,7 @@
 }
 
 [data-theme="light"] .payroll-match-issue-count--warn {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .text-danger {
@@ -1943,6 +1975,10 @@
   border-color: var(--line);
 }
 
+[data-theme="light"] .driver-region-item-name {
+  color: #8a6d12;
+}
+
 [data-theme="light"] .driver-region-item-meta {
   color: var(--muted);
 }
@@ -1956,7 +1992,7 @@
 }
 
 [data-theme="light"] .driver-region-item-default.is-full {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .driver-region-expose {
@@ -1987,11 +2023,11 @@
 }
 
 [data-theme="light"] .driver-region-metric strong {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .driver-region-peak-table__head strong {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .driver-region-rank-panel {
@@ -2004,7 +2040,7 @@
 }
 
 [data-theme="light"] .driver-region-rank-first {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .driver-region-rank__name {
@@ -2032,7 +2068,7 @@
 }
 
 [data-theme="light"] .driver-unassigned-empty {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .driver-unassigned-stale {
@@ -2072,7 +2108,7 @@
 }
 
 [data-theme="light"] .driver-region-crawl-status--assignable {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .driver-region-crawl-status--unregistered {
@@ -2084,7 +2120,7 @@
 }
 
 [data-theme="light"] .driver-org-week-totals {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .driver-scroll-table {
@@ -2097,15 +2133,15 @@
 }
 
 [data-theme="light"] .driver-org-member-panel .driver-org-total-label {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .driver-org-member-panel .driver-org-total-row td {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .driver-org-list-summary {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .driver-org-list-table th,
@@ -2114,7 +2150,7 @@
 }
 
 [data-theme="light"] .driver-org-list-crew-stat--accent strong {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .urgent-mission-amount-input {
@@ -2145,6 +2181,10 @@
   color: var(--muted);
 }
 
+[data-theme="light"] .urgent-mission-card__pay {
+  color: #8a6d12;
+}
+
 [data-theme="light"] .urgent-mission-block__head h3 {
   color: var(--text);
 }
@@ -2162,6 +2202,10 @@
   color: var(--text);
 }
 
+[data-theme="light"] .urgent-mission-status.is-open {
+  color: #8a6d12;
+}
+
 [data-theme="light"] .urgent-mission-status.is-done {
   color: #1d4ed8;
 }
@@ -2176,6 +2220,10 @@
 
 [data-theme="light"] .driver-region-mission-bar {
   background: #eef1f6;
+}
+
+[data-theme="light"] .urgent-mission-in-badge {
+  color: #8a6d12;
 }
 
 [data-theme="light"] .urgent-mission-target-list li {
@@ -2211,6 +2259,10 @@
 
 [data-theme="light"] #payroll-slip-search .driver-payslip-summary-card--net span {
   color: var(--muted);
+}
+
+[data-theme="light"] #payroll-slip-search .driver-payslip-summary-card--net strong {
+  color: #8a6d12;
 }
 
 [data-theme="light"] #payroll-slip-search .driver-payslip-table-block__hint {
@@ -2880,7 +2932,7 @@
 }
 
 [data-theme="light"] .wr-badge--request {
-  color: #92600a;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .wr-badge--approved {
@@ -2991,6 +3043,21 @@
 [data-theme="light"] .section-title,
 [data-theme="light"] legend {
   color: #15181e;
+}
+
+/* 버튼 계열 글자 확정 교정 (배경이 다른 규칙에 있어 자동변환이 틀리는 경우) */
+[data-theme="light"] .primary-btn,
+[data-theme="light"] .small-btn {
+  color: #1a1a1a !important;          /* 노란 버튼 → 어두운 글자 */
+}
+[data-theme="light"] .danger-btn {
+  color: #ffffff !important;          /* 빨간 버튼 → 흰 글자 */
+}
+/* 앰버 태그/배지 가독 (옅은 노랑 위 밝은 노랑 글자 방지) */
+[data-theme="light"] .settlement-call-fee-log-badge {
+  background: #fde4b8 !important;
+  border-color: #e3c159 !important;
+  color: #6f5207 !important;
 }
 
 /* 카드 경계: 연회색 페이지 위에서 틀이 또렷하게 (눈부심 없이 구분) */
