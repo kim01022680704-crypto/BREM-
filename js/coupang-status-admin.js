@@ -710,8 +710,10 @@
         <button type="button" class="dashboard-region-rider" data-dashboard-coupang-rider="${esc(vendorId)}" data-dashboard-coupang-index="${index}">
           <span class="dashboard-region-rider__name">${esc(rider.name)}${idLine}</span>
           <span class="dashboard-region-rider__calls"><b>${esc(n(rider.complete))}</b><small>오늘 콜</small></span>
-          <span class="dashboard-region-rider__rate${acceptClass}"><small>수락</small><b>${esc(coupangRateLabel(rider.acceptRate))}</b></span>
-          <span class="dashboard-region-rider__rate${rejectClass}"><small>거절</small><b>${esc(coupangRateLabel(rider.rejectRate))}</b></span>
+          <span class="dashboard-region-rider__rates">
+            <span class="dashboard-region-rider__rate${acceptClass}"><small>수락</small><b>${esc(coupangRateLabel(rider.acceptRate))}</b></span>
+            <span class="dashboard-region-rider__rate${rejectClass}"><small>거절</small><b>${esc(coupangRateLabel(rider.rejectRate))}</b></span>
+          </span>
           <span class="dashboard-region-rider__go">상세</span>
         </button>
       </li>`;

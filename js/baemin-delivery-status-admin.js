@@ -6560,8 +6560,10 @@
         <button type="button" class="dashboard-region-rider" data-dashboard-rider-partner="${escapeHtml(partnerId)}" data-dashboard-rider-index="${index}">
           <span class="dashboard-region-rider__name">${escapeHtml(rider.name)}${idLine}</span>
           <span class="dashboard-region-rider__calls"><b>${escapeHtml(formatNumber(rider.complete))}</b><small>오늘 콜</small></span>
-          <span class="dashboard-region-rider__rate${acceptClass}"><small>수락</small><b>${escapeHtml(accept)}</b></span>
-          <span class="dashboard-region-rider__rate${rejectClass}"><small>거절</small><b>${escapeHtml(reject)}</b></span>
+          <span class="dashboard-region-rider__rates">
+            <span class="dashboard-region-rider__rate${acceptClass}"><small>수락</small><b>${escapeHtml(accept)}</b></span>
+            <span class="dashboard-region-rider__rate${rejectClass}"><small>거절</small><b>${escapeHtml(reject)}</b></span>
+          </span>
           <span class="dashboard-region-rider__go">상세</span>
         </button>
       </li>`;

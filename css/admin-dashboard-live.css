@@ -1189,8 +1189,8 @@ body.dashboard-week-modal-open {
 
 #dashboard .dashboard-region-rider {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) auto auto auto auto;
-  gap: 8px 12px;
+  grid-template-columns: minmax(0, 1.4fr) auto auto auto;
+  gap: 8px 14px;
   align-items: center;
   width: 100%;
   min-height: 64px;
@@ -1201,6 +1201,12 @@ body.dashboard-week-modal-open {
   color: #f4f4f5;
   text-align: left;
   cursor: pointer;
+}
+
+#dashboard .dashboard-region-rider__rates {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 #dashboard .dashboard-region-rider:hover,
@@ -1290,12 +1296,64 @@ body.dashboard-week-modal-open {
   padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
 
-#dashboard.dashboard-fit .dashboard-region-rider {
-  grid-template-columns: minmax(0, 1fr) auto;
+#dashboard.dashboard-fit .dashboard-region-riders {
+  gap: 6px;
 }
 
-#dashboard.dashboard-fit .dashboard-region-rider__calls,
-#dashboard.dashboard-fit .dashboard-region-rider__rate,
+#dashboard.dashboard-fit .dashboard-region-rider {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name  calls"
+    "rates go";
+  column-gap: 12px;
+  row-gap: 8px;
+  min-height: 0;
+  padding: 11px 14px;
+}
+
+#dashboard.dashboard-fit .dashboard-region-rider__name {
+  grid-area: name;
+  align-self: center;
+}
+
+#dashboard.dashboard-fit .dashboard-region-rider__calls {
+  grid-area: calls;
+  flex-direction: row;
+  align-items: baseline;
+  align-self: center;
+  justify-self: end;
+  gap: 5px;
+}
+
+#dashboard.dashboard-fit .dashboard-region-rider__calls b {
+  font-size: 1.15rem;
+}
+
+#dashboard.dashboard-fit .dashboard-region-rider__rates {
+  grid-area: rates;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#dashboard.dashboard-fit .dashboard-region-rider__rate {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+#dashboard.dashboard-fit .dashboard-region-rider__rate small {
+  font-size: 0.72rem;
+}
+
+#dashboard.dashboard-fit .dashboard-region-rider__rate b {
+  font-size: 0.86rem;
+}
+
 #dashboard.dashboard-fit .dashboard-region-rider__go {
+  grid-area: go;
+  align-self: center;
   justify-self: end;
 }
