@@ -21,6 +21,10 @@
   color: var(--muted);
 }
 
+[data-theme="light"] .contribution-region-group__head span {
+  color: #92600a;
+}
+
 [data-theme="light"] .contribution-progress-section__head span {
   color: var(--muted);
 }
@@ -224,6 +228,14 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] .calendar-weekdays span:first-child {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .calendar-weekdays span:last-child {
+  color: #1d4ed8;
+}
+
 [data-theme="light"] .calendar-day:hover {
   background: #eef1f6;
 }
@@ -264,6 +276,10 @@
   background: #ffffff;
 }
 
+[data-theme="light"] .settlement-coupang-id {
+  color: #1d4ed8;
+}
+
 [data-theme="light"] .settlement-coupang-id--none {
   border-color: var(--line);
   color: var(--muted);
@@ -275,12 +291,37 @@
   color: var(--text);
 }
 
+[data-theme="light"] .baemin-collect-result--error {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .baemin-collect-result--success {
+  color: #15803d;
+}
+
 [data-theme="light"] .baemin-rider-day-results__item {
   background: #eef1f6;
 }
 
+[data-theme="light"] .baemin-rider-day-results__item--ok .baemin-rider-day-results__status {
+  color: #15803d;
+}
+
+[data-theme="light"] .baemin-rider-day-results__item--missing .baemin-rider-day-results__status,
+[data-theme="light"] .baemin-rider-day-results__item--failed .baemin-rider-day-results__status {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .baemin-rider-day-results__item--empty .baemin-rider-day-results__status {
+  color: #92600a;
+}
+
 [data-theme="light"] .baemin-rider-day-results__meta {
   color: var(--muted);
+}
+
+[data-theme="light"] .form-help--warn {
+  color: #92600a;
 }
 
 [data-theme="light"] .baemin-json-dialog {
@@ -289,6 +330,22 @@
 
 [data-theme="light"] .baemin-json-dialog::backdrop {
   background: #e4e8ee;
+}
+
+[data-theme="light"] .baemin-session-status--ok {
+  color: #15803d;
+}
+
+[data-theme="light"] .baemin-session-status--warn {
+  color: #92600a;
+}
+
+[data-theme="light"] .baemin-session-status--error {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .baemin-auto-collect-panel--paused {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .baemin-auto-collect-grid dt {
@@ -316,6 +373,14 @@
   color: var(--text);
 }
 
+[data-theme="light"] .baemin-menu-collect-status--success {
+  color: #15803d;
+}
+
+[data-theme="light"] .baemin-menu-collect-status--failed {
+  color: #b91c1c;
+}
+
 [data-theme="light"] .baemin-menu-collect-status--idle {
   color: var(--text);
 }
@@ -328,8 +393,24 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] .baemin-coverage-table tr.is-missing td {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .baemin-coverage-table tr.is-ok td.status-ok {
+  color: #15803d;
+}
+
+[data-theme="light"] .baemin-coverage-table .status-missing {
+  color: #b91c1c;
+}
+
 [data-theme="light"] .baemin-table-scroll .baemin-data-table thead th {
   background: #eef1f6;
+}
+
+[data-theme="light"] .baemin-view-hero__title {
+  color: #92600a;
 }
 
 [data-theme="light"] .baemin-view-hero__desc {
@@ -338,6 +419,17 @@
 
 [data-theme="light"] .baemin-view-hero__desc code {
   background: #e4e8ee;
+  color: #92600a;
+}
+
+[data-theme="light"] .baemin-view-status-badge.baemin-applied-banner--ok,
+[data-theme="light"] .baemin-view-status-badge.baemin-view-status-badge--ok {
+  color: #15803d;
+}
+
+[data-theme="light"] .baemin-view-status-badge.baemin-applied-banner--warn,
+[data-theme="light"] .baemin-view-status-badge.baemin-view-status-badge--warn {
+  color: #92600a;
 }
 
 [data-theme="light"] .baemin-field__label {
@@ -353,12 +445,20 @@
   color: var(--text);
 }
 
+[data-theme="light"] .baemin-partner-map-table__region {
+  color: #92600a;
+}
+
 [data-theme="light"] .baemin-partner-map-table__dp {
   color: var(--text);
 }
 
 [data-theme="light"] .baemin-partner-map-table__actions button {
   color: var(--muted);
+}
+
+[data-theme="light"] .baemin-partner-map-table__actions button:hover {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .baemin-view-nav {
@@ -375,12 +475,40 @@
   color: var(--text);
 }
 
+[data-theme="light"] .baemin-region-tabs .baemin-region-tab.is-active {
+  color: #92600a;
+}
+
+[data-theme="light"] .dashboard-baemin-applied-time {
+  color: #92600a;
+}
+
 [data-theme="light"] .dashboard-baemin-queried-at {
   color: var(--muted);
 }
 
+[data-theme="light"] .dashboard-baemin-live-card.is-soft-refreshing .dashboard-baemin-queried-at {
+  color: #92600a;
+}
+
+[data-theme="light"] .dashboard-baemin-week-block__head h3 {
+  color: #92600a;
+}
+
+[data-theme="light"] .dashboard-baemin-compact-table th {
+  color: #92600a;
+}
+
+[data-theme="light"] .dashboard-baemin-region-name {
+  color: #92600a;
+}
+
 [data-theme="light"] .dashboard-baemin-region-meta {
   color: var(--muted);
+}
+
+[data-theme="light"] .baemin-grand-totals__percent--missed {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .baemin-view-week__date,
@@ -401,8 +529,16 @@
   background: #e4e8ee;
 }
 
+[data-theme="light"] .baemin-partner-map-chip strong {
+  color: #92600a;
+}
+
 [data-theme="light"] .baemin-partner-map-chip button {
   color: var(--muted);
+}
+
+[data-theme="light"] .baemin-partner-map-chip button:hover {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .baemin-view-meta__item {
@@ -412,6 +548,10 @@
 
 [data-theme="light"] .baemin-view-meta__label {
   color: var(--text);
+}
+
+[data-theme="light"] .baemin-view-meta__value--accent {
+  color: #92600a;
 }
 
 [data-theme="light"] .baemin-view-refresh-meta {
@@ -435,6 +575,10 @@
   color: var(--muted);
 }
 
+[data-theme="light"] .baemin-grand-totals__value--accent {
+  color: #1d4ed8;
+}
+
 [data-theme="light"] .admin-account-baemin-item {
   border-color: var(--line);
   background: #e4e8ee;
@@ -442,6 +586,19 @@
 
 [data-theme="light"] .baemin-grand-totals__percent {
   color: var(--muted);
+}
+
+[data-theme="light"] .baemin-grand-totals__percent--over,
+[data-theme="light"] .baemin-quota-cell__percent--over {
+  color: #92600a;
+}
+
+[data-theme="light"] .baemin-quota-cell__percent--missed {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .baemin-view-setcount__field .baemin-field__label {
+  color: #92600a;
 }
 
 [data-theme="light"] .baemin-menu-tabs--buttons .promotion-tab {
@@ -478,6 +635,15 @@
   background: #e4e8ee;
 }
 
+[data-theme="light"] .baemin-partner-tab-bar .promotion-tab.is-contaminated {
+  color: #92600a;
+}
+
+[data-theme="light"] .settlement-preview-table.unmatched td:first-child,
+[data-theme="light"] .settlement-preview-table.unmatched td:nth-child(2) {
+  color: #b91c1c;
+}
+
 [data-theme="light"] .mini-week-table {
   background: #ffffff;
 }
@@ -489,6 +655,18 @@
 [data-theme="light"] .primary-btn,
 [data-theme="light"] .small-btn {
   color: #1a1a1a;
+}
+
+[data-theme="light"] .rejection-erp-publish-status {
+  color: #92600a;
+}
+
+[data-theme="light"] .platform-tag--coupang {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .platform-tag--baemin {
+  color: #15803d;
 }
 
 [data-theme="light"] .bar {
@@ -504,6 +682,26 @@
 [data-theme="light"] .bike-row,
 [data-theme="light"] .mission-item {
   background: #ffffff;
+}
+
+[data-theme="light"] .inquiry-badge--new {
+  color: #92600a;
+}
+
+[data-theme="light"] .inquiry-badge--read {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .inquiry-badge--done {
+  color: #15803d;
+}
+
+[data-theme="light"] .inquiry-badge--ack {
+  color: #92600a;
+}
+
+[data-theme="light"] .inquiry-typing {
+  color: #92600a;
 }
 
 [data-theme="light"] .inquiry-reply-preview {
@@ -532,6 +730,11 @@
 
 [data-theme="light"] .admin-migration-banner {
   background: #e4e8ee;
+  color: #b91c1c;
+}
+
+[data-theme="light"] .admin-migration-banner code {
+  color: #92600a;
 }
 
 [data-theme="light"] .dashboard-table .dashboard-cell-phone {
@@ -581,6 +784,42 @@
 [data-theme="light"] .bulk-guide-table th,
 [data-theme="light"] .bulk-preview-table th {
   background: #e4e8ee;
+}
+
+[data-theme="light"] .bulk-guide-table .req {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .bulk-preview-subtitle--warn {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .bulk-preview-subtitle--warn strong {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .bulk-preview-table--unmatched tr.row-error td {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .bulk-preview-stats .ok strong {
+  color: #15803d;
+}
+
+[data-theme="light"] .bulk-preview-stats .err strong {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .bulk-result-ok {
+  color: #15803d;
+}
+
+[data-theme="light"] .bulk-result-err {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .bulk-result-warn {
+  color: #92600a;
 }
 
 [data-theme="light"] .promotion-platform-tabs {
@@ -633,6 +872,14 @@
   background: #d8dfe9;
 }
 
+[data-theme="light"] .promotion-sla-tag {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .promotion-assigned-tag {
+  color: #15803d;
+}
+
 [data-theme="light"] .promotion-global-rule-pickers {
   background: #ffffff;
 }
@@ -644,6 +891,10 @@
 [data-theme="light"] .promotion-gap-popup__dialog {
   border-color: var(--line);
   background: #e4e8ee;
+}
+
+[data-theme="light"] .promotion-gap-popup__eyebrow {
+  color: #92600a;
 }
 
 [data-theme="light"] .promotion-gap-popup__meta {
@@ -668,8 +919,16 @@
   color: var(--muted);
 }
 
+[data-theme="light"] .promotion-gap-reason {
+  color: #92600a;
+}
+
 [data-theme="light"] .promotion-gap-toolbar p {
   color: var(--muted);
+}
+
+[data-theme="light"] .promotion-gap-default-hint {
+  color: var(--text);
 }
 
 [data-theme="light"] .promotion-condition-row {
@@ -713,8 +972,32 @@
   background: #fbefc6;
 }
 
+[data-theme="light"] .weekly-id-tag {
+  color: #1d4ed8;
+}
+
 [data-theme="light"] .promotion-channel-badge.is-bro {
   border-color: var(--line);
+}
+
+[data-theme="light"] .promotion-channel-badge.is-direct {
+  color: #92600a;
+}
+
+[data-theme="light"] .direct-erp-badge.latest {
+  color: #15803d;
+}
+
+[data-theme="light"] tr.direct-registry-active > td:first-child {
+  color: #15803d;
+}
+
+[data-theme="light"] .direct-region-gap {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .direct-region-ok {
+  color: #15803d;
 }
 
 [data-theme="light"] #directRegionReportTable thead th {
@@ -725,8 +1008,20 @@
   border-color: var(--line);
 }
 
+[data-theme="light"] #directRegionReportTable .direct-region-mission.is-extra {
+  color: #92600a;
+}
+
+[data-theme="light"] .settle-grouped-table thead .settle-group-th.settle-group-pay {
+  color: #15803d;
+}
+
 [data-theme="light"] .tax-management-week-platform {
   color: var(--muted);
+}
+
+[data-theme="light"] .direct-erp-preview-ok {
+  color: #15803d;
 }
 
 [data-theme="light"] .direct-erp-notin-row {
@@ -735,6 +1030,10 @@
 
 [data-theme="light"] .muted-inline {
   color: var(--muted);
+}
+
+[data-theme="light"] .settlement-negative-table td.settlement-negative-net {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .settlement-retro-row--no-unpaid td.settlement-retro-name {
@@ -753,6 +1052,14 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] .lease-hero-card--profit .lease-hero-card__value {
+  color: #15803d;
+}
+
+[data-theme="light"] .lease-hero-card--warning .lease-hero-card__value {
+  color: #92600a;
+}
+
 [data-theme="light"] .lease-erp-counts {
   background: #ffffff;
 }
@@ -761,8 +1068,20 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] .lease-period-card__profit {
+  color: #15803d;
+}
+
 [data-theme="light"] .lease-erp-summary {
   background: #ffffff;
+}
+
+[data-theme="light"] .lease-erp-summary__item--warning strong {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-erp-summary__item--profit strong {
+  color: #15803d;
 }
 
 [data-theme="light"] .lease-form-section {
@@ -781,6 +1100,26 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] .bulk-match-ok--new {
+  color: #15803d;
+}
+
+[data-theme="light"] .bulk-match-ok {
+  color: #15803d;
+}
+
+[data-theme="light"] .bulk-match-miss {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .lease-profit-result__label {
+  color: #15803d;
+}
+
+[data-theme="light"] .lease-profit-result__value {
+  color: #15803d;
+}
+
 [data-theme="light"] .lease-profit-result__breakdown > div {
   background: #e4e8ee;
 }
@@ -793,8 +1132,36 @@
   background: #ffffff;
 }
 
+[data-theme="light"] .lease-erp-nav__btn.active {
+  color: #15803d;
+}
+
+[data-theme="light"] .lease-erp-unsaved-banner__text strong {
+  color: #92600a;
+}
+
 [data-theme="light"] .lease-save-status {
   color: var(--text);
+}
+
+[data-theme="light"] .lease-save-status--warn {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-save-status--busy {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-save-status--done {
+  color: #15803d;
+}
+
+[data-theme="light"] .lease-save-status--error {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .lease-unsaved-hint {
+  color: #92600a;
 }
 
 [data-theme="light"] .lease-dash-tile {
@@ -813,14 +1180,50 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] .lease-dash-tile--profit strong {
+  color: #15803d;
+}
+
+[data-theme="light"] .lease-dash-tile--warning strong {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-dash-tile--deficit strong {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .lease-dash-tile--success strong {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-dash-tile--cost strong {
+  color: #92600a;
+}
+
 [data-theme="light"] .lease-dash-tile--cost em,
 [data-theme="light"] .lease-dash-tile--warning em,
 [data-theme="light"] .lease-dash-tile--profit em {
   color: var(--muted);
 }
 
+[data-theme="light"] .lease-dash-weekly-lease {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-dash-vehicle-row--unpaid td:first-child strong {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-dash-vehicle-row--empty td:first-child strong {
+  color: #92600a;
+}
+
 [data-theme="light"] .lease-model-type-chip {
   background: #eef1f6;
+}
+
+[data-theme="light"] .lease-model-type-chip__remove {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .lease-form-grid select {
@@ -831,12 +1234,64 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] .lease-lessee-panel__title {
+  color: #15803d;
+}
+
+[data-theme="light"] .lease-cost-preview-grid dd {
+  color: #15803d;
+}
+
+[data-theme="light"] .lease-status-badge--operating {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-status-badge--empty {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-status-badge--unpaid {
+  color: #b91c1c;
+}
+
 [data-theme="light"] .lease-status-badge--ended {
   color: var(--muted);
 }
 
+[data-theme="light"] .lease-status-badge--expiring {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-status-badge--scheduled {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-status-badge--collecting {
+  color: #15803d;
+}
+
 [data-theme="light"] .lease-week-summary article {
   background: #eef1f6;
+}
+
+[data-theme="light"] .lease-week-summary__operating strong {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-week-summary__empty strong {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-weekly-days--rental {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-weekly-days--empty {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-weekly-days--unpaid {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .lease-submenu {
@@ -851,10 +1306,52 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] .lease-calc-status--deficit {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .lease-calc-status--profit {
+  color: #15803d;
+}
+
+[data-theme="light"] .lease-money--deficit,
+[data-theme="light"] .lease-money--deficit strong {
+  color: #b91c1c !important;
+}
+
+[data-theme="light"] .lease-money--profit,
+[data-theme="light"] .lease-money--profit strong {
+  color: #15803d !important;
+}
+
+[data-theme="light"] .lease-money--warning {
+  color: #92600a !important;
+}
+
+[data-theme="light"] .lease-status--done {
+  color: #15803d;
+}
+
+[data-theme="light"] .lease-deduct-start-warn {
+  color: #b91c1c !important;
+}
+
+[data-theme="light"] .lease-status--collecting {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-status--unpaid {
+  color: #b91c1c;
+}
+
 [data-theme="light"] .lease-deduction-tab {
   border-color: var(--line);
   background: #e4e8ee;
   color: var(--text);
+}
+
+[data-theme="light"] .lease-payment-week-cell {
+  color: #92600a;
 }
 
 [data-theme="light"] .lease-month-summary article {
@@ -874,6 +1371,14 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] .lease-filter-btn--lease.active {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-filter-btn--rental.active {
+  color: #92600a;
+}
+
 [data-theme="light"] .lease-filter-btn[data-lease-filter="all"].active {
   border-color: var(--line);
   background: #e4e8ee;
@@ -881,6 +1386,42 @@
 
 [data-theme="light"] .lease-filter-status {
   background: #eef1f6;
+}
+
+[data-theme="light"] .lease-filter-status--lease {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-filter-status--rental {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-filter-btn--empty.active {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-filter-status--empty {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-list-badge--empty {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-list-badge--operating {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-sub-rental {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-sub-rental-pending {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-rent-split br + * {
+  color: #92600a;
 }
 
 [data-theme="light"] .lease-rental-modal__backdrop {
@@ -934,6 +1475,22 @@
   border-color: var(--line);
 }
 
+[data-theme="light"] .lease-type-option input:checked + .lease-type-chip--lease {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-type-option input:checked + .lease-type-chip--lease .lease-type-chip__mark {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-type-option input:checked + .lease-type-chip--rental {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-type-option input:checked + .lease-type-chip--rental .lease-type-chip__mark {
+  color: #92600a;
+}
+
 [data-theme="light"] .lease-type-option input:checked + .lease-type-chip--manual {
   border-color: var(--line);
   color: var(--muted);
@@ -943,8 +1500,40 @@
   color: var(--text);
 }
 
+[data-theme="light"] .lease-type-option input:checked + .lease-type-chip--erp {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .lease-type-option input:checked + .lease-type-chip--erp .lease-type-chip__mark {
+  color: #8a6d12;
+}
+
 [data-theme="light"] .lease-arrear-manual-register {
   background: #eef1f6;
+}
+
+[data-theme="light"] .lease-list-badge--lease {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-list-badge--lease .lease-list-badge__mark {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-list-badge--rental {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-list-badge--rental .lease-list-badge__mark {
+  color: #92600a;
+}
+
+[data-theme="light"] .lease-type-badge--lease {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .lease-type-badge--rental {
+  color: #92600a;
 }
 
 [data-theme="light"] .lease-form-grid input,
@@ -977,6 +1566,10 @@
   background: #e4e8ee;
 }
 
+[data-theme="light"] #leaseContractVehicleSearch::placeholder {
+  color: #1d4ed8;
+}
+
 [data-theme="light"] .revenue-period-btn,
 [data-theme="light"] .revenue-sub-btn {
   background: #eef1f6;
@@ -988,12 +1581,25 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] .revenue-period-btn.active,
+[data-theme="light"] .revenue-sub-btn.active {
+  color: #1d4ed8;
+}
+
 [data-theme="light"] .revenue-summary-week-row {
   background: #eef1f6;
 }
 
 [data-theme="light"] .revenue-income-fieldset {
   background: #eef1f6;
+}
+
+[data-theme="light"] .revenue-net-positive {
+  color: #15803d !important;
+}
+
+[data-theme="light"] .revenue-net-negative {
+  color: #b91c1c !important;
 }
 
 [data-theme="light"] .mission-catalog-item {
@@ -1008,8 +1614,16 @@
   color: var(--text);
 }
 
+[data-theme="light"] .mission-limit-note {
+  color: #92600a;
+}
+
 [data-theme="light"] .mission-default-block {
   border-color: var(--line);
+}
+
+[data-theme="light"] .mission-custom-badge {
+  color: #92600a;
 }
 
 [data-theme="light"] .mission-subnav-link {
@@ -1033,8 +1647,16 @@
   color: var(--muted);
 }
 
+[data-theme="light"] .mission-platform-badge--coupang {
+  color: #b91c1c;
+}
+
 [data-theme="light"] .mission-id-code {
   color: var(--text);
+}
+
+[data-theme="light"] .badge--success {
+  color: #15803d;
 }
 
 [data-theme="light"] .badge--muted {
@@ -1073,6 +1695,14 @@
   background: #ffffff;
 }
 
+[data-theme="light"] .payroll-notice-published {
+  color: #15803d;
+}
+
+[data-theme="light"] .payroll-notice-pending {
+  color: #92600a;
+}
+
 [data-theme="light"] .notice-menu-tab {
   background: #ffffff;
 }
@@ -1089,14 +1719,34 @@
   background: #ffffff;
 }
 
+[data-theme="light"] .payroll-week-finalize-period {
+  color: #b91c1c;
+}
+
 [data-theme="light"] .payroll-week-finalize-badge {
   border-color: var(--line);
   color: var(--text);
 }
 
+[data-theme="light"] .payroll-week-finalize-badge.is-finalized {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .payroll-withdrawal-pause-badge {
+  color: #15803d;
+}
+
+[data-theme="light"] .payroll-withdrawal-pause-badge.is-paused {
+  color: #92600a;
+}
+
 [data-theme="light"] .payroll-inline-money {
   border-color: var(--line);
   background: #e4e8ee;
+}
+
+[data-theme="light"] .payroll-payslip-daily {
+  color: #1d4ed8;
 }
 
 [data-theme="light"] .payroll-daily-region-tag-remove {
@@ -1105,6 +1755,10 @@
 
 [data-theme="light"] .payroll-daily-region-chip {
   border-color: var(--line);
+}
+
+[data-theme="light"] .payroll-daily-region-chip span {
+  color: #1d4ed8;
 }
 
 [data-theme="light"] .payroll-daily-region-detail {
@@ -1125,6 +1779,11 @@
   background: #e4e8ee;
 }
 
+[data-theme="light"] .payroll-daily-platform-pill input:checked + span,
+[data-theme="light"] .payroll-daily-platform-pill:has(input:checked) {
+  color: #1d4ed8;
+}
+
 [data-theme="light"] .payroll-payslip-wrap {
   background: #e4e8ee;
 }
@@ -1133,12 +1792,55 @@
   background: #ffffff;
 }
 
+[data-theme="light"] .payroll-payslip-group--pay {
+  color: #15803d;
+}
+
+[data-theme="light"] .payroll-payslip-group--deduct {
+  color: #92600a;
+}
+
 [data-theme="light"] .payroll-payslip-rownum {
   background: #ffffff;
 }
 
+[data-theme="light"] .payroll-payslip-diff {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .payroll-payslip-bulk {
+  color: #15803d;
+}
+
+[data-theme="light"] .payroll-bulk-preview .text-warning,
+[data-theme="light"] .payroll-upload-card .text-warning {
+  color: #92600a;
+}
+
 [data-theme="light"] .payroll-match-issues-head {
   background: #ffffff;
+}
+
+[data-theme="light"] .payroll-match-issue-count {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .payroll-match-issue-count--warn {
+  color: #92600a;
+}
+
+[data-theme="light"] .text-danger {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .payroll-bulk-preview .text-success,
+[data-theme="light"] .payroll-upload-card .text-success {
+  color: #15803d;
+}
+
+[data-theme="light"] .payroll-bulk-preview .text-danger,
+[data-theme="light"] .payroll-upload-card .text-danger {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .driver-org-region-checks {
@@ -1165,6 +1867,10 @@
 
 [data-theme="light"] .driver-region-item-default {
   color: var(--muted);
+}
+
+[data-theme="light"] .driver-region-item-default.is-full {
+  color: #92600a;
 }
 
 [data-theme="light"] .driver-region-expose {
@@ -1194,6 +1900,14 @@
   color: var(--muted);
 }
 
+[data-theme="light"] .driver-region-metric strong {
+  color: #92600a;
+}
+
+[data-theme="light"] .driver-region-peak-table__head strong {
+  color: #92600a;
+}
+
 [data-theme="light"] .driver-region-rank-panel {
   border-color: var(--line);
   background: #e4e8ee;
@@ -1201,6 +1915,10 @@
 
 [data-theme="light"] .driver-region-rank-panel__head h4 {
   color: var(--text);
+}
+
+[data-theme="light"] .driver-region-rank-first {
+  color: #92600a;
 }
 
 [data-theme="light"] .driver-region-rank__name {
@@ -1215,12 +1933,24 @@
   color: var(--muted);
 }
 
+[data-theme="light"] .driver-region-erp-id {
+  color: #1d4ed8;
+}
+
 [data-theme="light"] .driver-region-default-mode__label {
   color: var(--muted);
 }
 
 [data-theme="light"] .driver-region-list-filter__meta {
   color: var(--muted);
+}
+
+[data-theme="light"] .driver-unassigned-empty {
+  color: #92600a;
+}
+
+[data-theme="light"] .driver-unassigned-stale {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .driver-unassigned-na {
@@ -1243,8 +1973,32 @@
   color: var(--muted);
 }
 
+[data-theme="light"] .driver-region-bulk-fail {
+  color: #b91c1c;
+}
+
+[data-theme="light"] .driver-region-bulk-ok {
+  color: #15803d;
+}
+
+[data-theme="light"] .driver-region-crawl-status--already {
+  color: #15803d;
+}
+
+[data-theme="light"] .driver-region-crawl-status--assignable {
+  color: #92600a;
+}
+
+[data-theme="light"] .driver-region-crawl-status--unregistered {
+  color: #b91c1c;
+}
+
 [data-theme="light"] .driver-region-crawl-search {
   background: #e4e8ee;
+}
+
+[data-theme="light"] .driver-org-week-totals {
+  color: #92600a;
 }
 
 [data-theme="light"] .driver-scroll-table {
@@ -1256,9 +2010,25 @@
   color: var(--text);
 }
 
+[data-theme="light"] .driver-org-member-panel .driver-org-total-label {
+  color: #92600a;
+}
+
+[data-theme="light"] .driver-org-member-panel .driver-org-total-row td {
+  color: #92600a;
+}
+
+[data-theme="light"] .driver-org-list-summary {
+  color: #92600a;
+}
+
 [data-theme="light"] .driver-org-list-table th,
 [data-theme="light"] .driver-org-list-table td {
   color: var(--text);
+}
+
+[data-theme="light"] .driver-org-list-crew-stat--accent strong {
+  color: #92600a;
 }
 
 [data-theme="light"] .urgent-mission-amount-input {
@@ -1270,6 +2040,14 @@
   border-color: var(--line);
   background: #eef1f6;
   color: var(--text);
+}
+
+[data-theme="light"] .urgent-mission-chip input:checked + span {
+  color: #15803d;
+}
+
+[data-theme="light"] .urgent-mission-chip--coupang input:checked + span {
+  color: #92600a;
 }
 
 [data-theme="light"] .urgent-mission-card {
@@ -1285,13 +2063,29 @@
   color: var(--text);
 }
 
+[data-theme="light"] .urgent-mission-tag--baemin {
+  color: #15803d;
+}
+
+[data-theme="light"] .urgent-mission-tag--coupang {
+  color: #92600a;
+}
+
 [data-theme="light"] .urgent-mission-status {
   background: #d8dfe9;
   color: var(--text);
 }
 
+[data-theme="light"] .urgent-mission-status.is-done {
+  color: #1d4ed8;
+}
+
 [data-theme="light"] .urgent-mission-status.is-closed {
   color: var(--muted);
+}
+
+[data-theme="light"] .danger-btn {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .driver-region-mission-bar {
@@ -1300,6 +2094,10 @@
 
 [data-theme="light"] .urgent-mission-target-list li {
   background: #eef1f6;
+}
+
+[data-theme="light"] .urgent-mission-selected-chips span {
+  color: #92600a;
 }
 
 [data-theme="light"] .urgent-mission-selected-chips small {
@@ -1365,6 +2163,10 @@
 
 [data-theme="light"] .call-fee-setup-dialog__summary {
   background: #e4e8ee;
+}
+
+[data-theme="light"] .call-fee-setup-dialog__error {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .inactive-drivers-week-tilde {
@@ -1436,6 +2238,14 @@
   color: var(--muted);
 }
 
+[data-theme="light"] #dashboard .dashboard-baemin-qcell .baemin-quota-cell__percent {
+  color: #b91c1c;
+}
+
+[data-theme="light"] #dashboard .dashboard-baemin-qcell.is-achieved .baemin-quota-cell__percent {
+  color: #15803d;
+}
+
 [data-theme="light"] #dashboard .dashboard-baemin-qcell.is-empty .baemin-quota-cell__percent {
   color: var(--muted);
 }
@@ -1467,6 +2277,10 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] #dashboard .dashboard-baemin-compact-table thead th.is-current {
+  color: #8a6d12;
+}
+
 [data-theme="light"] #dashboard .dashboard-baemin-compact-table th em {
   color: #8a6d12;
 }
@@ -1487,6 +2301,14 @@
   color: var(--text);
 }
 
+[data-theme="light"] #dashboard .dashboard-baemin-qcell.is-near .baemin-quota-cell__percent {
+  color: #92600a;
+}
+
+[data-theme="light"] #dashboard .dashboard-baemin-qcell.is-achieved .baemin-quota-cell__percent {
+  color: #15803d;
+}
+
 [data-theme="light"] #dashboard .dashboard-baemin-week-block {
   border-top-color: var(--line);
 }
@@ -1494,6 +2316,14 @@
 [data-theme="light"] #dashboard .dashboard-baemin-week-region-tabs .baemin-region-tab {
   border-color: var(--line);
   color: var(--muted);
+}
+
+[data-theme="light"] #dashboard .dashboard-baemin-week-region-tabs .baemin-region-tab.is-active {
+  color: #8a6d12;
+}
+
+[data-theme="light"] #dashboard .dashboard-slot-legend span.is-current {
+  color: #8a6d12;
 }
 
 [data-theme="light"] #dashboard .dashboard-baemin-compact-table th:first-child,
@@ -1606,6 +2436,10 @@
   color: var(--muted);
 }
 
+[data-theme="light"] #dashboard .dashboard-week-sim__table tr.is-miss td {
+  color: #b91c1c;
+}
+
 [data-theme="light"] #dashboard .dashboard-week-sim__table tr.is-limit td:first-child {
   color: #8a6d12;
 }
@@ -1688,6 +2522,14 @@
   color: #8a6d12;
 }
 
+[data-theme="light"] #dashboard .dashboard-region-rider__rate.is-good b {
+  color: #15803d;
+}
+
+[data-theme="light"] #dashboard .dashboard-region-rider__rate.is-bad b {
+  color: #b91c1c;
+}
+
 [data-theme="light"] #dashboard .dashboard-region-rider__go {
   color: #8a6d12;
 }
@@ -1716,6 +2558,10 @@
   color: var(--text);
 }
 
+[data-theme="light"] .sa-chip em {
+  color: #1d4ed8;
+}
+
 [data-theme="light"] .sa-chip span {
   color: var(--muted);
 }
@@ -1727,6 +2573,10 @@
 
 [data-theme="light"] .sa-bundle-card span {
   color: var(--muted);
+}
+
+[data-theme="light"] .sa-bundle-card button {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .sa-select,
@@ -1788,6 +2638,14 @@
 
 [data-theme="light"] .sa-band small {
   color: var(--muted);
+}
+
+[data-theme="light"] .sa-ratio--up {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .sa-ratio--down {
+  color: #b91c1c;
 }
 
 [data-theme="light"] .sa-rank {
@@ -1931,6 +2789,22 @@
   color: var(--muted);
 }
 
+[data-theme="light"] .wr-badge--request {
+  color: #92600a;
+}
+
+[data-theme="light"] .wr-badge--approved {
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .wr-badge--done {
+  color: #15803d;
+}
+
+[data-theme="light"] .wr-badge--rejected {
+  color: #b91c1c;
+}
+
 [data-theme="light"] .wr-tag {
   color: var(--text);
 }
@@ -1947,8 +2821,16 @@
   color: var(--muted);
 }
 
+[data-theme="light"] .wr-btn--reject {
+  color: #b91c1c;
+}
+
 [data-theme="light"] .wr-empty {
   color: var(--muted);
+}
+
+[data-theme="light"] .wr-requester {
+  color: var(--text);
 }
 
 [data-theme="light"] .wr-form .field > span {
