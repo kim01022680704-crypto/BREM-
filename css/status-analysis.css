@@ -71,7 +71,7 @@
   border: 1px solid rgba(255, 212, 0, .5);
   border-radius: 10px;
   background: linear-gradient(180deg, rgba(255,212,0,.16), rgba(255,212,0,.04));
-  color: var(--yellow, #ffd400);
+  color: var(--accent-ink);
   font-size: 0.84rem;
   font-weight: 800;
   cursor: pointer;
@@ -106,7 +106,7 @@
 .sa-chip.is-on {
   border-color: var(--yellow, #ffd400);
   background: rgba(255, 212, 0, .14);
-  color: var(--yellow, #ffd400);
+  color: var(--accent-ink);
 }
 .sa-bundle-form {
   display: flex;
@@ -126,7 +126,7 @@
   border-radius: 12px;
   background: #1b1b1b;
 }
-.sa-bundle-card strong { color: var(--yellow, #ffd400); }
+.sa-bundle-card strong { color: var(--accent-ink); }
 .sa-bundle-card span { color: var(--muted, #a1a1aa); font-size: 0.8rem; }
 .sa-bundle-card button {
   margin-left: auto;
@@ -243,7 +243,7 @@
 
 .sa-kpi__label { color: var(--muted, #a1a1aa); font-size: 0.76rem; font-weight: 600; }
 .sa-kpi__value { color: var(--text, #fff); font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-.sa-kpi--accent .sa-kpi__value { color: var(--yellow, #ffd400); }
+.sa-kpi--accent .sa-kpi__value { color: var(--accent-ink); }
 .sa-kpi__hint { color: #6b6b73; font-size: 0.7rem; }
 
 /* 지역 블록 */
@@ -329,7 +329,7 @@
 
 .sa-th { display: inline-flex; align-items: center; gap: 5px; }
 .sa-arrow { color: #5a5a62; font-size: 10px; }
-.sa-arrow.is-on { color: var(--yellow, #ffd400); }
+.sa-arrow.is-on { color: var(--accent-ink); }
 
 .sa-table tbody tr:hover td { background: rgba(255, 255, 255, .04); }
 
@@ -428,7 +428,7 @@
   border: 1px solid rgba(255, 212, 0, .5);
   border-radius: 12px;
   background: linear-gradient(180deg, rgba(255,212,0,.14), rgba(255,212,0,.04));
-  color: var(--yellow, #ffd400);
+  color: var(--accent-ink);
   font-size: 0.95rem;
   font-weight: 800;
   cursor: pointer;
@@ -567,7 +567,7 @@
 }
 .sa-sim-card__label { color: var(--muted, #a1a1aa); font-size: 0.82rem; font-weight: 600; }
 .sa-sim-card__value { color: var(--text, #fff); font-size: 1.7rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-.sa-sim-card.is-accent .sa-sim-card__value { color: var(--yellow, #ffd400); }
+.sa-sim-card.is-accent .sa-sim-card__value { color: var(--accent-ink); }
 .sa-sim-warn { color: #6b6b73; font-size: 0.74rem; }
 
 /* 지역별 미니 추이 */
@@ -591,7 +591,7 @@
   margin-bottom: 4px;
 }
 .sa-mini-card__head h4 { margin: 0; font-size: 0.82rem; color: var(--text, #fff); }
-.sa-mini-card__head span { color: var(--yellow, #ffd400); font-size: 0.78rem; font-weight: 800; }
+.sa-mini-card__head span { color: var(--accent-ink); font-size: 0.78rem; font-weight: 800; }
 .sa-mini { width: 100%; height: 56px; display: block; }
 
 @media (max-width: 720px) {

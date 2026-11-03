@@ -585,6 +585,6 @@ button.driver-link {
 }
 
 .dphone-nav .is-active {
-  color: var(--yellow);
+  color: var(--accent-ink);
   font-weight: 700;
 }
