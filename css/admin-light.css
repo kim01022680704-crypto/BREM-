@@ -268,6 +268,10 @@
   background: #eef1f6;
 }
 
+[data-theme="light"] .settlement-verify-badge.is-gap {
+  color: #b91c1c;
+}
+
 [data-theme="light"] .admin-scroll-table-wrap {
   background: #e4e8ee;
 }
@@ -884,6 +888,10 @@
   background: #ffffff;
 }
 
+[data-theme="light"] .promotion-row-rate-missing td {
+  color: #8a6d12;
+}
+
 [data-theme="light"] .promotion-gap-popup__backdrop {
   background: #e4e8ee;
 }
@@ -941,35 +949,100 @@
 
 [data-theme="light"] .holiday-settlement-banner {
   background: #fbefc6;
+  color: #8a6d12;
+}
+
+[data-theme="light"] .holiday-settlement-banner h3 {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .holiday-settlement-banner ul {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .holiday-settlement-banner li {
+  color: #8a6d12;
 }
 
 [data-theme="light"] .payout-wave-picker {
   background: #fbefc6;
+  color: #8a6d12;
+}
+
+[data-theme="light"] .payout-wave-picker-label {
+  color: #8a6d12;
 }
 
 [data-theme="light"] .payout-wave-option {
   background: #fbefc6;
 }
 
+[data-theme="light"] .payout-wave-option strong {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .payout-wave-hint {
+  color: #8a6d12;
+}
+
 [data-theme="light"] .weekly-part-box {
   background: #fbefc6;
+  color: #8a6d12;
+}
+
+[data-theme="light"] .weekly-part-week {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .weekly-part-slots label {
+  color: #8a6d12;
 }
 
 [data-theme="light"] .weekly-part-view-tabs button {
   background: #eef1f6;
+  color: #8a6d12;
+}
+
+[data-theme="light"] .weekly-part-tag {
+  background: #fbefc6;
+  color: #8a6d12;
+}
+
+[data-theme="light"] .weekly-part-tag--missing {
+  background: #fdecec;
+  color: #b91c1c;
 }
 
 [data-theme="light"] .payroll-range-finalize {
   background: #fbefc6;
+  color: #8a6d12;
+}
+
+[data-theme="light"] .payroll-range-finalize label {
+  color: #8a6d12;
 }
 
 [data-theme="light"] .payroll-range-finalize input,
 [data-theme="light"] .payroll-range-finalize select {
   background: #fbefc6;
+  color: #8a6d12;
 }
 
 [data-theme="light"] .payroll-week-finalize-batch {
   background: #fbefc6;
+  color: #8a6d12;
+}
+
+[data-theme="light"] .payroll-week-finalize-batch.is-finalized {
+  background: #e8f5ec;
+}
+
+[data-theme="light"] .payroll-week-finalize-batch strong {
+  color: #8a6d12;
+}
+
+[data-theme="light"] .payroll-week-finalize-batch span {
+  color: #8a6d12;
 }
 
 [data-theme="light"] .weekly-id-tag {
@@ -1042,6 +1115,10 @@
 
 [data-theme="light"] .settlement-spill-row--crossed .muted-inline {
   color: var(--muted);
+}
+
+[data-theme="light"] .weekly-call-audit-insight-list {
+  color: #8a6d12;
 }
 
 [data-theme="light"] .mission-setup-banner code {
@@ -1566,6 +1643,10 @@
   background: #e4e8ee;
 }
 
+[data-theme="light"] .lease-list-scroll .lease-table thead th {
+  background: #e9edf5;
+}
+
 [data-theme="light"] #leaseContractVehicleSearch::placeholder {
   color: #1d4ed8;
 }
@@ -1637,6 +1718,11 @@
 
 [data-theme="light"] .mission-assignment-table thead th {
   background: #eef1f6;
+}
+
+[data-theme="light"] .mission-now-chip--missing {
+  background: #fdecec;
+  color: #b91c1c;
 }
 
 [data-theme="light"] .mission-now-chip--empty {
@@ -2195,6 +2281,10 @@
 
 [data-theme="light"] .mission-forecast-chart__rise {
   color: var(--text);
+}
+
+[data-theme="light"] .mission-adjust-table td.is-over {
+  color: #b91c1c;
 }
 
 [data-theme="light"] #dashboard .dashboard-baemin-live-card {
