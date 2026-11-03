@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261029edit1">
   <link rel="stylesheet" href="css/admin-app.css?v=20261030kakaoapp1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
-  <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20261101sim3">
+  <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20261103riders1">
 </head>
 <body>
   <div class="admin-app-boot-splash" id="adminAppBootSplash">
@@ -116,7 +116,7 @@
           <div class="card-header dashboard-baemin-live-card__header">
             <div>
               <h2>오늘 배민 · 할당 달성</h2>
-              <p class="form-help dashboard-baemin-live-help">크롤 마지막 숫자 · 들어오면 바로 조회 · 2분마다 갱신</p>
+              <p class="form-help dashboard-baemin-live-help">크롤 마지막 숫자 · 들어오면 바로 조회 · 2분마다 갱신 · 지역 줄을 누르면 운행중 기사</p>
             </div>
             <div class="dashboard-baemin-live-actions">
               <button type="button" class="primary-btn" id="dashboardBaeminLiveQueryBtn">스냅샷 조회</button>
@@ -170,12 +170,25 @@
             </div>
           </div>
           </div>
+          <div class="dashboard-region-riders-modal" id="dashboardRegionRidersModal" role="dialog" aria-modal="true" aria-labelledby="dashboardRegionRidersTitle" hidden>
+            <div class="dashboard-region-riders-modal__backdrop" data-region-riders-close></div>
+            <div class="dashboard-region-riders-modal__dialog">
+              <div class="dashboard-region-riders-modal__head">
+                <div>
+                  <h3 id="dashboardRegionRidersTitle">운행중 기사</h3>
+                  <p class="form-help" id="dashboardRegionRidersSummary">지역 줄을 누르면 운행중 기사가 나옵니다.</p>
+                </div>
+                <button type="button" class="small-btn dashboard-region-riders-modal__close" data-region-riders-close>닫기</button>
+              </div>
+              <div class="dashboard-region-riders-modal__body" id="dashboardRegionRidersBody"></div>
+            </div>
+          </div>
         </article>
         <article class="card dashboard-baemin-live-card" id="dashboardCoupangLiveCard">
           <div class="card-header dashboard-baemin-live-card__header">
             <div>
               <h2>오늘 쿠팡 · 할당 달성</h2>
-              <p class="form-help dashboard-baemin-live-help">오늘 피크 · 크롤 조회</p>
+              <p class="form-help dashboard-baemin-live-help">오늘 피크 · 크롤 조회 · 지역 줄을 누르면 운행중 기사</p>
             </div>
             <div class="dashboard-baemin-live-actions">
               <button type="button" class="primary-btn" id="dashboardCoupangLiveQueryBtn">실시간 조회</button>
@@ -557,14 +570,14 @@
   <script src="js/date-picker.js?v=20260715a"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20261101sim3"></script>
-  <script src="js/coupang-status-admin.js?v=20260923peak14"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20261103riders2"></script>
+  <script src="js/coupang-status-admin.js?v=20261103riders2"></script>
   <script src="js/payroll-slip-utils.js?v=20260814match1"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/admin-payroll-slip-search.js?v=20260817pay6"></script>
   <script src="js/admin-work-requests.js?v=20260927req8"></script>
   <script src="js/driver-utils.js?v=20260921off1"></script>
-  <script src="js/driver-detail-search.js?v=20261030detailacct1"></script>
+  <script src="js/driver-detail-search.js?v=20261103riders2"></script>
   <script src="js/admin-driver-popups.js?v=20261030kakaoapp1"></script>
   <script src="js/admin-app.js?v=20261101inq1"></script>
   <script src="js/pwa-register.js" defer></script>

@@ -39,7 +39,10 @@
     weekVendorId: '',
     weekCache: null,
     weekRange: null,
-    bound: false
+    bound: false,
+    operatingByVendor: {},
+    vendorMeta: [],
+    openVendorId: ''
   };
   const local = { running: false, hasToken: false, vendorCount: 0, collecting: false, loop: {}, tokenSource: '', seenAnyAuthHeader: false };
   let localPollTimer = null;
@@ -473,6 +476,7 @@
     $('dashboardCoupangOpenStatusBtn')?.addEventListener('click', () => {
       document.querySelector('[data-section="coupang-rider-status"]')?.click();
     });
+    bindCoupangRegionRiders();
     startDashboardCoupangLivePoll();
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') return;
@@ -539,6 +543,250 @@
     }
   }
 
+  function isCoupangOnline(status) {
+    const compact = String(status || '').replace(/[\s_-]+/g, '').toUpperCase();
+    return compact === 'ONLINE';
+  }
+
+  function coupangRateLabel(value) {
+    if (value == null || !Number.isFinite(Number(value))) return '-';
+    return `${Number(value).toFixed(1)}%`;
+  }
+
+  function collectCoupangRiderRows(items) {
+    const latest = new Map();
+    (items || []).forEach(it => {
+      const parsed = it.parsed_json || {};
+      const vendorId = String(parsed.vendorId || it.vendor_id || '').trim();
+      if (!vendorId) return;
+      const name = String(parsed.name || it.rider_name || '').trim();
+      const phone = String(parsed.phone || it.phone_number || '').trim();
+      const matchKey = String(parsed.matchKey || it.match_key || '').trim();
+      const courierId = String(parsed.courierId || it.courier_id || '').trim();
+      const identity = matchKey || courierId || `${name}|${phone}`;
+      if (!identity || identity === '|') return;
+      const at = String(it.collected_at || '');
+      const key = `${vendorId}|${identity}`;
+      const prev = latest.get(key);
+      if (prev && at < prev.at) return;
+      const complete = Math.max(0, Number(parsed.completeCount) || 0);
+      const reject = Math.max(0, Number(parsed.rejectCount) || 0);
+      const cancel = Math.max(0, Number(parsed.cancelCount) || 0);
+      const denom = complete + reject + cancel;
+      const status = String(parsed.edpStatus || '').trim();
+      latest.set(key, {
+        at,
+        rider: {
+          name: name || '-',
+          phone,
+          matchKey,
+          courierId,
+          complete,
+          acceptRate: denom > 0 ? (complete / denom) * 100 : null,
+          rejectRate: denom > 0 ? (reject / denom) * 100 : null,
+          online: isCoupangOnline(status),
+          hasStatus: Boolean(status)
+        },
+        vendorId
+      });
+    });
+    const byVendor = {};
+    latest.forEach(row => {
+      if (!byVendor[row.vendorId]) byVendor[row.vendorId] = [];
+      byVendor[row.vendorId].push(row.rider);
+    });
+    return byVendor;
+  }
+
+  function coupangOperatingForRows(regionRows, pool, items) {
+    const byVendorRaw = collectCoupangRiderRows(items);
+    const byVendor = {};
+    (regionRows || []).forEach(region => {
+      const vendorId = String(region.vendorId || '').trim();
+      if (!vendorId) return;
+      const key = regionDedupeKey(region.vendorName);
+      const ids = new Set([vendorId]);
+      (pool || []).forEach(row => {
+        const id = String(row.vendorId || '').trim();
+        if (!id) return;
+        if (id === vendorId || (key && regionDedupeKey(row.vendorName) === key)) ids.add(id);
+      });
+      const seen = new Set();
+      const all = [];
+      ids.forEach(id => {
+        (byVendorRaw[id] || []).forEach(rider => {
+          const ident = rider.matchKey || rider.courierId || `${rider.name}|${rider.phone}`;
+          if (seen.has(ident)) return;
+          seen.add(ident);
+          all.push(rider);
+        });
+      });
+      const statusKnown = all.some(rider => rider.hasStatus);
+      const riders = (statusKnown ? all.filter(rider => rider.online) : all.filter(rider => rider.complete > 0))
+        .sort((a, b) => b.complete - a.complete || String(a.name).localeCompare(String(b.name), 'ko'));
+      byVendor[vendorId] = { riders, statusKnown };
+    });
+    return { byVendor };
+  }
+
+  function restoreCoupangOperatingFromCache(cache) {
+    const raw = cache?.operatingByVendor;
+    if (raw && typeof raw === 'object') {
+      const next = {};
+      Object.entries(raw).forEach(([id, bag]) => {
+        const vendorId = String(id || '').trim();
+        const rows = Array.isArray(bag?.riders) ? bag.riders : (Array.isArray(bag) ? bag : null);
+        if (!vendorId || !rows) return;
+        next[vendorId] = {
+          statusKnown: bag?.statusKnown !== false,
+          riders: rows.map(row => ({
+            name: String(row?.name || '').trim() || '-',
+            phone: String(row?.phone || '').trim(),
+            matchKey: String(row?.matchKey || '').trim(),
+            courierId: String(row?.courierId || '').trim(),
+            complete: Math.max(0, Number(row?.complete || 0) || 0),
+            acceptRate: row?.acceptRate == null || !Number.isFinite(Number(row.acceptRate)) ? null : Number(row.acceptRate),
+            rejectRate: row?.rejectRate == null || !Number.isFinite(Number(row.rejectRate)) ? null : Number(row.rejectRate)
+          }))
+        };
+      });
+      if (Object.keys(next).length) dash.operatingByVendor = next;
+    }
+    if (Array.isArray(cache?.vendorMeta)) {
+      dash.vendorMeta = cache.vendorMeta
+        .map(row => ({
+          vendorId: String(row?.vendorId || '').trim(),
+          vendorName: String(row?.vendorName || '').trim()
+        }))
+        .filter(row => row.vendorId);
+    }
+  }
+
+  function renderCoupangRegionRiderList(vendorId, riders) {
+    if (!riders.length) return '<p class="form-help">운행중 기사가 없습니다.</p>';
+    return `<ul class="dashboard-region-riders">${riders.map((rider, index) => {
+      const acceptClass = rider.acceptRate == null ? '' : (rider.acceptRate >= 95 ? ' is-good' : ' is-bad');
+      const rejectClass = rider.rejectRate == null ? '' : (rider.rejectRate <= 5 ? ' is-good' : ' is-bad');
+      const idLine = rider.matchKey || rider.courierId
+        ? `<small>${esc(rider.matchKey || rider.courierId)}</small>`
+        : '';
+      return `<li>
+        <button type="button" class="dashboard-region-rider" data-dashboard-coupang-rider="${esc(vendorId)}" data-dashboard-coupang-index="${index}">
+          <span class="dashboard-region-rider__name">${esc(rider.name)}${idLine}</span>
+          <span class="dashboard-region-rider__calls"><b>${esc(n(rider.complete))}</b><small>오늘 콜</small></span>
+          <span class="dashboard-region-rider__rate${acceptClass}"><small>수락</small><b>${esc(coupangRateLabel(rider.acceptRate))}</b></span>
+          <span class="dashboard-region-rider__rate${rejectClass}"><small>거절</small><b>${esc(coupangRateLabel(rider.rejectRate))}</b></span>
+          <span class="dashboard-region-rider__go">상세</span>
+        </button>
+      </li>`;
+    }).join('')}</ul>`;
+  }
+
+  function paintCoupangRegionRiders(vendorId) {
+    const id = String(vendorId || '').trim();
+    const modal = $('dashboardRegionRidersModal');
+    const title = $('dashboardRegionRidersTitle');
+    const summary = $('dashboardRegionRidersSummary');
+    const body = $('dashboardRegionRidersBody');
+    if (!modal || !body) return;
+    const meta = (dash.vendorMeta || []).find(row => row.vendorId === id);
+    const regionName = shortRegionLabel(meta?.vendorName || id);
+    const bag = dash.operatingByVendor?.[id] || null;
+    if (title) title.textContent = `${regionName} · 운행중 기사`;
+    if (!bag) {
+      if (summary) summary.textContent = '기사 목록을 아직 받지 못했습니다.';
+      body.innerHTML = '<p class="form-help">실시간 조회가 끝난 뒤 지역 줄을 다시 눌러 주세요.</p>';
+      return;
+    }
+    const riders = bag.riders || [];
+    if (summary) {
+      const head = bag.statusKnown === false ? '운행 상태가 없어 오늘 콜이 있는 기사' : '운행중';
+      summary.textContent = riders.length
+        ? `${head} ${n(riders.length)}명 · 오늘 완료콜 · 수락율 · 거절율. 기사를 누르면 상세가 열립니다.`
+        : (bag.statusKnown === false
+          ? '오늘 콜이 있는 기사가 없습니다.'
+          : '지금 운행중인 기사가 없습니다.');
+    }
+    body.innerHTML = renderCoupangRegionRiderList(id, riders);
+  }
+
+  function openCoupangRegionRiders(vendorId) {
+    const id = String(vendorId || '').trim();
+    const modal = $('dashboardRegionRidersModal');
+    if (!id || !modal) return;
+    dash.openVendorId = id;
+    modal.dataset.ridersSource = 'coupang';
+    paintCoupangRegionRiders(id);
+    modal.hidden = false;
+    document.body.classList.add('dashboard-week-modal-open');
+    modal.querySelector('.dashboard-region-riders-modal__close')?.focus();
+  }
+
+  function coupangVendorFromRow(row) {
+    if (!row) return '';
+    const marked = String(row.getAttribute('data-dashboard-coupang-region') || '').trim();
+    if (marked) return marked;
+    const title = String(row.querySelector('.dashboard-baemin-region-name')?.getAttribute('title') || '')
+      .replace(/\s*·\s*누르면 운행중 기사$/, '')
+      .trim();
+    const text = String(row.querySelector('.dashboard-baemin-region-name')?.textContent || '').trim();
+    const hit = (dash.vendorMeta || []).find(item => item.vendorName === title || shortRegionLabel(item.vendorName) === text);
+    return hit?.vendorId || '';
+  }
+
+  async function openCoupangRiderDetail(vendorId, index) {
+    const rider = dash.operatingByVendor?.[String(vendorId || '').trim()]?.riders?.[Number(index)];
+    if (!rider) return;
+    const opener = window.BremDriverDetailSearch?.openDriverMatch;
+    if (typeof opener !== 'function') {
+      toast('기사상세를 열 수 없습니다.');
+      return;
+    }
+    await opener({
+      name: rider.name,
+      phone: rider.phone,
+      coupangId: rider.matchKey || rider.courierId,
+      matchKey: rider.matchKey
+    });
+  }
+
+  function bindCoupangRegionRiders() {
+    const card = $('dashboardCoupangCard');
+    const host = $('dashboard');
+    if (!card || card.dataset.regionRidersBound === '1') return;
+    card.dataset.regionRidersBound = '1';
+    card.addEventListener('click', event => {
+      const row = event.target.closest('tbody tr');
+      if (!row || !card.contains(row) || row.classList.contains('dashboard-baemin-compact-table__summary')) return;
+      const vendorId = coupangVendorFromRow(row);
+      if (!vendorId) return;
+      openCoupangRegionRiders(vendorId);
+    });
+    card.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const row = event.target.closest?.('[data-dashboard-coupang-region]');
+      if (!row || !card.contains(row)) return;
+      event.preventDefault();
+      openCoupangRegionRiders(row.getAttribute('data-dashboard-coupang-region'));
+    });
+    host?.addEventListener('click', event => {
+      const riderBtn = event.target.closest('[data-dashboard-coupang-rider]');
+      if (riderBtn) {
+        void openCoupangRiderDetail(
+          riderBtn.getAttribute('data-dashboard-coupang-rider'),
+          riderBtn.getAttribute('data-dashboard-coupang-index')
+        );
+        return;
+      }
+      if (event.target.closest('[data-region-riders-close]')) dash.openVendorId = '';
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      if ($('dashboardRegionRidersModal')?.dataset.ridersSource !== 'coupang') return;
+      dash.openVendorId = '';
+    });
+  }
+
   function renderTodayTable(regionRows, totals) {
     const nowPeak = currentCoupangPeakKey();
     const peakHeads = PEAK_ORDER.map(pt => {
@@ -567,8 +815,9 @@
           upcoming: isUpcomingCoupangPeak(pt)
         });
       }).join('');
-      return `<tr>
-        <td>${regionNameCell(region.vendorName)}</td>
+      const fullName = String(region.vendorName || '').trim() || '-';
+      return `<tr class="dashboard-baemin-region-row" data-dashboard-coupang-region="${esc(region.vendorId)}" tabindex="0" role="button" aria-label="${esc(fullName)} 운행중 기사">
+        <td><strong class="dashboard-baemin-region-name" title="${esc(fullName)} · 누르면 운행중 기사">${esc(shortRegionLabel(fullName))}</strong></td>
         <td>${esc(n(region.drivingCount))}</td>
         ${peakCells}
         <td>${region.rejectionRate == null ? '-' : `${esc(n(region.rejectionRate))}%`}</td>
@@ -772,9 +1021,10 @@
       const today = todayBusinessKey();
       const queriedAt = new Date();
 
-      const [peakRes, vendorRes] = await Promise.all([
+      const [peakRes, vendorRes, riderRes] = await Promise.all([
         adminApi(`/api/admin/coupang/items?sourceMenu=peak_realtime&collectDate=${encodeURIComponent(today)}`),
-        adminApi(`/api/admin/coupang/items?sourceMenu=vendor_info&collectDate=${encodeURIComponent(today)}`)
+        adminApi(`/api/admin/coupang/items?sourceMenu=vendor_info&collectDate=${encodeURIComponent(today)}`),
+        adminApi(`/api/admin/coupang/items?sourceMenu=rider_daily&collectDate=${encodeURIComponent(today)}`)
       ]);
 
       if (!peakRes.ok && !vendorRes.ok) {
@@ -883,6 +1133,16 @@
       // 자동갱신: 이전 숫자가 있는데 빈/0 응답이면 표 유지 (깜빡이며 0 되는 것 방지)
       if (silent && hadTable && prevActivity > 0 && (nextActivity <= 0 || itemCount <= 0)) {
         return;
+      }
+
+      const operating = coupangOperatingForRows(regionRows, Array.from(vendorById.values()), riderRes.ok ? riderRes.items || [] : []);
+      dash.operatingByVendor = operating.byVendor;
+      dash.vendorMeta = regionRows.map(row => ({
+        vendorId: String(row.vendorId || '').trim(),
+        vendorName: String(row.vendorName || '').trim()
+      }));
+      if (dash.openVendorId && $('dashboardRegionRidersModal')?.dataset.ridersSource === 'coupang' && !$('dashboardRegionRidersModal')?.hidden) {
+        paintCoupangRegionRiders(dash.openVendorId);
       }
 
       if (appliedEl) {
@@ -1062,6 +1322,7 @@
         weekSummary.textContent = `${cache.weekSummaryText} · 최신 갱신 중…`;
       }
     }
+    restoreCoupangOperatingFromCache(cache);
     markCurrentCoupangPeaks();
     return true;
   }
@@ -1080,7 +1341,9 @@
       summaryText: summary ? String(summary.textContent || '').replace(/\s*·\s*최신 갱신 중…$/, '') : '',
       appliedHtml: appliedEl ? appliedEl.innerHTML : '',
       activityScore: Number(dash.lastActivity || 0),
-      vendorIds: Array.isArray(dash.lastVendorIds) ? dash.lastVendorIds : []
+      vendorIds: Array.isArray(dash.lastVendorIds) ? dash.lastVendorIds : [],
+      operatingByVendor: dash.operatingByVendor || {},
+      vendorMeta: Array.isArray(dash.vendorMeta) ? dash.vendorMeta : []
     });
   }
 

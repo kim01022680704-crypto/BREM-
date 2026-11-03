@@ -24,6 +24,8 @@
     dashboardLiveBusy: false,
     dashboardLiveFetchedAt: 0,
     dashboardLastActivity: 0,
+    dashboardOperatingByPartner: {},
+    dashboardRegionRiderPartnerId: '',
     activeMenu: 'delivery_status',
     partners: [],
     contamination: null,
@@ -6192,7 +6194,8 @@
       regionMeta: (state.dashboardBaeminRegions || []).map(r => ({
         partnerId: r.partnerId,
         regionName: r.regionName
-      }))
+      })),
+      operatingByPartner: state.dashboardOperatingByPartner || {}
     });
   }
 
@@ -6237,6 +6240,7 @@
       return false;
     }
     restoreRegionsFromCache(cache);
+    restoreOperatingRidersFromCache(cache);
 
     // 오늘 표: 비어 있을 때만 캐시로 채움 (이미 최신이면 유지)
     if (!panelsEl.querySelector('table') && cache.panelsHtml) {
@@ -6460,6 +6464,190 @@
     return afterCurrent;
   }
 
+  function collectDashboardOperatingRiders(items) {
+    const riders = [];
+    (items || []).forEach(row => {
+      const parsed = row?.parsed_json || {};
+      const status = parsed.statusDesc || row?.statusDesc || '';
+      if (!isDrivingStatus(status)) return;
+      const metrics = extractAcceptRateMetrics(parsed);
+      const deny = Number(metrics.foodReject || 0)
+        + Number(metrics.foodCancel || 0)
+        + Number(metrics.foodRiderFault || 0);
+      const denom = Number(metrics.complete || 0) + deny;
+      const acceptRate = denom > 0 ? 100 - (deny / denom) * 100 : null;
+      const rejectRate = denom > 0 ? (Number(metrics.foodReject || 0) / denom) * 100 : null;
+      riders.push({
+        name: String(row.rider_name || parsed.riderName || '').trim() || '-',
+        userId: String(row.rider_user_id || parsed.riderUserId || '').trim(),
+        phone: String(row.phone_number || parsed.phoneNumber || '').trim(),
+        complete: Math.max(0, readCompleteTotal(parsed, row)),
+        acceptRate,
+        rejectRate
+      });
+    });
+    riders.sort((a, b) => b.complete - a.complete || String(a.name).localeCompare(String(b.name), 'ko'));
+    return riders;
+  }
+
+  function restoreOperatingRidersFromCache(cache) {
+    const raw = cache?.operatingByPartner;
+    if (!raw || typeof raw !== 'object') return;
+    const next = {};
+    Object.entries(raw).forEach(([id, rows]) => {
+      const partnerId = normalizePartnerId(id);
+      if (!partnerId || !Array.isArray(rows)) return;
+      next[partnerId] = rows.map(row => ({
+        name: String(row?.name || '').trim() || '-',
+        userId: String(row?.userId || '').trim(),
+        phone: String(row?.phone || '').trim(),
+        complete: Math.max(0, Number(row?.complete || 0) || 0),
+        acceptRate: row?.acceptRate == null || !Number.isFinite(Number(row.acceptRate)) ? null : Number(row.acceptRate),
+        rejectRate: row?.rejectRate == null || !Number.isFinite(Number(row.rejectRate)) ? null : Number(row.rejectRate)
+      }));
+    });
+    if (Object.keys(next).length) state.dashboardOperatingByPartner = next;
+  }
+
+  function renderDashboardRegionRiderList(partnerId, riders) {
+    if (!riders.length) {
+      return '<p class="form-help">운행중 기사가 없습니다.</p>';
+    }
+    return `<ul class="dashboard-region-riders">${riders.map((rider, index) => {
+      const accept = formatAcceptRatePercent(rider.acceptRate);
+      const reject = formatAcceptRatePercent(rider.rejectRate);
+      const acceptClass = rider.acceptRate == null ? '' : (rider.acceptRate >= 95 ? ' is-good' : ' is-bad');
+      const rejectClass = rider.rejectRate == null ? '' : (rider.rejectRate <= 5 ? ' is-good' : ' is-bad');
+      const idLine = rider.userId ? `<small>${escapeHtml(rider.userId)}</small>` : '';
+      return `<li>
+        <button type="button" class="dashboard-region-rider" data-dashboard-rider-partner="${escapeHtml(partnerId)}" data-dashboard-rider-index="${index}">
+          <span class="dashboard-region-rider__name">${escapeHtml(rider.name)}${idLine}</span>
+          <span class="dashboard-region-rider__calls"><b>${escapeHtml(formatNumber(rider.complete))}</b><small>오늘 콜</small></span>
+          <span class="dashboard-region-rider__rate${acceptClass}"><small>수락</small><b>${escapeHtml(accept)}</b></span>
+          <span class="dashboard-region-rider__rate${rejectClass}"><small>거절</small><b>${escapeHtml(reject)}</b></span>
+          <span class="dashboard-region-rider__go">상세</span>
+        </button>
+      </li>`;
+    }).join('')}</ul>`;
+  }
+
+  function paintDashboardRegionRiders(partnerId) {
+    const pid = normalizePartnerId(partnerId);
+    const modal = $('dashboardRegionRidersModal');
+    const title = $('dashboardRegionRidersTitle');
+    const summary = $('dashboardRegionRidersSummary');
+    const body = $('dashboardRegionRidersBody');
+    if (!modal || !body) return;
+    const regionName = state.dashboardBaeminRegions.find(region => region.partnerId === pid)?.regionName
+      || partnerLabelById(pid)
+      || pid
+      || '지역';
+    const riders = state.dashboardOperatingByPartner?.[pid] || null;
+    if (title) title.textContent = `${regionName} · 운행중 기사`;
+    if (!riders) {
+      if (summary) summary.textContent = '기사 목록을 아직 받지 못했습니다.';
+      body.innerHTML = '<p class="form-help">스냅샷 조회가 끝난 뒤 지역 줄을 다시 눌러 주세요.</p>';
+      return;
+    }
+    if (summary) {
+      summary.textContent = riders.length
+        ? `운행중 ${formatNumber(riders.length)}명 · 오늘 완료콜 · 수락율 · 거절율. 기사를 누르면 상세가 열립니다.`
+        : '지금 운행중인 기사가 없습니다.';
+    }
+    body.innerHTML = renderDashboardRegionRiderList(pid, riders);
+  }
+
+  function openDashboardRegionRiders(partnerId) {
+    const pid = normalizePartnerId(partnerId);
+    if (!pid) return;
+    const modal = $('dashboardRegionRidersModal');
+    if (!modal) return;
+    state.dashboardRegionRiderPartnerId = pid;
+    modal.dataset.ridersSource = 'baemin';
+    paintDashboardRegionRiders(pid);
+    modal.hidden = false;
+    document.body.classList.add('dashboard-week-modal-open');
+    modal.querySelector('.dashboard-region-riders-modal__close')?.focus();
+  }
+
+  function closeDashboardRegionRiders() {
+    const modal = $('dashboardRegionRidersModal');
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    state.dashboardRegionRiderPartnerId = '';
+    if (modal.dataset.ridersSource === 'baemin') delete modal.dataset.ridersSource;
+    const weekOpen = document.querySelector('#dashboard .dashboard-week-modal:not([hidden])');
+    if (!weekOpen) document.body.classList.remove('dashboard-week-modal-open');
+  }
+
+  function dashboardRegionFromRow(row) {
+    if (!row) return '';
+    const marked = normalizePartnerId(row.getAttribute('data-dashboard-region') || '');
+    if (marked) return marked;
+    const name = String(row.querySelector('.dashboard-baemin-region-name')?.textContent || '').trim();
+    if (!name) return '';
+    const region = (state.dashboardBaeminRegions || []).find(item => String(item.regionName || '').trim() === name);
+    return region?.partnerId || '';
+  }
+
+  async function openDashboardRiderDetail(partnerId, index) {
+    const pid = normalizePartnerId(partnerId);
+    const rider = state.dashboardOperatingByPartner?.[pid]?.[Number(index)];
+    if (!rider) return;
+    const opener = window.BremDriverDetailSearch?.openDriverMatch;
+    if (typeof opener !== 'function') {
+      showToast('기사상세를 열 수 없습니다.');
+      return;
+    }
+    await opener({
+      name: rider.name,
+      userId: rider.userId,
+      phone: rider.phone
+    });
+  }
+
+  function bindDashboardRegionRiders() {
+    const host = $('dashboard');
+    if (!host || host.dataset.regionRidersBound === '1') return;
+    host.dataset.regionRidersBound = '1';
+    const modal = $('dashboardRegionRidersModal');
+    if (modal && modal.parentElement !== host) host.appendChild(modal);
+
+    host.addEventListener('click', event => {
+      const riderBtn = event.target.closest('[data-dashboard-rider-partner]');
+      if (riderBtn && host.contains(riderBtn)) {
+        void openDashboardRiderDetail(
+          riderBtn.getAttribute('data-dashboard-rider-partner'),
+          riderBtn.getAttribute('data-dashboard-rider-index')
+        );
+        return;
+      }
+      if (event.target.closest('[data-region-riders-close]')) {
+        closeDashboardRegionRiders();
+        return;
+      }
+      const row = event.target.closest('#dashboardBaeminLivePanels tbody tr');
+      if (!row || row.classList.contains('dashboard-baemin-compact-table__summary')) return;
+      const partnerId = dashboardRegionFromRow(row);
+      if (!partnerId) return;
+      openDashboardRegionRiders(partnerId);
+    });
+    host.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const row = event.target.closest?.('[data-dashboard-region]');
+      if (!row || !host.contains(row)) return;
+      event.preventDefault();
+      openDashboardRegionRiders(row.getAttribute('data-dashboard-region'));
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      if (window.BremDriverPopups?.isOpen?.()) return;
+      if (document.getElementById('driverPhonePopup')?.classList.contains('is-open')) return;
+      if (document.getElementById('driverDetailPanel')?.classList.contains('is-open')) return;
+      closeDashboardRegionRiders();
+    });
+  }
+
   function renderDashboardTodayTable(regionRows, totals) {
     const phone = isDashboardFit();
     const nowSlot = currentBaeminSlotKey();
@@ -6482,9 +6670,10 @@
     </tr>`;
     const bodyRows = regionRows.map(region => {
       const fullName = String(region.regionName || '').trim() || '-';
-      return `<tr>
+      const partnerId = normalizePartnerId(region.partnerId);
+      return `<tr class="dashboard-baemin-region-row" data-dashboard-region="${escapeHtml(partnerId)}" tabindex="0" role="button" aria-label="${escapeHtml(fullName)} 운행중 기사">
       <td>
-        <strong class="dashboard-baemin-region-name" title="${escapeHtml(fullName)}">${escapeHtml(fullName)}</strong>
+        <strong class="dashboard-baemin-region-name" title="${escapeHtml(fullName)} · 누르면 운행중 기사">${escapeHtml(fullName)}</strong>
         <span class="dashboard-baemin-region-meta">${formatNumber(region.setCount)}세트</span>
       </td>
       <td>${driveText(region.drivingCount)}</td>
@@ -7216,6 +7405,7 @@
       const queriedAt = new Date();
 
       const regionRows = [];
+      const operatingByPartner = {};
       let drivingSum = 0;
       let morningSum = 0;
       let afternoonSum = 0;
@@ -7305,6 +7495,7 @@
           midnightTotal: totals.midnightTotal,
           targets
         });
+        operatingByPartner[partnerId] = collectDashboardOperatingRiders(items);
       }
 
       regionRows.sort((a, b) => String(a.regionName).localeCompare(String(b.regionName), 'ko'));
@@ -7336,6 +7527,17 @@
       })) {
         // 빈·불완전 응답은 버리고 이전 숫자 유지 — 다음 폴링에서 다시 시도
         return;
+      }
+
+      state.dashboardOperatingByPartner = operatingByPartner;
+      const ridersModal = $('dashboardRegionRidersModal');
+      if (
+        state.dashboardRegionRiderPartnerId
+        && ridersModal
+        && !ridersModal.hidden
+        && ridersModal.dataset.ridersSource !== 'coupang'
+      ) {
+        paintDashboardRegionRiders(state.dashboardRegionRiderPartnerId);
       }
 
       // 이번주 팝업의 오늘 줄: 배민 일별은 다음 날 들어오므로 이 실시간 숫자로 채운다.
@@ -7588,6 +7790,7 @@
       openBaeminStatusFromDashboard();
     });
     bindDashboardWeekModals();
+    bindDashboardRegionRiders();
     // 초기 로딩 부담 완화: 파싱 시점(=로그인 화면)에는 조회하지 않는다.
     // 대시보드 렌더에서 refreshDashboardBaeminLive() 가 지역 조회와 폴러를 시작한다.
     document.addEventListener('visibilitychange', () => {

@@ -79,6 +79,12 @@ const BremDriverDetailSearch = (function () {
     return `${formatNumber(value)}원`;
   }
 
+  function formatKm(meters) {
+    const value = Math.max(0, Math.round(Number(meters) || 0));
+    const km = value / 1000;
+    return `${km.toLocaleString('ko-KR', { maximumFractionDigits: 1, minimumFractionDigits: value ? 1 : 0 })}km`;
+  }
+
   function formatRate(value) {
     if (value == null || value === '' || Number.isNaN(Number(value))) return '-';
     return `${Math.round(Number(value) * 10) / 10}%`;
@@ -256,6 +262,7 @@ const BremDriverDetailSearch = (function () {
         coupangCalls: 0,
         baeminFee: 0,
         coupangFee: 0,
+        coupangDistance: 0,
         feeStamp: { baemin: '', coupang: '' },
         hasCall: { baemin: false, coupang: false }
       });
@@ -283,6 +290,9 @@ const BremDriverDetailSearch = (function () {
       if (bucket.feeStamp[platform] && appliedAt < bucket.feeStamp[platform]) return;
       bucket.feeStamp[platform] = appliedAt;
       bucket[`${platform}Fee`] = Math.max(0, Number(row.deliveryAmount ?? row.settlementAmount ?? 0));
+      if (platform === 'coupang') {
+        bucket.coupangDistance = Math.max(0, Math.round(Number(row.deliveryDistanceM) || 0));
+      }
       if (!bucket.hasCall[platform]) {
         bucket[`${platform}Calls`] = Math.max(0, Math.round(Number(row.orderCount ?? row.callCount ?? 0)));
       }
@@ -322,8 +332,9 @@ const BremDriverDetailSearch = (function () {
       acc.coupangCalls += day.coupangCalls;
       acc.baeminFee += day.baeminFee;
       acc.coupangFee += day.coupangFee;
+      acc.coupangDistance += day.coupangDistance;
       return acc;
-    }, { baeminCalls: 0, coupangCalls: 0, baeminFee: 0, coupangFee: 0 });
+    }, { baeminCalls: 0, coupangCalls: 0, baeminFee: 0, coupangFee: 0, coupangDistance: 0 });
     const fee = totals.baeminFee + totals.coupangFee;
     const calls = totals.baeminCalls + totals.coupangCalls;
     const baeminRegion = regionText(driver, 'baemin');
@@ -337,6 +348,7 @@ const BremDriverDetailSearch = (function () {
         <td>${formatNumber(day.coupangCalls)}</td>
         <td>${formatMoney(day.baeminFee)}</td>
         <td>${formatMoney(day.coupangFee)}</td>
+        <td>${formatKm(day.coupangDistance)}</td>
         <td>${formatMoney(day.baeminFee + day.coupangFee)}</td>
       </tr>`).join('');
 
@@ -385,10 +397,11 @@ const BremDriverDetailSearch = (function () {
       <div class="driver-detail-kpis">
         <article class="driver-detail-kpi"><span>이번 주 배달료</span><b>${formatMoney(fee)}</b><em>배민 ${formatMoney(totals.baeminFee)} · 쿠팡 ${formatMoney(totals.coupangFee)}</em></article>
         <article class="driver-detail-kpi"><span>이번 주 콜수</span><b>${formatNumber(calls)}</b><em>배민 ${formatNumber(totals.baeminCalls)} · 쿠팡 ${formatNumber(totals.coupangCalls)}</em></article>
+        <article class="driver-detail-kpi"><span>이번 주 배달거리</span><b>${formatKm(totals.coupangDistance)}</b><em>쿠팡 일정산 오더별 거리 합</em></article>
         ${rateCard('배민 수락율', baeminRate, 'baemin')}
         ${rateCard('쿠팡 거절율', coupangRate, 'coupang')}
       </div>
-      <p class="driver-detail-note">${state.loadError ? `일부 데이터를 읽지 못했습니다. ${escapeHtml(state.loadError)}` : '배달료는 일정산 업로드 금액이고, 콜수는 콜수 입력이 있으면 그 값을 우선합니다.'}</p>
+      <p class="driver-detail-note">${state.loadError ? `일부 데이터를 읽지 못했습니다. ${escapeHtml(state.loadError)}` : '배달료·배달거리는 일정산 업로드 값이고, 콜수는 콜수 입력이 있으면 그 값을 우선합니다.'}</p>
       <div class="driver-scroll-table table-wrap">
         <table class="driver-detail-table">
           <thead>
@@ -398,6 +411,7 @@ const BremDriverDetailSearch = (function () {
               <th>쿠팡콜</th>
               <th>배민배달료</th>
               <th>쿠팡배달료</th>
+              <th>배달거리</th>
               <th>배달료합계</th>
             </tr>
           </thead>
@@ -409,6 +423,7 @@ const BremDriverDetailSearch = (function () {
               <th>${formatNumber(totals.coupangCalls)}</th>
               <th>${formatMoney(totals.baeminFee)}</th>
               <th>${formatMoney(totals.coupangFee)}</th>
+              <th>${formatKm(totals.coupangDistance)}</th>
               <th>${formatMoney(fee)}</th>
             </tr>
           </tfoot>
@@ -728,9 +743,13 @@ const BremDriverDetailSearch = (function () {
       if (window.BremDriverPopups?.isOpen?.()) return;
       if ($('#driverPhonePopup')?.classList.contains('is-open')) {
         closePhone();
+        event.stopPropagation();
         return;
       }
-      if ($('#driverDetailPanel')?.classList.contains('is-open')) closePanel();
+      if ($('#driverDetailPanel')?.classList.contains('is-open')) {
+        closePanel();
+        event.stopPropagation();
+      }
     });
   }
 
@@ -861,9 +880,90 @@ const BremDriverDetailSearch = (function () {
     else openPanel();
   }
 
+  function matchDriver(hint = {}) {
+    const list = drivers();
+    const matchKey = window.BremWeeklySettlement?.baeminIdMatchKey;
+    const keyOf = (value) => {
+      if (typeof matchKey === 'function') return matchKey(value);
+      const text = String(value || '').trim().replace(/\s+/g, '');
+      if (!text) return '';
+      return /^\d+$/.test(text) ? (text.replace(/^0+/, '') || '0') : text.toLowerCase();
+    };
+    const key = keyOf(hint.userId);
+    if (key) {
+      const hit = list.find(driver => keyOf(driver?.baeminId) === key);
+      if (hit) return hit;
+    }
+    const coupangKeys = [hint.coupangId, hint.matchKey]
+      .map(value => String(value || '').replace(/\s+/g, '').toLowerCase())
+      .filter(Boolean);
+    if (coupangKeys.length) {
+      const hit = list.find(driver => {
+        const ids = [
+          coupangId(driver),
+          erpId(driver),
+          driver?.coupangId,
+          driver?.coupangLoginId,
+          driver?.coupangLoginKey
+        ].map(value => String(value || '').replace(/\s+/g, '').toLowerCase()).filter(Boolean);
+        return ids.some(id => coupangKeys.includes(id));
+      });
+      if (hit) return hit;
+    }
+    const phone = digits(hint.phone);
+    if (phone.length >= 8) {
+      const hit = list.find(driver => digits(driver?.phone) === phone);
+      if (hit) return hit;
+    }
+    const name = String(hint.name || '').trim();
+    if (name && name !== '-') {
+      const hits = list.filter(driver => String(driver?.name || '').trim() === name);
+      if (hits.length === 1) return hits[0];
+    }
+    return null;
+  }
+
+  async function openDriverMatch(hint = {}) {
+    const panel = $('#driverDetailPanel');
+    if (!panel) return false;
+    bind();
+    panel.hidden = false;
+    panel.classList.add('is-open');
+    markOpenButtons(true);
+    if (!state.weekStart) state.weekStart = weekStartKey(localDateKey());
+    syncWeekUi();
+    const search = $('#driverDetailSearchView');
+    const screen = $('#driverDetailScreen');
+    const title = $('#driverDetailTitle');
+    const body = $('#driverDetailBody');
+    if (search) search.hidden = true;
+    if (screen) screen.hidden = false;
+    const name = String(hint.name || '').trim();
+    if (title) title.textContent = name && name !== '-' ? `${name} 상세` : '기사상세';
+    if (body) body.innerHTML = '<p class="driver-detail-empty">기사 정보를 확인하고 있습니다.</p>';
+    try {
+      await ensureSearchDrivers();
+    } catch (error) {
+      if (!drivers().length) {
+        if (body) body.innerHTML = `<p class="driver-detail-empty">${escapeHtml(error?.message || '기사 목록을 불러오지 못했습니다.')}</p>`;
+        return false;
+      }
+    }
+    const driver = matchDriver(hint);
+    if (!driver?.id) {
+      if (body) {
+        body.innerHTML = `<p class="driver-detail-empty">${escapeHtml(name && name !== '-' ? name : '이 기사')}와 연결된 등록 기사가 없습니다. 배민ID·쿠팡ID·이름이 기사 등록과 같아야 상세가 열립니다.</p>`;
+      }
+      return false;
+    }
+    state.selectedId = String(driver.id);
+    showDetail();
+    return true;
+  }
+
   bind();
 
-  return { open, openPanel, closePanel, togglePanel, setWeek };
+  return { open, openPanel, closePanel, togglePanel, setWeek, openDriverMatch };
 })();
 
 window.BremDriverDetailSearch = BremDriverDetailSearch;
