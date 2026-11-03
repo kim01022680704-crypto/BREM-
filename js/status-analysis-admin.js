@@ -1152,7 +1152,7 @@
       { key: 'baemin', name: '배민', color: '#60a5fa' }
     ];
     const callFmt = v => Math.round(v).toLocaleString('ko-KR');
-    const focusWeeks = [addDays(currentWeek(), -14), addDays(currentWeek(), -7), currentWeek()];
+    const focusWeeks = [4, 3, 2, 1, 0].map(index => addDays(currentWeek(), -7 * index));
     const weekLabels = focusWeeks.map(w => `${w.slice(5).replace('-', '/')} 주`);
     const weekTotals = platform => focusWeeks.map(w => sumRows(aggregate(platform, w, addDays(w, 6), trendScope), platform));
     const weekSeries = platformSeries.map(p => ({
@@ -1294,13 +1294,13 @@
     const charts = [
       {
         title: '주간 콜수',
-        sub: '최근 3주',
+        sub: '최근 5주',
         svg: chartMulti(model.weekLabels, printSeries(model.weekSeries), model.callFmt, { height: 220, showValues: true, print: true }),
         height: 220
       },
       {
         title: '주간 배달비',
-        sub: '최근 3주 · 일정산 배달비',
+        sub: '최근 5주 · 일정산 배달비',
         svg: chartMulti(model.weekLabels, printSeries(model.weekPaySeries), model.payFmt, { height: 220, showValues: true, padLeft: 78, print: true }),
         height: 220
       },
@@ -1506,11 +1506,11 @@
         </div>
         <div class="sa-charts sa-charts--focus">
           <article class="sa-chart-card">
-            <div class="sa-chart-card__head"><h3>주간 콜수</h3><span>최근 3주 · 쿠팡·배민</span></div>
+            <div class="sa-chart-card__head"><h3>주간 콜수</h3><span>최근 5주 · 쿠팡·배민</span></div>
             ${chartMulti(weekLabels, weekSeries, callFmt, { height: 260, showValues: true })}
           </article>
           <article class="sa-chart-card">
-            <div class="sa-chart-card__head"><h3>주간 배달비</h3><span>최근 3주 · 일정산 배달비 · 쿠팡·배민</span></div>
+            <div class="sa-chart-card__head"><h3>주간 배달비</h3><span>최근 5주 · 일정산 배달비 · 쿠팡·배민</span></div>
             ${chartMulti(weekLabels, weekPaySeries, focus.payFmt, { height: 260, showValues: true, padLeft: 78 })}
           </article>
           <article class="sa-chart-card">
