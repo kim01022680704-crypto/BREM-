@@ -452,13 +452,13 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --black: #eef1f5;      /* 페이지 배경 */
-  --black-2: #ffffff;    /* 살짝 올라온 면 */
-  --card: #ffffff;       /* 카드 */
-  --line: #d7dde6;       /* 테두리 */
-  --text: #15181e;       /* 본문 */
-  --muted: #4b5563;      /* 보조 텍스트 (흰 배경에서 또렷하게) */
-  --text-secondary: #4b5563;
+  --black: #e8ecf1;      /* 페이지 배경 (순백 눈부심 완화) */
+  --black-2: #f2f5f9;    /* 살짝 올라온 면 */
+  --card: #fbfcfe;       /* 카드 (소프트 화이트) */
+  --line: #ccd3de;       /* 테두리 (또렷한 경계) */
+  --text: #121620;       /* 본문 (진하게) */
+  --muted: #475062;      /* 보조 텍스트 */
+  --text-secondary: #475062;
 }
 
 .theme-toggle-btn {
