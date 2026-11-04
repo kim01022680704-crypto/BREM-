@@ -567,13 +567,30 @@ function riderMatchesRegion(rider, region, zClusters) {
   if (!value) return false;
   if (value === region.vendorId || value === region.key) return true;
   if (region.vendorName && value === region.vendorName) return true;
-  const valueShort = shortCoupangRegionLabel(value);
-  const regionShort = shortCoupangRegionLabel(region.vendorName || region.label || '');
-  if (!valueShort || !regionShort || valueShort !== regionShort) return false;
+  let regionDisplay = displayCoupangRegionLabel(region.vendorName || region.label || '');
+  const regionIsZ = coupangRegionIsZ(`${region.vendorName || ''} ${region.label || ''}`)
+    || Boolean(zClusterInfo(zClusters).vendorIds?.has(coupangRegionVendorId(region)));
+  if (regionIsZ && regionDisplay && !/\(Z\)/i.test(regionDisplay)) {
+    regionDisplay = `${shortCoupangRegionLabel(regionDisplay)}(Z)`;
+  }
+  const valueDisplay = displayCoupangRegionLabel(value);
+  if (!regionDisplay || valueDisplay !== regionDisplay) return false;
+  if (coupangRegionIsZ(value) !== regionIsZ) return false;
   const regionTag = coupangRegionBranchTag(region.vendorName || region.label || '');
   const valueTag = coupangValueBranchTag(value);
-  if (regionTag && (valueTag || '이글스') !== regionTag) return false;
-  return coupangRegionIsZ(value) === regionIsCoupangZ(region, zClusters);
+  let tag = valueTag;
+  if (!tag) {
+    const tags = zClusters?.tagsByDisplay?.get(valueDisplay);
+    if (!tags || tags.size !== 1) return false;
+    tag = [...tags][0];
+  }
+  if (!regionTag || tag !== regionTag) return false;
+  const owners = zClusters?.ownersByKey?.get(`${regionDisplay}|${regionTag}`) || [];
+  if (owners.length > 1) {
+    const chosen = owners.slice().sort((a, b) => a.localeCompare(b))[0];
+    return coupangRegionVendorId(region) === chosen;
+  }
+  return true;
 }
 
 let zClusterCache = { at: 0, info: null };
@@ -584,6 +601,8 @@ function emptyZClusterInfo() {
   return {
     shorts,
     vendorIds,
+    tagsByDisplay: new Map(),
+    ownersByKey: new Map(),
     has(value) { return shorts.has(value); }
   };
 }
@@ -593,16 +612,31 @@ async function loadCoupangZClusters(supabase) {
   const { data, error } = await supabase
     .from('coupang_collect_items')
     .select('vendor_id,vendor_name')
-    .eq('source_menu', 'vendor_info')
-    .ilike('vendor_name', '%(Z)%')
-    .limit(500);
+    .in('source_menu', ['vendor_info', 'weekly_performance', 'peak_realtime'])
+    .neq('vendor_id', '')
+    .order('collect_date', { ascending: false })
+    .limit(5000);
   const info = emptyZClusterInfo();
+  const seen = new Set();
   if (!error) {
     (data || []).forEach(row => {
-      const short = shortCoupangRegionLabel(row.vendor_name);
-      if (short) info.shorts.add(short);
       const vendorId = String(row.vendor_id || '').trim();
-      if (vendorId) info.vendorIds.add(vendorId);
+      const name = String(row.vendor_name || '').trim();
+      if (!vendorId || !name || seen.has(vendorId)) return;
+      seen.add(vendorId);
+      const display = displayCoupangRegionLabel(name);
+      const tag = coupangRegionBranchTag(name);
+      if (coupangRegionIsZ(name)) {
+        const short = shortCoupangRegionLabel(name);
+        if (short) info.shorts.add(short);
+        info.vendorIds.add(vendorId);
+      }
+      if (!display || !tag) return;
+      if (!info.tagsByDisplay.has(display)) info.tagsByDisplay.set(display, new Set());
+      info.tagsByDisplay.get(display).add(tag);
+      const key = `${display}|${tag}`;
+      if (!info.ownersByKey.has(key)) info.ownersByKey.set(key, []);
+      info.ownersByKey.get(key).push(vendorId);
     });
     zClusterCache = { at: Date.now(), info };
   }

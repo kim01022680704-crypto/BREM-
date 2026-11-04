@@ -368,6 +368,24 @@
       .replace(/"/g, '&quot;');
   }
 
+  function savedCoupangOptionValue(selectEl, saved) {
+    const raw = String(saved || '').trim();
+    if (!raw || !selectEl) return '';
+    const options = [...selectEl.options].filter(option => option.value);
+    if (options.some(option => option.value === raw)) return raw;
+    const api = window.BremCoupangRegion;
+    if (!api?.displayCoupangRegionLabel) return raw;
+    const display = api.displayCoupangRegionLabel(raw);
+    const tag = api.coupangValueBranchTag?.(raw) || '';
+    const hits = options.filter(option => {
+      if (api.displayCoupangRegionLabel(option.value) !== display) return false;
+      const optionTag = api.coupangValueBranchTag?.(option.value) || '';
+      return !tag || optionTag === tag;
+    });
+    if (!tag && hits.length !== 1) return raw;
+    return hits.length === 1 ? hits[0].value : raw;
+  }
+
   function normalizeSavedCoupangRegion(value) {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -443,21 +461,17 @@
         items.forEach(item => {
           const vendorName = String(item.vendorName || '').trim();
           const api = window.BremCoupangRegion;
-          const value = api?.displayCoupangRegionLabel
-            ? api.displayCoupangRegionLabel(vendorName)
-            : shortCoupangRegionLabel(vendorName);
           const text = api?.coupangRegionSelectLabel
             ? api.coupangRegionSelectLabel(vendorName)
-            : value;
-          if (!value || !text) return;
-          const key = `${value}\0${text}`;
-          if (seen.has(key)) return;
-          seen.add(key);
-          options.push(`<option value="${escapeHtml(value)}">${escapeHtml(text)}</option>`);
+            : shortCoupangRegionLabel(vendorName);
+          if (!text) return;
+          if (seen.has(text)) return;
+          seen.add(text);
+          options.push(`<option value="${escapeHtml(text)}">${escapeHtml(text)}</option>`);
         });
         options.sort((a, b) => a.localeCompare(b, 'ko'));
         regionCoupangInput.innerHTML = `<option value="">미선택</option>${options.join('')}`;
-        ensureSelectValue(regionCoupangInput, normalizeSavedCoupangRegion(keepCoupang));
+        ensureSelectValue(regionCoupangInput, savedCoupangOptionValue(regionCoupangInput, keepCoupang));
       } catch (_) { /* ignore */ }
     }
   }

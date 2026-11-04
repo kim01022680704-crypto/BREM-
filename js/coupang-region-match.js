@@ -54,12 +54,54 @@
     return coupangRegionBranchTag(region?.vendorName || region?.label || '');
   }
 
-  function coupangTagsMatch(value, region) {
-    const regionTag = coupangRegionTagOf(region);
-    if (!regionTag) return true;
-    const valueTag = coupangValueBranchTag(value);
-    if (!valueTag) return regionTag === '이글스';
-    return valueTag === regionTag;
+  function coupangRegionExactKey(region) {
+    const display = displayCoupangRegionLabel(region?.vendorName || region?.label || '');
+    const tag = coupangRegionTagOf(region);
+    if (!display || !tag) return '';
+    return `${display}|${tag}`;
+  }
+
+  function coupangValueExactKey(value) {
+    const display = displayCoupangRegionLabel(value);
+    const tag = coupangValueBranchTag(value);
+    if (!display || !tag) return '';
+    return `${display}|${tag}`;
+  }
+
+  function coupangTagsForDisplay(catalog, display, isZ) {
+    const tags = new Set();
+    (Array.isArray(catalog) ? catalog : []).forEach(region => {
+      const regionDisplay = displayCoupangRegionLabel(region?.vendorName || region?.label || '');
+      if (regionDisplay !== display) return;
+      if (coupangRegionLooksZ(region) !== isZ) return;
+      const tag = coupangRegionTagOf(region);
+      if (tag) tags.add(tag);
+    });
+    return tags;
+  }
+
+  function riderMatchesCoupangRegion(value, region, catalog) {
+    const raw = String(value || '').trim();
+    if (!region || !raw) return false;
+    if (raw === region.vendorId || raw === region.key) return true;
+    if (region.vendorName && raw === region.vendorName) return true;
+    const regionKey = coupangRegionExactKey(region);
+    const valueKey = coupangValueExactKey(raw);
+    if (valueKey) return Boolean(regionKey) && valueKey === regionKey;
+    const display = displayCoupangRegionLabel(raw);
+    const regionDisplay = displayCoupangRegionLabel(region?.vendorName || region?.label || '');
+    if (!display || display !== regionDisplay) return false;
+    if (coupangRegionIsZ(raw) !== coupangRegionLooksZ(region)) return false;
+    const tags = coupangTagsForDisplay(catalog, display, coupangRegionIsZ(raw));
+    return tags.size === 1 && tags.has(coupangRegionTagOf(region));
+  }
+
+  function pickCoupangCatalogRegion(catalog, value) {
+    const list = Array.isArray(catalog) ? catalog : [];
+    const hits = list.filter(region => riderMatchesCoupangRegion(value, region, list));
+    if (!hits.length) return null;
+    hits.sort((a, b) => String(a.vendorId || a.key || '').localeCompare(String(b.vendorId || b.key || '')));
+    return hits[0];
   }
 
   /** 선택 목록 표기. 값은 지역명(+Z)만 두고, 화면에는 태그를 붙인다. */
@@ -99,25 +141,6 @@
       if (!key || !zBases.has(key)) return true;
       return coupangRegionLooksZ(region);
     });
-  }
-
-  function riderMatchesCoupangRegion(value, region) {
-    const raw = String(value || '').trim();
-    if (!region || !raw) return false;
-    if (raw === region.vendorId || raw === region.key) return true;
-    if (region.vendorName && raw === region.vendorName) return true;
-    const valueShort = shortCoupangRegionLabel(raw);
-    const regionShort = shortCoupangRegionLabel(region.vendorName || region.label || '');
-    if (!valueShort || !regionShort || valueShort !== regionShort) return false;
-    if (!coupangTagsMatch(raw, region)) return false;
-    return coupangRegionIsZ(raw) === coupangRegionLooksZ(region);
-  }
-
-  function pickCoupangCatalogRegion(catalog, value) {
-    const list = Array.isArray(catalog) ? catalog : [];
-    const hits = list.filter(region => riderMatchesCoupangRegion(value, region));
-    if (!hits.length) return null;
-    return hits.find(region => coupangRegionLooksZ(region) === coupangRegionIsZ(value)) || hits[0];
   }
 
   const api = {
