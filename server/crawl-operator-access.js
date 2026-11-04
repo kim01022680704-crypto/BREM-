@@ -63,7 +63,7 @@ function accountMatchesLegacyOperator(account = {}) {
 
 function resolveCrawlAllowed(registryAccount, identity = {}) {
   const role = String(registryAccount?.role || identity.role || '').trim().toLowerCase();
-  if (role === 'ceo' || role === 'director') {
+  if (role === 'ceo' || role === 'operator' || role === 'director') {
     return { allowed: true, source: 'role' };
   }
   const legacy = accountMatchesLegacyOperator({

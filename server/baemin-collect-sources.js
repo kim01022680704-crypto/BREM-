@@ -310,6 +310,27 @@ function buildDedupeKey(sourceId, item, index = 0, options = {}) {
   return `${partnerId}:${sourceId}:row-${index}`;
 }
 
+/** 배민 영업일 시간대. hour 24~29 는 익일 0~5시. */
+function hourlyCountsFromItem(item) {
+  const hours = Array(24).fill(0);
+  const stored = item?.hourlyCounts;
+  if (Array.isArray(stored) && stored.length === 24 && stored.every(value => value == null || typeof value !== 'object')) {
+    return stored.map(value => Number(value) || 0);
+  }
+  const list = Array.isArray(item?.hourlyCompleted) ? item.hourlyCompleted : [];
+  list.forEach(entry => {
+    if (!entry || typeof entry !== 'object') return;
+    const rawHour = Number(entry.hour);
+    const count = Number(entry.count ?? entry.complete ?? entry.completed ?? 0);
+    if (!Number.isFinite(rawHour) || !Number.isFinite(count)) return;
+    let hour = rawHour;
+    if (hour >= 24 && hour <= 29) hour -= 24;
+    if (hour < 0 || hour > 23) return;
+    hours[hour] += count;
+  });
+  return hours;
+}
+
 function mapItemToCollectRow(sourceId, item, collectDate, sourceUrl, collectedAt, options = {}) {
   const acceptance = pickAcceptance(item);
   const peak = item?.deliveryPeakTimeCount || {};

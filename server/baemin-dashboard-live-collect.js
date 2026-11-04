@@ -322,6 +322,9 @@ function summarizeTodayAggregate(live) {
  *   - 중단요청(collectProgress.isAbortRequested) 시 현재 협력사 후 정지.
  */
 async function collectAllPartnersViaDashboard(page, options = {}) {
+  // 세션 서버는 이 파일만 매 회차 다시 읽는다. 진행 모듈도 같이 새로 읽어
+  // 돌고 있는 프로세스에 isAbortRequested 가 없는 옛 객체가 남지 않게 한다.
+  try { delete require.cache[require.resolve('./baemin-collect-progress')]; } catch { /* ignore */ }
   const collectProgress = require('./baemin-collect-progress');
   const centerCtx = require('./baemin-center-context');
   const region = require('./baemin-partner-region');

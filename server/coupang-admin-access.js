@@ -6,9 +6,18 @@ function normalizeVendorIdList(list) {
     .filter(Boolean))];
 }
 
+/** 대표(관리자)가 체크한 쿠팡 매장. 그 직책 계정이 없으면 null(필터 없음). */
+function collectOperatingCoupangVendorIds(accounts) {
+  const operators = (accounts || []).filter(account =>
+    account && account.active !== false && String(account.role || '') === ADMIN_ROLES.OPERATOR
+  );
+  if (!operators.length) return null;
+  return normalizeVendorIdList(operators.flatMap(account => account.coupangVendorIds || []));
+}
+
 function canManageCoupangRegions(account) {
   const role = String(account?.role || '').toLowerCase();
-  return role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.DIRECTOR;
+  return role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.OPERATOR || role === ADMIN_ROLES.DIRECTOR;
 }
 
 /**
@@ -53,6 +62,7 @@ function filterItemsByVendorScope(items, scope) {
 module.exports = {
   normalizeVendorIdList,
   canManageCoupangRegions,
+  collectOperatingCoupangVendorIds,
   resolveCoupangVendorScope,
   filterItemsByVendorScope
 };

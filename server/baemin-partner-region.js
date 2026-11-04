@@ -121,7 +121,7 @@ async function assignRegisteredPartnerToManagers(partnerId, actorAccount = null)
   let updated = 0;
   const next = accounts.map(account => {
     const role = String(account?.role || '').toLowerCase();
-    const canManage = role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.DIRECTOR;
+    const canManage = role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.OPERATOR || role === ADMIN_ROLES.DIRECTOR;
     const current = [...new Set((Array.isArray(account?.baeminPartnerIds) ? account.baeminPartnerIds : [])
       .map(id => normalizePartnerId(id))
       .filter(id => /^DP\d{6,}$/.test(id)))];

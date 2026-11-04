@@ -34,14 +34,14 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20261101adjust4">
+  <link rel="stylesheet" href="css/admin.css?v=20261104hour1">
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261029edit1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
-  <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20261103riders5">
+  <link rel="stylesheet" href="css/admin-dashboard-live.css?v=20261104tag1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20261010missionlabel2">
-  <link rel="stylesheet" href="css/admin-mobile.css?v=20260910reg1">
+  <link rel="stylesheet" href="css/admin-mobile.css?v=20261104tag1">
   <link rel="stylesheet" href="css/admin-sidebar.css?v=20260915font1">
 </head>
 <body>
@@ -150,6 +150,7 @@
         <button class="nav-btn" data-section="calls">콜수 입력</button>
         <button class="nav-btn" data-section="baemin-biz-status">배민 BIZ 현황</button>
         <button class="nav-btn" data-section="baemin-status">배민현황</button>
+        <button class="nav-btn" data-section="baemin-rider-hourly">라이더별내역</button>
         <button class="nav-btn" data-section="baemin-status" data-baemin-menu-focus="calls_rejection_sync">콜수·거절율 동기화</button>
         <button class="nav-btn" data-section="coupang-rider-status">쿠팡현황</button>
         <button class="nav-btn" data-section="coupang-status">쿠팡 밴더현황</button>
@@ -1095,6 +1096,38 @@
             </div>
           </form>
         </dialog>
+      </section>
+
+      <section class="section" id="baemin-rider-hourly">
+        <header class="baemin-view-hero">
+          <div class="baemin-view-hero__text">
+            <h2 class="baemin-view-hero__title">라이더별내역</h2>
+            <p class="baemin-view-hero__desc">배민 기사별 시간대 완료 건수 · 지역별 · 라이더별 수집과 함께 저장</p>
+          </div>
+        </header>
+        <article class="card">
+          <div class="rider-hourly-toolbar">
+            <label class="baemin-field">
+              <span class="baemin-field__label">배달일</span>
+              <input type="date" id="baeminRiderHourlyDate">
+            </label>
+            <label class="baemin-field rider-hourly-region-field">
+              <span class="baemin-field__label">지역</span>
+              <select id="baeminRiderHourlyRegion"></select>
+            </label>
+            <label class="baemin-field">
+              <span class="baemin-field__label">기사</span>
+              <input type="search" id="baeminRiderHourlySearch" placeholder="이름" autocomplete="off">
+            </label>
+            <label class="rider-hourly-zero">
+              <input type="checkbox" id="baeminRiderHourlyZeros">
+              0건 기사 포함
+            </label>
+            <button type="button" class="primary-btn" id="baeminRiderHourlyLoadBtn">불러오기</button>
+          </div>
+          <p class="form-help" id="baeminRiderHourlyMeta">라이더별 수집 시각(06:30 · 11:00 · 13:30 · 21:30)에 같이 쌓입니다. 영업일은 06시~다음날 05시입니다.</p>
+          <div class="table-wrap admin-scroll-table-wrap rider-hourly-wrap" id="baeminRiderHourlyTable"></div>
+        </article>
       </section>
 
       <section class="section baemin-view-section" id="baemin-status">
@@ -7736,11 +7769,12 @@
               직책
               <select id="adminAccountRole" required>
                 <option value="ceo">대표</option>
+                <option value="operator">대표(관리자)</option>
                 <option value="director">총괄</option>
                 <option value="manager" selected>팀장</option>
               </select>
             </label>
-            <p class="form-help admin-account-role-help" id="adminAccountRoleHelp">대표: 계정 생성·직책·메뉴 설정 · 총괄: 메뉴 수정 · 팀장: 조회만</p>
+            <p class="form-help admin-account-role-help" id="adminAccountRoleHelp">대표: 계정 생성·직책·메뉴 설정 · 대표(관리자): 체크한 쿠팡 지역이 실제 운영 지역 · 총괄: 메뉴 수정 · 팀장: 조회만</p>
             <label id="adminAccountPasswordWrap">
               <span id="adminAccountPasswordLabel">비밀번호</span>
               <input type="password" id="adminAccountPassword" minlength="4" autocomplete="new-password">
@@ -7794,7 +7828,7 @@
                   <button class="small-btn" type="button" id="adminAccountCoupangClearAll">전체 해제</button>
                 </div>
               </div>
-              <p class="form-help">수집된 쿠팡 매장 중 이 계정에 배정할 지역을 선택합니다. 체크한 지역만 대시보드·쿠팡현황에 보입니다. 배정을 비운 대표·총괄만 전체를 봅니다.</p>
+              <p class="form-help">수집된 쿠팡 매장 중 이 계정에 배정할 지역을 선택합니다. <strong>대표(관리자)</strong>가 체크한 지역만 실제 운영 지역입니다. 다른 계정 수정·기사관리·기사지역관리·지역매칭에는 그 체크만 나오고, 체크하지 않은 지역은 보이지 않습니다.</p>
               <div class="admin-account-baemin-grid" id="adminAccountCoupangGrid"></div>
             </div>
             <p class="form-help" id="adminAccountStatus"></p>
@@ -10317,7 +10351,7 @@
   <script src="js/storage-supabase-mapper.js?v=20261103dist2"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20261103dist2"></script>
-  <script src="js/storage.js?v=20261103dist2"></script>
+  <script src="js/storage.js?v=20261104hour1"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js?v=20261101inq1"></script>
@@ -10337,9 +10371,10 @@
   <script src="js/weekly-settlement-admin.js?v=20260922part5"></script>
   <script src="js/baemin-delivery-fee.js?v=20260917ai1"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
-    <script src="js/baemin-delivery-status-admin.js?v=20261103riders4"></script>
-    <script src="js/coupang-status-admin.js?v=20261103riders4"></script>
-    <script src="js/coupang-rider-status-admin.js?v=20260811a"></script>
+    <script src="js/baemin-delivery-status-admin.js?v=20261104op2"></script>
+    <script src="js/baemin-rider-hourly-admin.js?v=20261104hour1"></script>
+    <script src="js/coupang-status-admin.js?v=20261104op2"></script>
+    <script src="js/coupang-rider-status-admin.js?v=20261104tag1"></script>
     <script src="js/contribution-admin.js?v=20260924peak20"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
@@ -10371,7 +10406,7 @@
   <script src="js/tax-invoice-parse.js?v=20261029week4"></script>
   <script src="js/tax-invoice-admin.js?v=20261029week5"></script>
   <script src="js/coupang-region-match.js?v=20261013zmatch1"></script>
-  <script src="js/driver-management-admin.js?v=20261025panel1"></script>
+  <script src="js/driver-management-admin.js?v=20261104op1"></script>
   <script src="js/driver-detail-search.js?v=20261103riders2"></script>
   <script src="js/inactive-drivers-admin.js?v=20260922active1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
@@ -10389,9 +10424,9 @@
   <script src="js/admin-mission-assignment.js?v=20261101region1"></script>
   <script src="js/table-sort.js"></script>
     <script src="js/admin-work-requests.js?v=20260927req8"></script>
-    <script src="js/admin.js?v=20261103dist2"></script>
+    <script src="js/admin.js?v=20261104hour1"></script>
   <script src="js/admin-driver-popups.js?v=20261030kakaoapp1" defer></script>
-  <script src="js/admin-sidebar-groups.js?v=20261101menu1" defer></script>
+  <script src="js/admin-sidebar-groups.js?v=20261104hour1" defer></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

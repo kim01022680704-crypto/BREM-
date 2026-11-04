@@ -1,3 +1,5 @@
+let abortRequested = false;
+
 let state = {
   active: false,
   percent: 0,

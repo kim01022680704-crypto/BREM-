@@ -2230,11 +2230,16 @@ async function getAdminCoupangClusterCrawlAssign(accessToken, query = {}) {
   const bestByDriver = new Map();
   const noVendorRows = [];
   const unregistered = [];
+  const { collectOperatingCoupangVendorIds } = require('./coupang-admin-access');
+  const { loadAdminRegistry } = require('./admin-registry');
+  const operatingList = collectOperatingCoupangVendorIds(await loadAdminRegistry(supabase).catch(() => []));
+  const operatingVendorIds = Array.isArray(operatingList) ? new Set(operatingList) : null;
 
   (crawlRows || []).forEach(row => {
     const parsed = row.parsed_json || {};
     const vendorId = String(row.vendor_id || parsed.vendorId || '').trim();
     const vendorName = String(row.vendor_name || parsed.vendorName || '').trim();
+    if (operatingVendorIds && !operatingVendorIds.has(vendorId)) return;
     const cluster = displayCoupangRegionLabel(vendorName) || shortCoupangRegionLabel(vendorName) || '';
     const matchKey = String(row.match_key || parsed.matchKey || '').trim();
     const courierId = String(row.courier_id || parsed.courierId || '').trim();

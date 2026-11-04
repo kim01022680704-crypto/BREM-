@@ -119,22 +119,28 @@ function resolveActorAccount(accounts, caller) {
   return buildFallbackAccountFromProfile(caller);
 }
 
+function isCeoLevelRole(role) {
+  return role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.OPERATOR;
+}
+
 function applyCeoRegistryPrivileges(account) {
-  if (!account || account.role !== ADMIN_ROLES.CEO) return account;
+  if (!account || !isCeoLevelRole(account.role)) return account;
   if (account.menus == null) return account;
 
   const menus = Array.isArray(account.menus) ? [...account.menus] : [];
   const editableMenus = Array.isArray(account.editableMenus) ? [...account.editableMenus] : menus;
   const nextMenus = menus.includes('admin-account') ? menus : [...menus, 'admin-account'];
-  const nextEditable = editableMenus.includes('admin-account')
-    ? editableMenus
-    : [...editableMenus, 'admin-account'];
+  const nextEditable = account.role === ADMIN_ROLES.OPERATOR
+    ? [...nextMenus]
+    : (editableMenus.includes('admin-account')
+      ? editableMenus
+      : [...editableMenus, 'admin-account']);
 
   return { ...account, menus: nextMenus, editableMenus: nextEditable, canOperateCrawl: true };
 }
 
 function assertCeo(actorAccount) {
-  if (actorAccount?.role !== ADMIN_ROLES.CEO) {
+  if (!isCeoLevelRole(actorAccount?.role)) {
     return { ok: false, status: 403, error: '대표만 이 작업을 수행할 수 있습니다.' };
   }
   return { ok: true };
@@ -179,7 +185,7 @@ async function createAdminUser(accessToken, body = {}) {
 
   const name = String(body.name || '').trim();
   const password = String(body.password || '');
-  const role = [ADMIN_ROLES.CEO, ADMIN_ROLES.DIRECTOR, ADMIN_ROLES.MANAGER].includes(body.role)
+  const role = [ADMIN_ROLES.CEO, ADMIN_ROLES.OPERATOR, ADMIN_ROLES.DIRECTOR, ADMIN_ROLES.MANAGER].includes(body.role)
     ? body.role
     : ADMIN_ROLES.MANAGER;
   const active = body.active !== false;
@@ -328,7 +334,7 @@ async function updateAdminUser(accessToken, userId, body = {}) {
   if (!ceoCheck.ok) return ceoCheck;
 
   const name = String(body.name ?? current.name).trim();
-  const role = [ADMIN_ROLES.CEO, ADMIN_ROLES.DIRECTOR, ADMIN_ROLES.MANAGER].includes(body.role)
+  const role = [ADMIN_ROLES.CEO, ADMIN_ROLES.OPERATOR, ADMIN_ROLES.DIRECTOR, ADMIN_ROLES.MANAGER].includes(body.role)
     ? body.role
     : current.role;
   const active = body.active == null ? current.active : !!body.active;

@@ -244,10 +244,70 @@
     return base.slice(-4);
   }
 
-  function regionNameCell(fullName) {
+  function coupangPortalAccount(parsed, item) {
+    const fromParsed = String(parsed?.portalAccount || '').trim();
+    if (fromParsed) return fromParsed;
+    const key = String(item?.dedupe_key || '');
+    const matched = key.match(/^acct:([^|]+)\|/);
+    return matched ? matched[1] : '';
+  }
+
+  function isCoupang119Account(account, vendorName) {
+    const acct = String(account || '').trim().toLowerCase();
+    if (acct && acct !== 'default' && (acct === 'cmp119' || acct.includes('119'))) return true;
+    const name = String(vendorName || '').replace(/\s+/g, '');
+    return name.includes('119컴퍼니') || name.startsWith('119');
+  }
+
+  function rememberPortalAccount(row, parsed, item) {
+    const acct = coupangPortalAccount(parsed, item);
+    if (!acct || !row) return;
+    if (!row.portalAccount || isCoupang119Account(acct, row.vendorName || parsed?.vendorName)) {
+      row.portalAccount = acct;
+    }
+  }
+
+  /** 지역명: 뒤 4글자 + (Z). 119/이글스는 이름에 붙이지 않고 태그로 둔다. */
+  function dashboardRegionBase(name) {
+    const raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '-';
+    if (raw === '전체합계' || raw === '전체 합계') return '합계';
+    const api = window.BremCoupangRegion;
+    if (api && typeof api.displayCoupangRegionLabel === 'function') {
+      const labeled = api.displayCoupangRegionLabel(raw);
+      if (labeled) return labeled;
+    }
+    const short = shortRegionLabel(raw);
+    if (/\(Z\)/i.test(raw) && short && short !== '-' && !/\(Z\)/i.test(short)) return `${short}(Z)`;
+    return short;
+  }
+
+  function coupangBranch(name, account) {
+    const base = dashboardRegionBase(name);
+    if (!base || base === '-' || base === '합계') return null;
+    return isCoupang119Account(account, name)
+      ? { key: '119', label: '119' }
+      : { key: 'eagles', label: '이글스' };
+  }
+
+  function branchTagHtml(name, account) {
+    const branch = coupangBranch(name, account);
+    if (!branch) return '';
+    return `<span class="dashboard-coupang-tag is-${branch.key}">${branch.label}</span>`;
+  }
+
+  function dashboardRegionLabel(name, account) {
+    const base = dashboardRegionBase(name);
+    const branch = coupangBranch(name, account);
+    if (!branch) return base || '-';
+    return `${base} · ${branch.label}`;
+  }
+
+  function regionNameCell(fullName, account, titleExtra) {
     const full = String(fullName || '').trim() || '-';
-    const short = shortRegionLabel(full);
-    return `<strong class="dashboard-baemin-region-name" title="${esc(full)}">${esc(short)}</strong>`;
+    const shown = dashboardRegionBase(full);
+    const title = titleExtra ? `${full} · ${titleExtra}` : full;
+    return `<strong class="dashboard-baemin-region-name" title="${esc(title)}">${esc(shown)}</strong>${branchTagHtml(full, account)}`;
   }
 
   /**
@@ -255,9 +315,10 @@
    * 쿠팡이 같은 지역에 밴더ID를 새로 발급하면 이름 뒤에 (2)/(3)가 붙는데,
    * 이를 제거해 옛 밴더·새 밴더를 같은 지역으로 묶는다.
    */
-  function regionDedupeKey(name) {
+  function regionDedupeKey(name, account) {
     const raw = String(name || '').replace(/\s+/g, '').replace(/\(\d+\)$/g, '').trim();
-    return raw;
+    if (!raw) return '';
+    return isCoupang119Account(account, raw) ? `119|${raw}` : raw;
   }
 
   /** 오늘 현황 행 활동 점수: 운행/완료가 있으면 최우선(최신·활성), 그다음 완료·목표 순 */
@@ -279,7 +340,7 @@
   function dedupeRegionRows(rows, scoreFn) {
     const best = new Map();
     (rows || []).forEach(row => {
-      const key = regionDedupeKey(row.vendorName) || String(row.vendorId || '');
+      const key = regionDedupeKey(row.vendorName, row.portalAccount) || String(row.vendorId || '');
       const score = scoreFn(row);
       const prev = best.get(key);
       if (!prev || score > prev.score) best.set(key, { row, score });
@@ -300,7 +361,7 @@
             ? `<span class="baemin-quota-tag ${achieved ? 'baemin-quota-tag--achieved' : 'baemin-quota-tag--missed'}">${achieved ? '달성' : '미달성'}</span>`
             : '-';
           return [
-            esc(p.vendorName || p.vendorId),
+            regionNameCell(p.vendorName || p.vendorId, p.portalAccount),
             esc(p.peakLabel || p.peakType),
             `${n(done)} / ${n(goal)}`,
             esc(n(p.remainingCount)),
@@ -339,7 +400,7 @@
           const dow = dayKo[dowRaw.toUpperCase()] || dayKo[dowRaw] || dowRaw || '-';
           const dateLabel = String(p.date || '').slice(0, 10) || '-';
           return [
-            esc(p.vendorName || p.vendorId),
+            regionNameCell(p.vendorName || p.vendorId, p.portalAccount),
             esc(dow),
             esc(dateLabel),
             esc(p.peakLabel || p.peakType),
@@ -352,7 +413,7 @@
     if (menu === 'vendor_info') {
       return wrapHtml(['지역', '목표', '완료', '진행중', '운행중', '거절율'],
         rows.map(p => [
-          esc(p.vendorName || p.vendorId),
+          regionNameCell(p.vendorName || p.vendorId, p.portalAccount),
           esc(n(p.target)),
           esc(n(p.completedCount)),
           esc(n(p.onGoingCount)),
@@ -361,8 +422,17 @@
         ]), true);
     }
     // rider_daily
-    return wrap(['매칭키', '이름', '연락처', '쿠팡ID', '완료', '거절', '취소', '지역'],
-      rows.map(p => [p.matchKey, p.name, p.phone, p.courierId, n(p.completeCount), n(p.rejectCount), n(p.cancelCount), p.vendorName || p.vendorId]));
+    return wrapHtml(['매칭키', '이름', '연락처', '쿠팡ID', '완료', '거절', '취소', '지역'],
+      rows.map(p => [
+        esc(p.matchKey),
+        esc(p.name),
+        esc(p.phone),
+        esc(p.courierId),
+        esc(n(p.completeCount)),
+        esc(n(p.rejectCount)),
+        esc(n(p.cancelCount)),
+        regionNameCell(p.vendorName || p.vendorId, p.portalAccount)
+      ]), true);
   }
 
   function wrap(headers, rows) {
@@ -444,7 +514,13 @@
     const date = String(p.date || it.collect_date || '').slice(0, 10);
     if (!vid || !date || date < weekRange.fromDate || date > weekRange.toDate) return;
     const name = String(p.vendorName || it.vendor_name || vid);
-    if (!vendorMap.has(vid)) vendorMap.set(vid, name);
+    const acct = coupangPortalAccount(p, it);
+    if (!vendorMap.has(vid)) {
+      vendorMap.set(vid, { vendorName: name, portalAccount: acct });
+    } else {
+      const cur = vendorMap.get(vid);
+      if (cur && typeof cur === 'object' && acct && !cur.portalAccount) cur.portalAccount = acct;
+    }
     if (!byVendor[vid]) byVendor[vid] = {};
     if (!byVendor[vid][date]) {
       byVendor[vid][date] = { peaks: emptyPeaks(), rejectionRate: null };
@@ -604,12 +680,12 @@
     (regionRows || []).forEach(region => {
       const vendorId = String(region.vendorId || '').trim();
       if (!vendorId) return;
-      const key = regionDedupeKey(region.vendorName);
+      const key = regionDedupeKey(region.vendorName, region.portalAccount);
       const ids = new Set([vendorId]);
       (pool || []).forEach(row => {
         const id = String(row.vendorId || '').trim();
         if (!id) return;
-        if (id === vendorId || (key && regionDedupeKey(row.vendorName) === key)) ids.add(id);
+        if (id === vendorId || (key && regionDedupeKey(row.vendorName, row.portalAccount) === key)) ids.add(id);
       });
       const seen = new Set();
       const all = [];
@@ -656,7 +732,8 @@
       dash.vendorMeta = cache.vendorMeta
         .map(row => ({
           vendorId: String(row?.vendorId || '').trim(),
-          vendorName: String(row?.vendorName || '').trim()
+          vendorName: String(row?.vendorName || '').trim(),
+          portalAccount: String(row?.portalAccount || '').trim()
         }))
         .filter(row => row.vendorId);
     }
@@ -728,9 +805,11 @@
     const body = $('dashboardRegionRidersBody');
     if (!modal || !body) return;
     const meta = (dash.vendorMeta || []).find(row => row.vendorId === id);
-    const regionName = shortRegionLabel(meta?.vendorName || id);
+    const regionName = dashboardRegionBase(meta?.vendorName || id);
     const bag = dash.operatingByVendor?.[id] || null;
-    if (title) title.textContent = `${regionName} · 운행중 기사`;
+    if (title) {
+      title.innerHTML = `${esc(regionName)} ${branchTagHtml(meta?.vendorName || id, meta?.portalAccount)} · 운행중 기사`;
+    }
     if (!bag) {
       if (summary) summary.textContent = '기사 목록을 아직 받지 못했습니다.';
       body.innerHTML = '<p class="form-help">실시간 조회가 끝난 뒤 지역 줄을 다시 눌러 주세요.</p>';
@@ -780,7 +859,11 @@
       .replace(/\s*·\s*누르면 운행중 기사$/, '')
       .trim();
     const text = String(row.querySelector('.dashboard-baemin-region-name')?.textContent || '').trim();
-    const hit = (dash.vendorMeta || []).find(item => item.vendorName === title || shortRegionLabel(item.vendorName) === text);
+    const hit = (dash.vendorMeta || []).find(item => {
+      if (item.vendorName === title) return true;
+      const label = dashboardRegionLabel(item.vendorName, item.portalAccount);
+      return label === text || shortRegionLabel(item.vendorName) === text || dashboardRegionBase(item.vendorName) === text;
+    });
     return hit?.vendorId || '';
   }
 
@@ -878,8 +961,9 @@
         });
       }).join('');
       const fullName = String(region.vendorName || '').trim() || '-';
-      return `<tr class="dashboard-baemin-region-row" data-dashboard-coupang-region="${esc(region.vendorId)}" tabindex="0" role="button" aria-label="${esc(fullName)} 운행중 기사">
-        <td><strong class="dashboard-baemin-region-name" title="${esc(fullName)} · 누르면 운행중 기사">${esc(shortRegionLabel(fullName))}</strong></td>
+      const aria = dashboardRegionLabel(fullName, region.portalAccount);
+      return `<tr class="dashboard-baemin-region-row" data-dashboard-coupang-region="${esc(region.vendorId)}" tabindex="0" role="button" aria-label="${esc(aria)} 운행중 기사">
+        <td>${regionNameCell(fullName, region.portalAccount, '누르면 운행중 기사')}</td>
         <td>${esc(n(region.drivingCount))}</td>
         ${peakCells}
         <td>${region.rejectionRate == null ? '-' : `${esc(n(region.rejectionRate))}%`}</td>
@@ -917,7 +1001,7 @@
     bar.innerHTML = list.map(v => {
       const active = v.vendorId === dash.weekVendorId ? ' is-active' : '';
       const full = String(v.vendorName || v.vendorId);
-      return `<button type="button" class="baemin-region-tab${active}" data-coupang-week-vendor="${esc(v.vendorId)}" title="${esc(full)}" aria-pressed="${v.vendorId === dash.weekVendorId ? 'true' : 'false'}">${esc(shortRegionLabel(full))}</button>`;
+      return `<button type="button" class="baemin-region-tab${active}" data-coupang-week-vendor="${esc(v.vendorId)}" title="${esc(full)}" aria-pressed="${v.vendorId === dash.weekVendorId ? 'true' : 'false'}">${esc(dashboardRegionBase(full))}${branchTagHtml(full, v.portalAccount)}</button>`;
     }).join('');
     bar.querySelectorAll('[data-coupang-week-vendor]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -936,6 +1020,7 @@
     if (!rowsEl || !dash.weekCache || !dash.weekRange) return;
     const vendor = (dash.weekCache.vendors || []).find(v => v.vendorId === vendorId);
     const regionName = vendor?.vendorName || vendorId;
+    const regionAccount = vendor?.portalAccount || '';
     const byDate = dash.weekCache.byVendor?.[vendorId] || {};
     const dates = listDatesInclusive(dash.weekRange.fromDate, dash.weekRange.toDate);
     if (!dates.length) {
@@ -958,14 +1043,14 @@
       ).join('');
       const rej = day?.rejectionRate;
       return `<tr>
-        <td>${regionNameCell(regionName)}</td>
+        <td>${regionNameCell(regionName, regionAccount)}</td>
         <td class="dashboard-baemin-date-cell" title="${esc(date)}">${esc(formatDeliveryDateWithWeekday(date))}</td>
         ${peakCells}
         <td>${rej == null ? '-' : `${esc(n(rej))}%`}</td>
       </tr>`;
     }).join('');
     if (summaryEl) {
-      summaryEl.textContent = `${shortRegionLabel(regionName)} · ${dash.weekRange.fromDate}(수) ~ ${dash.weekRange.toDate}(화) · ${filled}/${dates.length}일`;
+      summaryEl.textContent = `${dashboardRegionLabel(regionName, regionAccount)} · ${dash.weekRange.fromDate}(수) ~ ${dash.weekRange.toDate}(화) · ${filled}/${dates.length}일`;
     }
     persistWeekCache();
   }
@@ -1010,7 +1095,13 @@
       const date = String(p.date || it.collect_date || '').slice(0, 10);
       if (!vid || !date || date < weekRange.fromDate || date > weekRange.toDate) return;
       const name = String(p.vendorName || it.vendor_name || vid);
-      if (!vendorMap.has(vid)) vendorMap.set(vid, name);
+      const acct = coupangPortalAccount(p, it);
+      if (!vendorMap.has(vid)) {
+        vendorMap.set(vid, { vendorName: name, portalAccount: acct });
+      } else {
+        const cur = vendorMap.get(vid);
+        if (cur && typeof cur === 'object' && acct && !cur.portalAccount) cur.portalAccount = acct;
+      }
       if (!byVendor[vid]) byVendor[vid] = {};
       if (!byVendor[vid][date]) {
         byVendor[vid][date] = { peaks: emptyPeaks(), rejectionRate: null };
@@ -1029,7 +1120,16 @@
       }
     });
 
-    let vendors = Array.from(vendorMap.entries()).map(([vendorId, vendorName]) => ({ vendorId, vendorName }));
+    let vendors = Array.from(vendorMap.entries()).map(([vendorId, info]) => {
+      if (info && typeof info === 'object') {
+        return {
+          vendorId,
+          vendorName: String(info.vendorName || vendorId),
+          portalAccount: String(info.portalAccount || '')
+        };
+      }
+      return { vendorId, vendorName: String(info || vendorId), portalAccount: '' };
+    });
     if (!vendors.length && vendorsHint.length) vendors = vendorsHint.slice();
     // 같은 지역에 밴더ID가 여러 개면(구ID/신ID) 주간 완료합계가 큰 최신 밴더만 남긴다.
     const weekVendorScore = (vendor) => {
@@ -1105,14 +1205,17 @@
         const p = it.parsed_json || {};
         const vid = String(p.vendorId || it.vendor_id || '').trim();
         if (!vid) return;
-        vendorById.set(vid, {
+        const row = {
           vendorId: vid,
           vendorName: String(p.vendorName || it.vendor_name || vid),
+          portalAccount: '',
           drivingCount: Number(p.riderOnLineCount) || 0,
           riderTotalCount: Number(p.riderTotalCount) || 0,
           rejectionRate: p.rejectionRate == null ? null : toRejectionPercent(p.rejectionRate),
           peaks: emptyPeaks()
-        });
+        };
+        rememberPortalAccount(row, p, it);
+        vendorById.set(vid, row);
       });
 
       (peakRes.items || []).forEach(it => {
@@ -1123,6 +1226,7 @@
           vendorById.set(vid, {
             vendorId: vid,
             vendorName: String(p.vendorName || it.vendor_name || vid),
+            portalAccount: '',
             drivingCount: 0,
             riderTotalCount: 0,
             rejectionRate: null,
@@ -1131,6 +1235,7 @@
         }
         const row = vendorById.get(vid);
         if (p.vendorName) row.vendorName = String(p.vendorName);
+        rememberPortalAccount(row, p, it);
         const pt = String(p.peakType || '').toUpperCase();
         if (!PEAK_ORDER.includes(pt)) return;
         row.peaks[pt].goal += Number(p.goalCount) || 0;
@@ -1201,7 +1306,8 @@
       dash.operatingByVendor = operating.byVendor;
       dash.vendorMeta = regionRows.map(row => ({
         vendorId: String(row.vendorId || '').trim(),
-        vendorName: String(row.vendorName || '').trim()
+        vendorName: String(row.vendorName || '').trim(),
+        portalAccount: String(row.portalAccount || '').trim()
       }));
       if (dash.openVendorId && $('dashboardRegionRidersModal')?.dataset.ridersSource === 'coupang' && !$('dashboardRegionRidersModal')?.hidden) {
         paintCoupangRegionRiders(dash.openVendorId);
@@ -1218,7 +1324,11 @@
       dash.lastVendorIds = regionRows.map(r => String(r.vendorId || '').trim()).filter(Boolean);
       persistTodayCache();
       if (!silent || !dash.weekCache) {
-        void loadWeekQuota(regionRows.map(r => ({ vendorId: r.vendorId, vendorName: r.vendorName })));
+        void loadWeekQuota(regionRows.map(r => ({
+          vendorId: r.vendorId,
+          vendorName: r.vendorName,
+          portalAccount: r.portalAccount || ''
+        })));
       }
       if (!silent) {
         toast(`오늘 쿠팡 할당 · 운행중 ${n(totals.drivingSum)}명 · 지역 ${regionRows.length}곳`);
@@ -1263,7 +1373,7 @@
     }, 30 * 1000);
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v8';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v10';
 
   function readDashboardCache() {
     try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }
@@ -1292,7 +1402,7 @@
 
   function isCoupangManagerRole() {
     const role = String(getSessionAccount()?.role || '').toLowerCase();
-    return role === 'ceo' || role === 'director';
+    return role === 'ceo' || role === 'operator' || role === 'director';
   }
 
   /** 계정+배정 지역 키. 배정이 바뀌면 이전 전체 표 캐시를 쓰지 않는다. */

@@ -495,6 +495,20 @@ html.brem-admin-app-nav .driver-popup-modal__dialog {
   letter-spacing: -0.02em;
 }
 
+.admin-phone-app .dashboard-coupang-compact-table .dashboard-baemin-region-name {
+  display: inline;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.admin-phone-app .dashboard-coupang-tag {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.58rem;
+  font-weight: 800;
+}
+
 .admin-phone-app .dashboard-baemin-region-meta,
 .admin-phone-app .baemin-quota-cell__percent {
   display: none !important;

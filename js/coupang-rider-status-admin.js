@@ -349,9 +349,12 @@
     });
     state.vendors = [...set.keys()].sort((a, b) => a.localeCompare(b, 'ko'));
     if (state.activeVendor !== ALL && !state.vendors.includes(state.activeVendor)) state.activeVendor = ALL;
-    const tabs = [{ id: ALL, label: '전체' }, ...state.vendors.map(v => ({ id: v, label: v }))];
+    const tabs = [{ id: ALL, html: '전체' }, ...state.vendors.map(v => ({
+      id: v,
+      html: `${esc(regionBase(v))}${branchTagHtml(v)}`
+    }))];
     bar.innerHTML = tabs.map(t =>
-      `<button type="button" class="baemin-region-tab${t.id === state.activeVendor ? ' is-active' : ''}" data-coupang-vendor="${esc(t.id)}">${esc(t.label)}</button>`
+      `<button type="button" class="baemin-region-tab${t.id === state.activeVendor ? ' is-active' : ''}" data-coupang-vendor="${esc(t.id)}" title="${esc(t.id === ALL ? '전체' : t.id)}">${t.html}</button>`
     ).join('');
     bar.querySelectorAll('[data-coupang-vendor]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -416,7 +419,7 @@
     renderLiveBadge(range);
     if (!riders.length) {
       tableEl.innerHTML = '<p class="form-help">해당 기간·매장에 라이더 데이터가 없습니다. [실시간 업데이트] 또는 밴더현황에서 주간 수집 후 조회하세요.</p>';
-      if (summary) summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · 0명 · ${range.label}`;
+      if (summary) summary.textContent = `${activeVendorText()} · 0명 · ${range.label}`;
       return;
     }
     const erpLookup = buildErpLookup();
@@ -447,7 +450,7 @@
       <tbody>${bodyRows}</tbody>
     </table></div>`;
     if (summary) {
-      summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · ${riders.length}명 · ERP매칭 ${matched}명 · ${range.label}`;
+      summary.textContent = `${activeVendorText()} · ${riders.length}명 · ERP매칭 ${matched}명 · ${range.label}`;
     }
   }
 
@@ -470,9 +473,49 @@
     return base.slice(-4);
   }
 
-  function regionNameCell(fullName) {
+  function regionBase(name) {
+    const raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '-';
+    const api = window.BremCoupangRegion;
+    if (api && typeof api.displayCoupangRegionLabel === 'function') {
+      const labeled = api.displayCoupangRegionLabel(raw);
+      if (labeled) return labeled;
+    }
+    const short = shortRegionLabel(raw);
+    if (/\(Z\)/i.test(raw) && short && short !== '-' && !/\(Z\)/i.test(short)) return `${short}(Z)`;
+    return short;
+  }
+
+  function is119Vendor(name, account) {
+    const acct = String(account || '').trim().toLowerCase();
+    if (acct && acct !== 'default' && (acct === 'cmp119' || acct.includes('119'))) return true;
+    const raw = String(name || '').replace(/\s+/g, '');
+    return raw.includes('119컴퍼니') || raw.startsWith('119');
+  }
+
+  function branchTagHtml(name, account) {
+    const base = regionBase(name);
+    if (!base || base === '-' || base === '합계') return '';
+    const is119 = is119Vendor(name, account);
+    const key = is119 ? '119' : 'eagles';
+    const label = is119 ? '119' : '이글스';
+    return `<span class="dashboard-coupang-tag is-${key}">${label}</span>`;
+  }
+
+  function regionFaceText(name, account) {
+    const base = regionBase(name);
+    if (!base || base === '-' || base === '합계') return base || '-';
+    return `${base} · ${is119Vendor(name, account) ? '119' : '이글스'}`;
+  }
+
+  function activeVendorText() {
+    if (state.activeVendor === ALL) return '전체';
+    return regionFaceText(state.activeVendor);
+  }
+
+  function regionNameCell(fullName, account) {
     const full = String(fullName || '').trim() || '-';
-    return `<strong class="dashboard-baemin-region-name" title="${esc(full)}">${esc(shortRegionLabel(full))}</strong>`;
+    return `<strong class="dashboard-baemin-region-name" title="${esc(full)}">${esc(regionBase(full))}</strong>${branchTagHtml(full, account)}`;
   }
 
   function renderQuotaTagCell(actual, target, hasCompleted = true) {
@@ -549,7 +592,7 @@
     tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap dashboard-coupang-table-wrap"><table class="admin-table dashboard-baemin-compact-table dashboard-coupang-compact-table">
       <thead><tr>${header.map((h, i) => `<th${i >= 1 && i <= 5 ? ` title="${esc(PEAK_LABEL[PEAK_ORDER[i - 1]])}"` : ''}>${esc(h)}</th>`).join('')}</tr></thead>
       <tbody>${bodyRows}</tbody></table></div>`;
-    if (summary) summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · 할당 달성(수~화) · 정산주 ${state.weekStart}`;
+    if (summary) summary.textContent = `${activeVendorText()} · 할당 달성(수~화) · 정산주 ${state.weekStart}`;
   }
 
   // 오늘 현황: 지역×피크 타임 표 (운행중 + 달성 태그 + 거절율)
@@ -572,6 +615,7 @@
       byVendor.set(vid, {
         vendorId: vid,
         vendorName: String(p.vendorName || vid),
+        portalAccount: String(p.portalAccount || ''),
         drivingCount: Number(p.riderOnLineCount) || 0,
         riderTotalCount: Number(p.riderTotalCount) || 0,
         rejectionRate: p.rejectionRate == null ? null : toRejectionPercent(p.rejectionRate),
@@ -585,6 +629,7 @@
         byVendor.set(vid, {
           vendorId: vid,
           vendorName: String(p.vendorName || vid),
+          portalAccount: String(p.portalAccount || ''),
           drivingCount: 0,
           riderTotalCount: 0,
           rejectionRate: null,
@@ -593,6 +638,7 @@
       }
       const row = byVendor.get(vid);
       if (p.vendorName) row.vendorName = String(p.vendorName);
+      if (p.portalAccount && !row.portalAccount) row.portalAccount = String(p.portalAccount);
       const pt = String(p.peakType || '').toUpperCase();
       if (!PEAK_ORDER.includes(pt)) return;
       row.peaks[pt].goal += Number(p.goalCount) || 0;
@@ -626,7 +672,7 @@
       <td>${rejAvg == null ? '-' : rejectionPctLabel(rejAvg)}</td>
     </tr>`;
     const bodyRows = regionRows.map(r => `<tr>
-      <td>${regionNameCell(r.vendorName)}</td>
+      <td>${regionNameCell(r.vendorName, r.portalAccount)}</td>
       <td>${esc(n(r.drivingCount))}</td>
       ${PEAK_ORDER.map(pt => renderQuotaTagCell(r.peaks[pt].completed, r.peaks[pt].goal, r.peaks[pt].has)).join('')}
       <td>${r.rejectionRate == null ? '-' : rejectionPctLabel(r.rejectionRate)}</td>

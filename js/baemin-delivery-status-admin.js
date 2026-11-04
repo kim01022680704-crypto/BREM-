@@ -858,6 +858,26 @@
     return kstHourNow() < 6 ? addDaysDate(today, -1) : today;
   }
 
+  function operatingDayStartMs(operatingDate = baeminOperatingDate()) {
+    const day = String(operatingDate || baeminOperatingDate()).slice(0, 10);
+    const ms = Date.parse(`${day}T06:00:00+09:00`);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  /** 수집 시각이 이번 영업일 06:00 이후일 때만 오늘 실적이다. */
+  function snapshotCoversOperatingDay(collectedAt, collectDate) {
+    const at = Date.parse(collectedAt || '');
+    if (Number.isFinite(at)) return at >= operatingDayStartMs();
+    return String(collectDate || '').slice(0, 10) === baeminOperatingDate();
+  }
+
+  function cacheTodayBoardIsCurrent(cache) {
+    if (String(cache?.operatingDate || '') !== baeminOperatingDate()) return false;
+    const at = Date.parse(cache?.snapshotCollectedAt || '');
+    if (!Number.isFinite(at)) return true;
+    return at >= operatingDayStartMs(cache.operatingDate);
+  }
+
   /** 배민 일별/라이더 조회 가능 최신일(보통 어제). 06시 전이면 그제. */
   function latestQueryableDateKey(today = todayKstDate()) {
     return addDaysDate(today, kstHourNow() < 6 ? -2 : -1);
@@ -5450,7 +5470,7 @@
     const account = window.BremStorage?.auth?.getAdminSessionAccount?.() || null;
     if (!account) return false;
     const role = String(account.role || '').trim().toLowerCase();
-    if (role === 'ceo' || role === 'director') return true;
+    if (role === 'ceo' || role === 'operator' || role === 'director') return true;
     if (account.canOperateCrawl === true) return true;
     const tokens = [
       account.id,
@@ -5968,7 +5988,7 @@
     }
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_baemin_cache_v5';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_baemin_cache_v6';
   const DASHBOARD_REFRESHING_SUFFIX = ' · 최신 갱신 중…';
 
   function readDashboardCache() {
@@ -6004,7 +6024,7 @@
 
   function isBaeminManagerRole() {
     const role = String(window.BremStorage?.auth?.getAdminSessionAccount?.()?.role || '').toLowerCase();
-    return role === 'ceo' || role === 'director';
+    return role === 'ceo' || role === 'operator' || role === 'director';
   }
 
   function buildBaeminScopeKey() {
@@ -6191,6 +6211,8 @@
       summaryText: stripRefreshingSuffix(summary?.textContent || ''),
       appliedHtml: appliedEl ? appliedEl.innerHTML : '',
       activityScore: score,
+      operatingDate: baeminOperatingDate(),
+      snapshotCollectedAt: state.dashboardSnapshotAt || '',
       regionMeta: (state.dashboardBaeminRegions || []).map(r => ({
         partnerId: r.partnerId,
         regionName: r.regionName
@@ -6242,8 +6264,8 @@
     restoreRegionsFromCache(cache);
     restoreOperatingRidersFromCache(cache);
 
-    // 오늘 표: 비어 있을 때만 캐시로 채움 (이미 최신이면 유지)
-    if (!panelsEl.querySelector('table') && cache.panelsHtml) {
+    // 오늘 표: 이번 영업일(06:00~) 스냅샷만 복원. 6시 전 캐시는 어제 실적이라 버린다.
+    if (cacheTodayBoardIsCurrent(cache) && !panelsEl.querySelector('table') && cache.panelsHtml) {
       panelsEl.innerHTML = cache.panelsHtml;
       state.dashboardLastActivity = estimateActivityFromCache(cache);
       const summary = $('dashboardBaeminLiveSummary');
@@ -6422,6 +6444,15 @@
     const achieved = prog.target > 0 ? prog.actual >= prog.target : prog.actual > 0;
     const currentClass = options.current ? ' is-current' : '';
     const extraClass = options.extraClass ? ` ${options.extraClass}` : '';
+    if (options.pending) {
+      return `<td class="dashboard-baemin-qcell is-upcoming${currentClass}${extraClass}">
+      <div class="dashboard-baemin-qcell__stack">
+        <div class="dashboard-baemin-qcell__bar" aria-hidden="true"><span class="dashboard-baemin-qcell__bar-fill" style="width:0%"></span></div>
+        <span class="dashboard-baemin-qcell__ratio">0/${escapeHtml(formatNumber(prog.target))}</span>
+        <span class="dashboard-baemin-qcell__meta"><span class="dashboard-baemin-qcell__wait">수집전</span></span>
+      </div>
+    </td>`;
+    }
     if (!empty && options.upcoming && prog.actual <= 0) {
       return `<td class="dashboard-baemin-qcell is-upcoming${currentClass}${extraClass}">
       <div class="dashboard-baemin-qcell__stack">
@@ -6712,9 +6743,10 @@
     });
   }
 
-  function renderDashboardTodayTable(regionRows, totals) {
+  function renderDashboardTodayTable(regionRows, totals, options = {}) {
     const phone = isDashboardFit();
     const nowSlot = currentBaeminSlotKey();
+    const pending = options.pending === true;
     const driveText = (count) => phone ? formatNumber(count) : `${formatNumber(count)}명`;
     const slotHead = (key, label) => {
       const current = nowSlot === key;
@@ -6722,7 +6754,8 @@
     };
     const cell = (actual, target, key) => renderCompactQuotaCell(actual, target, {
       current: nowSlot === key,
-      upcoming: isUpcomingBaeminSlot(key)
+      upcoming: isUpcomingBaeminSlot(key),
+      pending: pending && nowSlot === key
     });
     const summaryRow = `<tr class="dashboard-baemin-compact-table__summary">
       <td><strong class="dashboard-baemin-region-name">${phone ? '합계' : '전체 합계'}</strong></td>
@@ -7393,6 +7426,97 @@
     }
   }
 
+  function snapshotStampFromResults(dash, snapshotResults) {
+    let at = String(dash?.collectedAt || '');
+    let date = String(dash?.collectDate || '');
+    (snapshotResults || []).forEach(entry => {
+      const result = entry?.result || {};
+      const resultDate = String(result.collectDate || '').slice(0, 10);
+      if (resultDate && resultDate > date) date = resultDate;
+      (result.items || []).forEach(row => {
+        const stamp = String(row.collected_at || row.collectedAt || '');
+        if (stamp > at) at = stamp;
+      });
+    });
+    return { at, date };
+  }
+
+  function boardNeedsOperatingReset(dash, snapshotResults) {
+    if (dash?.awaitingOperatingDay === true) return true;
+    const hasItems = (snapshotResults || []).some(entry => (entry?.result?.items || []).length > 0);
+    if (!hasItems && dash?.ok === false) return false;
+    const stamp = snapshotStampFromResults(dash, snapshotResults);
+    if (!hasItems && !stamp.at && !stamp.date) return false;
+    return !snapshotCoversOperatingDay(stamp.at, stamp.date);
+  }
+
+  function paintOperatingDayReset(partnerIds, today, queriedAt) {
+    const regionRows = [];
+    let targetMorning = 0;
+    let targetAfternoon = 0;
+    let targetEvening = 0;
+    let targetMidnight = 0;
+    (partnerIds || []).forEach(partnerId => {
+      const setCount = getPartnerSetCount(partnerId);
+      const targets = computeSlotTargets(setCount, today);
+      const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === partnerId)?.regionName
+        || partnerLabelById(partnerId)
+        || partnerId;
+      targetMorning += targets.morning;
+      targetAfternoon += targets.afternoon;
+      targetEvening += targets.evening;
+      targetMidnight += targets.midnight;
+      regionRows.push({
+        partnerId,
+        regionName,
+        setCount,
+        drivingCount: 0,
+        morningTotal: 0,
+        afternoonTotal: 0,
+        eveningTotal: 0,
+        midnightTotal: 0,
+        targets
+      });
+    });
+    regionRows.sort((a, b) => String(a.regionName).localeCompare(String(b.regionName), 'ko'));
+    state.dashboardOperatingByPartner = {};
+    state.dashboardTodayLive = {
+      date: today,
+      byPartner: Object.fromEntries(regionRows.map(row => [row.partnerId, {
+        morning: 0,
+        afternoon: 0,
+        evening: 0,
+        midnight: 0
+      }]))
+    };
+    state.dashboardSnapshotAt = '';
+    state.dashboardLastActivity = 0;
+    const panelsEl = $('dashboardBaeminLivePanels');
+    const summary = $('dashboardBaeminLiveSummary');
+    const appliedEl = $('dashboardBaeminAppliedTime');
+    if (panelsEl) {
+      panelsEl.innerHTML = renderDashboardTodayTable(regionRows, {
+        drivingSum: 0,
+        morningSum: 0,
+        afternoonSum: 0,
+        eveningSum: 0,
+        midnightSum: 0,
+        targetMorning,
+        targetAfternoon,
+        targetEvening,
+        targetMidnight
+      }, { pending: true });
+    }
+    markCurrentBaeminSlots();
+    if (summary) {
+      summary.textContent = `오늘 ${today} · 6시 새 영업일 · 수집 전 · 지역 ${formatNumber(regionRows.length)}곳`;
+    }
+    if (appliedEl) {
+      appliedEl.textContent = `6시 이후 수집 대기 · 자동조회 ${formatDateTime(queriedAt.toISOString())}`;
+    }
+    persistTodayDashboardCache(0);
+  }
+
   async function queryDashboardBaeminLive(options = {}) {
     const silent = options.silent === true;
     const summary = $('dashboardBaeminLiveSummary');
@@ -7508,6 +7632,13 @@
         );
       }
       if (!silent) await extrasPromise;
+
+      if (boardNeedsOperatingReset(dash, snapshotResults)) {
+        await extrasPromise;
+        paintOperatingDayReset(partnerIds, today, queriedAt);
+        void queryDashboardBaeminWeek(partnerIds, { silent, forceRefresh: silent });
+        return;
+      }
 
       const notAppliedHit = snapshotResults.find(entry => entry.result?.ok && entry.result.notApplied);
       if (notAppliedHit) {
@@ -7650,6 +7781,7 @@
       if (summary) {
         summary.textContent = summaryText;
       }
+      state.dashboardSnapshotAt = dash.collectedAt || '';
       state.dashboardLastActivity = nextActivity;
       persistTodayDashboardCache(nextActivity);
       // 오늘 확정 후에만 주간 갱신 (실패/빈응답 때 주간까지 0으로 덮지 않음)

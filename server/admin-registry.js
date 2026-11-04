@@ -2,6 +2,7 @@ const SETTINGS_KEY = 'brem_admin_accounts';
 
 const ADMIN_ROLES = Object.freeze({
   CEO: 'ceo',
+  OPERATOR: 'operator',
   DIRECTOR: 'director',
   MANAGER: 'manager'
 });

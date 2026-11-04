@@ -14246,6 +14246,7 @@ const BremStorage = (function () {
     'calls',
     'baemin-biz-status',
     'baemin-status',
+    'baemin-rider-hourly',
     'coupang-rider-status',
     'coupang-status',
     'contribution',
@@ -14277,19 +14278,21 @@ const BremStorage = (function () {
 
   const ADMIN_ROLES = Object.freeze({
     CEO: 'ceo',
+    OPERATOR: 'operator',
     DIRECTOR: 'director',
     MANAGER: 'manager'
   });
 
   const ADMIN_ROLE_LABELS = Object.freeze({
     ceo: '대표',
+    operator: '대표(관리자)',
     director: '총괄',
     manager: '팀장'
   });
 
   function normalizeAdminRole(role, index = 0) {
     const value = String(role || '').trim();
-    if (value === ADMIN_ROLES.CEO || value === ADMIN_ROLES.DIRECTOR || value === ADMIN_ROLES.MANAGER) {
+    if (value === ADMIN_ROLES.CEO || value === ADMIN_ROLES.OPERATOR || value === ADMIN_ROLES.DIRECTOR || value === ADMIN_ROLES.MANAGER) {
       return value;
     }
     return index === 0 ? ADMIN_ROLES.CEO : ADMIN_ROLES.MANAGER;
@@ -14383,6 +14386,10 @@ const BremStorage = (function () {
       } else {
         normalized.push('baemin-status');
       }
+    }
+
+    if (normalized.includes('baemin-status') && !normalized.includes('baemin-rider-hourly')) {
+      normalized.splice(normalized.indexOf('baemin-status') + 1, 0, 'baemin-rider-hourly');
     }
 
     if (!normalized.includes('coupang-status')) {
@@ -14558,6 +14565,11 @@ const BremStorage = (function () {
     const next = editableMenus
       .map(menuId => String(menuId || '').trim())
       .filter(menuId => allowed.has(menuId));
+    if (allowed.has('baemin-rider-hourly') && !next.includes('baemin-rider-hourly')) {
+      const after = next.indexOf('baemin-status');
+      if (after >= 0) next.splice(after + 1, 0, 'baemin-rider-hourly');
+      else next.push('baemin-rider-hourly');
+    }
     if (next.includes('urgent-missions') && allowed.has('rider-push') && !next.includes('rider-push')) {
       next.splice(next.indexOf('urgent-missions') + 1, 0, 'rider-push');
     }
@@ -14637,14 +14649,16 @@ const BremStorage = (function () {
   }
 
   function applyCeoPrivileges(account) {
-    if (!account || account.role !== ADMIN_ROLES.CEO) return account;
+    if (!account || (account.role !== ADMIN_ROLES.CEO && account.role !== ADMIN_ROLES.OPERATOR)) return account;
 
     const menus = normalizeAdminMenus(account.menus);
     const editableMenus = normalizeAdminEditableMenus(menus, account.editableMenus ?? menus);
     const nextMenus = menus.includes('admin-account') ? menus : [...menus, 'admin-account'];
-    let nextEditable = editableMenus.includes('admin-account')
-      ? editableMenus
-      : [...editableMenus, 'admin-account'];
+    let nextEditable = account.role === ADMIN_ROLES.OPERATOR
+      ? [...nextMenus]
+      : (editableMenus.includes('admin-account')
+        ? editableMenus
+        : [...editableMenus, 'admin-account']);
     if (nextMenus.includes('baemin-biz-status') && !nextEditable.includes('baemin-biz-status')) {
       nextEditable = [...nextEditable, 'baemin-biz-status'];
     }
@@ -15370,7 +15384,7 @@ const BremStorage = (function () {
 
     async createAdminAccount({ name, password, menus, editableMenus, active = true, role = ADMIN_ROLES.MANAGER, email, baeminPartnerIds, coupangVendorIds, canOperateCrawl = false } = {}, options = {}) {
       const actorRole = options.actor?.role || ADMIN_ROLES.MANAGER;
-      if (actorRole !== ADMIN_ROLES.CEO) {
+      if (actorRole !== ADMIN_ROLES.CEO && actorRole !== ADMIN_ROLES.OPERATOR) {
         return { ok: false, message: '대표만 관리자 계정을 생성할 수 있습니다.' };
       }
 
@@ -15613,7 +15627,7 @@ const BremStorage = (function () {
 
     async deleteAdminAccount(accountId, options = {}) {
       const actorRole = options.actor?.role || ADMIN_ROLES.MANAGER;
-      if (actorRole !== ADMIN_ROLES.CEO) {
+      if (actorRole !== ADMIN_ROLES.CEO && actorRole !== ADMIN_ROLES.OPERATOR) {
         return { ok: false, message: '대표만 관리자 계정을 삭제할 수 있습니다.' };
       }
 

@@ -722,7 +722,7 @@ body.dashboard-week-modal-open {
 
 #dashboard .dashboard-coupang-compact-table th:nth-child(1),
 #dashboard .dashboard-coupang-compact-table td:nth-child(1) {
-  width: 9%;
+  width: 16%;
 }
 
 #dashboard .dashboard-coupang-compact-table th:nth-child(2),
@@ -846,6 +846,26 @@ body.dashboard-week-modal-open {
   letter-spacing: -0.02em;
 }
 
+#dashboard .dashboard-coupang-compact-table .dashboard-baemin-region-name,
+#dashboard.dashboard-fit .dashboard-coupang-compact-table .dashboard-baemin-region-name {
+  display: inline;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+#dashboard .dashboard-coupang-compact-table td:first-child {
+  white-space: normal;
+}
+
+#dashboard .dashboard-coupang-tag,
+#dashboard.dashboard-fit .dashboard-coupang-tag {
+  display: inline-block !important;
+  margin-left: 4px;
+  font-size: 0.58rem;
+}
+
 #dashboard.dashboard-fit .dashboard-baemin-region-meta {
   display: none !important;
 }
@@ -902,7 +922,7 @@ body.dashboard-week-modal-open {
   width: 18% !important;
 }
 
-/* 쿠팡 지역 18 · 운행 8 · 피크 12.8×5 · 거절 10 */
+/* 쿠팡 지역 24 · 운행 8 · 피크 11.6×5 · 거절 10 — (Z)와 119/이글스 태그 */
 #dashboard.dashboard-fit .dashboard-coupang-compact-table th:nth-child(1),
 #dashboard.dashboard-fit .dashboard-coupang-compact-table td:nth-child(1) {
   width: 18% !important;
@@ -915,7 +935,7 @@ body.dashboard-week-modal-open {
 
 #dashboard.dashboard-fit .dashboard-coupang-compact-table th:nth-child(n+3):nth-child(-n+7),
 #dashboard.dashboard-fit .dashboard-coupang-compact-table td:nth-child(n+3):nth-child(-n+7) {
-  width: 12.8% !important;
+  width: 11.6% !important;
 }
 
 #dashboard.dashboard-fit .dashboard-coupang-compact-table th:nth-child(8),

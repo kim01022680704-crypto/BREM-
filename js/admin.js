@@ -215,6 +215,7 @@
     { id: 'calls', label: '콜수 입력' },
     { id: 'baemin-biz-status', label: '배민 BIZ 현황' },
     { id: 'baemin-status', label: '배민현황' },
+    { id: 'baemin-rider-hourly', label: '라이더별내역' },
     { id: 'coupang-rider-status', label: '쿠팡현황' },
     { id: 'coupang-status', label: '쿠팡 밴더현황' },
     { id: 'contribution', label: '기여도' },
@@ -256,27 +257,32 @@
     return getSessionAdminAccount()?.role || ADMIN_ROLES.MANAGER;
   }
 
+  function isCeoLevelRole(role = getSessionAdminRole()) {
+    return role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.OPERATOR;
+  }
+
   function canCreateAdminAccount() {
-    return getSessionAdminRole() === ADMIN_ROLES.CEO;
+    return isCeoLevelRole();
   }
 
   function canDeleteAdminAccount() {
-    return getSessionAdminRole() === ADMIN_ROLES.CEO;
+    return isCeoLevelRole();
   }
 
   function canEditAdminAccountMenus(account) {
     const role = getSessionAdminRole();
-    if (role === ADMIN_ROLES.CEO) return true;
+    if (isCeoLevelRole(role)) return true;
     if (role === ADMIN_ROLES.DIRECTOR) return account.role === ADMIN_ROLES.MANAGER;
     return false;
   }
 
   function canFullyEditAdminAccount() {
-    return getSessionAdminRole() === ADMIN_ROLES.CEO;
+    return isCeoLevelRole();
   }
 
   function adminRoleBadgeClass(role) {
     if (role === ADMIN_ROLES.CEO) return 'admin-role-badge admin-role-badge--ceo';
+    if (role === ADMIN_ROLES.OPERATOR) return 'admin-role-badge admin-role-badge--operator';
     if (role === ADMIN_ROLES.DIRECTOR) return 'admin-role-badge admin-role-badge--director';
     return 'admin-role-badge admin-role-badge--manager';
   }
@@ -307,10 +313,11 @@
   let cachedBaeminRegionItems = [];
   let cachedCoupangVendorItems = [];
   let cachedCoupangVendorLoadError = '';
+  let cachedOperatingCoupangVendorIds = null;
 
   function canEditBaeminPartnerScope() {
     const role = getSessionAdminRole();
-    return role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.DIRECTOR;
+    return isCeoLevelRole(role) || role === ADMIN_ROLES.DIRECTOR;
   }
 
   function canEditCoupangVendorScope() {
@@ -348,6 +355,7 @@
     cachedCoupangVendorLoadError = '';
     if (!token) {
       cachedCoupangVendorItems = [];
+      cachedOperatingCoupangVendorIds = null;
       cachedCoupangVendorLoadError = '로그인이 필요합니다.';
       return [];
     }
@@ -359,18 +367,23 @@
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         cachedCoupangVendorItems = [];
+        cachedOperatingCoupangVendorIds = null;
         cachedCoupangVendorLoadError = payload.message || payload.error || `매장 목록 조회 실패 (${response.status})`;
         return [];
       }
       cachedCoupangVendorItems = Array.isArray(payload.allItems)
         ? payload.allItems
         : (Array.isArray(payload.items) ? payload.items : []);
+      cachedOperatingCoupangVendorIds = Array.isArray(payload.operatingVendorIds)
+        ? payload.operatingVendorIds.map(id => String(id || '').trim()).filter(Boolean)
+        : null;
       if (!cachedCoupangVendorItems.length) {
         cachedCoupangVendorLoadError = '수집된 쿠팡 매장이 없습니다. 쿠팡 밴더현황에서 수집 후 다시 열어주세요.';
       }
       return cachedCoupangVendorItems;
     } catch (e) {
       cachedCoupangVendorItems = [];
+      cachedOperatingCoupangVendorIds = null;
       cachedCoupangVendorLoadError = e?.message || '매장 목록 조회 중 오류';
       return [];
     }
@@ -423,24 +436,48 @@
     return base.length <= 4 ? base : base.slice(-4);
   }
 
+  function coupangVendorIs119(name) {
+    const raw = String(name || '').replace(/\s+/g, '');
+    return raw.includes('119컴퍼니') || raw.startsWith('119');
+  }
+
+  function coupangVendorDisplayName(name) {
+    const raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '-';
+    const api = window.BremCoupangRegion;
+    if (api && typeof api.displayCoupangRegionLabel === 'function') {
+      const labeled = api.displayCoupangRegionLabel(raw);
+      if (labeled) return labeled;
+    }
+    const short = shortCoupangVendorLabel(raw);
+    if (/\(Z\)/i.test(raw) && short && short !== '-' && !/\(Z\)/i.test(short)) return `${short}(Z)`;
+    return short;
+  }
+
+  function coupangVendorTagHtml(name) {
+    const shown = coupangVendorDisplayName(name);
+    if (!shown || shown === '-') return '';
+    const is119 = coupangVendorIs119(name);
+    const key = is119 ? '119' : 'eagles';
+    const label = is119 ? '119' : '이글스';
+    return `<span class="dashboard-coupang-tag is-${key}">${label}</span>`;
+  }
+
   function uniqueCoupangVendorLabels(items = []) {
-    const prepared = items.map(item => {
+    return items.map(item => {
       const id = String(item.vendorId || '').trim();
       const full = String(item.vendorName || id).trim();
-      const base = coupangVendorHangulBase(full) || id || '-';
-      return { item, id, full, base, label: base.length <= 4 ? base : base.slice(-4) };
-    });
-    const counts = prepared.reduce((map, row) => {
-      map[row.label] = (map[row.label] || 0) + 1;
-      return map;
-    }, {});
-    return prepared.map(row => {
-      if (counts[row.label] > 1) {
-        const wider = row.base.length <= 6 ? row.base : row.base.slice(-6);
-        row.label = wider !== row.label ? wider : (row.full || row.id || row.label);
-      }
-      return row;
-    });
+      return {
+        item,
+        id,
+        full,
+        label: coupangVendorDisplayName(full),
+        tagHtml: coupangVendorTagHtml(full),
+        branch: coupangVendorIs119(full) ? '119' : '이글스'
+      };
+    }).sort((a, b) => String(a.label).localeCompare(String(b.label), 'ko')
+      || String(a.branch).localeCompare(String(b.branch), 'ko')
+      || String(a.id).localeCompare(String(b.id)));
   }
 
   function renderAdminAccountCoupangGrid(selectedIds = []) {
@@ -458,12 +495,22 @@
       grid.innerHTML = `<p class="form-help">${escapeHtml(cachedCoupangVendorLoadError || '수집된 쿠팡 매장이 없습니다. 쿠팡 밴더현황에서 수집 후 다시 열어주세요.')}</p>`;
       return;
     }
+    const limitToOperating = $('#adminAccountRole')?.value !== 'operator'
+      && Array.isArray(cachedOperatingCoupangVendorIds);
+    const allowOperating = limitToOperating ? new Set(cachedOperatingCoupangVendorIds) : null;
+    const visibleItems = allowOperating
+      ? cachedCoupangVendorItems.filter(item => allowOperating.has(String(item.vendorId || '').trim()))
+      : cachedCoupangVendorItems;
+    if (!visibleItems.length) {
+      grid.innerHTML = '<p class="form-help">대표(관리자)가 체크한 운영 지역이 없습니다. 그 계정에서 운영 지역을 먼저 체크하세요.</p>';
+      return;
+    }
     const selected = new Set((selectedIds || []).map(id => String(id).trim()));
-    grid.innerHTML = uniqueCoupangVendorLabels(cachedCoupangVendorItems).map(row => {
+    grid.innerHTML = uniqueCoupangVendorLabels(visibleItems).map(row => {
       const active = selected.has(row.id);
       return `<label class="admin-account-baemin-item${active ? ' is-active' : ''}" title="${escapeHtml(row.full)}">
         <input type="checkbox" value="${escapeHtml(row.id)}" ${active ? 'checked' : ''}>
-        <span>${escapeHtml(row.label)}</span>
+        <span class="admin-account-coupang-label"><span>${escapeHtml(row.label)}</span>${row.tagHtml || ''}</span>
       </label>`;
     }).join('');
     grid.querySelectorAll('.admin-account-baemin-item').forEach(labelEl => {
@@ -505,8 +552,10 @@
     if (createBtn) createBtn.hidden = !canCreateAdminAccount();
 
     if (intro) {
-      if (role === ADMIN_ROLES.CEO) {
-        intro.textContent = '대표: 관리자 계정 생성·직책·메뉴·배민/쿠팡 담당 지역 배정이 가능합니다. 대시보드·현황은 계정에 배정한 지역만 보입니다.';
+      if (isCeoLevelRole(role)) {
+        intro.textContent = role === ADMIN_ROLES.OPERATOR
+          ? '대표(관리자): 대표와 같은 계정·직책·메뉴·지역 배정 권한입니다. 이 계정에서 체크한 쿠팡 지역만 실제 운영 지역입니다.'
+          : '대표: 관리자 계정 생성·직책·메뉴·배민/쿠팡 담당 지역 배정이 가능합니다. 대시보드·현황은 계정에 배정한 지역만 보입니다.';
       } else if (role === ADMIN_ROLES.DIRECTOR) {
         intro.textContent = '총괄: 팀장 메뉴·배민/쿠팡 담당 지역 배정이 가능합니다. 대시보드·현황은 계정에 배정한 지역만 보입니다.';
       } else {
@@ -950,6 +999,10 @@
         input.checked = true;
         input.closest('.admin-account-baemin-item')?.classList.add('is-active');
       });
+    });
+
+    $('#adminAccountRole')?.addEventListener('change', () => {
+      renderAdminAccountCoupangGrid(getSelectedAdminAccountCoupangVendorIds());
     });
 
     $('#adminAccountCoupangClearAll')?.addEventListener('click', () => {
@@ -7856,6 +7909,9 @@
       case 'baemin-biz-status':
       case 'baemin-status':
         window.BremBaeminDeliveryStatusAdmin?.refresh?.(sectionId);
+        break;
+      case 'baemin-rider-hourly':
+        window.BremBaeminRiderHourlyAdmin?.refresh?.();
         break;
       case 'coupang-status':
         window.BremCoupangStatusAdmin?.refresh?.();

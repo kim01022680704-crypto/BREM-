@@ -1832,6 +1832,24 @@ app.get('/api/admin/baemin-delivery/view-full-bundle', async (req, res) => {
   }
 });
 
+app.get('/api/admin/baemin-delivery/rider-hourly', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.getRiderHourlyBoard(getBearerToken(req), {
+      date: req.query.date,
+      partnerId: req.query.partnerId
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '라이더 시간대 내역을 불러오지 못했습니다.' });
+  }
+});
+
 app.get('/api/admin/baemin-delivery/view-rider-range', async (req, res) => {
   try {
     const result = await baeminDeliveryCollect.getRiderHistoryRange(getBearerToken(req), {

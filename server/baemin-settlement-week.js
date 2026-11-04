@@ -98,6 +98,19 @@ function businessTodayKST(now = new Date()) {
   return hour < 6 ? addDays(cal, -1) : cal;
 }
 
+/** 현재 영업일 시작 (해당 영업일 06:00 KST). 이 시각 이전 스냅샷은 전날 실적이다. */
+function operatingDayStartMs(now = new Date()) {
+  const day = businessTodayKST(now);
+  const ms = Date.parse(`${day}T06:00:00+09:00`);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function isCurrentOperatingSnapshot(collectedAt, now = new Date()) {
+  const ms = Date.parse(String(collectedAt || ''));
+  if (!Number.isFinite(ms)) return false;
+  return ms >= operatingDayStartMs(now);
+}
+
 /** 일별/라이더: 전날(조회 가능 최신일)을 끝으로 하는 연속 일수. 수~화 주차와 무관. */
 const HISTORY_LOOKBACK_DAYS = 8;
 

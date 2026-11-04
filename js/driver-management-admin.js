@@ -14,6 +14,7 @@ const BremDriverManagementAdmin = (function () {
     selectedRegionKey: '',
     baeminRegions: [],
     coupangRegions: [],
+    coupangOperatingVendorIds: null,
     regionExposure: { baemin: {}, coupang: {} },
     regionRanking: null,
     regionRankingKey: '',
@@ -1946,14 +1947,23 @@ const BremDriverManagementAdmin = (function () {
       const res = await fetch('/api/admin/coupang/vendor-regions', { headers, credentials: 'same-origin' });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || '쿠팡 지역을 불러오지 못했습니다.');
-      const items = payload.allItems || payload.items || [];
+      const operatingIds = Array.isArray(payload.operatingVendorIds)
+        ? payload.operatingVendorIds.map(id => String(id || '').trim()).filter(Boolean)
+        : null;
+      state.coupangOperatingVendorIds = operatingIds;
+      const allowOperating = operatingIds ? new Set(operatingIds) : null;
+      const items = (payload.allItems || payload.items || []).filter(item => {
+        if (!allowOperating) return true;
+        return allowOperating.has(String(item.vendorId || '').trim());
+      });
       const seen = new Set();
       state.coupangRegions = items.map(item => {
         const vendorId = String(item.vendorId || '').trim();
         const vendorName = String(item.vendorName || '').trim();
         if (!vendorId || seen.has(vendorId)) return null;
         seen.add(vendorId);
-        const label = displayCoupangRegion(vendorName) || vendorId;
+        const branch = /119컴퍼니|^119/.test(vendorName.replace(/\s+/g, '')) ? '119' : '이글스';
+        const label = `${displayCoupangRegion(vendorName) || vendorId} ${branch}`;
         return {
           key: vendorId,
           vendorId,
@@ -1962,11 +1972,12 @@ const BremDriverManagementAdmin = (function () {
           platform: 'coupang'
         };
       }).filter(Boolean);
-      state.coupangRegions = collapseCoupangZTwins(state.coupangRegions)
-        .sort((a, b) => a.label.localeCompare(b.label, 'ko') || a.vendorId.localeCompare(b.vendorId));
+      if (!operatingIds) state.coupangRegions = collapseCoupangZTwins(state.coupangRegions);
+      state.coupangRegions.sort((a, b) => a.label.localeCompare(b.label, 'ko') || a.vendorId.localeCompare(b.vendorId));
       invalidateRegionMemberCache();
     } catch (error) {
       console.warn('[BREM] coupang regions:', error);
+      state.coupangOperatingVendorIds = null;
       state.coupangRegions = [];
       showToast(error.message || '쿠팡 지역 목록을 불러오지 못했습니다.');
     }
@@ -2296,7 +2307,10 @@ const BremDriverManagementAdmin = (function () {
     const value = driverRegionValue(driver, platform);
     if (!value) return false;
     const catalog = platform === 'coupang' ? state.coupangRegions : state.baeminRegions;
-    if (!catalog.length) return true;
+    if (!catalog.length) {
+      if (platform === 'coupang' && Array.isArray(state.coupangOperatingVendorIds)) return false;
+      return true;
+    }
     return Boolean(findCatalogRegion(value, platform));
   }
 
@@ -3636,6 +3650,7 @@ const BremDriverManagementAdmin = (function () {
       const zHit = hits.find(item => /\(Z\)/i.test(`${item.label || ''} ${item.vendorName || ''}`));
       if (zHit || hits[0]) return zHit || hits[0];
     }
+    if (Array.isArray(state.coupangOperatingVendorIds)) return null;
     const label = key || displayCoupangRegion(vendorName) || vid;
     return {
       key: vid || label,

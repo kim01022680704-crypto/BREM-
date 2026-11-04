@@ -655,6 +655,23 @@
     letter-spacing: -0.02em;
   }
 
+  .admin-app #dashboard .dashboard-coupang-compact-table td:first-child {
+    white-space: normal !important;
+  }
+
+  .admin-app #dashboard .dashboard-coupang-compact-table .dashboard-baemin-region-name {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+  }
+
+  .admin-app #dashboard .dashboard-coupang-tag {
+    display: inline-block !important;
+    margin-left: 4px;
+    font-size: 0.6rem !important;
+    font-weight: 800;
+  }
+
   .admin-app #dashboard .dashboard-baemin-region-meta {
     display: block !important;
     font-size: 0.68rem !important;

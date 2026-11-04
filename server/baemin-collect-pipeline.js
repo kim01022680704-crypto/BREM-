@@ -3,6 +3,7 @@ const {
   listCollectSources,
   getCollectSource,
   mapItemToCollectRow,
+  hourlyCountsFromItem,
   extractBusinessDate,
   buildDefaultQuery,
   resolveApiEndpoint,
@@ -5759,6 +5760,167 @@ async function getSlaOutRangeForAdmin(options = {}) {
   };
 }
 
+const RIDER_HOURLY_ORDER = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5];
+
+function riderHourlyCountsFromRow(row) {
+  const parsed = row?.parsed_json || {};
+  if (Array.isArray(parsed.hourlyCounts) && parsed.hourlyCounts.length === 24) {
+    return parsed.hourlyCounts.map(value => Number(value) || 0);
+  }
+  const fromParsed = Array.isArray(parsed.hourlyCompleted) && parsed.hourlyCompleted.length
+    ? parsed.hourlyCompleted
+    : null;
+  return hourlyCountsFromItem({ hourlyCompleted: fromParsed || row?.raw_json?.hourlyCompleted || [] });
+}
+
+async function fetchRiderHistoryDayRows(date, select, partnerId = '') {
+  const supabase = getServiceClient();
+  const rows = [];
+  let offset = 0;
+  const partner = String(partnerId || '').trim().toUpperCase();
+  while (true) {
+    let query = supabase
+      .from('baemin_biz_collect_items')
+      .select(select)
+      .eq('source_menu', 'rider_history')
+      .eq('collect_date', date)
+      .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+    if (partner) query = query.like('dedupe_key', `${partner}:${date}:%`);
+    const { data, error } = await query;
+    if (error) return { ok: false, error: error.message || '라이더 시간대 조회 실패' };
+    if (!data?.length) break;
+    rows.push(...data);
+    if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
+    offset += BIZ_COLLECT_PAGE_SIZE;
+  }
+  return { ok: true, rows };
+}
+
+async function getRiderHourlyBoardForAdmin(options = {}) {
+  const { latestQueryableDate } = require('./baemin-settlement-week');
+  const requested = String(options.date || '').slice(0, 10);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : latestQueryableDate();
+  const partnerId = String(options.partnerId || '').trim().toUpperCase();
+  const scope = options.actorScope;
+  const allowed = new Set((scope?.allowedPartnerIds || []).map(id => String(id).toUpperCase()));
+
+  if (partnerId && allowed.size && !allowed.has(partnerId)) {
+    return { ok: false, status: 403, error: '해당 지역에 접근 권한이 없습니다.' };
+  }
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const { data: latestRows, error: latestError } = await supabase
+    .from('baemin_biz_collect_items')
+    .select('collect_date')
+    .eq('source_menu', 'rider_history')
+    .lte('collect_date', latestQueryableDate())
+    .order('collect_date', { ascending: false })
+    .limit(1);
+  if (latestError) {
+    return { ok: false, status: 500, error: latestError.message || '최근 수집일 조회 실패' };
+  }
+  const latestCollectedDate = String(latestRows?.[0]?.collect_date || '').slice(0, 10);
+
+  const listed = await fetchRiderHistoryDayRows(
+    date,
+    'dedupe_key,rider_user_id,collected_at,total:parsed_json->totalComplete,region:parsed_json->regionName,partner:parsed_json->partnerName'
+  );
+  if (!listed.ok) return { ok: false, status: 500, error: listed.error };
+  if (!requested && !(listed.rows || []).length && latestCollectedDate && latestCollectedDate !== date) {
+    return getRiderHourlyBoardForAdmin({ ...options, date: latestCollectedDate });
+  }
+
+  const { readPartnerRegionMap, resolvePartnerDisplay } = require('./baemin-partner-region');
+  const regionMap = await readPartnerRegionMap().catch(() => ({}));
+  const regionBuckets = new Map();
+
+  (listed.rows || []).forEach(row => {
+    const pid = partnerIdFromDedupeKey(row.dedupe_key);
+    if (!pid) return;
+    if (allowed.size && !allowed.has(pid)) return;
+    const info = resolvePartnerDisplay(pid, row.partner, row.region, regionMap);
+    const bucket = regionBuckets.get(pid) || {
+      partnerId: pid,
+      regionName: info.displayName || info.regionName || pid,
+      riderIds: new Set(),
+      total: 0,
+      collectedAt: ''
+    };
+    const riderId = String(row.rider_user_id || '').trim();
+    if (riderId) bucket.riderIds.add(riderId);
+    bucket.total += Number(row.total) || 0;
+    const at = String(row.collected_at || '');
+    if (at > bucket.collectedAt) bucket.collectedAt = at;
+    if (!bucket.regionName || bucket.regionName === pid) {
+      bucket.regionName = info.displayName || info.regionName || pid;
+    }
+    regionBuckets.set(pid, bucket);
+  });
+
+  const regions = [...regionBuckets.values()]
+    .map(bucket => ({
+      partnerId: bucket.partnerId,
+      regionName: bucket.regionName,
+      riderCount: bucket.riderIds.size,
+      total: bucket.total,
+      collectedAt: bucket.collectedAt
+    }))
+    .sort((a, b) => String(a.regionName).localeCompare(String(b.regionName), 'ko'));
+
+  let riders = [];
+  let collectedAt = '';
+  const busiest = [...regions].sort((a, b) => b.total - a.total)[0];
+  const selectedPartnerId = partnerId || busiest?.partnerId || '';
+  if (selectedPartnerId && regions.some(region => region.partnerId === selectedPartnerId)) {
+    const detail = await fetchRiderHistoryDayRows(
+      date,
+      'dedupe_key,rider_name,rider_user_id,phone_number,collected_at,parsed_json,raw_json',
+      selectedPartnerId
+    );
+    if (!detail.ok) return { ok: false, status: 500, error: detail.error };
+    const byRider = new Map();
+    (detail.rows || []).forEach(row => {
+      if (!rowBelongsToPartner(row, selectedPartnerId)) return;
+      const riderId = String(row.rider_user_id || row.rider_name || '').trim();
+      if (!riderId) return;
+      const at = String(row.collected_at || '');
+      const prev = byRider.get(riderId);
+      if (prev && prev.collectedAt >= at) return;
+      const hours = riderHourlyCountsFromRow(row);
+      byRider.set(riderId, {
+        riderName: String(row.rider_name || '').trim() || riderId,
+        riderUserId: String(row.rider_user_id || '').trim(),
+        phoneNumber: String(row.phone_number || '').trim(),
+        hours,
+        total: hours.reduce((sum, count) => sum + count, 0),
+        collectedAt: at
+      });
+    });
+    riders = [...byRider.values()].sort((a, b) => b.total - a.total || a.riderName.localeCompare(b.riderName, 'ko'));
+    collectedAt = riders.reduce((max, rider) => (rider.collectedAt > max ? rider.collectedAt : max), '');
+  }
+
+  return {
+    ok: true,
+    date,
+    latestCollectedDate,
+    hourOrder: RIDER_HOURLY_ORDER,
+    regions,
+    partnerId: selectedPartnerId,
+    riders,
+    collectedAt,
+    message: regions.length
+      ? ''
+      : (latestCollectedDate && latestCollectedDate !== date
+        ? `${date} 라이더 수집이 없습니다. 최근 수집일은 ${latestCollectedDate} 입니다.`
+        : `${date} 라이더 수집이 없습니다. 라이더별 수집(06:30 · 11:00 · 13:30 · 21:30) 이후 표시됩니다.`)
+  };
+}
+
 module.exports = {
   getBizCollectTableStatus,
   getApiRegistry,
@@ -5772,6 +5934,7 @@ module.exports = {
   getViewBundleForAdmin,
   getViewFullBundleForAdmin,
   getRiderHistoryRangeForAdmin,
+  getRiderHourlyBoardForAdmin,
   getSlaOutRangeForAdmin,
   getDailyHistoryRangeForAdmin,
   getHistoryCollectCoverageForAdmin,

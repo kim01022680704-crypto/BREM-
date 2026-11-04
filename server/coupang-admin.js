@@ -11,7 +11,8 @@ const sessionStore = require('./coupang-session');
 const {
   resolveCoupangVendorScope,
   filterItemsByVendorScope,
-  normalizeVendorIdList
+  normalizeVendorIdList,
+  collectOperatingCoupangVendorIds
 } = require('./coupang-admin-access');
 
 const MENUS = ['peak_realtime', 'weekly_performance', 'vendor_info', 'rider_daily'];
@@ -26,9 +27,11 @@ async function resolveCallerScope(accessToken) {
 
   const supabase = getServiceClient();
   let account = null;
+  let operatingVendorIds = null;
   if (supabase) {
     const accounts = await loadAdminRegistry(supabase, caller).catch(() => []);
     account = resolveActorAccount(accounts || [], caller);
+    operatingVendorIds = collectOperatingCoupangVendorIds(accounts || []);
   }
   const scope = resolveCoupangVendorScope(account, catalogIds);
   return {
@@ -36,6 +39,7 @@ async function resolveCallerScope(accessToken) {
     caller,
     account,
     catalogItems,
+    operatingVendorIds,
     scope
   };
 }
@@ -81,6 +85,7 @@ async function getVendorRegions(accessToken) {
     map: Object.fromEntries(items.map(item => [item.vendorId, item.vendorName])),
     viewVendorIds: scoped.scope.viewVendorIds || [],
     canManageRegions: Boolean(scoped.scope.canManageRegions),
+    operatingVendorIds: scoped.operatingVendorIds,
     // 대표·총괄 계정 메뉴의 지역 배정 UI용 전체 목록
     allItems,
     allMap: Object.fromEntries(allItems.map(item => [item.vendorId, item.vendorName]))

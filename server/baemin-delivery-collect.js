@@ -683,18 +683,67 @@ async function getDashboardLive(accessToken, options = {}) {
     }));
   }
 
+  const { businessTodayKST, isCurrentOperatingSnapshot } = require('./baemin-settlement-week');
+  const { readAppliedBaeminDelivery } = require('./baemin-collect-pipeline');
+
+  function countItems(list) {
+    return list.reduce((sum, entry) => sum + (Array.isArray(entry.r.items) ? entry.r.items.length : 0), 0);
+  }
+
+  function maxCollectedAt(list) {
+    let at = '';
+    for (const entry of list) {
+      for (const row of entry.r.items || []) {
+        const stamp = String(row.collected_at || row.collectedAt || '').trim();
+        if (stamp && stamp > at) at = stamp;
+      }
+    }
+    return at;
+  }
+
   let results = await fetchPartners(false);
   let source = 'collect';
-  const collectCount = results.reduce((sum, entry) => sum + (Array.isArray(entry.r.items) ? entry.r.items.length : 0), 0);
-  if (collectCount <= 0) {
-    results = await fetchPartners(true);
-    source = 'applied';
+  let collectedAt = maxCollectedAt(results);
+  let collectCount = countItems(results);
+  if (!(collectCount > 0 && isCurrentOperatingSnapshot(collectedAt))) {
+    const applied = await readAppliedBaeminDelivery().catch(() => null);
+    const appliedAt = String(applied?.collectedAt || applied?.appliedAt || '').trim();
+    if (isCurrentOperatingSnapshot(appliedAt)) {
+      results = await fetchPartners(true);
+      source = 'applied';
+      collectedAt = maxCollectedAt(results) || appliedAt;
+      collectCount = countItems(results);
+    }
+  }
+
+  // 6시 이전 스냅샷은 전 영업일이다. 오늘 칸에 어제 아침·오후·저녁·심야를 채우지 않는다.
+  if (!(collectCount > 0 && isCurrentOperatingSnapshot(collectedAt))) {
+    const day = businessTodayKST();
+    const byPartner = {};
+    partnerIds.forEach(pid => {
+      byPartner[pid] = {
+        ok: true,
+        items: [],
+        notApplied: false,
+        collectDate: day,
+        message: ''
+      };
+    });
+    return {
+      ok: true,
+      collectDate: day,
+      collectedAt: '',
+      source: 'awaiting',
+      awaitingOperatingDay: true,
+      notApplied: false,
+      partnerIds,
+      byPartner
+    };
   }
 
   const byPartner = {};
   let notApplied = false;
   let collectDate = '';
-  let collectedAt = '';
   for (const { partnerId, r } of results) {
     const items = r.items || [];
     byPartner[partnerId] = {
@@ -787,6 +836,18 @@ async function getRiderHistoryRange(accessToken, options = {}) {
     toDate: options.toDate,
     partnerId: options.partnerId,
     compact: options.compact === true,
+    actorScope: scopeForView(actor.scope)
+  });
+}
+
+async function getRiderHourlyBoard(accessToken, options = {}) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { getRiderHourlyBoardForAdmin } = require('./baemin-collect-pipeline');
+  return getRiderHourlyBoardForAdmin({
+    date: options.date,
+    partnerId: options.partnerId,
     actorScope: scopeForView(actor.scope)
   });
 }
@@ -999,6 +1060,7 @@ module.exports = {
   getViewBundle,
   getViewFullBundle,
   getRiderHistoryRange,
+  getRiderHourlyBoard,
   getSlaOutRange,
   getDailyHistoryRange,
   getHistoryCollectCoverage,

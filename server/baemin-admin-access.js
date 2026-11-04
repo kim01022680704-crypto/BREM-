@@ -8,7 +8,7 @@ function normalizePartnerIdList(list) {
 
 function canManageBaeminRegions(account) {
   const role = String(account?.role || '').toLowerCase();
-  return role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.DIRECTOR;
+  return role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.OPERATOR || role === ADMIN_ROLES.DIRECTOR;
 }
 
 /**
