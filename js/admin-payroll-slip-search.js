@@ -467,9 +467,10 @@
   const MONTH_PRINT_CSS = `
     #payrollMonthPrint { z-index: 220; }
     #payrollMonthPrint .payroll-month-print-dialog {
-      width: min(1180px, calc(100vw - 16px));
-      max-width: calc(100vw - 16px);
+      width: min(960px, 100%);
+      max-width: 100%;
       max-height: min(94vh, 980px);
+      overflow: auto;
     }
     .payroll-month-print-bar {
       display: flex;
@@ -623,6 +624,7 @@
     .payslip-sheet table {
       width: 100% !important;
       max-width: 100% !important;
+      min-width: 0 !important;
       table-layout: fixed !important;
       border-collapse: collapse;
       margin: 0 0 12px;
