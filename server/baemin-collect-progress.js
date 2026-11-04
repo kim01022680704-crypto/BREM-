@@ -1,5 +1,22 @@
 let abortRequested = false;
 
+// [복구] 수집 중단요청 플래그 API. 수집 루프(baemin-dashboard-live-collect / baemin-collect-pipeline)가
+// 매 반복마다 isAbortRequested() 로 확인하고, 세션 서버는 requestAbort() 로 정지를 신호한다.
+// (병합 중 이 함수들이 모듈에서 누락돼 수집이 isAbortRequested is not a function 으로 전부 실패했었음)
+function requestAbort() {
+  abortRequested = true;
+  return true;
+}
+
+function clearAbort() {
+  abortRequested = false;
+  return true;
+}
+
+function isAbortRequested() {
+  return abortRequested === true;
+}
+
 let state = {
   active: false,
   percent: 0,
@@ -52,6 +69,7 @@ function startCollect({
   partnerTotal = 0,
   menuLabel = ''
 } = {}) {
+  abortRequested = false; // 새 수집 시작 시 이전 중단요청 초기화
   state = {
     active: true,
     percent: 1,
@@ -192,6 +210,7 @@ function finishCollect({ ok = true, savedTotal = 0, message = '' } = {}) {
 }
 
 function clearProgress() {
+  abortRequested = false;
   state = {
     active: false,
     percent: 0,
@@ -230,5 +249,8 @@ module.exports = {
   skipPartner,
   finishCollect,
   clearProgress,
-  getCollectProgress
+  getCollectProgress,
+  requestAbort,
+  clearAbort,
+  isAbortRequested
 };
