@@ -36,6 +36,12 @@ logs/
 # scripts/_preview-*.js 가 만드는 로컬 미리보기 산출물
 _preview-*.html
 
+# 임시 진단 스크립트·캡처·프리뷰 산출물 (밑줄 접두사 규칙, 추적 제외)
+_*
+scripts/_*
+# 루트 데이터 export (엑셀)
+/*.xlsx
+
 # 라이더 앱 서명·빌드 산출물
 *.jks
 *.keystore
