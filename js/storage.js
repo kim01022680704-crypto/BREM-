@@ -1592,6 +1592,7 @@ const BremStorage = (function () {
 
   const ADMIN_SECTION_KEYS = Object.freeze({
     dashboard: [KEYS.drivers, KEYS.notices, KEYS.calls, KEYS.rejections, KEYS.leaseVehicles],
+    'status-analysis': [KEYS.drivers, KEYS.rejections],
     notices: [KEYS.notices],
     'mission-management': [KEYS.promotionRules, KEYS.drivers],
     'mission-assignment': [KEYS.promotionRules, KEYS.drivers, KEYS.missionDefaults],
@@ -14234,6 +14235,7 @@ const BremStorage = (function () {
     'rider-inquiries',
     'dashboard',
     'admin-schedule',
+    'status-analysis',
     'work-requests',
     'mission-results',
     'missions',
@@ -14320,6 +14322,14 @@ const BremStorage = (function () {
 
     if (normalized.includes('urgent-missions') && !normalized.includes('rider-push')) {
       normalized.splice(normalized.indexOf('urgent-missions') + 1, 0, 'rider-push');
+    }
+
+    if (!normalized.includes('status-analysis')) {
+      const scheduleIndex = normalized.indexOf('admin-schedule');
+      const dashboardIndex = normalized.indexOf('dashboard');
+      const anchor = scheduleIndex >= 0 ? scheduleIndex : dashboardIndex;
+      if (anchor >= 0) normalized.splice(anchor + 1, 0, 'status-analysis');
+      else normalized.push('status-analysis');
     }
 
     if (normalized.includes('missions') && !normalized.includes('mission-results')) {

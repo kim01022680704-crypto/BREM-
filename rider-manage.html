@@ -22,6 +22,10 @@
         var isEdit = !!p.get('edit');
         var fromList = p.get('from') === 'list';
         var root = document.documentElement;
+        // 관리자 ERP와 같은 라이트/다크 선택을 따름 (기기별 localStorage, 다크 기본)
+        try {
+          if (localStorage.getItem('bremAdminTheme') === 'light') root.setAttribute('data-theme', 'light');
+        } catch (eTheme) {}
         if (embed) root.classList.add('is-embed-popup');
         if (simple) root.classList.add('is-embed-simple');
         if (simple && !isEdit) root.classList.add('is-embed-new');       // 신규 간이등록
@@ -277,6 +281,65 @@
     html.is-embed-edit.is-embed-loading .index-content,
     html.is-embed-edit.is-embed-loading #embedBackToList {
       visibility: hidden;
+    }
+
+    /* ───────── 라이트 모드에서는 위 다크 리스킨을 해제 (관리자 ERP 테마 따름) ───────── */
+    html.is-embed-new[data-theme="light"],
+    html.is-embed-new[data-theme="light"] body,
+    html.is-embed-edit[data-theme="light"],
+    html.is-embed-edit[data-theme="light"] body { background: #ffffff !important; color-scheme: light; }
+    html.is-embed-new[data-theme="light"] .field-label,
+    html.is-embed-edit[data-theme="light"] .field-label { color: #374151 !important; }
+    html.is-embed-new[data-theme="light"] .field-label em,
+    html.is-embed-edit[data-theme="light"] .field-label em { color: #dc2626 !important; }
+    html.is-embed-new[data-theme="light"] input,
+    html.is-embed-new[data-theme="light"] select,
+    html.is-embed-new[data-theme="light"] textarea,
+    html.is-embed-new[data-theme="light"] .date-picker-button,
+    html.is-embed-edit[data-theme="light"] input,
+    html.is-embed-edit[data-theme="light"] select,
+    html.is-embed-edit[data-theme="light"] textarea,
+    html.is-embed-edit[data-theme="light"] .date-picker-button {
+      background: #ffffff !important;
+      border: 1px solid #cbd5e1 !important;
+      color: #111620 !important;
+    }
+    html.is-embed-new[data-theme="light"] input::placeholder,
+    html.is-embed-new[data-theme="light"] textarea::placeholder,
+    html.is-embed-edit[data-theme="light"] input::placeholder,
+    html.is-embed-edit[data-theme="light"] textarea::placeholder { color: #9aa0a6 !important; }
+    html.is-embed-new[data-theme="light"] .platform-panel,
+    html.is-embed-edit[data-theme="light"] .platform-panel {
+      background: #f3f4f6 !important;
+      border: 1px solid #e4e7ec !important;
+    }
+    html.is-embed-new[data-theme="light"] .platform-panel-label,
+    html.is-embed-new[data-theme="light"] .platform-check > span,
+    html.is-embed-edit[data-theme="light"] .platform-panel-label,
+    html.is-embed-edit[data-theme="light"] .platform-check > span { color: #374151 !important; }
+    html.is-embed-new[data-theme="light"] .form-note,
+    html.is-embed-new[data-theme="light"] .form-note--subtle,
+    html.is-embed-edit[data-theme="light"] .form-note,
+    html.is-embed-edit[data-theme="light"] .form-note--subtle { color: #687078 !important; }
+    html.is-embed-new[data-theme="light"] .form-note strong,
+    html.is-embed-edit[data-theme="light"] .form-note strong { color: #111620 !important; }
+    html.is-embed-new[data-theme="light"] .form-actions .btn.ghost,
+    html.is-embed-edit[data-theme="light"] .form-actions .btn.ghost {
+      background: #eef1f6 !important;
+      border: 1px solid #cbd5e1 !important;
+      color: #111620 !important;
+    }
+    /* 카톡등록 모달도 라이트로 */
+    html[data-theme="light"] .kakao-register-modal__dialog {
+      background: #ffffff !important; color: #111620 !important; border: 1px solid #e4e7ec !important;
+    }
+    html[data-theme="light"] .kakao-register-modal textarea {
+      background: #ffffff !important; color: #111620 !important; border: 1px solid #cbd5e1 !important;
+    }
+    html[data-theme="light"] .kakao-register-modal__close { color: #374151 !important; }
+    html[data-theme="light"] .kakao-register-modal__help { color: #687078 !important; }
+    html[data-theme="light"] .kakao-register-modal__actions .btn.ghost {
+      background: #eef1f6 !important; border: 1px solid #cbd5e1 !important; color: #111620 !important;
     }
   </style>
 </head>

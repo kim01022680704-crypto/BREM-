@@ -636,3 +636,86 @@ html.brem-admin-app-nav .driver-popup-modal__dialog {
   color: #f5e6a8;
 }
 
+/* ============================================================
+   라이트 테마 보정 — 관리자 앱 (admin-app.css 하드코딩 다크 색 대응)
+   <html class="brem-admin-app-nav" data-theme="light"> 일 때만 적용.
+   ============================================================ */
+html.brem-admin-app-nav[data-theme="light"],
+html.brem-admin-app-nav[data-theme="light"] body {
+  background: var(--black);
+}
+
+[data-theme="light"] .admin-phone-app .eyebrow {
+  color: #9a7700;
+}
+
+[data-theme="light"] .admin-phone-app .logout-btn {
+  border-color: var(--line);
+  color: var(--text);
+}
+
+[data-theme="light"] .admin-phone-app .hero-desc,
+[data-theme="light"] .admin-phone-stat span,
+[data-theme="light"] .admin-phone-shortcut span,
+[data-theme="light"] .admin-phone-today-item span {
+  color: var(--muted);
+}
+
+[data-theme="light"] .admin-phone-stat {
+  background: var(--card);
+  border-color: rgba(154, 119, 0, 0.3);
+}
+
+[data-theme="light"] .admin-phone-stat strong,
+[data-theme="light"] .admin-phone-shortcut strong {
+  color: #9a7700;
+}
+
+[data-theme="light"] .admin-phone-shortcut {
+  background: #fdf6e3;
+  border-color: rgba(154, 119, 0, 0.4);
+}
+
+[data-theme="light"] .admin-phone-today-item {
+  background: var(--card);
+  border-color: var(--line);
+}
+
+[data-theme="light"] .admin-app-nav {
+  background: var(--card);
+  border-top-color: var(--line);
+}
+
+[data-theme="light"] .admin-app-nav__item {
+  color: var(--muted);
+}
+
+[data-theme="light"] .admin-kakao-paste__dialog,
+[data-theme="light"] .admin-kakao-paste textarea {
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--line);
+}
+
+[data-theme="light"] .admin-kakao-paste__close {
+  color: var(--text);
+}
+
+[data-theme="light"] .admin-kakao-paste__help {
+  color: var(--muted);
+}
+
+[data-theme="light"] .brem-native-push-banner {
+  background: #fdf6e3;
+  color: #3a2f0a;
+  border-color: rgba(154, 119, 0, 0.4);
+}
+
+[data-theme="light"] .brem-native-push-banner span {
+  color: #6b5a12;
+}
+
+[data-theme="light"] .admin-phone-app .driver-popup-modal__dialog {
+  border-color: var(--line);
+}
+

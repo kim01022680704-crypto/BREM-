@@ -82,6 +82,7 @@
 
   let callStatsIndex = null;
   let callStatsIndexKey = '';
+  let dashboardDistanceLoadKey = '';
   const driverSelectOptionsCache = new Map();
   const sectionRenderFingerprints = new Map();
   let pendingSectionNavRaf = 0;
@@ -140,6 +141,7 @@
     coupangWeekCalls: { get: entry => entry.coupangWeekCalls, type: 'number' },
     baeminWeekCalls: { get: entry => entry.baeminWeekCalls, type: 'number' },
     totalWeekCalls: { get: entry => entry.totalWeekCalls, type: 'number' },
+    coupangWeekDistance: { get: entry => entry.coupangWeekDistance, type: 'number' },
     coupangRejectionRate: { get: entry => entry.coupangRejectionSort, type: 'number' },
     baeminRejectionRate: { get: entry => entry.baeminRejectionSort, type: 'number' },
     monthlyCallCount: { get: entry => entry.monthlyCallCount, type: 'number' },
@@ -205,6 +207,7 @@
     { id: 'rider-inquiries', label: '라이더 문의' },
     { id: 'dashboard', label: '대시보드' },
     { id: 'admin-schedule', label: '관리자 스케줄표' },
+    { id: 'status-analysis', label: '지사데이터 분석' },
     { id: 'work-requests', label: '업무' },
     { id: 'mission-results', label: '장기근속이벤트 결과' },
     { id: 'missions', label: '장기근속이벤트' },
@@ -3404,18 +3407,70 @@
     return formatPercent(entry.rate, entry);
   }
 
+  function formatDistanceKm(meters) {
+    const value = Math.max(0, Math.round(Number(meters) || 0));
+    const km = value / 1000;
+    return `${km.toLocaleString('ko-KR', { maximumFractionDigits: 1, minimumFractionDigits: value ? 1 : 0 })}km`;
+  }
+
+  function weekDeliveryDistanceMap(weekStart) {
+    const end = weekEndKey(weekStart);
+    const latest = new Map();
+    (BremStorage.settlements?.getAll?.() || []).forEach(row => {
+      if (normalizePlatform(row.platform) !== 'coupang') return;
+      const day = String(row.period || '').slice(0, 10);
+      if (!day || day < weekStart || day > end) return;
+      const driverId = String(row.driverId || '');
+      if (!driverId) return;
+      const key = `${driverId}|${day}`;
+      const appliedAt = String(row.appliedAt || '');
+      const prev = latest.get(key);
+      if (prev && appliedAt < prev.appliedAt) return;
+      latest.set(key, {
+        driverId,
+        appliedAt,
+        meters: Math.max(0, Math.round(Number(row.deliveryDistanceM) || 0))
+      });
+    });
+    const totals = new Map();
+    latest.forEach(row => {
+      totals.set(row.driverId, (totals.get(row.driverId) || 0) + row.meters);
+    });
+    return totals;
+  }
+
+  function scheduleDashboardDistanceLoad(weekStart) {
+    const end = weekEndKey(weekStart);
+    const key = `${weekStart}|${end}`;
+    if (dashboardDistanceLoadKey === key) return;
+    if (typeof BremStorage.ensureSettlementsSinceDate !== 'function') return;
+    dashboardDistanceLoadKey = key;
+    void BremStorage.ensureSettlementsSinceDate(weekStart, { untilDate: end, merge: true }).then(result => {
+      if (result?.cached) return;
+      if (dashboardWeekStart() !== weekStart) {
+        dashboardDistanceLoadKey = '';
+        return;
+      }
+      renderDashboard();
+    }).catch(() => {});
+  }
+
   function renderDashboard() {
     window.BremPerf?.time?.('admin.renderDashboard');
+    const distanceWeekStart = dashboardWeekStart();
+    scheduleDashboardDistanceLoad(distanceWeekStart);
     void window.BremBaeminDeliveryStatusAdmin?.refreshDashboardBaeminLive?.();
     void window.BremCoupangStatusAdmin?.refreshDashboardCard?.();
     const month = dashboardMonth();
     const weekStart = dashboardWeekStart();
     const totalDrivers = drivers().length;
     const allDrivers = filteredDashboardDrivers();
+    const distanceByDriver = weekDeliveryDistanceMap(weekStart);
     const driverStats = allDrivers.map(driver => {
       const coupangWeekCalls = weekCallsForDriverByPlatform(driver.id, weekStart, 'coupang');
       const baeminWeekCalls = weekCallsForDriverByPlatform(driver.id, weekStart, 'baemin');
       const totalWeekCalls = coupangWeekCalls + baeminWeekCalls;
+      const coupangWeekDistance = distanceByDriver.get(driver.id) || 0;
       const monthlyCallCount = monthCalls(driver.id, month);
       const coupangRejectionEntry = BremStorage.rejections.getEntryForWeek(driver.id, weekStart, 'coupang');
       const baeminRejectionEntry = BremStorage.rejections.getEntryForWeek(driver.id, weekStart, 'baemin');
@@ -3424,6 +3479,7 @@
         coupangWeekCalls,
         baeminWeekCalls,
         totalWeekCalls,
+        coupangWeekDistance,
         monthlyCallCount,
         coupangRejectionEntry,
         baeminRejectionEntry,
@@ -3441,6 +3497,7 @@
       coupangWeekCalls,
       baeminWeekCalls,
       totalWeekCalls,
+      coupangWeekDistance,
       monthlyCallCount
     }) => {
       const eventSummary = eventProgressSummary(driver);
@@ -3452,6 +3509,7 @@
           <td class="dashboard-cell-num"><strong>${number(coupangWeekCalls)}</strong></td>
           <td class="dashboard-cell-num"><strong>${number(baeminWeekCalls)}</strong></td>
           <td class="dashboard-cell-num"><strong>${number(totalWeekCalls)}</strong></td>
+          <td class="dashboard-cell-num">${formatDistanceKm(coupangWeekDistance)}</td>
           <td class="dashboard-cell-rate">${dashboardRejectionCell(driver, weekStart, 'coupang')}</td>
           <td class="dashboard-cell-rate">${dashboardRejectionCell(driver, weekStart, 'baemin')}</td>
           <td class="dashboard-cell-num"><strong>${number(monthlyCallCount)}</strong></td>
@@ -3476,7 +3534,7 @@
     const emptyMessage = state.dashboardSearchQuery.trim()
       ? '검색 결과에 해당하는 기사가 없습니다.'
       : '기사등록 프로그램에서 기사를 먼저 등록하세요.';
-    $('#dashboardRows').innerHTML = rows || emptyRow(10, emptyMessage);
+    $('#dashboardRows').innerHTML = rows || emptyRow(11, emptyMessage);
     updateDashboardSearchStatus(totalDrivers, allDrivers.length);
     const dashboardCountEl = $('#dashboardDriverCount');
     if (dashboardCountEl) {
@@ -5189,6 +5247,11 @@
     return ensureSettlementUnmatchedWeek(normalizePlatform(platform));
   }
 
+  function settlementDistanceText(record) {
+    if (record?.deliveryDistanceM == null || record.deliveryDistanceM === '') return '-';
+    return formatDistanceKm(record.deliveryDistanceM);
+  }
+
   function settlementRowCells(record, platform) {
     const orderCount = Number(record.orderCount ?? record.callCount ?? 0);
     const amount = settlementAmountValue(record);
@@ -5205,6 +5268,7 @@
 
     return `
       <td>${orderCount.toLocaleString('ko-KR')}</td>
+      <td>${settlementDistanceText(record)}</td>
       <td>${formatMoney(hourlyInsurance)}</td>
       <td>${formatMoney(amount)}</td>
     `;
@@ -5292,11 +5356,12 @@
         <tr>
           <td><strong>${escapeHtml(record.driverName)}</strong></td>
           <td>${Number(record.orderCount || 0).toLocaleString('ko-KR')}</td>
+          <td>${settlementDistanceText(record)}</td>
           <td>${callFeeUnit == null ? '설정 필요' : formatMoney(Number(record.orderCount || 0) * callFeeUnit)}</td>
           <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
           <td>${formatMoney(settlementAmountValue(record))}</td>
         </tr>
-      `).join('') || '<tr><td colspan="5" class="empty">매칭된 기사가 없습니다.</td></tr>';
+      `).join('') || '<tr><td colspan="6" class="empty">매칭된 기사가 없습니다.</td></tr>';
     }
 
     const failedBlock = $(`#settlementFailedBlock-${p}`);
@@ -5308,6 +5373,7 @@
             <td>${escapeHtml(record.rawName)}</td>
             <td>${escapeHtml(record.name)}</td>
             <td>${Number(record.orderCount || 0).toLocaleString('ko-KR')}</td>
+            <td>${settlementDistanceText(record)}</td>
             <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
             <td>${formatMoney(settlementAmountValue(record))}</td>
           </tr>
@@ -5371,7 +5437,7 @@
           </td>
         </tr>
       `;
-      }).join('') || `<tr><td colspan="9" class="empty">${emptyMessage}</td></tr>`;
+      }).join('') || `<tr><td colspan="${p === 'coupang' ? 9 : 8}" class="empty">${emptyMessage}</td></tr>`;
 
       if (summaryEl) {
         summaryEl.textContent = rows.length
@@ -7899,6 +7965,9 @@
     switch (sectionId) {
       case 'dashboard':
         renderDashboard();
+        break;
+      case 'status-analysis':
+        window.BremStatusAnalysis?.render?.();
         break;
       case 'mission-results':
         renderMissionResults();
