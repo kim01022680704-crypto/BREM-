@@ -208,10 +208,10 @@ function buildDeliveryStatusItems(live) {
         : (completed.total != null ? completed.total : (slaIncluded + slaExcluded))
     );
 
-    // 상세(C) 응답의 riderId = 구 로그인 id(예: bigcloud8200) → ERP riders.baemin_id 매칭 키.
-    // 목록(B)의 riderId = 숫자 내부 id(상세 호출용). 매칭/중복키는 로그인 id 우선.
-    const loginId = String(d.riderId || '').trim();
-    const numericId = String(r.riderId || '').trim();
+    // 실시간 운영 현황 상세의 「라이더 ID」는 userId (예: rkwangks) → ERP riders.baemin_id.
+    // riderId 는 상세 호출용 내부 숫자라서 이걸로 붙이면 기사 계정과 하나도 안 맞는다.
+    const loginId = [d.userId, r.userId].map(value => String(value || '').trim()).find(value => value && !/^\d+$/.test(value)) || '';
+    const numericId = String(r.riderId || d.riderId || '').trim();
     const matchUserId = loginId || numericId;
 
     return {
