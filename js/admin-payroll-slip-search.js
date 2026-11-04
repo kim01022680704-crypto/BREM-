@@ -503,6 +503,7 @@
       background: #e7e5e4;
       border-radius: 14px;
       padding: 14px;
+      overflow-x: hidden;
     }
     .payroll-month-print-empty {
       margin: 0;
@@ -513,9 +514,12 @@
     }
     .payslip-sheet {
       box-sizing: border-box;
-      max-width: 210mm;
+      width: 100%;
+      max-width: 190mm;
+      min-width: 0;
       margin: 0 auto 16px;
-      padding: 16px 18px 14px;
+      padding: 16px 16px 14px;
+      overflow: hidden;
       border: 1px solid #d6d3d1;
       background: #fff;
       color: #111;
@@ -615,40 +619,66 @@
     }
     .payslip-sheet table {
       width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       margin: 0 0 12px;
     }
     .payslip-sheet th,
     .payslip-sheet td {
-      padding: 4px 6px;
+      box-sizing: border-box;
+      padding: 4px 4px;
       border-bottom: 1px solid #e7e5e4;
+      background: #fff;
+      color: #111;
+      font-size: 11px;
       font-weight: 600;
       text-align: right;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .payslip-sheet th {
+    .payslip-sheet thead th {
       background: #f5f5f4;
       color: #44403c;
       font-size: 10px;
       font-weight: 800;
     }
     .payslip-sheet td.is-label,
-    .payslip-sheet th.is-label { text-align: left; white-space: normal; }
+    .payslip-sheet th.is-label {
+      text-align: left;
+      white-space: normal;
+    }
     .payslip-sheet tfoot td {
       border-top: 2px solid #111;
       border-bottom: 0;
+      background: #fafaf9;
+      color: #111;
       font-weight: 800;
     }
     .payslip-sheet__cols {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      min-width: 0;
     }
+    .payslip-sheet__cols section { min-width: 0; }
     .payslip-sheet__cols table { margin: 0; }
+    .payslip-sheet__cols th.is-label {
+      width: 62%;
+      background: #fff;
+      color: #111;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .payslip-sheet__cols td { width: 38%; }
     .payslip-sheet tr.is-total th,
-    .payslip-sheet tr.is-total td { font-weight: 800; }
-    .payslip-sheet .is-zero { color: #a8a29e; }
+    .payslip-sheet tr.is-total td {
+      background: #fafaf9;
+      font-weight: 800;
+    }
+    .payslip-sheet .is-zero { color: #78716c; }
     .payslip-sheet .is-neg { color: #b91c1c; }
     .payslip-sheet__formula {
       display: flex;
@@ -663,10 +693,40 @@
       font-variant-numeric: tabular-nums;
     }
     .payslip-sheet__formula strong { color: #ffd400; font-size: 16px; }
+    .payslip-sheet__sign {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 10px;
+    }
     .payslip-sheet__foot {
-      margin: 8px 0 0;
+      margin: 0;
       color: #78716c;
       font-size: 10px;
+    }
+    .payslip-sheet__stamps {
+      display: flex;
+      flex: 0 0 auto;
+      gap: 6px;
+    }
+    .payslip-sheet__stamp {
+      width: 58px;
+      text-align: center;
+    }
+    .payslip-sheet__stamp span {
+      display: block;
+      margin-bottom: 3px;
+      color: #44403c;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .payslip-sheet__stamp b {
+      display: block;
+      box-sizing: border-box;
+      height: 62px;
+      border: 1.5px solid #111;
+      background: #fff;
     }
   `;
 
@@ -877,6 +937,16 @@
         </div>
         <h2>주별 내역</h2>
         <table>
+          <colgroup>
+            <col style="width:16%">
+            <col style="width:15%">
+            <col style="width:8%">
+            <col style="width:13%">
+            <col style="width:13%">
+            <col style="width:11%">
+            <col style="width:11%">
+            <col style="width:13%">
+          </colgroup>
           <thead>
             <tr>
               <th class="is-label">정산주</th>
@@ -906,11 +976,17 @@
         <div class="payslip-sheet__cols">
           <section>
             <h2>지급 내역</h2>
-            <table><tbody>${detailRows(payRows, total)}</tbody></table>
+            <table>
+              <colgroup><col style="width:62%"><col style="width:38%"></colgroup>
+              <tbody>${detailRows(payRows, total)}</tbody>
+            </table>
           </section>
           <section>
             <h2>공제 내역</h2>
-            <table><tbody>${detailRows(deductRows, total)}</tbody></table>
+            <table>
+              <colgroup><col style="width:62%"><col style="width:38%"></colgroup>
+              <tbody>${detailRows(deductRows, total)}</tbody>
+            </table>
           </section>
         </div>
         <div class="payslip-sheet__formula">
@@ -920,7 +996,14 @@
           <span>=</span>
           <strong>${won(total.netPay)}원</strong>
         </div>
-        <p class="payslip-sheet__foot">쿠팡·배민은 각 플랫폼 총지급액입니다. 주급명세서를 지급일 기준으로 합산했습니다. 출력 ${printedAt}</p>
+        <div class="payslip-sheet__sign">
+          <p class="payslip-sheet__foot">쿠팡·배민은 각 플랫폼 총지급액입니다. 주급명세서를 지급일 기준으로 합산했습니다. 출력 ${printedAt}</p>
+          <div class="payslip-sheet__stamps" aria-label="도장">
+            <div class="payslip-sheet__stamp"><span>담당</span><b></b></div>
+            <div class="payslip-sheet__stamp"><span>팀장</span><b></b></div>
+            <div class="payslip-sheet__stamp"><span>대표</span><b></b></div>
+          </div>
+        </div>
       </article>
     `;
   }
@@ -1020,8 +1103,10 @@
     @page { size: A4; margin: 12mm; }
     html, body { margin: 0; background: #fff; }
     .payslip-sheet {
+      width: 100%;
       max-width: none;
       margin: 0;
+      overflow: visible;
       border: 0;
       page-break-after: always;
       break-after: page;
