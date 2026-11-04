@@ -337,7 +337,7 @@
           <div class="card-header lease-contract-list-head">
             <div>
               <h2>급여명세서 검색</h2>
-              <p class="form-help" id="payrollSlipSearchStatus">정산주를 고른 뒤 이름을 누르세요.</p>
+              <p class="form-help" id="payrollSlipSearchStatus">이름을 누르면 주급이 열리고, 거기서 여러 달을 골라 인쇄할 수 있습니다.</p>
             </div>
             <div class="lease-list-toolbar">
               <input type="hidden" id="payrollSlipSearchWeekStart">
@@ -434,8 +434,27 @@
       </div>
       <div id="payrollSlipSearchPopupBody"></div>
       <div class="inquiry-popup__actions">
+        <button type="button" class="small-btn" id="payrollSlipSearchMonthPrintBtn">달별 인쇄</button>
         <button type="button" class="small-btn" data-payroll-search-close>닫기</button>
       </div>
+    </div>
+  </div>
+  <div class="inquiry-popup" id="payrollMonthPrint" hidden>
+    <button type="button" class="inquiry-popup__backdrop" data-payroll-month-print-close aria-label="닫기"></button>
+    <div class="inquiry-popup__dialog payroll-month-print-dialog" role="dialog" aria-modal="true" aria-labelledby="payrollMonthPrintTitle">
+      <p class="inquiry-popup__eyebrow">급여명세서</p>
+      <div class="inquiry-popup__title-row">
+        <h2 id="payrollMonthPrintTitle">달별 급여명세서</h2>
+      </div>
+      <p class="inquiry-popup__meta" id="payrollMonthPrintMeta">지급일이 같은 달인 주급을 한 장으로 모읍니다.</p>
+      <div class="payroll-month-print-bar">
+        <div class="payroll-month-print-months" id="payrollMonthPrintMonths"></div>
+        <button type="button" class="small-btn" id="payrollMonthPrintAll">전체</button>
+        <button type="button" class="small-btn" id="payrollMonthPrintNone">해제</button>
+        <button type="button" class="small-btn" id="payrollMonthPrintBtn">인쇄</button>
+        <button type="button" class="small-btn" data-payroll-month-print-close>닫기</button>
+      </div>
+      <div class="payroll-month-print-preview" id="payrollMonthPrintPreview"></div>
     </div>
   </div>
 
@@ -584,7 +603,7 @@
   <script src="js/coupang-status-admin.js?v=20261104op2"></script>
   <script src="js/payroll-slip-utils.js?v=20260814match1"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
-  <script src="js/admin-payroll-slip-search.js?v=20260817pay6"></script>
+  <script src="js/admin-payroll-slip-search.js?v=20261104monthprint1"></script>
   <script src="js/admin-work-requests.js?v=20260927req8"></script>
   <script src="js/driver-utils.js?v=20260921off1"></script>
   <script src="js/driver-detail-search.js?v=20261103riders2"></script>
