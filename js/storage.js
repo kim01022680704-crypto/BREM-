@@ -1233,7 +1233,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await postMission();
@@ -1297,7 +1297,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await deleteRequest();
@@ -1368,7 +1368,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await postNotice();
@@ -1404,7 +1404,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await deleteRequest();
@@ -1431,7 +1431,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await postRows();
@@ -2869,7 +2869,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await fetchRiders();
@@ -2938,7 +2938,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await deleteAll();
@@ -2959,7 +2959,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await fetchCount();
@@ -3091,7 +3091,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await postRider();
@@ -3139,7 +3139,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await postReset();
@@ -3184,7 +3184,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await postBulk();
@@ -3329,7 +3329,7 @@ const BremStorage = (function () {
       if (!result.ok && result.status === 401) {
         const client = getSupabaseClient();
         if (client) {
-          await client.auth.refreshSession();
+          await refreshAdminAccessToken(client);
           rememberAdminAccessToken('');
         }
         result = await postChunk(chunk);
@@ -3404,7 +3404,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await postBulk();
@@ -4485,7 +4485,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await fetchOne();
@@ -4524,7 +4524,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await postMerge();
@@ -4545,7 +4545,7 @@ const BremStorage = (function () {
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
       if (client) {
-        await client.auth.refreshSession();
+        await refreshAdminAccessToken(client);
         rememberAdminAccessToken('');
       }
       result = await postMerge();
