@@ -466,9 +466,10 @@
 
   const MONTH_PRINT_CSS = `
     #payrollMonthPrint { z-index: 220; }
-    .payroll-month-print-dialog {
-      width: min(1040px, calc(100vw - 24px));
-      max-height: min(92vh, 960px);
+    #payrollMonthPrint .payroll-month-print-dialog {
+      width: min(1180px, calc(100vw - 16px));
+      max-width: calc(100vw - 16px);
+      max-height: min(94vh, 980px);
     }
     .payroll-month-print-bar {
       display: flex;
@@ -502,8 +503,8 @@
     .payroll-month-print-preview {
       background: #e7e5e4;
       border-radius: 14px;
-      padding: 14px;
-      overflow-x: hidden;
+      padding: 18px 16px;
+      overflow: auto;
     }
     .payroll-month-print-empty {
       margin: 0;
@@ -514,15 +515,17 @@
     }
     .payslip-sheet {
       box-sizing: border-box;
-      width: 100%;
-      max-width: 190mm;
+      width: min(100%, 200mm);
+      max-width: 100%;
       min-width: 0;
       margin: 0 auto 16px;
-      padding: 16px 16px 14px;
-      overflow: hidden;
+      padding: 18px 16px 16px;
+      overflow: visible;
       border: 1px solid #d6d3d1;
+      border-radius: 2px;
       background: #fff;
       color: #111;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
       font-family: "Pretendard Variable", Pretendard, "Noto Sans KR", sans-serif;
       font-size: 12px;
       line-height: 1.35;
@@ -618,42 +621,47 @@
       font-size: 13px;
     }
     .payslip-sheet table {
-      width: 100%;
-      table-layout: fixed;
+      width: 100% !important;
+      max-width: 100% !important;
+      table-layout: fixed !important;
       border-collapse: collapse;
       margin: 0 0 12px;
     }
     .payslip-sheet th,
     .payslip-sheet td {
-      box-sizing: border-box;
-      padding: 4px 4px;
+      box-sizing: border-box !important;
+      padding: 5px 3px !important;
       border-bottom: 1px solid #e7e5e4;
-      background: #fff;
-      color: #111;
-      font-size: 11px;
-      font-weight: 600;
+      background: #fff !important;
+      color: #111 !important;
+      font-size: 11px !important;
+      font-weight: 650;
+      line-height: 1.25;
       text-align: right;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
       overflow: hidden;
-      text-overflow: ellipsis;
+      text-overflow: clip;
     }
     .payslip-sheet thead th {
-      background: #f5f5f4;
-      color: #44403c;
-      font-size: 10px;
+      background: #f5f5f4 !important;
+      color: #44403c !important;
+      font-size: 10px !important;
       font-weight: 800;
+      white-space: normal !important;
+      line-height: 1.2;
+      vertical-align: bottom;
     }
     .payslip-sheet td.is-label,
     .payslip-sheet th.is-label {
       text-align: left;
-      white-space: normal;
+      white-space: normal !important;
     }
     .payslip-sheet tfoot td {
       border-top: 2px solid #111;
       border-bottom: 0;
-      background: #fafaf9;
-      color: #111;
+      background: #fafaf9 !important;
+      color: #111 !important;
       font-weight: 800;
     }
     .payslip-sheet__cols {
@@ -666,13 +674,17 @@
     .payslip-sheet__cols section { min-width: 0; }
     .payslip-sheet__cols table { margin: 0; }
     .payslip-sheet__cols th.is-label {
-      width: 62%;
-      background: #fff;
-      color: #111;
-      font-size: 11px;
+      width: 58%;
+      background: #fff !important;
+      color: #111 !important;
+      font-size: 11px !important;
       font-weight: 600;
     }
-    .payslip-sheet__cols td { width: 38%; }
+    .payslip-sheet__cols td {
+      width: 42%;
+      color: #111 !important;
+      font-weight: 750;
+    }
     .payslip-sheet tr.is-total th,
     .payslip-sheet tr.is-total td {
       background: #fafaf9;
@@ -711,31 +723,33 @@
       gap: 6px;
     }
     .payslip-sheet__stamp {
-      width: 58px;
+      width: 78px;
       text-align: center;
     }
     .payslip-sheet__stamp span {
       display: block;
-      margin-bottom: 3px;
-      color: #44403c;
-      font-size: 10px;
+      margin-bottom: 4px;
+      color: #111;
+      font-size: 11px;
       font-weight: 800;
     }
     .payslip-sheet__stamp b {
       display: block;
       box-sizing: border-box;
-      height: 62px;
+      height: 78px;
       border: 1.5px solid #111;
       background: #fff;
     }
   `;
 
   function ensureMonthPrintStyle() {
-    if (document.getElementById('payrollMonthPrintStyle')) return;
-    const style = document.createElement('style');
-    style.id = 'payrollMonthPrintStyle';
+    let style = document.getElementById('payrollMonthPrintStyle');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'payrollMonthPrintStyle';
+      document.head.appendChild(style);
+    }
     style.textContent = MONTH_PRINT_CSS;
-    document.head.appendChild(style);
   }
 
   function won(value) {
@@ -938,14 +952,14 @@
         <h2>주별 내역</h2>
         <table>
           <colgroup>
-            <col style="width:16%">
-            <col style="width:15%">
-            <col style="width:8%">
             <col style="width:13%">
             <col style="width:13%">
-            <col style="width:11%">
-            <col style="width:11%">
+            <col style="width:7%">
+            <col style="width:14%">
             <col style="width:13%">
+            <col style="width:13%">
+            <col style="width:13%">
+            <col style="width:14%">
           </colgroup>
           <thead>
             <tr>
@@ -999,8 +1013,6 @@
         <div class="payslip-sheet__sign">
           <p class="payslip-sheet__foot">쿠팡·배민은 각 플랫폼 총지급액입니다. 주급명세서를 지급일 기준으로 합산했습니다. 출력 ${printedAt}</p>
           <div class="payslip-sheet__stamps" aria-label="도장">
-            <div class="payslip-sheet__stamp"><span>담당</span><b></b></div>
-            <div class="payslip-sheet__stamp"><span>팀장</span><b></b></div>
             <div class="payslip-sheet__stamp"><span>대표</span><b></b></div>
           </div>
         </div>
@@ -1108,6 +1120,8 @@
       margin: 0;
       overflow: visible;
       border: 0;
+      border-radius: 0;
+      box-shadow: none;
       page-break-after: always;
       break-after: page;
     }
