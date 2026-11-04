@@ -1671,6 +1671,7 @@ const BremStorage = (function () {
       KEYS.directSettlementAdjustments,
       KEYS.directOtherPayments,
       KEYS.directBremPromotions,
+      KEYS.payrollWithdrawalRequests,
       KEYS.revenue
     ],
     'admin-account': [],

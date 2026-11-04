@@ -281,6 +281,9 @@ window.BremSupabaseStorageAdapter = (function () {
         // keys.directBremPromotions,           // 10KB   (deferred)
         // keys.directSettlementAdjustments,    // 728KB  (deferred)
         // keys.directRetroAdjustments,         // 102KB  (deferred)
+        // keys.payrollWithdrawalRequests,      // 2.4MB  (deferred) — UI는 fetchFromAdminApi(서버)로 읽고,
+        //   getAll() fallback은 payroll-daily-settlement/final-deposit/settlement-result-direct/
+        //   revenue-region-settlement 섹션 진입 시 reloadSettingKey로 지연 로드된다. 코어에서 분리해 egress 절감.
         keys.leaseLoans,
         keys.deductionLedger,
         keys.missionDefaults,
@@ -290,7 +293,7 @@ window.BremSupabaseStorageAdapter = (function () {
         keys.payrollDailySettlementRoster,
         keys.payrollDailySettlementRegions,
         keys.payrollDailySettlementFees,
-        keys.payrollWithdrawalRequests,
+        // keys.payrollWithdrawalRequests,  // 2.4MB — 위 주석대로 섹션 진입 시 지연 로드 (코어 분리)
         keys.payrollDailyExcludedSettlements,
         keys.payrollWeekFinalized,
         keys.payrollWithdrawalPaused,
