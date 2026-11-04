@@ -518,6 +518,8 @@ module.exports = {
   addDays,
   weekdayKST,
   businessTodayKST,
+  operatingDayStartMs,
+  isCurrentOperatingSnapshot,
   settlementWeekStart,
   settlementWeekEnd,
   latestQueryableDate,
