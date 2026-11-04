@@ -55,6 +55,20 @@ function displayCoupangRegionLabel(name) {
   return short || raw;
 }
 
+function coupangRegionBranchTag(name) {
+  const raw = String(name || '').replace(/\s+/g, '');
+  if (!raw) return '';
+  if (raw.includes('119컴퍼니') || raw.startsWith('119')) return '119';
+  return '이글스';
+}
+
+function coupangRegionSelectLabel(name) {
+  const display = displayCoupangRegionLabel(name);
+  if (!display) return '';
+  const tag = coupangRegionBranchTag(name);
+  return tag ? `${display} · ${tag}` : display;
+}
+
 /** vendorName 정규화 — (2) 접미사 제거 */
 function coupangRegionDedupeKey(name) {
   return String(name || '').replace(/\s+/g, '').replace(/\(\d+\)$/g, '').trim();
@@ -295,6 +309,8 @@ module.exports = {
   digitsOnly,
   shortCoupangRegionLabel,
   displayCoupangRegionLabel,
+  coupangRegionBranchTag,
+  coupangRegionSelectLabel,
   coupangRegionIsZ,
   coupangRegionDedupeKey,
   coupangVendorIdOf,

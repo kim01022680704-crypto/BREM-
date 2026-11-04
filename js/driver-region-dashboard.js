@@ -238,7 +238,7 @@
     }
     regionSelect.disabled = false;
     regionSelect.innerHTML = regions.map(region => (
-      `<option value="${escapeHtml(region.key)}"${region.key === selectedKey ? ' selected' : ''}>${escapeHtml(region.label || region.key)}</option>`
+      `<option value="${escapeHtml(region.key)}"${region.key === selectedKey ? ' selected' : ''}>${escapeHtml(region.displayLabel || region.label || region.key)}</option>`
     )).join('');
   }
 
@@ -269,7 +269,7 @@
     renderRegionOptions(regions, selectedKey);
     if (periodEl) periodEl.textContent = formatWeekLabel(result?.weekStart, result?.weekEnd);
     if (regionLabelEl) {
-      regionLabelEl.textContent = result?.region?.label || selectedKey || '-';
+      regionLabelEl.textContent = result?.region?.displayLabel || result?.region?.label || selectedKey || '-';
     }
 
     if (regions.length) {

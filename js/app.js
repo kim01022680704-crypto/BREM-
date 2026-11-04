@@ -360,6 +360,26 @@
     }
   }
 
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function normalizeSavedCoupangRegion(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const stripped = raw
+      .replace(/\s*·\s*(119|이글스)\s*$/u, '')
+      .replace(/\s+(119|이글스)\s*$/u, '')
+      .trim();
+    const labeled = window.BremCoupangRegion?.displayCoupangRegionLabel?.(stripped) || '';
+    if (labeled && !/이글스|119/.test(labeled)) return labeled;
+    return stripped;
+  }
+
   function shortCoupangRegionLabel(name) {
     let raw = String(name || '').replace(/\s+/g, '').trim();
     if (!raw) return '';
@@ -421,13 +441,23 @@
         const seen = new Set();
         const options = [];
         items.forEach(item => {
-          const short = shortCoupangRegionLabel(item.vendorName);
-          if (!short || seen.has(short)) return;
-          seen.add(short);
-          options.push(`<option value="${short}">${short}</option>`);
+          const vendorName = String(item.vendorName || '').trim();
+          const api = window.BremCoupangRegion;
+          const value = api?.displayCoupangRegionLabel
+            ? api.displayCoupangRegionLabel(vendorName)
+            : shortCoupangRegionLabel(vendorName);
+          const text = api?.coupangRegionSelectLabel
+            ? api.coupangRegionSelectLabel(vendorName)
+            : value;
+          if (!value || !text) return;
+          const key = `${value}\0${text}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          options.push(`<option value="${escapeHtml(value)}">${escapeHtml(text)}</option>`);
         });
+        options.sort((a, b) => a.localeCompare(b, 'ko'));
         regionCoupangInput.innerHTML = `<option value="">미선택</option>${options.join('')}`;
-        ensureSelectValue(regionCoupangInput, keepCoupang);
+        ensureSelectValue(regionCoupangInput, normalizeSavedCoupangRegion(keepCoupang));
       } catch (_) { /* ignore */ }
     }
   }

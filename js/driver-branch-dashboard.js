@@ -126,7 +126,7 @@
   function renderRegions(regions, selectedKey) {
     if (!regionSelect) return;
     regionSelect.innerHTML = regions.length
-      ? regions.map(region => `<option value="${escapeHtml(region.key)}"${region.key === selectedKey ? ' selected' : ''}>${escapeHtml(region.label || region.key)}</option>`).join('')
+      ? regions.map(region => `<option value="${escapeHtml(region.key)}"${region.key === selectedKey ? ' selected' : ''}>${escapeHtml(region.displayLabel || region.label || region.key)}</option>`).join('')
       : '<option value="">담당 지역 없음</option>';
     regionSelect.disabled = !regions.length;
   }
@@ -225,7 +225,7 @@
     renderRegions(regions, state.regionKey);
     syncPlatformTabs();
     if (periodEl) periodEl.textContent = formatPeriod(result?.weekStart, result?.weekEnd);
-    if (regionLabelEl) regionLabelEl.textContent = result?.region?.label || '-';
+    if (regionLabelEl) regionLabelEl.textContent = result?.region?.displayLabel || result?.region?.label || '-';
     const empty = !result?.isBranchManager || !regions.length;
     if (emptyEl) {
       emptyEl.hidden = !empty;

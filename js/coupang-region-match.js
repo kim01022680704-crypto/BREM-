@@ -25,6 +25,22 @@
     return short || raw;
   }
 
+  /** 119컴퍼니 / 그 외(이글스). 지역명에 붙이지 않고 태그로만 쓴다. */
+  function coupangRegionBranchTag(name) {
+    const raw = String(name || '').replace(/\s+/g, '');
+    if (!raw) return '';
+    if (raw.includes('119컴퍼니') || raw.startsWith('119')) return '119';
+    return '이글스';
+  }
+
+  /** 선택 목록 표기. 값은 지역명(+Z)만 두고, 화면에는 태그를 붙인다. */
+  function coupangRegionSelectLabel(name) {
+    const display = displayCoupangRegionLabel(name);
+    if (!display) return '';
+    const tag = coupangRegionBranchTag(name);
+    return tag ? `${display} · ${tag}` : display;
+  }
+
   function coupangRegionLooksZ(region) {
     return coupangRegionIsZ(`${region?.label || ''} ${region?.vendorName || ''}`);
   }
@@ -74,6 +90,8 @@
   const api = {
     shortCoupangRegionLabel,
     displayCoupangRegionLabel,
+    coupangRegionBranchTag,
+    coupangRegionSelectLabel,
     coupangRegionIsZ,
     coupangRegionLooksZ,
     coupangZBases,

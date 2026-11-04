@@ -11,6 +11,7 @@ const {
 const {
   shortCoupangRegionLabel,
   displayCoupangRegionLabel,
+  coupangRegionSelectLabel,
   coupangRegionIsZ,
   coupangVendorMatchesRegion,
   PEAK_LABELS,
@@ -286,10 +287,14 @@ function listBranchManagerRegions(exposure, platform, driverId) {
 function decorateCoupangBranchRegion(region, vendorName) {
   const name = String(vendorName || region?.vendorName || '').trim();
   const label = displayCoupangRegionLabel(name || region?.label) || region?.label;
+  const displayLabel = name
+    ? (coupangRegionSelectLabel(name) || label)
+    : label;
   return {
     ...region,
     vendorName: name || region?.vendorName || '',
-    label
+    label,
+    displayLabel: displayLabel || label
   };
 }
 
@@ -337,7 +342,8 @@ async function attachCoupangRegionName(supabase, region) {
       ...region,
       vendorId: vendorId || region.vendorId,
       vendorName: current,
-      label: displayCoupangRegionLabel(current) || region.label
+      label: displayCoupangRegionLabel(current) || region.label,
+      displayLabel: coupangRegionSelectLabel(current) || region.displayLabel || region.label
     };
   }
   if (!vendorId) return region;
@@ -358,7 +364,8 @@ async function attachCoupangRegionName(supabase, region) {
     ...region,
     vendorId: vendorId || region.vendorId,
     vendorName: name,
-    label: displayCoupangRegionLabel(name) || region.label
+    label: displayCoupangRegionLabel(name) || region.label,
+    displayLabel: coupangRegionSelectLabel(name) || region.displayLabel || region.label
   };
 }
 
