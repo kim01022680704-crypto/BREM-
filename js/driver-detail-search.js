@@ -13,6 +13,10 @@ const BremDriverDetailSearch = (function () {
     loading: false,
     loadError: '',
     searchTimer: null,
+    searchSeq: 0,
+    searching: false,
+    searchDoneQuery: '',
+    searchError: '',
     detailSeq: 0
   };
 
@@ -212,6 +216,18 @@ const BremDriverDetailSearch = (function () {
     }
     const hits = searchHits();
     if (!hits.length) {
+      if (state.searching) {
+        root.innerHTML = '<p class="driver-detail-empty">검색 중…</p>';
+        return;
+      }
+      if (state.searchError && state.searchDoneQuery === query) {
+        root.innerHTML = `<p class="driver-detail-empty">${escapeHtml(state.searchError)}</p>`;
+        return;
+      }
+      if (state.searchDoneQuery === query) {
+        root.innerHTML = '<p class="driver-detail-empty">검색 결과가 없습니다.</p>';
+        return;
+      }
       root.innerHTML = driversReady()
         ? '<p class="driver-detail-empty">검색 결과가 없습니다.</p>'
         : '<p class="driver-detail-empty">기사 목록 불러오는 중…</p>';
@@ -682,8 +698,7 @@ const BremDriverDetailSearch = (function () {
     state.bound = true;
     $('#driverDetailQuery')?.addEventListener('input', event => {
       state.query = event.target.value || '';
-      window.clearTimeout(state.searchTimer);
-      state.searchTimer = window.setTimeout(renderResults, 120);
+      scheduleSearch();
     });
     document.addEventListener('brem-drivers-sync-ready', () => {
       if (!$('#driverDetailPanel')?.classList.contains('is-open')) return;
@@ -832,6 +847,50 @@ const BremDriverDetailSearch = (function () {
     }
   }
 
+  function scheduleSearch() {
+    window.clearTimeout(state.searchTimer);
+    state.searchTimer = window.setTimeout(() => {
+      void runDetailSearch();
+    }, 160);
+  }
+
+  async function runDetailSearch() {
+    const seq = ++state.searchSeq;
+    const typed = String($('#driverDetailQuery')?.value || '');
+    state.query = typed;
+    const trimmed = typed.trim();
+    state.searchError = '';
+    state.searchDoneQuery = '';
+    if (!trimmed) {
+      state.searching = false;
+      renderResults();
+      return;
+    }
+    state.searching = true;
+    renderResults();
+    const search = window.BremStorage?.searchDriversAndMerge;
+    if (typeof search !== 'function') {
+      if (seq !== state.searchSeq) return;
+      state.searching = false;
+      state.searchDoneQuery = trimmed;
+      renderResults();
+      return;
+    }
+    try {
+      const result = await search(trimmed, { limit: 200, status: '전체' });
+      if (seq !== state.searchSeq) return;
+      if (!result?.ok) {
+        state.searchError = result?.message || result?.error || '기사 검색에 실패했습니다.';
+      }
+    } catch (error) {
+      if (seq !== state.searchSeq) return;
+      state.searchError = error?.message || '기사 검색에 실패했습니다.';
+    }
+    state.searching = false;
+    state.searchDoneQuery = trimmed;
+    renderResults();
+  }
+
   function refreshOpenSearch() {
     if (!$('#driverDetailPanel')?.classList.contains('is-open')) return;
     if ($('#driverDetailScreen') && !$('#driverDetailScreen').hidden) return;
@@ -847,10 +906,10 @@ const BremDriverDetailSearch = (function () {
     markOpenButtons(true);
     open();
     const root = $('#driverDetailResults');
-    if (root && !driversReady()) {
-      const typed = String($('#driverDetailQuery')?.value || '').trim();
+    if (root && !driversReady() && !String($('#driverDetailQuery')?.value || '').trim()) {
       root.innerHTML = '<p class="driver-detail-empty">기사 목록 불러오는 중…</p>';
     }
+    if (String($('#driverDetailQuery')?.value || '').trim()) scheduleSearch();
     void ensureSearchDrivers().then(() => {
       refreshOpenSearch();
     }).catch(error => {
