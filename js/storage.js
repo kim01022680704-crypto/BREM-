@@ -294,6 +294,49 @@ const BremStorage = (function () {
     }
   };
 
+  // 관리자 「모바일 화면 보기」는 기사 로그인을 하지 않는다.
+  // 번들로 받은 실적·미션을 이 메모리에 올려야 기사앱 화면이 그대로 읽는다.
+  function createPreviewMemoryAdapter() {
+    const store = new Map();
+    return {
+      type: 'preview',
+      isHydrated() {
+        return true;
+      },
+      isKeyLoaded(key) {
+        return store.has(key);
+      },
+      read(key, fallback) {
+        if (!store.has(key)) return fallback;
+        const value = store.get(key);
+        return value == null ? fallback : value;
+      },
+      readRaw(key) {
+        if (!store.has(key)) return { exists: false, value: null };
+        return { exists: true, value: store.get(key) };
+      },
+      stage(key, value) {
+        if (value == null) store.delete(key);
+        else store.set(key, value);
+      },
+      write(key, value) {
+        if (value == null) store.delete(key);
+        else store.set(key, value);
+        return Promise.resolve({ ok: true, preview: true });
+      },
+      remove(key) {
+        store.delete(key);
+        return Promise.resolve({ ok: true, preview: true });
+      },
+      has(key) {
+        return store.has(key);
+      },
+      listBremKeys() {
+        return [...store.keys()];
+      }
+    };
+  }
+
   function readLocalDevJson(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
@@ -1126,7 +1169,7 @@ const BremStorage = (function () {
   }
 
   function setMissionsCache(list) {
-    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
+    if (activeStorageAdapter.stage) {
       activeStorageAdapter.stage(KEYS.missions, list);
       return;
     }
@@ -3439,7 +3482,7 @@ const BremStorage = (function () {
   }
 
   async function fetchRiderAssignedMissionsFromServer() {
-    const token = await resolveAdminAccessToken();
+    const token = adminPreviewToken || await resolveAdminAccessToken();
     if (!token) {
       return { ok: false, message: '로그인 세션이 없습니다.' };
     }
@@ -4008,7 +4051,8 @@ const BremStorage = (function () {
     const mapper = window.BremSupabaseMapper;
     const mapped = {
       baemin: missions.baemin && mapper?.rowToMission ? mapper.rowToMission(missions.baemin) : null,
-      coupang: missions.coupang && mapper?.rowToMission ? mapper.rowToMission(missions.coupang) : null
+      coupang: missions.coupang && mapper?.rowToMission ? mapper.rowToMission(missions.coupang) : null,
+      combined: missions.combined && mapper?.rowToMission ? mapper.rowToMission(missions.combined) : null
     };
     const current = storageAdapter.read(KEYS.missions, []) || [];
     const merged = new Map((Array.isArray(current) ? current : []).map(item => [item.id, item]));
@@ -5506,6 +5550,7 @@ const BremStorage = (function () {
     if (storageBootstrapPromise) return storageBootstrapPromise;
 
     if (adminPreviewToken) {
+      activeStorageAdapter = createPreviewMemoryAdapter();
       storageBootstrapPromise = (async () => {
         try {
           if (window.BremSupabaseConfig?.load) await window.BremSupabaseConfig.load();
