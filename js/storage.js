@@ -4944,20 +4944,29 @@ const BremStorage = (function () {
     return { ...riderCoupangOpsCache };
   }
 
+  // [Egress 최적화] 배민/쿠팡 라이브 폴링이 같은 /api/rider/live 를 각자 2분마다 호출해
+  // 요청이 중복됐다. 짧은 창(3초) 안의 호출은 하나의 요청으로 합친다(coalesce).
+  let riderLiveInFlight = null;
+  async function fetchRiderLiveCoalesced() {
+    if (riderLiveInFlight) return riderLiveInFlight;
+    riderLiveInFlight = (async () => {
+      try {
+        const result = await riderApiFetch('/api/rider/live', 'live');
+        if (result?.ok) mergeRiderLiveInCache(result);
+        return result;
+      } finally {
+        setTimeout(() => { riderLiveInFlight = null; }, 3000);
+      }
+    })();
+    return riderLiveInFlight;
+  }
+
   async function refreshRiderBaeminOps() {
-    const result = await riderApiFetch('/api/rider/live', 'live');
-    if (result?.ok) {
-      mergeRiderLiveInCache(result);
-    }
-    return result;
+    return fetchRiderLiveCoalesced();
   }
 
   async function refreshRiderCoupangOps() {
-    const result = await riderApiFetch('/api/rider/live', 'live');
-    if (result?.ok) {
-      mergeRiderLiveInCache(result);
-    }
-    return result;
+    return fetchRiderLiveCoalesced();
   }
 
   function isDriverAppCacheReady() {

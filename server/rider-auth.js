@@ -826,6 +826,41 @@ const RIDER_LIVE_SETTING_KEYS = [
   'brem_rider_published_long_event_config'
 ];
 
+// [Egress 최적화] 아래 settings 키들은 모든 라이더에게 공통(전역)이다.
+// 라이더 폴링마다 70KB+ blob(brem_driver_weekly_targets 등)을 통째로 읽어
+// 서버가 메모리에서 해당 라이더만 걸러내던 구조라 egress가 폭증했다.
+// 공통 데이터이므로 서버 메모리에 짧게(TTL) 캐시해 "라이더 수백 명 × 각자 읽기" →
+// "워밍 인스턴스당 TTL마다 1번 읽기"로 줄인다. 값은 관리자 발행 시에만 바뀌므로 30초 지연은 무해.
+const SHARED_SETTINGS_TTL_MS = 30_000;
+const sharedSettingsCache = new Map(); // key -> { value, at }
+
+async function fetchSharedSettings(supabase, keys = []) {
+  const now = Date.now();
+  const wanted = [...new Set(keys.filter(Boolean))];
+  const stale = wanted.filter(key => {
+    const hit = sharedSettingsCache.get(key);
+    return !hit || (now - hit.at) >= SHARED_SETTINGS_TTL_MS;
+  });
+  if (stale.length) {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('key,value')
+      .in('key', stale);
+    if (error) return { data: null, error };
+    const found = new Map((data || []).map(row => [row.key, row.value]));
+    stale.forEach(key => {
+      sharedSettingsCache.set(key, { value: found.has(key) ? found.get(key) : null, at: now });
+    });
+  }
+  const rows = wanted
+    .map(key => {
+      const hit = sharedSettingsCache.get(key);
+      return hit && hit.value != null ? { key, value: hit.value } : null;
+    })
+    .filter(Boolean);
+  return { data: rows, error: null };
+}
+
 function maxPublishedTimestamp(values = []) {
   const stamps = values.filter(Boolean).map(value => String(value));
   if (!stamps.length) return null;
@@ -1020,10 +1055,7 @@ async function getRiderAppBundle(accessToken) {
     buildRiderCallsQuery(supabase, riderId),
     buildRiderRejectionsQuery(supabase, riderId, { publishedOnly: true }),
     buildRiderTargetsQuery(supabase, riderId),
-    supabase
-      .from('settings')
-      .select('key,value')
-      .in('key', allSettingKeys),
+    fetchSharedSettings(supabase, allSettingKeys),
     supabase
       .from('notices')
       .select(NOTICE_SELECT)
@@ -1128,10 +1160,7 @@ async function getRiderSnapshot(accessToken) {
   ] = await Promise.all([
     buildRiderCallsQuery(supabase, riderId, { publishedOnly: true }),
     buildRiderRejectionsQuery(supabase, riderId, { publishedOnly: true }),
-    supabase
-      .from('settings')
-      .select('key,value')
-      .in('key', RIDER_SNAPSHOT_SETTING_KEYS),
+    fetchSharedSettings(supabase, RIDER_SNAPSHOT_SETTING_KEYS),
     missionQuery
   ]);
 
@@ -1710,10 +1739,7 @@ async function getRiderLive(accessToken) {
       .select('id,driver_id,month,count,updated_at')
       .eq('driver_id', riderId)
       .order('month', { ascending: false }),
-    supabase
-      .from('settings')
-      .select('key,value')
-      .in('key', RIDER_LIVE_SETTING_KEYS),
+    fetchSharedSettings(supabase, RIDER_LIVE_SETTING_KEYS),
     buildRiderCallsQuery(supabase, riderId, {
       select: 'id,driver_id,date,platform,count,updated_at'
     }),
@@ -1785,10 +1811,7 @@ async function getRiderDashboard(accessToken) {
       .order('pinned', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(100),
-    supabase
-      .from('settings')
-      .select('key,value')
-      .in('key', RIDER_DASHBOARD_SETTING_KEYS)
+    fetchSharedSettings(supabase, RIDER_DASHBOARD_SETTING_KEYS)
   ]);
 
   const firstError = [callsResult, rejectionsResult, targetsResult, noticesResult, settingsResult]
