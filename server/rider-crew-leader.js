@@ -65,6 +65,11 @@ function baeminIdLookupVariants(value) {
   return [...new Set([raw, digits, stripped, withZero].filter(Boolean))];
 }
 
+function phoneLookupKey(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length >= 10 ? digits : '';
+}
+
 async function readOrgChart(supabase) {
   const { data, error } = await supabase
     .from('settings')
@@ -421,15 +426,39 @@ async function loadLiveRatesForDrivers(supabase, riders, liveMap) {
 async function loadBaeminLiveByRiders(supabase, riders) {
   const result = new Map();
   const variantToDriver = new Map();
+  const phoneToDriver = new Map();
   (riders || []).forEach(rider => {
     const id = String(rider.id || '').trim();
     if (!id) return;
     baeminIdLookupVariants(rider.baemin_id || rider.baeminId).forEach(variant => {
       if (!variantToDriver.has(variant)) variantToDriver.set(variant, id);
     });
+    const phone = phoneLookupKey(rider.phone);
+    if (phone && !phoneToDriver.has(phone)) phoneToDriver.set(phone, id);
   });
   const variants = [...variantToDriver.keys()];
-  if (!variants.length) return result;
+  const phones = [...phoneToDriver.keys()];
+  if (!variants.length && !phones.length) return result;
+
+  const remember = (row, driverId) => {
+    if (!driverId) return;
+    const prev = result.get(driverId);
+    const collectedAt = Date.parse(row.collected_at || '') || 0;
+    if (prev && collectedAt && collectedAt < prev.collectedAt) return;
+    const parsed = row.parsed_json || {};
+    const complete = Math.max(0, Math.round(Number(
+      parsed.allDayComplete || parsed.totalComplete || parsed.completeCount || 0
+    )));
+    const operating = isDrivingStatus(parsed.statusDesc || parsed.status_desc || '');
+    result.set(driverId, {
+      operating,
+      liveComplete: complete,
+      collectDate: String(row.collect_date || '').slice(0, 10),
+      collectedAt,
+      statusDesc: String(parsed.statusDesc || parsed.status_desc || '').trim(),
+      acceptRateFromDelivery: calcAcceptRateFromDelivery(parsed)
+    });
+  };
 
   const tables = ['baemin_delivery_applied_items', 'baemin_biz_collect_items'];
   for (const table of tables) {
@@ -437,7 +466,7 @@ async function loadBaeminLiveByRiders(supabase, riders) {
       const chunk = variants.slice(i, i + 80);
       const { data, error } = await supabase
         .from(table)
-        .select('collected_at,collect_date,rider_user_id,parsed_json')
+        .select('collected_at,collect_date,rider_user_id,phone_number,parsed_json')
         .eq('source_menu', 'delivery_status')
         .in('rider_user_id', chunk)
         .order('collected_at', { ascending: false })
@@ -448,25 +477,27 @@ async function loadBaeminLiveByRiders(supabase, riders) {
         continue;
       }
       (data || []).forEach(row => {
-        const driverId = variantToDriver.get(String(row.rider_user_id || '').trim());
-        if (!driverId) return;
-        const prev = result.get(driverId);
-        const collectedAt = Date.parse(row.collected_at || '') || 0;
-        if (prev && collectedAt && collectedAt < prev.collectedAt) return;
-        const parsed = row.parsed_json || {};
-        const complete = Math.max(0, Math.round(Number(parsed.totalComplete || parsed.completeCount || 0)));
-        const operating = isDrivingStatus(parsed.statusDesc || parsed.status_desc || '');
-        result.set(driverId, {
-          operating,
-          liveComplete: complete,
-          collectDate: String(row.collect_date || '').slice(0, 10),
-          collectedAt,
-          statusDesc: String(parsed.statusDesc || parsed.status_desc || '').trim(),
-          acceptRateFromDelivery: calcAcceptRateFromDelivery(parsed)
-        });
+        remember(row, variantToDriver.get(String(row.rider_user_id || '').trim()));
       });
     }
-    if (result.size) break;
+    for (let i = 0; i < phones.length; i += 80) {
+      const chunk = phones.slice(i, i + 80);
+      const { data, error } = await supabase
+        .from(table)
+        .select('collected_at,collect_date,rider_user_id,phone_number,parsed_json')
+        .eq('source_menu', 'delivery_status')
+        .in('phone_number', chunk)
+        .order('collected_at', { ascending: false })
+        .limit(Math.max(400, chunk.length * 8));
+      if (error) {
+        if (/does not exist|Could not find the table/i.test(String(error.message || ''))) break;
+        console.warn(`[BREM] crew-leader baemin ops phone (${table}):`, error.message || error);
+        continue;
+      }
+      (data || []).forEach(row => {
+        remember(row, phoneToDriver.get(phoneLookupKey(row.phone_number)));
+      });
+    }
   }
   return result;
 }

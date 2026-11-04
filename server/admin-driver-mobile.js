@@ -93,37 +93,54 @@ async function loadBaeminOperating(supabase, rider) {
     return { ...unknownOperating('UNUSED'), skipped: true };
   }
   const variants = baeminIdVariants(rider.baemin_id);
-  if (!variants.length) return unknownOperating('NO_BAEMIN_ID');
+  const phoneDigits = String(rider.phone || rider.raw_data?.phone || '').replace(/\D/g, '');
+  const phones = phoneDigits.length >= 10 ? [phoneDigits] : [];
+  if (!variants.length && !phones.length) return unknownOperating('NO_BAEMIN_ID');
   const today = kstToday();
   const tables = ['baemin_delivery_applied_items', 'baemin_biz_collect_items'];
   let best = null;
+  const consider = (row) => {
+    const collectedAt = Date.parse(row.collected_at || '') || 0;
+    if (best && collectedAt && collectedAt < best.collectedAt) return;
+    const parsed = row.parsed_json && typeof row.parsed_json === 'object' ? row.parsed_json : {};
+    const status = String(parsed.statusDesc || parsed.status_desc || '').trim();
+    best = {
+      collectedAt,
+      collectDate: String(row.collect_date || '').slice(0, 10),
+      status,
+      operating: isDrivingStatus(status)
+    };
+  };
   for (const table of tables) {
-    const { data, error } = await supabase
-      .from(table)
-      .select('collected_at,collect_date,parsed_json')
-      .eq('source_menu', 'delivery_status')
-      .in('rider_user_id', variants)
-      .order('collected_at', { ascending: false })
-      .limit(12);
-    if (error) {
-      if (!/does not exist|Could not find the table/i.test(String(error.message || ''))) {
-        console.warn(`[BREM] driver mobile baemin ops (${table}):`, error.message || error);
-      }
-      continue;
+    const queries = [];
+    if (variants.length) {
+      queries.push(supabase
+        .from(table)
+        .select('collected_at,collect_date,parsed_json')
+        .eq('source_menu', 'delivery_status')
+        .in('rider_user_id', variants)
+        .order('collected_at', { ascending: false })
+        .limit(12));
     }
-    (data || []).forEach(row => {
-      const collectedAt = Date.parse(row.collected_at || '') || 0;
-      if (best && collectedAt && collectedAt < best.collectedAt) return;
-      const parsed = row.parsed_json && typeof row.parsed_json === 'object' ? row.parsed_json : {};
-      const status = String(parsed.statusDesc || parsed.status_desc || '').trim();
-      best = {
-        collectedAt,
-        collectDate: String(row.collect_date || '').slice(0, 10),
-        status,
-        operating: isDrivingStatus(status)
-      };
-    });
-    if (best) break;
+    if (phones.length) {
+      queries.push(supabase
+        .from(table)
+        .select('collected_at,collect_date,parsed_json')
+        .eq('source_menu', 'delivery_status')
+        .in('phone_number', phones)
+        .order('collected_at', { ascending: false })
+        .limit(12));
+    }
+    const results = await Promise.all(queries);
+    for (const { data, error } of results) {
+      if (error) {
+        if (!/does not exist|Could not find the table/i.test(String(error.message || ''))) {
+          console.warn(`[BREM] driver mobile baemin ops (${table}):`, error.message || error);
+        }
+        continue;
+      }
+      (data || []).forEach(consider);
+    }
   }
   if (!best || best.collectDate !== today) return unknownOperating('NO_TODAY');
   return {

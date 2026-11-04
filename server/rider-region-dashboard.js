@@ -179,16 +179,24 @@ function normalizePersonName(value) {
 }
 
 /** 지역에 등록된 기사 인덱스 (배민ID → rider, 이름 → rider) */
+function phoneMatchKey(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length >= 10 ? digits : '';
+}
+
 function indexRegionRiders(riders = []) {
   const byBaeminId = new Map();
   const byName = new Map();
+  const byPhone = new Map();
   riders.forEach(rider => {
     const idKey = baeminIdMatchKey(rider.baeminId || rider.raw_data?.baeminId);
     if (idKey) byBaeminId.set(idKey, rider);
+    const phoneKey = phoneMatchKey(rider.phone || rider.raw_data?.phone);
+    if (phoneKey && !byPhone.has(phoneKey)) byPhone.set(phoneKey, rider);
     const nameKey = normalizePersonName(rider.name);
     if (nameKey && !byName.has(nameKey)) byName.set(nameKey, rider);
   });
-  return { byBaeminId, byName };
+  return { byBaeminId, byName, byPhone };
 }
 
 function matchRegionRider(indexes, parsed = {}) {
@@ -198,6 +206,10 @@ function matchRegionRider(indexes, parsed = {}) {
   );
   if (crawlId && indexes.byBaeminId.has(crawlId)) {
     return indexes.byBaeminId.get(crawlId);
+  }
+  const phoneKey = phoneMatchKey(parsed.phone || parsed.phoneNumber || parsed.phone_number);
+  if (phoneKey && indexes.byPhone?.has(phoneKey)) {
+    return indexes.byPhone.get(phoneKey);
   }
   const nameKey = normalizePersonName(
     parsed.riderName || parsed.rider_name || parsed.name || ''
@@ -930,7 +942,7 @@ async function buildWeeklyRanking(supabase, region, weekStart, weekEnd, options 
 async function loadBaeminDeliverySnapshot(supabase, partnerId, today) {
   const base = () => supabase
     .from('baemin_biz_collect_items')
-    .select('dedupe_key,parsed_json,collect_date,rider_user_id,rider_name')
+    .select('dedupe_key,parsed_json,collect_date,rider_user_id,rider_name,phone_number')
     .eq('source_menu', 'delivery_status')
     .like('dedupe_key', `${partnerId}:%`)
     .limit(3000);
@@ -998,7 +1010,8 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
       const operatingRider = matchRegionRider(regionRiderIndex, {
         ...parsed,
         userId: parsed.userId || parsed.riderId || row.rider_user_id,
-        riderName: parsed.riderName || parsed.rider_name || parsed.name || row.rider_name
+        riderName: parsed.riderName || parsed.rider_name || parsed.name || row.rider_name,
+        phone: parsed.phone || parsed.phoneNumber || row.phone_number
       });
       if (operatingRider) {
         operatingLiveMap.set(operatingRider.id, {
@@ -1022,7 +1035,8 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
     const matched = matchRegionRider(riderIndex, {
       ...parsed,
       userId: parsed.userId || parsed.riderId || row.rider_user_id,
-      riderName: parsed.riderName || parsed.rider_name || parsed.name || row.rider_name
+      riderName: parsed.riderName || parsed.rider_name || parsed.name || row.rider_name,
+      phone: parsed.phone || parsed.phoneNumber || row.phone_number
     });
     if (!matched) return;
     const prev = rankingByDriver.get(matched.id);

@@ -1220,6 +1220,14 @@ function baeminIdLookupVariants(value) {
   return [...new Set([raw, key].filter(Boolean))];
 }
 
+function phoneLookupVariants(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length < 10) return [];
+  const variants = new Set([digits]);
+  if (digits.startsWith('82') && digits.length > 10) variants.add(`0${digits.slice(2)}`);
+  return [...variants];
+}
+
 function extractSlaOutComplete(parsed = {}) {
   return Math.max(0, Number(
     parsed.slaOutComplete
@@ -1251,7 +1259,8 @@ function calcAcceptRateFromMetrics(metrics = {}) {
 
 async function fetchLatestDeliveryStatusForBaeminId(supabase, baeminId, options = {}) {
   const variants = baeminIdLookupVariants(baeminId);
-  if (!variants.length) return null;
+  const phones = phoneLookupVariants(options.phone);
+  if (!variants.length && !phones.length) return null;
 
   let minDate = String(options.minCollectDate || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(minDate)) {
@@ -1263,37 +1272,54 @@ async function fetchLatestDeliveryStatusForBaeminId(supabase, baeminId, options 
     }
   }
 
+  const hits = [];
   const tables = ['baemin_delivery_applied_items', 'baemin_biz_collect_items'];
   for (const table of tables) {
-    let query = supabase
-      .from(table)
-      .select('collected_at, collect_date, rider_user_id, rider_name, phone_number, parsed_json, dedupe_key')
-      .eq('source_menu', 'delivery_status')
-      .in('rider_user_id', variants)
-      .order('collected_at', { ascending: false })
-      .limit(20);
-    if (minDate) query = query.gte('collect_date', minDate);
-
-    const { data, error } = await query;
-
-    if (error) {
-      if (/does not exist|Could not find the table/i.test(String(error.message || ''))) continue;
-      console.warn(`[BREM] rider baeminOps delivery lookup (${table}):`, error.message || error);
-      continue;
+    const queries = [];
+    if (variants.length) {
+      let byId = supabase
+        .from(table)
+        .select('collected_at, collect_date, rider_user_id, rider_name, phone_number, parsed_json, dedupe_key')
+        .eq('source_menu', 'delivery_status')
+        .in('rider_user_id', variants)
+        .order('collected_at', { ascending: false })
+        .limit(20);
+      if (minDate) byId = byId.gte('collect_date', minDate);
+      queries.push(byId);
     }
-    if (!data?.length) continue;
+    if (phones.length) {
+      let byPhone = supabase
+        .from(table)
+        .select('collected_at, collect_date, rider_user_id, rider_name, phone_number, parsed_json, dedupe_key')
+        .eq('source_menu', 'delivery_status')
+        .in('phone_number', phones)
+        .order('collected_at', { ascending: false })
+        .limit(20);
+      if (minDate) byPhone = byPhone.gte('collect_date', minDate);
+      queries.push(byPhone);
+    }
 
-    const sorted = data.slice().sort((a, b) => {
-      const ta = Date.parse(a.collected_at || '') || 0;
-      const tb = Date.parse(b.collected_at || '') || 0;
-      if (tb !== ta) return tb - ta;
-      const ca = extractDeliveryStatusMetrics(a.parsed_json).complete;
-      const cb = extractDeliveryStatusMetrics(b.parsed_json).complete;
-      return cb - ca;
-    });
-    return { row: sorted[0], source: table };
+    const results = await Promise.all(queries);
+    for (const { data, error } of results) {
+      if (error) {
+        if (/does not exist|Could not find the table/i.test(String(error.message || ''))) continue;
+        console.warn(`[BREM] rider baeminOps delivery lookup (${table}):`, error.message || error);
+        continue;
+      }
+      (data || []).forEach(row => hits.push({ row, source: table }));
+    }
   }
-  return null;
+
+  if (!hits.length) return null;
+  hits.sort((a, b) => {
+    const ta = Date.parse(a.row.collected_at || '') || 0;
+    const tb = Date.parse(b.row.collected_at || '') || 0;
+    if (tb !== ta) return tb - ta;
+    const ca = extractDeliveryStatusMetrics(a.row.parsed_json).complete;
+    const cb = extractDeliveryStatusMetrics(b.row.parsed_json).complete;
+    return cb - ca;
+  });
+  return hits[0];
 }
 
 async function fetchWeekSlaOutComplete(supabase, baeminId, weekStart, today) {
@@ -1408,6 +1434,7 @@ async function fetchLatestLiveAcceptRate(supabase, { baeminId, driverId }) {
 
 async function loadRiderBaeminOps(supabase, rider = {}) {
   const baeminId = normalizeBaeminUserId(rider.baemin_id || rider.baeminId);
+  const phone = String(rider.phone || rider.raw_data?.phone || '').trim();
   const driverId = String(rider.id || '').trim();
   const empty = {
     available: false,
@@ -1423,7 +1450,7 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
     collectDate: null,
     collectedAt: null,
     updatedAt: null,
-    reason: baeminId ? 'NO_DATA' : 'NO_BAEMIN_ID'
+    reason: (baeminId || phone) ? 'NO_DATA' : 'NO_BAEMIN_ID'
   };
 
   if (!baeminId && !driverId) return empty;
@@ -1440,7 +1467,9 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
   }
 
   const [deliveryHitRaw, acceptRowRaw, weekSlaHit] = await Promise.all([
-    baeminId ? fetchLatestDeliveryStatusForBaeminId(supabase, baeminId, { minCollectDate: weekStart }) : Promise.resolve(null),
+    (baeminId || phone)
+      ? fetchLatestDeliveryStatusForBaeminId(supabase, baeminId, { minCollectDate: weekStart, phone })
+      : Promise.resolve(null),
     fetchLatestLiveAcceptRate(supabase, { baeminId, driverId }),
     baeminId ? fetchWeekSlaOutComplete(supabase, baeminId, weekStart, today) : Promise.resolve({ sum: 0, days: new Set() })
   ]);
