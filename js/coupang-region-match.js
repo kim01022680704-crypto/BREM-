@@ -3,8 +3,15 @@
  * 브라우저(기사지역관리)와 Node 테스트에서 같이 쓴다.
  */
 (function (root) {
+  function stripCoupangBranchSuffix(name) {
+    return String(name || '')
+      .replace(/\s*·\s*(119|이글스)\s*$/u, '')
+      .replace(/\s+(119|이글스)\s*$/u, '')
+      .trim();
+  }
+
   function shortCoupangRegionLabel(name) {
-    let raw = String(name || '').replace(/\s+/g, '').trim();
+    let raw = stripCoupangBranchSuffix(name).replace(/\s+/g, '').trim();
     if (!raw) return '';
     raw = raw.replace(/\(\d+\)$/g, '');
     const hangul = raw.replace(/[^가-힣]/g, '');
@@ -18,19 +25,41 @@
   }
 
   function displayCoupangRegionLabel(name) {
-    const raw = String(name || '').replace(/\s+/g, '').trim();
+    const raw = stripCoupangBranchSuffix(name).replace(/\s+/g, '').trim();
     if (!raw) return '';
     const short = shortCoupangRegionLabel(raw);
     if (coupangRegionIsZ(raw) && short && !coupangRegionIsZ(short)) return `${short}(Z)`;
     return short || raw;
   }
 
-  /** 119컴퍼니 / 그 외(이글스). 지역명에 붙이지 않고 태그로만 쓴다. */
+  /** 119컴퍼니 / 그 외(이글스). 붙인 태그 「 119」도 119로 본다. */
   function coupangRegionBranchTag(name) {
-    const raw = String(name || '').replace(/\s+/g, '');
+    const original = String(name || '').trim();
+    const raw = original.replace(/\s+/g, '');
     if (!raw) return '';
-    if (raw.includes('119컴퍼니') || raw.startsWith('119')) return '119';
+    if (raw.includes('119컴퍼니') || raw.startsWith('119') || /(?:·|\s)119\s*$/.test(original)) return '119';
     return '이글스';
+  }
+
+  function coupangValueBranchTag(value) {
+    const original = String(value || '').trim();
+    const raw = original.replace(/\s+/g, '');
+    if (!raw) return '';
+    if (raw.includes('119컴퍼니') || raw.startsWith('119') || /(?:·|\s)119\s*$/.test(original)) return '119';
+    if (original.includes('이글스')) return '이글스';
+    return '';
+  }
+
+  function coupangRegionTagOf(region) {
+    return coupangRegionBranchTag(region?.vendorName || region?.label || '');
+  }
+
+  function coupangTagsMatch(value, region) {
+    const regionTag = coupangRegionTagOf(region);
+    if (!regionTag) return true;
+    const valueTag = coupangValueBranchTag(value);
+    if (!valueTag) return regionTag === '이글스';
+    return valueTag === regionTag;
   }
 
   /** 선택 목록 표기. 값은 지역명(+Z)만 두고, 화면에는 태그를 붙인다. */
@@ -45,12 +74,18 @@
     return coupangRegionIsZ(`${region?.label || ''} ${region?.vendorName || ''}`);
   }
 
+  function coupangZKey(region) {
+    const base = shortCoupangRegionLabel(region?.vendorName || region?.label || '');
+    if (!base) return '';
+    return `${coupangRegionTagOf(region)}|${base}`;
+  }
+
   function coupangZBases(regions) {
     const set = new Set();
     (regions || []).forEach(region => {
       if (!coupangRegionLooksZ(region)) return;
-      const base = shortCoupangRegionLabel(region.label || region.vendorName);
-      if (base) set.add(base);
+      const key = coupangZKey(region);
+      if (key) set.add(key);
     });
     return set;
   }
@@ -60,31 +95,29 @@
     const zBases = coupangZBases(list);
     if (!zBases.size) return list;
     return list.filter(region => {
-      const base = shortCoupangRegionLabel(region.label || region.vendorName);
-      if (!base || !zBases.has(base)) return true;
+      const key = coupangZKey(region);
+      if (!key || !zBases.has(key)) return true;
       return coupangRegionLooksZ(region);
     });
   }
 
-  function riderMatchesCoupangRegion(value, region, zBases) {
+  function riderMatchesCoupangRegion(value, region) {
     const raw = String(value || '').trim();
     if (!region || !raw) return false;
     if (raw === region.vendorId || raw === region.key) return true;
     if (region.vendorName && raw === region.vendorName) return true;
     const valueShort = shortCoupangRegionLabel(raw);
-    const regionShort = shortCoupangRegionLabel(region.label || region.vendorName || '');
+    const regionShort = shortCoupangRegionLabel(region.vendorName || region.label || '');
     if (!valueShort || !regionShort || valueShort !== regionShort) return false;
-    if (coupangRegionLooksZ(region)) return true;
-    if (coupangRegionIsZ(raw)) return false;
-    return !(zBases && zBases.has(regionShort));
+    if (!coupangTagsMatch(raw, region)) return false;
+    return coupangRegionIsZ(raw) === coupangRegionLooksZ(region);
   }
 
   function pickCoupangCatalogRegion(catalog, value) {
     const list = Array.isArray(catalog) ? catalog : [];
-    const zBases = coupangZBases(list);
-    const hits = list.filter(region => riderMatchesCoupangRegion(value, region, zBases));
+    const hits = list.filter(region => riderMatchesCoupangRegion(value, region));
     if (!hits.length) return null;
-    return hits.find(region => coupangRegionLooksZ(region)) || hits[0];
+    return hits.find(region => coupangRegionLooksZ(region) === coupangRegionIsZ(value)) || hits[0];
   }
 
   const api = {
@@ -92,6 +125,7 @@
     displayCoupangRegionLabel,
     coupangRegionBranchTag,
     coupangRegionSelectLabel,
+    coupangValueBranchTag,
     coupangRegionIsZ,
     coupangRegionLooksZ,
     coupangZBases,

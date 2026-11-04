@@ -130,14 +130,20 @@ check('Z는 자기 vendor 실적만', coupangVendorMatchesRegion(pohang[1], '197
 check('Z는 클러스터명 크롤도 흡수', coupangVendorMatchesRegion(pohang[1], '', '배달연합#plus_경북_포항중앙'));
 check('일반은 자기 vendor만', coupangVendorMatchesRegion(pohang[0], '18839', '배달연합#plus_경북_포항중앙'));
 const zClusters = new Set(['포항중앙']);
-check('ERP 포항중앙 기사는 Z에 붙음', T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[1], platform: 'coupang' }, zClusters));
-check('ERP 포항중앙 기사는 일반에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[0], platform: 'coupang' }, zClusters));
+check('ERP 포항중앙 기사는 일반에 붙음', T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[0], platform: 'coupang' }, zClusters));
+check('ERP 포항중앙 기사는 Z에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[1], platform: 'coupang' }, zClusters));
 check('Z 표기 기사는 일반에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '포항중앙(Z)' }, { ...pohang[0], platform: 'coupang' }, zClusters));
+check('Z 표기 기사는 Z에 붙음', T.riderMatchesRegion({ regionCoupang: '포항중앙(Z)' }, { ...pohang[1], platform: 'coupang' }, zClusters));
 check('PostgREST는 (Z)를 따옴표로 감싼다', T.escapePostgrestValue('포항중앙(Z)') === '"포항중앙(Z)"');
 const unlabeledZ = { key: '19749', vendorId: '19749', label: '포항중앙', vendorName: '', platform: 'coupang' };
 const zInfo = { shorts: new Set(['포항중앙']), vendorIds: new Set(['19749']), has(v) { return this.shorts.has(v); } };
-check('저장 라벨에 Z가 없어도 vendorId로 Z 실적', T.riderMatchesRegion({ regionCoupang: '포항중앙' }, unlabeledZ, zInfo));
-check('같은 라벨 일반 vendor는 여전히 제외', !T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[0], platform: 'coupang' }, zInfo));
+check('Z vendor는 일반 표기 기사에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '포항중앙' }, unlabeledZ, zInfo));
+check('Z vendor는 Z 표기 기사에 붙음', T.riderMatchesRegion({ regionCoupang: '포항중앙(Z)' }, unlabeledZ, zInfo));
+check('같은 라벨 일반 vendor도 일반 기사에 붙음', T.riderMatchesRegion({ regionCoupang: '포항중앙' }, { ...pohang[0], platform: 'coupang' }, zInfo));
+const namgu119 = { key: 'z119', vendorId: 'z119', label: '남구중앙(Z) 119', vendorName: '119컴퍼니#plus_울산_남구중앙(Z)', platform: 'coupang' };
+const namguEagles = { key: 'e1', vendorId: 'e1', label: '남구중앙 이글스', vendorName: '브램#plus_울산_남구중앙', platform: 'coupang' };
+check('남구중앙은 이글스에 붙음', T.riderMatchesRegion({ regionCoupang: '남구중앙' }, namguEagles, zClusters));
+check('남구중앙은 Z119에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '남구중앙' }, namgu119, zClusters));
 check('남구처럼 Z 없는 권역은 그대로', T.riderMatchesRegion(
   { regionCoupang: '남구중앙' },
   { key: '1', vendorId: '1', label: '남구중앙', vendorName: '배달연합#plus_대구_남구중앙', platform: 'coupang' },

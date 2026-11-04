@@ -11,6 +11,8 @@ const {
 const {
   shortCoupangRegionLabel,
   displayCoupangRegionLabel,
+  coupangRegionBranchTag,
+  coupangValueBranchTag,
   coupangRegionSelectLabel,
   coupangRegionIsZ,
   coupangVendorMatchesRegion,
@@ -302,19 +304,21 @@ function coupangRegionLooksZ(region) {
   return coupangRegionIsZ(`${region?.label || ''} ${region?.vendorName || ''}`);
 }
 
-/** 같은 4글자 클러스터에 Z 쌍이 있으면 일반 권역은 목록에서 뺀다. 포항은 Z만 탄다. */
+/** 같은 회사의 4글자 클러스터에 Z 쌍이 있으면 그 회사의 일반 권역만 목록에서 뺀다. 119 Z가 이글스 일반을 지우지 않는다. */
 function collapseCoupangZTwins(regions) {
   const list = Array.isArray(regions) ? regions : [];
-  const zBases = new Set();
+  const zKeys = new Set();
   list.forEach(region => {
     if (!coupangRegionLooksZ(region)) return;
-    const base = shortCoupangRegionLabel(region.label || region.vendorName);
-    if (base) zBases.add(base);
+    const base = shortCoupangRegionLabel(region.vendorName || region.label);
+    const tag = coupangRegionBranchTag(region.vendorName || region.label);
+    if (base) zKeys.add(`${tag}|${base}`);
   });
-  if (!zBases.size) return list;
+  if (!zKeys.size) return list;
   return list.filter(region => {
-    const base = shortCoupangRegionLabel(region.label || region.vendorName);
-    if (!base || !zBases.has(base)) return true;
+    const base = shortCoupangRegionLabel(region.vendorName || region.label);
+    const tag = coupangRegionBranchTag(region.vendorName || region.label);
+    if (!base || !zKeys.has(`${tag}|${base}`)) return true;
     return coupangRegionLooksZ(region);
   });
 }
@@ -564,12 +568,12 @@ function riderMatchesRegion(rider, region, zClusters) {
   if (value === region.vendorId || value === region.key) return true;
   if (region.vendorName && value === region.vendorName) return true;
   const valueShort = shortCoupangRegionLabel(value);
-  const regionShort = shortCoupangRegionLabel(region.label || region.vendorName || '');
+  const regionShort = shortCoupangRegionLabel(region.vendorName || region.label || '');
   if (!valueShort || !regionShort || valueShort !== regionShort) return false;
-  if (regionIsCoupangZ(region, zClusters)) return true;
-  if (coupangRegionIsZ(value)) return false;
-  const info = zClusterInfo(zClusters);
-  return !(info.shorts && info.shorts.has(regionShort));
+  const regionTag = coupangRegionBranchTag(region.vendorName || region.label || '');
+  const valueTag = coupangValueBranchTag(value);
+  if (regionTag && (valueTag || '이글스') !== regionTag) return false;
+  return coupangRegionIsZ(value) === regionIsCoupangZ(region, zClusters);
 }
 
 let zClusterCache = { at: 0, info: null };

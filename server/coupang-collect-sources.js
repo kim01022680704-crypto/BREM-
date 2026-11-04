@@ -32,8 +32,15 @@ function buildMatchKey(name, phone) {
 }
 
 /** 쿠팡 지역 표시용 4글자 (쿠팡현황·기사지역관리와 동일) */
+function stripCoupangBranchSuffix(name) {
+  return String(name || '')
+    .replace(/\s*·\s*(119|이글스)\s*$/u, '')
+    .replace(/\s+(119|이글스)\s*$/u, '')
+    .trim();
+}
+
 function shortCoupangRegionLabel(name) {
-  let raw = String(name || '').replace(/\s+/g, '').trim();
+  let raw = stripCoupangBranchSuffix(name).replace(/\s+/g, '').trim();
   if (!raw) return '';
   raw = raw.replace(/\(\d+\)$/g, '');
   const hangul = raw.replace(/[^가-힣]/g, '');
@@ -48,7 +55,7 @@ function coupangRegionIsZ(name) {
 
 /** 화면용 라벨 — 포항중앙 / 포항중앙(Z) 를 구분한다. */
 function displayCoupangRegionLabel(name) {
-  const raw = String(name || '').replace(/\s+/g, '').trim();
+  const raw = stripCoupangBranchSuffix(name).replace(/\s+/g, '').trim();
   if (!raw) return '';
   const short = shortCoupangRegionLabel(raw);
   if (coupangRegionIsZ(raw) && short && !coupangRegionIsZ(short)) return `${short}(Z)`;
@@ -56,10 +63,20 @@ function displayCoupangRegionLabel(name) {
 }
 
 function coupangRegionBranchTag(name) {
-  const raw = String(name || '').replace(/\s+/g, '');
+  const original = String(name || '').trim();
+  const raw = original.replace(/\s+/g, '');
   if (!raw) return '';
-  if (raw.includes('119컴퍼니') || raw.startsWith('119')) return '119';
+  if (raw.includes('119컴퍼니') || raw.startsWith('119') || /(?:·|\s)119\s*$/.test(original)) return '119';
   return '이글스';
+}
+
+function coupangValueBranchTag(value) {
+  const original = String(value || '').trim();
+  const raw = original.replace(/\s+/g, '');
+  if (!raw) return '';
+  if (raw.includes('119컴퍼니') || raw.startsWith('119') || /(?:·|\s)119\s*$/.test(original)) return '119';
+  if (original.includes('이글스')) return '이글스';
+  return '';
 }
 
 function coupangRegionSelectLabel(name) {
@@ -310,6 +327,7 @@ module.exports = {
   shortCoupangRegionLabel,
   displayCoupangRegionLabel,
   coupangRegionBranchTag,
+  coupangValueBranchTag,
   coupangRegionSelectLabel,
   coupangRegionIsZ,
   coupangRegionDedupeKey,
