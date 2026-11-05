@@ -1,7 +1,8 @@
 /**
  * 크롤링(수집)과 분리된 ERP 확인사살 스케줄
  * - 콜수입력(배민) + 거절율입력(배민/쿠팡) + 라이더 앱 반영
- * - KST 07:00 / 11:30 / 14:00 / 22:00 (하루 4회)
+ * - KST 10:00 / 11:30 / 14:00 / 22:00 (하루 4회)
+ * - 아침은 9시 30분 수집 뒤 10시 반영. 배민 라이더 수집은 06~09시에 안 됨.
  */
 const { settlementWeekStart, todayKST, latestQueryableDate } = require('./baemin-settlement-week');
 const { computeCrawlWeekRangeFromLatest } = require('./crawl-session-auth');
@@ -12,7 +13,7 @@ const {
   waitForWeeklyRefreshIdle
 } = require('./crawl-schedule-coord');
 
-const DEFAULT_SLOTS = Object.freeze(['07:00', '11:30', '14:00', '22:00']);
+const DEFAULT_SLOTS = Object.freeze(['10:00', '11:30', '14:00', '22:00']);
 
 function getSlots() {
   const raw = String(process.env.CRAWL_ERP_PUBLISH_SLOTS || '').trim();
@@ -47,7 +48,7 @@ function nextSlotInfo(slots = getSlots(), d = nowKst()) {
   // 내일 첫 슬롯
   const tomorrow = new Date(d.getTime() + 24 * 3600 * 1000);
   const nextDate = kstDateKey(tomorrow);
-  const slot = list[0] || '07:00';
+  const slot = list[0] || '10:00';
   return { date: nextDate, slot, at: `${nextDate}T${slot}:00+09:00` };
 }
 

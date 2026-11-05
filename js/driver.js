@@ -1473,16 +1473,35 @@
     return meters / 1000;
   }
 
+  function distanceAddonLadderOf(mission) {
+    const raw = mission?.base?.distanceAddonLadder
+      || mission?.promotionRule?.base?.distanceAddonLadder
+      || null;
+    return window.BremPromotionConditions?.normalizeDistanceAddonLadder
+      ? window.BremPromotionConditions.normalizeDistanceAddonLadder(raw)
+      : null;
+  }
+
   function distanceAddonView(mission, key) {
     const addons = distanceAddonsOf(mission);
-    if (!addons.length || key === 'baemin') return { html: '', extra: 0 };
+    const ladder = distanceAddonLadderOf(mission);
+    const ladderRows = ladder && window.BremPromotionConditions?.expandDistanceAddonLadder
+      ? window.BremPromotionConditions.expandDistanceAddonLadder(ladder)
+      : [];
+    if ((!addons.length && !ladderRows.length) || key === 'baemin') return { html: '', extra: 0 };
     const km = weekCoupangDistanceKm(state.currentDriver?.id);
-    const extra = addons.reduce((sum, row) => sum + (km + 0.0001 >= row.minKm ? row.amount : 0), 0);
-    const html = `<ul class="mission-dist-notes">${addons.map(row => {
+    const extraRows = addons.reduce((sum, row) => sum + (km + 0.0001 >= row.minKm ? row.amount : 0), 0);
+    const ladderHits = ladderRows.filter(row => km + 0.0001 >= row.minKm).length;
+    const extra = extraRows + ladderHits * Number(ladder?.amount || 0);
+    const rowHtml = addons.map(row => {
       const hit = km + 0.0001 >= row.minKm;
       const label = row.conditionName || `${number(row.minKm)}km 이상 달성 시 ${moneyWon(row.amount)} 지급`;
       return `<li class="${hit ? 'is-hit' : ''}">+추가(쿠팡) ${label}</li>`;
-    }).join('')}</ul>`;
+    }).join('');
+    const ladderHtml = ladder
+      ? `<li class="${ladderHits ? 'is-hit' : ''}">+추가(쿠팡) ${number(ladder.startKm)}km부터 ${number(ladder.untilKm)}km까지 ${number(ladder.stepKm)}km마다 ${moneyWon(ladder.amount)}${ladderHits ? ` · ${ladderHits}칸` : ''}</li>`
+      : '';
+    const html = `<ul class="mission-dist-notes">${rowHtml}${ladderHtml}</ul>`;
     return { html, extra };
   }
 

@@ -450,7 +450,8 @@ const BremPromotionAdmin = (function () {
           tiers: [],
           tierMode: 'retroactive'
         },
-        distanceAddons: []
+        distanceAddons: [],
+        distanceAddonLadder: null
       },
       blockConditions: [],
       bonusConditions: [],
@@ -574,6 +575,48 @@ const BremPromotionAdmin = (function () {
         <button type="button" class="small-btn danger-btn" data-remove-dist-tier aria-label="구간 삭제">삭제</button>
       </div>
     `).join('');
+  }
+
+  function readDistanceAddonLadder() {
+    const startKm = Math.round(Number($('#promotionDistanceLadderStart')?.value || 0));
+    const stepKm = Math.round(Number($('#promotionDistanceLadderStep')?.value || 0));
+    const amount = Math.round(Number($('#promotionDistanceLadderAmount')?.value || 0));
+    const untilKm = Math.round(Number($('#promotionDistanceLadderUntil')?.value || 0));
+    const any = startKm > 0 || stepKm > 0 || amount > 0 || untilKm > 0;
+    if (!any) return null;
+    return { startKm, stepKm, amount, untilKm };
+  }
+
+  function renderDistanceLadderPreview() {
+    const preview = $('#promotionDistanceLadderPreview');
+    if (!preview) return;
+    const ladder = readDistanceAddonLadder();
+    if (!ladder) {
+      preview.textContent = '시작 km, 간격, 칸마다 금액, 마지막 km를 넣으면 칸 수가 여기 보입니다.';
+      return;
+    }
+    if (!(ladder.startKm > 0 && ladder.stepKm > 0 && ladder.amount > 0 && ladder.untilKm >= ladder.startKm)) {
+      preview.textContent = '시작 km, 간격, 칸마다 금액, 마지막 km를 모두 넣으세요. 마지막 km는 시작 km 이상이어야 합니다.';
+      return;
+    }
+    const steps = Math.floor((ladder.untilKm - ladder.startKm) / ladder.stepKm) + 1;
+    const maxSteps = window.BremPromotionConditions?.MAX_DISTANCE_LADDER_STEPS || 80;
+    if (steps > maxSteps) {
+      preview.textContent = `칸이 ${steps}개입니다. ${maxSteps}개까지만 됩니다. 마지막 km를 낮추거나 간격을 넓히세요.`;
+      return;
+    }
+    const endKm = ladder.startKm + (steps - 1) * ladder.stepKm;
+    const total = steps * ladder.amount;
+    preview.textContent = `${ladder.startKm.toLocaleString('ko-KR')}km부터 ${endKm.toLocaleString('ko-KR')}km까지 ${ladder.stepKm.toLocaleString('ko-KR')}km마다 ${ladder.amount.toLocaleString('ko-KR')}원 · ${steps}칸 · 전부 달성 시 ${total.toLocaleString('ko-KR')}원`;
+  }
+
+  function fillDistanceAddonLadder(ladder) {
+    const spec = ladder && typeof ladder === 'object' ? ladder : {};
+    if ($('#promotionDistanceLadderStart')) $('#promotionDistanceLadderStart').value = spec.startKm ?? '';
+    if ($('#promotionDistanceLadderStep')) $('#promotionDistanceLadderStep').value = spec.stepKm ?? '';
+    if ($('#promotionDistanceLadderAmount')) $('#promotionDistanceLadderAmount').value = spec.amount ?? '';
+    if ($('#promotionDistanceLadderUntil')) $('#promotionDistanceLadderUntil').value = spec.untilKm ?? '';
+    renderDistanceLadderPreview();
   }
 
   function distanceAddonAutoName(minKm, amount) {
@@ -720,6 +763,7 @@ const BremPromotionAdmin = (function () {
     renderPayTierRows(state.payTierDraft);
     renderDistanceTierRows(state.distanceTierDraft);
     renderDistanceAddonRows(state.distanceAddonDraft);
+    fillDistanceAddonLadder(base.distanceAddonLadder || draft.base?.distanceAddonLadder);
     syncTypeSections();
     renderConditionLists(platformValue);
     updateRateFieldLabels(platformValue);
@@ -765,7 +809,8 @@ const BremPromotionAdmin = (function () {
         tiers: readDistanceTierRowsFromForm(),
         tierMode: $('#promotionDistanceTierMode')?.value === 'step' ? 'step' : 'retroactive'
       },
-      distanceAddons: readDistanceAddonRows()
+      distanceAddons: readDistanceAddonRows(),
+      distanceAddonLadder: readDistanceAddonLadder()
     };
 
     return {
@@ -893,6 +938,18 @@ const BremPromotionAdmin = (function () {
     const addonKms = addons.map(row => row.minKm);
     if (new Set(addonKms).size !== addonKms.length) {
       return '거리 가산의 달성 km가 중복되면 안 됩니다.';
+    }
+
+    const ladder = payload.base.distanceAddonLadder;
+    if (ladder) {
+      if (!(ladder.startKm > 0 && ladder.stepKm > 0 && ladder.amount > 0 && ladder.untilKm >= ladder.startKm)) {
+        return '반복 가산은 시작 km, 간격, 칸마다 금액, 마지막 km를 모두 입력하세요.';
+      }
+      const steps = Math.floor((ladder.untilKm - ladder.startKm) / ladder.stepKm) + 1;
+      const maxSteps = window.BremPromotionConditions?.MAX_DISTANCE_LADDER_STEPS || 80;
+      if (steps > maxSteps) {
+        return `반복 가산은 ${maxSteps}칸까지입니다. 마지막 km를 낮추거나 간격을 넓히세요.`;
+      }
     }
 
     const allConditions = [
@@ -1391,6 +1448,9 @@ const BremPromotionAdmin = (function () {
       }
       rows.push({ id: '', minKm: '', amount: '' });
       renderDistanceAddonRows(rows);
+    });
+    $('#promotionDistanceLadderFields')?.addEventListener('input', () => {
+      renderDistanceLadderPreview();
     });
     $('#promotionDistanceAddonRows')?.addEventListener('input', event => {
       const field = event.target.closest('[data-dist-addon-km], [data-dist-addon-amount]');

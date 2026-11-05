@@ -135,8 +135,32 @@ const BremPromotionConditions = (function () {
         ? (raw.payPerCallTiers ?? legacy.payPerCallTiers)
         : [],
       distance: normalizeDistance(raw.distance ?? legacy.distance),
-      distanceAddons: normalizeDistanceAddons(raw.distanceAddons ?? legacy.distanceAddons)
+      distanceAddons: normalizeDistanceAddons(raw.distanceAddons ?? legacy.distanceAddons),
+      distanceAddonLadder: normalizeDistanceAddonLadder(raw.distanceAddonLadder ?? legacy.distanceAddonLadder)
     };
+  }
+
+  const MAX_DISTANCE_LADDER_STEPS = 80;
+
+  function normalizeDistanceAddonLadder(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const startKm = Math.round(Number(raw.startKm || 0));
+    const stepKm = Math.round(Number(raw.stepKm || 0));
+    const amount = Math.round(Number(raw.amount || 0));
+    const untilKm = Math.round(Number(raw.untilKm || 0));
+    if (!(startKm > 0 && stepKm > 0 && amount > 0 && untilKm >= startKm)) return null;
+    return { startKm, stepKm, amount, untilKm };
+  }
+
+  function expandDistanceAddonLadder(raw, limit = MAX_DISTANCE_LADDER_STEPS) {
+    const spec = normalizeDistanceAddonLadder(raw);
+    if (!spec) return [];
+    const cap = Math.max(1, Number(limit) || MAX_DISTANCE_LADDER_STEPS);
+    const rows = [];
+    for (let km = spec.startKm; km <= spec.untilKm && rows.length < cap; km += spec.stepKm) {
+      rows.push({ minKm: km, amount: spec.amount });
+    }
+    return rows;
   }
 
   function normalizeDistanceAddons(raw) {
@@ -447,6 +471,9 @@ const BremPromotionConditions = (function () {
 
   return {
     MAX_CONDITIONS_PER_MODE,
+    MAX_DISTANCE_LADDER_STEPS,
+    normalizeDistanceAddonLadder,
+    expandDistanceAddonLadder,
     MAX_CALL_TIERS,
     MIN_SUPPORTED_COUNT,
     PROCESSING_MODES,

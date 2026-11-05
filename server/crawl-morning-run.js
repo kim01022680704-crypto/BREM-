@@ -293,7 +293,7 @@ async function runMorningCrawlPipeline(options = {}) {
     push('rider_publish', {
       ok: true,
       skipped: true,
-      message: '라이더앱 반영 생략 — 스케줄(07:00/11:30/14:00/22:00)에서 확인사살'
+      message: '라이더앱 반영 생략 — 스케줄(10:00/11:30/14:00/22:00)에서 확인사살'
     });
   }
 

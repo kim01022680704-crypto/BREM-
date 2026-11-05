@@ -328,5 +328,24 @@ console.log('\n[8] 저장 레코드 정규화 — channel 왕복');
   check('기존 저장본(meta에 channel 없음)은 bro로 읽힘', mapper.rowToPromotionApplyResult(legacyRow).channel, 'bro');
 }
 
+console.log('\n[9] 거리 반복 가산 — 150km부터 50km마다 2만 원');
+{
+  const ladder = {
+    startKm: 150,
+    stepKm: 50,
+    amount: 20000,
+    untilKm: 1000
+  };
+  const rule = { base: { distanceAddons: [], distanceAddonLadder: ladder } };
+  const pay = km => engine.calculateDistanceAddonPay(rule, { totalDistanceMeters: km * 1000 }).amount;
+  check('140km는 0원', pay(140), 0);
+  check('150km는 2만 원', pay(150), 20000);
+  check('320km는 4칸 8만 원', pay(320), 80000);
+  check('1000km는 18칸', pay(1000), 18 * 20000);
+  check('1050km도 마지막 1000km에서 멈춤', pay(1050), 18 * 20000);
+  const steps = env.BremPromotionConditions.expandDistanceAddonLadder(ladder);
+  check('칸 수 18', steps.length, 18);
+}
+
 console.log(`\n결과: ${pass}건 통과, ${fail}건 실패`);
 process.exit(fail ? 1 : 0);

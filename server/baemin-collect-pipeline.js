@@ -5917,7 +5917,7 @@ async function getRiderHourlyBoardForAdmin(options = {}) {
       ? ''
       : (latestCollectedDate && latestCollectedDate !== date
         ? `${date} 라이더 수집이 없습니다. 최근 수집일은 ${latestCollectedDate} 입니다.`
-        : `${date} 라이더 수집이 없습니다. 라이더별 수집(06:30 · 11:00 · 13:30 · 21:30) 이후 표시됩니다.`)
+        : `${date} 라이더 수집이 없습니다. 라이더별 수집(09:30 · 11:00 · 13:30 · 21:30) 이후 표시됩니다.`)
   };
 }
 

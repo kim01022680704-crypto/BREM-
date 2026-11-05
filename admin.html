@@ -210,7 +210,7 @@
                 <span class="crawl-runtime-tag crawl-runtime-tag--unknown" id="crawlCoupangRuntimeTag" title="쿠팡 기본 사업자 세션">쿠팡 eaglesp · 확인중</span>
                 <span class="crawl-runtime-tag crawl-runtime-tag--unknown" id="crawlCoupang2RuntimeTag" title="쿠팡 119cmpp 사업자 세션">쿠팡 119cmpp · 확인중</span>
               </div>
-              <button type="button" class="primary-btn crawl-morning-start-btn" id="crawlMorningStartBtn" title="배민+쿠팡 최초 1회차(수집→콜수/거절율→라이더앱). 이후 주단위 06:30/11:00/13:30/21:30 · 확인사살 07:00/11:30/14:00/22:00 (지정 관리자 전용)">크롤링 시작</button>
+              <button type="button" class="primary-btn crawl-morning-start-btn" id="crawlMorningStartBtn" title="배민+쿠팡 최초 1회차(수집→콜수/거절율→라이더앱). 이후 주단위 09:30/11:00/13:30/21:30 · 확인사살 10:00/11:30/14:00/22:00 (지정 관리자 전용)">크롤링 시작</button>
             </div>
             <button type="button" class="primary-btn rider-app-publish-btn" id="riderAppPublishBtn" data-rider-app-publish title="콜수·거절율·장기근속을 기사 전용 앱에 일괄 반영 (월·주간 목표는 실시간)">라이더 앱 반영</button>
             <a class="top-link topbar-link--register" href="rider-manage.html?register=1" data-driver-popup="register">기사등록</a>
@@ -858,7 +858,7 @@
             <button type="button" class="primary-btn" id="baeminMorningRunBtn">출근 원버튼 (배민+쿠팡 수집·ERP·라이더반영)</button>
             <button type="button" class="small-btn" id="coupangNaverMailOpenBtn">네이버메일 열기(쿠팡 OTP용)</button>
             <button type="button" class="small-btn" id="coupangAuthRecoverBtn">쿠팡 네이버OTP 복구</button>
-            <span id="baeminMorningRunStatus" class="form-help">수집·자동순회 시작. 주단위(라이더별)는 06:30·11:00·13:30·21:30, 콜수/거절/라이더반영은 07:00·11:30·14:00·22:00. 수요일은 전주 수~화.</span>
+            <span id="baeminMorningRunStatus" class="form-help">수집·자동순회 시작. 주단위(라이더별)는 09:30·11:00·13:30·21:30, 콜수/거절/라이더반영은 10:00·11:30·14:00·22:00. 수요일은 전주 수~화.</span>
           </div>
           <div class="form-row baemin-collect-toolbar">
             <label>
@@ -1144,7 +1144,7 @@
             </label>
             <button type="button" class="primary-btn" id="baeminRiderHourlyLoadBtn">불러오기</button>
           </div>
-          <p class="form-help" id="baeminRiderHourlyMeta">라이더별 수집 시각(06:30 · 11:00 · 13:30 · 21:30)에 같이 쌓입니다. 영업일은 06시~다음날 05시입니다.</p>
+          <p class="form-help" id="baeminRiderHourlyMeta">라이더별 수집 시각(09:30 · 11:00 · 13:30 · 21:30)에 같이 쌓입니다. 영업일은 06시~다음날 05시입니다.</p>
           <div class="table-wrap admin-scroll-table-wrap rider-hourly-wrap" id="baeminRiderHourlyTable"></div>
         </article>
       </section>
@@ -4277,7 +4277,26 @@
                 <h3>추가 가산조건2 (거리)</h3>
                 <button type="button" class="small-btn" id="promotionAddDistanceAddonBtn">거리 가산 추가</button>
               </div>
-              <p class="form-help">추가 가산 조건과 같은 칸입니다. 조건명 · 조건 유형(주간 거리 이상) · 몇 km 이상 · 달성 시 지급 금액을 넣습니다. km와 금액을 바꾸면 조건명이 「800km 이상 달성 시 30,000원 지급」으로 자동으로 바뀝니다. 최대 3개, 그 주를 넘긴 금액만 예정 금액에 더합니다.</p>
+              <p class="form-help">같은 금액이 거리마다 반복되면 아래 네 칸만 넣으면 됩니다. 예를 들어 시작 150, 간격 50, 칸마다 20,000, 마지막 1,000이면 150·200·250 … 1,000km마다 2만 원씩 더합니다. 그 주를 넘긴 칸만 예정 금액에 더합니다. 금액이 칸마다 다르면 아래 거리 가산을 최대 3개까지 따로 넣으세요.</p>
+              <div class="promotion-condition-fields" id="promotionDistanceLadderFields">
+                <label>
+                  <span>시작 km</span>
+                  <input type="number" min="0" step="10" id="promotionDistanceLadderStart" placeholder="150">
+                </label>
+                <label>
+                  <span>간격 km</span>
+                  <input type="number" min="1" step="10" id="promotionDistanceLadderStep" placeholder="50">
+                </label>
+                <label>
+                  <span>칸마다 지급 (원)</span>
+                  <input type="number" min="0" step="1000" id="promotionDistanceLadderAmount" placeholder="20000">
+                </label>
+                <label>
+                  <span>마지막 km</span>
+                  <input type="number" min="0" step="10" id="promotionDistanceLadderUntil" placeholder="1000">
+                </label>
+              </div>
+              <p class="form-help" id="promotionDistanceLadderPreview">시작 km, 간격, 칸마다 금액, 마지막 km를 넣으면 칸 수가 여기 보입니다.</p>
               <div id="promotionDistanceAddonRows" class="promotion-tier-rows"></div>
             </div>
 

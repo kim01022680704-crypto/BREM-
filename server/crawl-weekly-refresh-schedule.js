@@ -5,7 +5,7 @@
  * - ERP 콜수/거절율 동기화까지 (라이더앱 반영은 기존 4회 스케줄)
  *
  * 기본 슬롯 = CRAWL_ERP_PUBLISH_SLOTS − 30분
- *   → 06:30 / 11:00 / 13:30 / 21:30 (KST)
+ *   → 09:30 / 11:00 / 13:30 / 21:30 (KST)
  */
 const http = require('http');
 const { settlementWeekStart, todayKST, latestQueryableDate } = require('./baemin-settlement-week');
@@ -27,7 +27,7 @@ function coupangPorts() {
   const ports = listCoupangAccountPorts();
   return ports.length ? ports : [COUPANG_PORT];
 }
-const DEFAULT_PUBLISH_SLOTS = Object.freeze(['07:00', '11:30', '14:00', '22:00']);
+const DEFAULT_PUBLISH_SLOTS = Object.freeze(['10:00', '11:30', '14:00', '22:00']);
 const DEFAULT_OFFSET_MIN = 30;
 
 function getPublishSlots() {
@@ -89,7 +89,7 @@ function nextSlotInfo(slots = getSlots(), d = nowKst()) {
   }
   const tomorrow = new Date(d.getTime() + 24 * 3600 * 1000);
   const nextDate = kstDateKey(tomorrow);
-  const slot = list[0] || '06:30';
+  const slot = list[0] || '09:30';
   return { date: nextDate, slot, at: `${nextDate}T${slot}:00+09:00` };
 }
 

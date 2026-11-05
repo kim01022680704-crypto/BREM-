@@ -894,7 +894,11 @@ const BremPromotionEngine = (function () {
       }))
       .filter(row => row.minKm > 0 && row.amount > 0)
       .sort((a, b) => a.minKm - b.minKm);
-    if (!valid.length) return { amount: 0, labels: [] };
+    const ladder = rule?.base?.distanceAddonLadder || null;
+    const ladderRows = BremPromotionConditions?.expandDistanceAddonLadder
+      ? BremPromotionConditions.expandDistanceAddonLadder(ladder)
+      : [];
+    if (!valid.length && !ladderRows.length) return { amount: 0, labels: [] };
     const meters = Number(riderData?.totalDistanceMeters || 0);
     if (!(meters > 0)) return { amount: 0, labels: [] };
     const km = meters / 1000;
@@ -906,6 +910,16 @@ const BremPromotionEngine = (function () {
       const named = String(row.conditionName || '').trim();
       labels.push(named || `+추가(쿠팡) ${row.minKm.toLocaleString('ko-KR')}km 이상 달성 시 ${row.amount.toLocaleString('ko-KR')}원 지급`);
     });
+    const spec = BremPromotionConditions?.normalizeDistanceAddonLadder
+      ? BremPromotionConditions.normalizeDistanceAddonLadder(ladder)
+      : null;
+    if (spec && ladderRows.length) {
+      const hits = ladderRows.filter(row => km + 0.0001 >= row.minKm);
+      if (hits.length) {
+        amount += hits.length * spec.amount;
+        labels.push(`+추가(쿠팡) ${spec.startKm.toLocaleString('ko-KR')}km부터 ${spec.stepKm.toLocaleString('ko-KR')}km마다 ${spec.amount.toLocaleString('ko-KR')}원 · ${hits.length}칸`);
+      }
+    }
     return { amount: Math.round(amount), labels };
   }
 
