@@ -279,6 +279,7 @@ const BremDriverDetailSearch = (function () {
         baeminFee: 0,
         coupangFee: 0,
         coupangDistance: 0,
+        coupangOutside: 0,
         feeStamp: { baemin: '', coupang: '' },
         hasCall: { baemin: false, coupang: false }
       });
@@ -308,6 +309,7 @@ const BremDriverDetailSearch = (function () {
       bucket[`${platform}Fee`] = Math.max(0, Number(row.deliveryAmount ?? row.settlementAmount ?? 0));
       if (platform === 'coupang') {
         bucket.coupangDistance = Math.max(0, Math.round(Number(row.deliveryDistanceM) || 0));
+        bucket.coupangOutside = Math.max(0, Math.round(Number(row.outsideCallCount) || 0));
       }
       if (!bucket.hasCall[platform]) {
         bucket[`${platform}Calls`] = Math.max(0, Math.round(Number(row.orderCount ?? row.callCount ?? 0)));
@@ -349,8 +351,9 @@ const BremDriverDetailSearch = (function () {
       acc.baeminFee += day.baeminFee;
       acc.coupangFee += day.coupangFee;
       acc.coupangDistance += day.coupangDistance;
+      acc.coupangOutside += day.coupangOutside;
       return acc;
-    }, { baeminCalls: 0, coupangCalls: 0, baeminFee: 0, coupangFee: 0, coupangDistance: 0 });
+    }, { baeminCalls: 0, coupangCalls: 0, baeminFee: 0, coupangFee: 0, coupangDistance: 0, coupangOutside: 0 });
     const fee = totals.baeminFee + totals.coupangFee;
     const calls = totals.baeminCalls + totals.coupangCalls;
     const baeminRegion = regionText(driver, 'baemin');
@@ -362,6 +365,7 @@ const BremDriverDetailSearch = (function () {
         <td>${escapeHtml(day.date)}</td>
         <td>${formatNumber(day.baeminCalls)}</td>
         <td>${formatNumber(day.coupangCalls)}</td>
+        <td>${formatNumber(day.coupangOutside)}</td>
         <td>${formatMoney(day.baeminFee)}</td>
         <td>${formatMoney(day.coupangFee)}</td>
         <td>${formatKm(day.coupangDistance)}</td>
@@ -412,7 +416,7 @@ const BremDriverDetailSearch = (function () {
       </div>
       <div class="driver-detail-kpis">
         <article class="driver-detail-kpi"><span>이번 주 배달료</span><b>${formatMoney(fee)}</b><em>배민 ${formatMoney(totals.baeminFee)} · 쿠팡 ${formatMoney(totals.coupangFee)}</em></article>
-        <article class="driver-detail-kpi"><span>이번 주 콜수</span><b>${formatNumber(calls)}</b><em>배민 ${formatNumber(totals.baeminCalls)} · 쿠팡 ${formatNumber(totals.coupangCalls)}</em></article>
+        <article class="driver-detail-kpi"><span>이번 주 콜수</span><b>${formatNumber(calls)}</b><em>배민 ${formatNumber(totals.baeminCalls)} · 쿠팡 ${formatNumber(totals.coupangCalls)} · 쿠팡권외콜 ${formatNumber(totals.coupangOutside)}</em></article>
         <article class="driver-detail-kpi"><span>이번 주 배달거리</span><b>${formatKm(totals.coupangDistance)}</b><em>쿠팡 일정산 오더별 거리 합</em></article>
         ${rateCard('배민 수락율', baeminRate, 'baemin')}
         ${rateCard('쿠팡 거절율', coupangRate, 'coupang')}
@@ -425,6 +429,7 @@ const BremDriverDetailSearch = (function () {
               <th>날짜</th>
               <th>배민콜</th>
               <th>쿠팡콜</th>
+              <th>쿠팡권외콜</th>
               <th>배민배달료</th>
               <th>쿠팡배달료</th>
               <th>배달거리</th>
@@ -437,6 +442,7 @@ const BremDriverDetailSearch = (function () {
               <th>합계</th>
               <th>${formatNumber(totals.baeminCalls)}</th>
               <th>${formatNumber(totals.coupangCalls)}</th>
+              <th>${formatNumber(totals.coupangOutside)}</th>
               <th>${formatMoney(totals.baeminFee)}</th>
               <th>${formatMoney(totals.coupangFee)}</th>
               <th>${formatKm(totals.coupangDistance)}</th>
