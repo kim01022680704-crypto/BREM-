@@ -2250,28 +2250,55 @@ const BremStorage = (function () {
     return date.toISOString().slice(0, 10);
   }
 
+  // 이번 달에 11/1~만 받아 둔 뒤, 그 주 안에 한 줄이라도 있으면 10/28~31을 다시 안 받는 문제가 있었다.
+  // 받아 온 구간을 기억하고, 요청한 시작~끝이 그 안에 완전히 들어갈 때만 캐시를 쓴다.
+  const loadedDateWindows = { calls: [], settlements: [] };
+
+  function rememberDateWindow(kind, since, until) {
+    const start = String(since || '').slice(0, 10);
+    const end = String(until || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || end < start) return;
+    const list = loadedDateWindows[kind] || [];
+    list.push({ since: start, until: end });
+    list.sort((a, b) => a.since.localeCompare(b.since) || a.until.localeCompare(b.until));
+    const merged = [];
+    list.forEach(item => {
+      const last = merged[merged.length - 1];
+      const touch = last ? addDaysToDateKey(last.until, 1) : '';
+      if (last && touch && item.since <= touch) {
+        if (item.until > last.until) last.until = item.until;
+        return;
+      }
+      merged.push({ since: item.since, until: item.until });
+    });
+    loadedDateWindows[kind] = merged;
+  }
+
+  function dateWindowCovers(kind, since, until) {
+    const start = String(since || '').slice(0, 10);
+    const end = String(until || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return false;
+    return (loadedDateWindows[kind] || []).some(item => item.since <= start && item.until >= end);
+  }
+
   async function ensureCallsSinceDate(sinceDate, options = {}) {
     const since = String(sinceDate || '').slice(0, 10);
     if (!since || !activeStorageAdapter?.ensureKeysLoaded) return { ok: true };
     const until = String(options.untilDate || '').slice(0, 10);
     const merge = options.merge === true || Boolean(until);
 
+    if (!options.force && until && dateWindowCovers('calls', since, until)) {
+      return { ok: true, cached: true };
+    }
+
     const existing = calls.getAll();
-    if (!options.force && existing.length) {
-      if (until) {
-        const covered = existing.some(call => {
-          const day = String(call?.date || '').slice(0, 10);
-          return day >= since && day <= until;
-        });
-        if (covered) return { ok: true, cached: true };
-      } else {
-        const earliest = existing.reduce((min, call) => {
-          const day = String(call?.date || '').slice(0, 10);
-          return !day || (min && day >= min) ? min : day;
-        }, '');
-        if (!earliest || earliest <= since) {
-          return { ok: true, cached: true };
-        }
+    if (!options.force && !until && existing.length) {
+      const earliest = existing.reduce((min, call) => {
+        const day = String(call?.date || '').slice(0, 10);
+        return !day || (min && day >= min) ? min : day;
+      }, '');
+      if (!earliest || earliest <= since) {
+        return { ok: true, cached: true };
       }
     }
 
@@ -2284,6 +2311,7 @@ const BremStorage = (function () {
         mergeWithExisting: merge
       }
     });
+    if (until) rememberDateWindow('calls', since, until);
     return { ok: true };
   }
 
@@ -2293,22 +2321,18 @@ const BremStorage = (function () {
     const until = String(options.untilDate || '').slice(0, 10);
     const merge = options.merge === true || Boolean(until);
 
+    if (!options.force && until && dateWindowCovers('settlements', since, until)) {
+      return { ok: true, cached: true };
+    }
+
     const existing = settlements.getAll();
-    if (!options.force && existing.length) {
-      if (until) {
-        const covered = existing.some(row => {
-          const day = String(row?.period || row?.date || '').slice(0, 10);
-          return day >= since && day <= until;
-        });
-        if (covered) return { ok: true, cached: true };
-      } else {
-        const earliest = existing.reduce((min, row) => {
-          const day = String(row?.period || row?.date || '').slice(0, 10);
-          return !day || (min && day >= min) ? min : day;
-        }, '');
-        if (!earliest || earliest <= since) {
-          return { ok: true, cached: true };
-        }
+    if (!options.force && !until && existing.length) {
+      const earliest = existing.reduce((min, row) => {
+        const day = String(row?.period || row?.date || '').slice(0, 10);
+        return !day || (min && day >= min) ? min : day;
+      }, '');
+      if (!earliest || earliest <= since) {
+        return { ok: true, cached: true };
       }
     }
 
@@ -2320,6 +2344,7 @@ const BremStorage = (function () {
         mergeWithExisting: merge
       }
     });
+    if (until) rememberDateWindow('settlements', since, until);
     return { ok: true };
   }
 
@@ -16375,6 +16400,8 @@ const BremStorage = (function () {
     ensureCallsSinceDate,
     ensureDashboardCallsLoaded,
     ensureSettlementsSinceDate,
+    callsWindowLoaded(since, until) { return dateWindowCovers('calls', since, until); },
+    settlementsWindowLoaded(since, until) { return dateWindowCovers('settlements', since, until); },
     ensureLongEventCallsLoaded,
     ensurePromotionCalculationCalls,
     isSectionCacheReady,

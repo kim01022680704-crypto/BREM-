@@ -51,18 +51,14 @@ const BremDriverManagementAdmin = (function () {
 
   const REGION_RANKING_POLL_MS = 120 * 1000;
 
-  function weekRowsCovered(rows, fieldNames, weekStart, weekEnd) {
+  function weekWindowLoaded(kind, weekStart, weekEnd) {
     const start = String(weekStart || '').slice(0, 10);
     const end = String(weekEnd || '').slice(0, 10);
-    if (!start || !end || !Array.isArray(rows) || !rows.length) return false;
-    return rows.some(row => {
-      let day = '';
-      for (const field of fieldNames) {
-        day = String(row?.[field] || '').slice(0, 10);
-        if (day) break;
-      }
-      return day >= start && day <= end;
-    });
+    if (!start || !end) return false;
+    const storage = window.BremStorage;
+    if (kind === 'calls') return storage?.callsWindowLoaded?.(start, end) === true;
+    if (kind === 'settlements') return storage?.settlementsWindowLoaded?.(start, end) === true;
+    return false;
   }
 
   function driversListStillSyncing() {
@@ -77,11 +73,10 @@ const BremDriverManagementAdmin = (function () {
     const start = weekStartKey(weekStart);
     const end = weekEndKey(start);
     if (!force && state.statsLoadedWeekSince === start && !state.statsLoadError) return;
-    const settlements = window.BremStorage?.settlements?.getAll?.() || [];
-    const calls = window.BremStorage?.calls?.getAll?.() || [];
     // 선택 정산주만 조회 — 90일/전체 로드는 statement timeout 유발
-    const needSettlements = force || !weekRowsCovered(settlements, ['period', 'date'], start, end);
-    const needCalls = force || !weekRowsCovered(calls, ['date'], start, end);
+    // 주에 한 줄이라도 있다고 그 주를 다 받은 것으로 보면 앞날이 빠진다.
+    const needSettlements = force || !weekWindowLoaded('settlements', start, end);
+    const needCalls = force || !weekWindowLoaded('calls', start, end);
     if (!needSettlements && !needCalls) {
       state.statsLoadedWeekSince = start;
       state.statsLoadError = '';
@@ -92,7 +87,7 @@ const BremDriverManagementAdmin = (function () {
     if (needCalls && typeof window.BremStorage?.ensureCallsSinceDate === 'function') {
       try {
         await window.BremStorage.ensureCallsSinceDate(start, {
-          force: false,
+          force: force === true,
           untilDate: end,
           merge: true
         });
@@ -104,7 +99,7 @@ const BremDriverManagementAdmin = (function () {
     if (needSettlements && typeof window.BremStorage?.ensureSettlementsSinceDate === 'function') {
       try {
         await window.BremStorage.ensureSettlementsSinceDate(start, {
-          force: false,
+          force: force === true,
           untilDate: end,
           merge: true
         });
@@ -541,7 +536,7 @@ const BremDriverManagementAdmin = (function () {
 
   /**
    * 기사지역관리·조직도 수치 출처
-   * - 콜수: 콜수 입력(admin_calls) 우선. 없으면 일정산 orderCount 로 주간 콜수 표시
+   * - 콜수: 날짜마다 콜수 입력이 있으면 그 날을 쓰고, 없는 날은 일정산 orderCount
    * - 배달료: 일정산 업로드(daily_settlements / settlements)의 deliveryAmount
    *   (쿠팡 기본정산 AL, 배민 건별 AI — 업로드·매칭된 금액만 합산)
    */
@@ -570,7 +565,8 @@ const BremDriverManagementAdmin = (function () {
           callCount: 0,
           deliveryFee: 0,
           feeByDay: new Map(),
-          orderByDay: new Map()
+          orderByDay: new Map(),
+          callByDay: new Map()
         };
         map.set(key, row);
       }
@@ -584,7 +580,9 @@ const BremDriverManagementAdmin = (function () {
       if (platform !== 'coupang' && platform !== 'baemin') return;
       const day = String(call.date || '').slice(0, 10);
       if (!day || day < start || day > end) return;
-      touch(id, platform).callCount += Math.max(0, Number(call.count || call.orderCount || 0));
+      const bucket = touch(id, platform);
+      const count = Math.max(0, Number(call.count || call.orderCount || 0));
+      bucket.callByDay.set(day, (bucket.callByDay.get(day) || 0) + count);
     });
 
     (window.BremStorage?.settlements?.getAll?.() || []).forEach(row => {
@@ -618,15 +616,16 @@ const BremDriverManagementAdmin = (function () {
         deliveryFee += day.deliveryFee;
       });
       row.deliveryFee = deliveryFee;
-      if (row.callCount <= 0) {
-        let fromSettlement = 0;
-        row.orderByDay.forEach(day => {
-          fromSettlement += day.orderCount;
-        });
-        row.callCount = fromSettlement;
-      }
+      const days = new Set([...row.callByDay.keys(), ...row.orderByDay.keys()]);
+      let callCount = 0;
+      days.forEach(day => {
+        if (row.callByDay.has(day)) callCount += row.callByDay.get(day);
+        else callCount += row.orderByDay.get(day)?.orderCount || 0;
+      });
+      row.callCount = callCount;
       delete row.feeByDay;
       delete row.orderByDay;
+      delete row.callByDay;
     });
 
     state.weekStatsIndexWeek = start;
