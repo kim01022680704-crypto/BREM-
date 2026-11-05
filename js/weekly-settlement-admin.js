@@ -1283,9 +1283,16 @@ const BremWeeklySettlementAdmin = (function () {
     const unmatched = record.previewUnmatched || [];
     const mismatchCount = record.summary.callCountMismatches || 0;
     const orderLabel = platformWeeklyOrderLabel(platform);
-    const summaryExtra = mismatchCount
-      ? `<p class="weekly-call-mismatch-banner">⚠ 콜수 미매칭 <strong>${formatNumber(mismatchCount)}</strong>명 — 여러 권역 콜이면 「콜수무시 승인」, 콜수를 주간서에 맞출 때만 「주간서 기준 입력」.</p>`
+    const outsideMismatches = Array.isArray(record.outsideCallMismatches) ? record.outsideCallMismatches : [];
+    const outsideSample = outsideMismatches.slice(0, 8).map(item =>
+      `${escapeHtml(item.name)} 일정산 ${formatNumber(item.daily)} / 주정산 ${formatNumber(item.weekly)}`
+    ).join(' · ');
+    const outsideExtra = platform === 'coupang' && outsideMismatches.length
+      ? `<p class="weekly-call-mismatch-banner">⚠ 권외콜 미매칭 <strong>${formatNumber(outsideMismatches.length)}</strong>명 — 그 주 일정산 합계와 주정산서 오더별 상세가 다릅니다.${outsideSample ? ` ${outsideSample}` : ''}</p>`
       : '';
+    const summaryExtra = `${mismatchCount
+      ? `<p class="weekly-call-mismatch-banner">⚠ 콜수 미매칭 <strong>${formatNumber(mismatchCount)}</strong>명 — 여러 권역 콜이면 「콜수무시 승인」, 콜수를 주간서에 맞출 때만 「주간서 기준 입력」.</p>`
+      : ''}${outsideExtra}`;
 
     const matchBasisLabel = platform === 'baemin'
       ? '배민 User ID ↔ 기사 배민 ID'
@@ -1297,6 +1304,7 @@ const BremWeeklySettlementAdmin = (function () {
       <p>매칭 <strong>${formatNumber(record.summary.matchedRiders)}</strong>명 (${matchBasisLabel})</p>
       <p>미매칭 <strong>${formatNumber(record.summary.unmatchedRiders)}</strong>명</p>
       <p>콜수 불일치 <strong>${formatNumber(mismatchCount)}</strong>명</p>
+      ${platform === 'coupang' ? `<p>권외콜 불일치 <strong>${formatNumber(outsideMismatches.length)}</strong>명</p>` : ''}
       <p>저장 대상 <strong>${formatNumber(record.riders.length + (record.previewUnmatched || []).filter(r => r.amounts?.useSheetPayout).length)}</strong>명 (매칭 + Z지급 맞춤)</p>
       ${ch === 'direct'
         ? `<p>예상 콜수수료 <strong>${callFeeUnit == null

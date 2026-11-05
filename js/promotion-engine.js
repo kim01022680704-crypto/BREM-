@@ -134,7 +134,7 @@ const BremPromotionEngine = (function () {
       if (typeof driverFilter === 'function' && !driverFilter(record.driverId)) return;
 
       if (!stats[record.driverId]) {
-        stats[record.driverId] = { callCount: 0, deliveryAmount: 0, uploadDays: 0, byDay: {} };
+        stats[record.driverId] = { callCount: 0, deliveryAmount: 0, outsideCallCount: 0, uploadDays: 0, byDay: {} };
       }
 
       const entry = stats[record.driverId];
@@ -143,6 +143,7 @@ const BremPromotionEngine = (function () {
       entry.byDay[day] = { callCount: dayCount, deliveryAmount: dayAmount };
       entry.callCount += dayCount;
       entry.deliveryAmount += dayAmount;
+      entry.outsideCallCount += Math.max(0, Math.round(Number(record.outsideCallCount) || 0));
       entry.uploadDays += 1;
     });
 
@@ -166,6 +167,7 @@ const BremPromotionEngine = (function () {
       rateLabel: getRateLabel(platform),
       dailyOrders: byDay,
       deliveryAmount: Number(stats?.deliveryAmount || 0),
+      outsideCallCount: Math.max(0, Math.round(Number(stats?.outsideCallCount) || 0)),
       selectedPromotionRuleId: getDriverSelector(driver, platform),
       selectedPromotionName: getPromotionNameById(getDriverSelector(driver, platform)),
       uploadDays: Number(stats?.uploadDays || 0),
@@ -923,6 +925,27 @@ const BremPromotionEngine = (function () {
     return { amount: Math.round(amount), labels };
   }
 
+  function calculateOutsideCallPay(rule, riderData) {
+    const spec = window.BremPromotionConditions?.normalizeOutsideCallAddon
+      ? BremPromotionConditions.normalizeOutsideCallAddon(rule?.base?.outsideCallAddon)
+      : null;
+    if (!spec || isBaeminPlatform(riderData?.platform)) {
+      return { amount: 0, labels: [], paidCount: 0, count: 0 };
+    }
+    const count = Math.max(0, Math.round(Number(riderData?.outsideCallCount) || 0));
+    const paid = window.BremOutsideCall?.payAmount
+      ? BremOutsideCall.payAmount(count, spec.startCount, spec.amountPerCall)
+      : { amount: 0, paidCount: 0 };
+    if (!(paid.amount > 0)) return { amount: 0, labels: [], paidCount: 0, count };
+    const money = Number(spec.amountPerCall).toLocaleString('ko-KR');
+    return {
+      amount: paid.amount,
+      paidCount: paid.paidCount,
+      count,
+      labels: [`권외콜 ${spec.startCount.toLocaleString('ko-KR')}건부터 건당 ${money}원 · ${count.toLocaleString('ko-KR')}건`]
+    };
+  }
+
   function calculatePromotionForRider(rule, riderData, settings) {
     const settingsValue = settings || BremStorage.promotionSettings.get();
     const block = evaluateBlockConditions(rule, riderData, settingsValue);
@@ -1053,13 +1076,16 @@ const BremPromotionEngine = (function () {
 
     const distanceResult = calculateDistancePay(rule, riderData);
     const addonResult = calculateDistanceAddonPay(rule, riderData);
+    const outsideResult = calculateOutsideCallPay(rule, riderData);
     const distanceBonus = (distanceResult.distanceBonus || 0) + (addonResult.amount || 0);
+    const outsideCallBonus = outsideResult.amount || 0;
     if (distanceBonus > 0 && distanceResult.label) {
       appliedBlockConditions.push({ name: `거리 ${distanceResult.label}` });
     }
     (addonResult.labels || []).forEach(name => appliedBlockConditions.push({ name }));
+    (outsideResult.labels || []).forEach(name => appliedBlockConditions.push({ name }));
 
-    const totalBonus = basePay + bonusPay + guaranteeBonus + distanceBonus;
+    const totalBonus = basePay + bonusPay + guaranteeBonus + distanceBonus + outsideCallBonus;
     const baseFailureReasons = baseResult.failureReasons || [];
     const guaranteeFailureReasons = guaranteeResult.failureReasons || [];
 
@@ -1073,7 +1099,7 @@ const BremPromotionEngine = (function () {
       eligible = guaranteeBonus > 0;
       if (!eligible) combinedReasons = guaranteeFailureReasons;
     } else if (type === 'distance') {
-      eligible = distanceBonus > 0;
+      eligible = distanceBonus > 0 || outsideCallBonus > 0;
       if (!eligible) combinedReasons = distanceResult.failureReasons || [];
     } else {
       eligible = totalBonus > 0;
@@ -1104,6 +1130,8 @@ const BremPromotionEngine = (function () {
       perCallBonus: basePay,
       guaranteeBonus,
       distanceBonus,
+      outsideCallBonus,
+      outsideCallCount: outsideResult.count || 0,
       distanceLabel: distanceResult.label || '',
       distancePayableKm: distanceResult.payableKm || 0,
       totalBonus,
@@ -1307,6 +1335,7 @@ const BremPromotionEngine = (function () {
     calculatePromotionForRider,
     calculateDistancePay,
     calculateDistanceAddonPay,
+    calculateOutsideCallPay,
     getPromotionFailureReasons,
     evaluateRule,
     evaluateRuleForDrivers,

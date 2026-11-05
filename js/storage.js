@@ -3594,6 +3594,9 @@ const BremStorage = (function () {
         ...(row.delivery_distance_m != null && row.delivery_distance_m !== ''
           ? { deliveryDistanceM: Math.max(0, Math.round(Number(row.delivery_distance_m) || 0)) }
           : {}),
+        ...(row.outside_call_count != null && row.outside_call_count !== ''
+          ? { outsideCallCount: Math.max(0, Math.round(Number(row.outside_call_count) || 0)) }
+          : {}),
         riderPublishedAt: row.rider_published_at || null
       }));
       stageRiderScopedCache(KEYS.calls, callRows, { tableLoaded: true });
@@ -10930,7 +10933,9 @@ const BremStorage = (function () {
       deductionBase: 0,
       hourlyInsurance: 0,
       deliveryDistanceM: 0,
-      hasDeliveryDistance: false
+      hasDeliveryDistance: false,
+      outsideCallCount: 0,
+      hasOutsideCallCount: false
     };
     cur.orderCount += Number(record.orderCount ?? record.callCount ?? 0) || 0;
     cur.settlementAmount += Number(record.settlementAmount ?? record.deliveryAmount ?? 0) || 0;
@@ -10939,6 +10944,10 @@ const BremStorage = (function () {
     if (record.deliveryDistanceM != null && record.deliveryDistanceM !== '') {
       cur.deliveryDistanceM += Math.max(0, Math.round(Number(record.deliveryDistanceM) || 0));
       cur.hasDeliveryDistance = true;
+    }
+    if (record.outsideCallCount != null && record.outsideCallCount !== '') {
+      cur.outsideCallCount += Math.max(0, Math.round(Number(record.outsideCallCount) || 0));
+      cur.hasOutsideCallCount = true;
     }
     if (!cur.riderId && record.riderId) cur.riderId = String(record.riderId);
     if (!cur.driverName && (record.driverName || record.name)) cur.driverName = String(record.driverName || record.name);
@@ -10972,7 +10981,8 @@ const BremStorage = (function () {
       deductionBase: share.deductionBase,
       deliveryAmount: share.settlementAmount,
       settlementAmount: share.settlementAmount,
-      ...(share.hasDeliveryDistance ? { deliveryDistanceM: Math.max(0, Math.round(Number(share.deliveryDistanceM) || 0)) } : {})
+      ...(share.hasDeliveryDistance ? { deliveryDistanceM: Math.max(0, Math.round(Number(share.deliveryDistanceM) || 0)) } : {}),
+      ...(share.hasOutsideCallCount ? { outsideCallCount: Math.max(0, Math.round(Number(share.outsideCallCount) || 0)) } : {})
     };
   }
 
@@ -11079,7 +11089,9 @@ const BremStorage = (function () {
           deductionBase: share.deductionBase + other.deductionBase,
           hourlyInsurance: share.hourlyInsurance + other.hourlyInsurance,
           deliveryDistanceM: (Number(share.deliveryDistanceM) || 0) + (Number(other.deliveryDistanceM) || 0),
-          hasDeliveryDistance: Boolean(share.hasDeliveryDistance || other.hasDeliveryDistance)
+          hasDeliveryDistance: Boolean(share.hasDeliveryDistance || other.hasDeliveryDistance),
+          outsideCallCount: (Number(share.outsideCallCount) || 0) + (Number(other.outsideCallCount) || 0),
+          hasOutsideCallCount: Boolean(share.hasOutsideCallCount || other.hasOutsideCallCount)
         });
       });
       return { records: out, mergedDrivers };
@@ -11124,6 +11136,9 @@ const BremStorage = (function () {
           deliveryDistanceM: record.deliveryDistanceM != null && record.deliveryDistanceM !== ''
             ? Math.max(0, Math.round(Number(record.deliveryDistanceM) || 0))
             : Math.max(0, Math.round(Number(existing?.deliveryDistanceM) || 0)),
+          outsideCallCount: record.outsideCallCount != null && record.outsideCallCount !== ''
+            ? Math.max(0, Math.round(Number(record.outsideCallCount) || 0))
+            : Math.max(0, Math.round(Number(existing?.outsideCallCount) || 0)),
           // 콜수수료는 업로드 시 콜수×단가로 고정. 단가 변경이 과거 주를 소급하지 않게 한다.
           // 재매칭처럼 단가가 안 넘어오면 이미 저장된 값을 유지한다.
           ...(computed

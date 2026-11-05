@@ -136,8 +136,17 @@ const BremPromotionConditions = (function () {
         : [],
       distance: normalizeDistance(raw.distance ?? legacy.distance),
       distanceAddons: normalizeDistanceAddons(raw.distanceAddons ?? legacy.distanceAddons),
-      distanceAddonLadder: normalizeDistanceAddonLadder(raw.distanceAddonLadder ?? legacy.distanceAddonLadder)
+      distanceAddonLadder: normalizeDistanceAddonLadder(raw.distanceAddonLadder ?? legacy.distanceAddonLadder),
+      outsideCallAddon: normalizeOutsideCallAddon(raw.outsideCallAddon ?? legacy.outsideCallAddon)
     };
+  }
+
+  function normalizeOutsideCallAddon(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const startCount = Math.round(Number(raw.startCount || 0));
+    const amountPerCall = Math.round(Number(raw.amountPerCall || 0));
+    if (!(startCount > 0 && amountPerCall > 0)) return null;
+    return { startCount, amountPerCall };
   }
 
   const MAX_DISTANCE_LADDER_STEPS = 80;
@@ -474,6 +483,7 @@ const BremPromotionConditions = (function () {
     MAX_DISTANCE_LADDER_STEPS,
     normalizeDistanceAddonLadder,
     expandDistanceAddonLadder,
+    normalizeOutsideCallAddon,
     MAX_CALL_TIERS,
     MIN_SUPPORTED_COUNT,
     PROCESSING_MODES,

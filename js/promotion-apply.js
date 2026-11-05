@@ -14,6 +14,7 @@ const BremPromotionApply = (function () {
       callCount: stats.callCount,
       deliveryAmount: stats.deliveryAmount,
       deliveryDistanceM: Math.max(0, Math.round(Number(stats.deliveryDistanceM) || 0)),
+      outsideCallCount: Math.max(0, Math.round(Number(stats.outsideCallCount) || 0)),
       byDay: stats.byDay,
       uploadDays: stats.uploadDays
     };
@@ -39,6 +40,7 @@ const BremPromotionApply = (function () {
       callCount: weeklyCalls,
       deliveryAmount: sheetDelivery > 0 ? sheetDelivery : daily.deliveryAmount,
       deliveryDistanceM: daily.deliveryDistanceM,
+      outsideCallCount: daily.outsideCallCount,
       byDay: daily.byDay,
       uploadDays: daily.uploadDays
     };
@@ -1140,6 +1142,7 @@ const BremPromotionApply = (function () {
       dailyOrders: stats.byDay,
       deliveryAmount: stats.deliveryAmount,
       totalDistanceMeters: statsPlatform === 'coupang' ? Number(stats.deliveryDistanceM || 0) : 0,
+      outsideCallCount: statsPlatform === 'baemin' ? 0 : Math.max(0, Math.round(Number(stats.outsideCallCount) || 0)),
       deliveryFees: rainAdjusted.fees,
       selectedPromotionRuleId: rule.id,
       selectedPromotionName: rule.name,
@@ -1496,6 +1499,7 @@ const BremPromotionApply = (function () {
       dailyOrders: stats.byDay,
       deliveryAmount: stats.deliveryAmount,
       totalDistanceMeters: Number(stats.deliveryDistanceM || 0),
+      outsideCallCount: Math.max(0, Math.round(Number(stats.outsideCallCount) || 0)),
       deliveryFees: fees,
       selectedPromotionRuleId: rule.id,
       selectedPromotionName: rule.name,
@@ -1841,6 +1845,7 @@ const BremPromotionApply = (function () {
       dailyOrders: mergeDailyOrders(coupangStats.byDay, baeminStats.byDay),
       deliveryAmount: deliveryAmountTotal,
       totalDistanceMeters: Number(coupangStats.deliveryDistanceM || 0),
+      outsideCallCount: Math.max(0, Math.round(Number(coupangStats.outsideCallCount) || 0)),
       deliveryFees: [...coupangFees, ...baeminFees],
       selectedPromotionRuleId: rule.id,
       selectedPromotionName: rule.name,

@@ -37,15 +37,27 @@ async function attachDeliveryDistanceToCalls(supabase, riderId, calls) {
   const from = dates.reduce((min, day) => (day < min ? day : min), dates[0]);
   const to = dates.reduce((max, day) => (day > max ? day : max), dates[0]);
   try {
-    const { data, error } = await supabase
+    let data;
+    let error;
+    let includeOutside = true;
+    ({ data, error } = await supabase
       .from('daily_settlements')
-      .select('period,platform,delivery_distance_m,applied_at')
+      .select('period,platform,delivery_distance_m,outside_call_count,applied_at')
       .eq('driver_id', riderId)
       .gte('period', from)
-      .lte('period', to);
+      .lte('period', to));
+    if (error && /outside_call/i.test(error.message || String(error))) {
+      includeOutside = false;
+      ({ data, error } = await supabase
+        .from('daily_settlements')
+        .select('period,platform,delivery_distance_m,applied_at')
+        .eq('driver_id', riderId)
+        .gte('period', from)
+        .lte('period', to));
+    }
     if (error) {
       const message = error.message || String(error);
-      if (!/delivery_distance/i.test(message)) {
+      if (!/delivery_distance|outside_call/i.test(message)) {
         console.warn('[BREM] rider delivery distance skipped:', message);
       }
       return list;
@@ -60,7 +72,8 @@ async function attachDeliveryDistanceToCalls(supabase, riderId, calls) {
       if (prev && appliedAt < prev.appliedAt) return;
       latest.set(day, {
         appliedAt,
-        meters: Math.max(0, Math.round(Number(row.delivery_distance_m) || 0))
+        meters: Math.max(0, Math.round(Number(row.delivery_distance_m) || 0)),
+        outside: includeOutside ? Math.max(0, Math.round(Number(row.outside_call_count) || 0)) : null
       });
     });
     return list.map(item => {
@@ -68,7 +81,11 @@ async function attachDeliveryDistanceToCalls(supabase, riderId, calls) {
       const day = String(item.date || '').slice(0, 10);
       const found = latest.get(day);
       if (!found) return item;
-      return { ...item, delivery_distance_m: found.meters };
+      return {
+        ...item,
+        delivery_distance_m: found.meters,
+        ...(found.outside == null ? {} : { outside_call_count: found.outside })
+      };
     });
   } catch (error) {
     console.warn('[BREM] rider delivery distance skipped:', error?.message || error);

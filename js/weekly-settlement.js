@@ -1064,6 +1064,7 @@ const BremWeeklySettlement = (function () {
         callCount: Number(record.orderCount || 0),
         deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
         deliveryDistanceM: Math.max(0, Math.round(Number(record.deliveryDistanceM) || 0)),
+        outsideCallCount: Math.max(0, Math.round(Number(record.outsideCallCount) || 0)),
         source: 'settlement',
         appliedAt: String(record.appliedAt || ''),
         recordId: String(record.id || '')
@@ -1091,16 +1092,19 @@ const BremWeeklySettlement = (function () {
     let callCount = 0;
     let deliveryAmount = 0;
     let deliveryDistanceM = 0;
+    let outsideCallCount = 0;
     Object.values(byDay).forEach(day => {
       callCount += Number(day.callCount || 0);
       deliveryAmount += Number(day.deliveryAmount || 0);
       deliveryDistanceM += Math.max(0, Math.round(Number(day.deliveryDistanceM) || 0));
+      outsideCallCount += Math.max(0, Math.round(Number(day.outsideCallCount) || 0));
     });
 
     return {
       callCount,
       deliveryAmount,
       deliveryDistanceM,
+      outsideCallCount,
       byDay,
       uploadDays: Object.keys(byDay).length,
       hasData: Object.keys(byDay).length > 0
@@ -2389,6 +2393,74 @@ const BremWeeklySettlement = (function () {
     return record;
   }
 
+  async function auditCoupangOutsideCalls(file, password, record) {
+    if (!file || !window.BremOutsideCall?.sumFromSheetRows || !record) return [];
+    let rows;
+    try {
+      rows = await readWeeklyRows(file, password, {
+        sheetMatcher: name => {
+          const text = String(name || '');
+          return text.includes('오더별') && text.includes('상세');
+        }
+      });
+    } catch (error) {
+      console.warn('[BREM] 주정산 권외콜 시트를 읽지 못했습니다.', error?.message || error);
+      return [];
+    }
+    const summary = window.BremOutsideCall.sumFromSheetRows(rows);
+    if (!summary?.byName) return [];
+    try {
+      await BremStorage.ensureSectionLoaded?.('settlements');
+      await BremStorage.ensureSectionLoaded?.('drivers');
+    } catch (error) {
+      console.warn('[BREM] 권외콜 대조용 일정산을 읽지 못했습니다.', error?.message || error);
+    }
+    const start = String(record.startDate || '').slice(0, 10);
+    const end = String(record.endDate || '').slice(0, 10);
+    const dailyByKey = new Map();
+    const nameByKey = new Map();
+    (BremStorage.settlements?.getAll?.() || []).forEach(item => {
+      if (normalizePlatform(item.platform) !== 'coupang') return;
+      const day = normalizePeriodDay(item.period);
+      if (start && day < start) return;
+      if (end && day > end) return;
+      const count = Math.max(0, Math.round(Number(item.outsideCallCount) || 0));
+      if (!count) return;
+      const driver = BremStorage.drivers?.getById?.(item.driverId);
+      const key = (driver ? makeCoupangNamePhoneKey(driver) : '')
+        || normalizeCoupangLoginKey(driver?.name || '');
+      if (!key) return;
+      dailyByKey.set(key, (dailyByKey.get(key) || 0) + count);
+      if (!nameByKey.has(key)) nameByKey.set(key, driver?.name || key);
+    });
+    const mismatches = [];
+    const seen = new Set();
+    summary.byName.forEach((weekly, key) => {
+      seen.add(key);
+      const daily = dailyByKey.get(key) || 0;
+      if (daily === weekly) return;
+      mismatches.push({
+        name: nameByKey.get(key) || key,
+        key,
+        weekly,
+        daily,
+        delta: weekly - daily
+      });
+    });
+    dailyByKey.forEach((daily, key) => {
+      if (seen.has(key)) return;
+      mismatches.push({
+        name: nameByKey.get(key) || key,
+        key,
+        weekly: 0,
+        daily,
+        delta: -daily
+      });
+    });
+    mismatches.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.name.localeCompare(b.name, 'ko'));
+    return mismatches;
+  }
+
   async function processWeeklyUpload(options) {
     const platform = normalizePlatform(options.platform);
     const files = Array.isArray(options.files) && options.files.length
@@ -2536,7 +2608,11 @@ const BremWeeklySettlement = (function () {
       unmatchedRiders
     });
 
-    return { ...record, previewUnmatched: unmatchedRiders };
+    let outsideCallMismatches = [];
+    if (platform === 'coupang') {
+      outsideCallMismatches = await auditCoupangOutsideCalls(file, options.password, record);
+    }
+    return { ...record, previewUnmatched: unmatchedRiders, outsideCallMismatches };
   }
 
   async function clearDriverPeriodCallData(driverId, startDate, endDate, platform) {

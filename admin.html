@@ -4300,6 +4300,21 @@
               <div id="promotionDistanceAddonRows" class="promotion-tier-rows"></div>
             </div>
 
+            <div class="promotion-form-section" id="promotionOutsideCallSection">
+              <h3>추가 가산조건3 (권외콜)</h3>
+              <p class="form-help">그 주 쿠팡 일정산 권외콜이 시작 건수에 닿으면, 시작 건수부터 건당 금액을 더합니다. 15건·1,000원이면 15번째부터 건당 1,000원이고 14건 이하는 0원입니다. 권외콜은 픽업이나 배달이 그 일정산서의 기준 권역 밖인 주문입니다.</p>
+              <div class="promotion-condition-fields">
+                <label>
+                  <span>시작 건수</span>
+                  <input type="number" min="1" step="1" id="promotionOutsideCallStart" placeholder="15">
+                </label>
+                <label>
+                  <span>건당 지급 (원)</span>
+                  <input type="number" min="0" step="100" id="promotionOutsideCallAmount" placeholder="1000">
+                </label>
+              </div>
+            </div>
+
             <div class="promotion-form-section" id="promotionReferenceConditionsSection">
               <div class="promotion-condition-toolbar">
                 <h3>단순 참고 조건</h3>
@@ -10409,10 +10424,10 @@
   <script src="js/supabase-config.js?v=20260909login1"></script>
   <script src="js/data-cache.js?v=20260621n"></script>
   <script src="js/data-loading-ui.js?v=20260622f"></script>
-  <script src="js/storage-supabase-mapper.js?v=20261103dist2"></script>
+  <script src="js/storage-supabase-mapper.js?v=20261105outside1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
-  <script src="js/storage-supabase-adapter.js?v=20261104egr1"></script>
-  <script src="js/storage.js?v=20261104preview1"></script>
+  <script src="js/storage-supabase-adapter.js?v=20261105outside1"></script>
+  <script src="js/storage.js?v=20261105outside1"></script>
   <script src="js/call-fee-dialog.js?v=20260906a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js?v=20261101inq1"></script>
@@ -10420,16 +10435,17 @@
   <script src="js/driver-utils.js?v=20260921off1"></script>
   <script src="js/driver-duplicate-dialog.js?v=20260820c"></script>
   <script src="js/settlement-formats.js?v=20260917ai1"></script>
-  <script src="js/settlement-client.js?v=20261103dist1"></script>
+  <script src="js/outside-call.js?v=20261105outside1"></script>
+  <script src="js/settlement-client.js?v=20261105outside1"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
-  <script src="js/promotion-conditions.js?v=20261103dist1"></script>
-  <script src="js/promotion-engine.js?v=20261103dist1"></script>
-  <script src="js/promotion-admin.js?v=20261103dist1"></script>
+  <script src="js/promotion-conditions.js?v=20261105outside1"></script>
+  <script src="js/promotion-engine.js?v=20261105outside1"></script>
+  <script src="js/promotion-admin.js?v=20261105outside1"></script>
   <script src="js/friend-invite-admin.js?v=20261030invite3"></script>
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
-  <script src="js/weekly-settlement.js?v=20261103dist1"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260922part5"></script>
+  <script src="js/weekly-settlement.js?v=20261105outside1"></script>
+  <script src="js/weekly-settlement-admin.js?v=20261105outside1"></script>
   <script src="js/baemin-delivery-fee.js?v=20260917ai1"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20261104op2"></script>
@@ -10439,7 +10455,7 @@
     <script src="js/contribution-admin.js?v=20260924peak20"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
-  <script src="js/promotion-apply.js?v=20261103dist1"></script>
+  <script src="js/promotion-apply.js?v=20261105outside1"></script>
   <script src="js/promotion-apply-admin.js?v=20261025settle2"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>

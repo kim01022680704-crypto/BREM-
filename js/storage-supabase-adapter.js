@@ -163,11 +163,32 @@ window.BremSupabaseStorageAdapter = (function () {
   let dailySettlementCallFeeColumnsOk = true;
 
   let dailySettlementDistanceColumnOk = true;
+  let dailySettlementOutsideColumnOk = true;
 
   function getDailySettlementSelect() {
-    const core = dailySettlementCallFeeColumnsOk ? DAILY_SETTLEMENT_SELECT : DAILY_SETTLEMENT_SELECT_BASE;
-    if (!dailySettlementDistanceColumnOk) return core;
-    return core.replace(/,applied_at$/, ',delivery_distance_m,applied_at');
+    let core = dailySettlementCallFeeColumnsOk ? DAILY_SETTLEMENT_SELECT : DAILY_SETTLEMENT_SELECT_BASE;
+    if (dailySettlementDistanceColumnOk) {
+      core = core.replace(/,applied_at$/, ',delivery_distance_m,applied_at');
+    }
+    if (dailySettlementOutsideColumnOk) {
+      core = core.replace(/,applied_at$/, ',outside_call_count,applied_at');
+    }
+    return core;
+  }
+
+  function isMissingDailySettlementOutsideColumnError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    if (!message.includes('outside_call')) return false;
+    return message.includes('schema cache')
+      || message.includes('could not find')
+      || message.includes('does not exist')
+      || message.includes('column');
+  }
+
+  function stripOptionalDailySettlementOutsideColumn(row) {
+    const next = { ...row };
+    delete next.outside_call_count;
+    return next;
   }
 
   function isMissingDailySettlementDistanceColumnError(error) {
@@ -375,6 +396,11 @@ window.BremSupabaseStorageAdapter = (function () {
           payload = chunk.map(stripOptionalLeaseVehicleColumns);
           ({ error } = await client.from(tableName).upsert(payload, { onConflict: 'id' }));
         }
+        if (error && tableName === 'daily_settlements' && isMissingDailySettlementOutsideColumnError(error)) {
+          dailySettlementOutsideColumnOk = false;
+          payload = payload.map(stripOptionalDailySettlementOutsideColumn);
+          ({ error } = await client.from(tableName).upsert(payload, { onConflict: 'id' }));
+        }
         if (error && tableName === 'daily_settlements' && isMissingDailySettlementDistanceColumnError(error)) {
           dailySettlementDistanceColumnOk = false;
           payload = payload.map(stripOptionalDailySettlementDistanceColumn);
@@ -537,16 +563,24 @@ window.BremSupabaseStorageAdapter = (function () {
           })();
       };
       let value;
-      try {
-        value = await fetchCollection(resolveSelectColumns(getDailySettlementSelect()));
-      } catch (error) {
-        if (table === 'daily_settlements' && isMissingDailySettlementDistanceColumnError(error)) {
-          dailySettlementDistanceColumnOk = false;
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        try {
           value = await fetchCollection(resolveSelectColumns(getDailySettlementSelect()));
-        } else if (table === 'daily_settlements' && isMissingDailySettlementCallFeeColumnError(error)) {
-          dailySettlementCallFeeColumnsOk = false;
-          value = await fetchCollection(resolveSelectColumns(DAILY_SETTLEMENT_SELECT_BASE));
-        } else {
+          break;
+        } catch (error) {
+          if (table !== 'daily_settlements') throw error;
+          if (isMissingDailySettlementOutsideColumnError(error)) {
+            dailySettlementOutsideColumnOk = false;
+            continue;
+          }
+          if (isMissingDailySettlementDistanceColumnError(error)) {
+            dailySettlementDistanceColumnOk = false;
+            continue;
+          }
+          if (isMissingDailySettlementCallFeeColumnError(error)) {
+            dailySettlementCallFeeColumnsOk = false;
+            continue;
+          }
           throw error;
         }
       }

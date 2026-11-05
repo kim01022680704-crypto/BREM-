@@ -1109,7 +1109,7 @@
       })
       .forEach(call => {
         if (!byDate.has(call.date)) {
-          byDate.set(call.date, { coupang: 0, baemin: 0, distance: 0, hasDistance: false });
+          byDate.set(call.date, { coupang: 0, baemin: 0, distance: 0, hasDistance: false, outside: 0, hasOutside: false });
         }
         const bucket = byDate.get(call.date);
         const count = Number(call.count || 0);
@@ -1120,6 +1120,10 @@
           if (call.deliveryDistanceM != null && call.deliveryDistanceM !== '') {
             bucket.distance += Math.max(0, Math.round(Number(call.deliveryDistanceM) || 0));
             bucket.hasDistance = true;
+          }
+          if (call.outsideCallCount != null && call.outsideCallCount !== '') {
+            bucket.outside += Math.max(0, Math.round(Number(call.outsideCallCount) || 0));
+            bucket.hasOutside = true;
           }
         }
       });
@@ -1132,11 +1136,15 @@
     let sumBaemin = 0;
     let sumDistance = 0;
     let hasDistance = false;
+    let sumOutside = 0;
+    let hasOutside = false;
     entries.forEach(([, counts]) => {
       sumCoupang += counts.coupang;
       sumBaemin += counts.baemin;
       sumDistance += counts.distance;
+      sumOutside += counts.outside;
       if (counts.hasDistance) hasDistance = true;
+      if (counts.hasOutside) hasOutside = true;
     });
     const sumTotal = sumCoupang + sumBaemin;
 
@@ -1164,6 +1172,7 @@
                 <span class="dc-row__sub--coupang">쿠 ${counts.coupang ? number(counts.coupang) : '-'}</span>
                 <span class="dc-row__sub--baemin">배 ${counts.baemin ? number(counts.baemin) : '-'}</span>
                 ${counts.hasDistance ? `<span class="dc-row__sub--distance">${formatDistanceKm(counts.distance)}</span>` : ''}
+                ${counts.hasOutside ? `<span class="dc-row__sub--outside">권외 ${number(counts.outside)}</span>` : ''}
               </span>
             </span>
             <span class="dc-row__total">${number(total)}<i>콜</i></span>
@@ -1174,6 +1183,7 @@
 
     setText('dailyRange', `${formatDate(dateKey(start))} ~ ${formatDate(dateKey(end))}`);
     setText('coupangWeekDistance', hasDistance ? formatDistanceKm(sumDistance) : '-');
+    setText('coupangWeekOutside', hasOutside ? `${number(sumOutside)}건` : '-');
 
     const summary = entries.length
       ? `
@@ -1533,6 +1543,46 @@
     return { html, extra };
   }
 
+  function outsideCallAddonOf(mission) {
+    const raw = mission?.base?.outsideCallAddon
+      || mission?.promotionRule?.base?.outsideCallAddon
+      || mission?.raw_data?.base?.outsideCallAddon
+      || null;
+    if (window.BremPromotionConditions?.normalizeOutsideCallAddon) {
+      return window.BremPromotionConditions.normalizeOutsideCallAddon(raw);
+    }
+    if (!raw || typeof raw !== 'object') return null;
+    const startCount = Math.round(Number(raw.startCount || 0));
+    const amountPerCall = Math.round(Number(raw.amountPerCall || 0));
+    if (!(startCount > 0 && amountPerCall > 0)) return null;
+    return { startCount, amountPerCall };
+  }
+
+  function weekCoupangOutsideCount(driverId) {
+    if (!driverId) return 0;
+    const { start, end } = weekRange();
+    let count = 0;
+    driverCalls(driverId).forEach(call => {
+      const callDate = dateValue(call.date);
+      if (callDate < start || callDate > end) return;
+      if (normalizePlatform(call.platform) === 'baemin') return;
+      count += Math.max(0, Math.round(Number(call.outsideCallCount) || 0));
+    });
+    return count;
+  }
+
+  function outsideCallView(mission, key) {
+    const spec = outsideCallAddonOf(mission);
+    if (!spec || key === 'baemin') return { html: '', extra: 0, count: 0 };
+    const count = weekCoupangOutsideCount(state.currentDriver?.id);
+    const paid = window.BremOutsideCall?.payAmount
+      ? BremOutsideCall.payAmount(count, spec.startCount, spec.amountPerCall)
+      : { amount: 0, paidCount: 0 };
+    const hit = paid.amount > 0;
+    const html = `<ul class="mission-dist-notes"><li class="${hit ? 'is-hit' : ''}">+추가(쿠팡) 권외콜 ${number(spec.startCount)}건부터 건당 ${moneyWon(spec.amountPerCall)} · 이번 주 ${number(count)}건</li></ul>`;
+    return { html, extra: paid.amount, count };
+  }
+
   function renderMissionSim(prefix, mission, currentCalls) {
     const el = document.getElementById(`riderMission${prefix}Sim`);
     if (!el) return;
@@ -1540,17 +1590,19 @@
     const config = missionSimConfig(mission);
     const distConfig = missionDistConfig(mission);
     const addon = distanceAddonView(mission, key);
-    if (!config && !distConfig && !addon.html) {
+    const outside = outsideCallView(mission, key);
+    if (!config && !distConfig && !addon.html && !outside.html) {
       el.hidden = true;
       el.innerHTML = '';
       return;
     }
     if (!config) {
-      const nowLine = addon.extra > 0
-        ? `<p class="mission-sim__now">이번 주 거리 가산 → 약 ${moneyWon(addon.extra)}</p>`
+      const extraNow = addon.extra + outside.extra;
+      const nowLine = extraNow > 0
+        ? `<p class="mission-sim__now">이번 주 가산 → 약 ${moneyWon(extraNow)}</p>`
         : '';
       el.hidden = false;
-      el.innerHTML = `${nowLine}${addon.html}${distanceSimHtml(key, distConfig)}`;
+      el.innerHTML = `${nowLine}${addon.html}${outside.html}${distanceSimHtml(key, distConfig)}`;
       return;
     }
 
@@ -1561,10 +1613,14 @@
     const now = sim.simulate(config, nowCalls);
     const guess = sim.simulate(config, guessCalls);
     const rows = sim.breakpoints(config);
-    const shownAmount = (now.started ? now.amount : 0) + addon.extra;
-    const distanceNote = addon.extra > 0 ? ` · 거리 ${moneyWon(addon.extra)} 포함` : '';
+    const shownAmount = (now.started ? now.amount : 0) + addon.extra + outside.extra;
+    const distanceNote = [
+      addon.extra > 0 ? `거리 ${moneyWon(addon.extra)}` : '',
+      outside.extra > 0 ? `권외 ${moneyWon(outside.extra)}` : ''
+    ].filter(Boolean).join(' · ');
+    const distanceSuffix = distanceNote ? ` · ${distanceNote} 포함` : '';
     const nowText = shownAmount > 0
-      ? `이번 주 ${number(nowCalls)}콜 → 약 ${moneyWon(shownAmount)}${now.started ? ` (${number(now.paidCallCount)}건 × ${moneyWon(now.payPerCall)})` : ''}${distanceNote}`
+      ? `이번 주 ${number(nowCalls)}콜 → 약 ${moneyWon(shownAmount)}${now.started ? ` (${number(now.paidCallCount)}건 × ${moneyWon(now.payPerCall)})` : ''}${distanceSuffix}`
       : `이번 주 ${number(nowCalls)}콜 → 아직 지급 시작(${number(config.payStartCallCount)}콜) 전 · ${number(now.remainToStart)}콜 남음`;
     const guessHint = guess.started
       ? `${number(guess.paidCallCount)}건 × ${moneyWon(guess.payPerCall)}`
@@ -1593,6 +1649,7 @@
       }</p>
       ${distanceSimHtml(key, distConfig)}
       ${addon.html}
+      ${outside.html}
     `;
   }
 

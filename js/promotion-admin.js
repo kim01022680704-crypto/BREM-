@@ -451,7 +451,8 @@ const BremPromotionAdmin = (function () {
           tierMode: 'retroactive'
         },
         distanceAddons: [],
-        distanceAddonLadder: null
+        distanceAddonLadder: null,
+        outsideCallAddon: null
       },
       blockConditions: [],
       bonusConditions: [],
@@ -587,6 +588,13 @@ const BremPromotionAdmin = (function () {
     return { startKm, stepKm, amount, untilKm };
   }
 
+  function readOutsideCallAddon() {
+    const startCount = Math.round(Number($('#promotionOutsideCallStart')?.value || 0));
+    const amountPerCall = Math.round(Number($('#promotionOutsideCallAmount')?.value || 0));
+    if (!(startCount > 0 && amountPerCall > 0)) return null;
+    return { startCount, amountPerCall };
+  }
+
   function renderDistanceLadderPreview() {
     const preview = $('#promotionDistanceLadderPreview');
     if (!preview) return;
@@ -700,6 +708,8 @@ const BremPromotionAdmin = (function () {
     if (distanceSection) distanceSection.hidden = platform === 'baemin';
     const addonSection = $('#promotionDistanceAddonSection');
     if (addonSection) addonSection.hidden = platform === 'baemin';
+    const outsideSection = $('#promotionOutsideCallSection');
+    if (outsideSection) outsideSection.hidden = platform === 'baemin';
     const enabledBox = $('#promotionDistanceEnabled');
     if (enabledBox && distanceOnly) enabledBox.checked = true;
     const distanceOn = platform !== 'baemin' && (distanceOnly || enabledBox?.checked);
@@ -764,6 +774,9 @@ const BremPromotionAdmin = (function () {
     renderDistanceTierRows(state.distanceTierDraft);
     renderDistanceAddonRows(state.distanceAddonDraft);
     fillDistanceAddonLadder(base.distanceAddonLadder || draft.base?.distanceAddonLadder);
+    const outside = base.outsideCallAddon || draft.base?.outsideCallAddon || {};
+    if ($('#promotionOutsideCallStart')) $('#promotionOutsideCallStart').value = outside.startCount || '';
+    if ($('#promotionOutsideCallAmount')) $('#promotionOutsideCallAmount').value = outside.amountPerCall || '';
     syncTypeSections();
     renderConditionLists(platformValue);
     updateRateFieldLabels(platformValue);
@@ -810,7 +823,8 @@ const BremPromotionAdmin = (function () {
         tierMode: $('#promotionDistanceTierMode')?.value === 'step' ? 'step' : 'retroactive'
       },
       distanceAddons: readDistanceAddonRows(),
-      distanceAddonLadder: readDistanceAddonLadder()
+      distanceAddonLadder: readDistanceAddonLadder(),
+      outsideCallAddon: readOutsideCallAddon()
     };
 
     return {
@@ -938,6 +952,16 @@ const BremPromotionAdmin = (function () {
     const addonKms = addons.map(row => row.minKm);
     if (new Set(addonKms).size !== addonKms.length) {
       return '거리 가산의 달성 km가 중복되면 안 됩니다.';
+    }
+
+    const outside = payload.base.outsideCallAddon;
+    if (outside && payload.platform === 'baemin') {
+      return '배민은 권외콜 데이터가 없어 가산3을 넣을 수 없습니다.';
+    }
+    const outsideStart = Number($('#promotionOutsideCallStart')?.value || 0);
+    const outsideAmount = Number($('#promotionOutsideCallAmount')?.value || 0);
+    if ((outsideStart > 0) !== (outsideAmount > 0)) {
+      return '권외콜 가산은 시작 건수와 건당 금액을 모두 입력하세요.';
     }
 
     const ladder = payload.base.distanceAddonLadder;

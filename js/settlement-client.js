@@ -828,6 +828,9 @@ const BremSettlementParser = (function () {
         settlementAmount: Number(row.settlementAmount ?? row.deliveryAmount ?? 0),
         ...(row.deliveryDistanceM != null && row.deliveryDistanceM !== ''
           ? { deliveryDistanceM: Math.max(0, Math.round(Number(row.deliveryDistanceM) || 0)) }
+          : {}),
+        ...(row.outsideCallCount != null && row.outsideCallCount !== ''
+          ? { outsideCallCount: Math.max(0, Math.round(Number(row.outsideCallCount) || 0)) }
           : {})
       };
 
@@ -906,6 +909,27 @@ const BremSettlementParser = (function () {
     return parsedRows;
   }
 
+  async function readCoupangOutsideCallSums(buffer, password) {
+    const rows = await openWorkbookSheetRows(buffer, normalizePassword(password), {
+      sheetName: '오더별',
+      sheetMatcher: (name) => {
+        const text = String(name || '');
+        return text.includes('오더별') && text.includes('상세');
+      }
+    });
+    if (!window.BremOutsideCall?.sumFromSheetRows) return null;
+    return window.BremOutsideCall.sumFromSheetRows(rows);
+  }
+
+  function attachCoupangOutsideCalls(parsedRows, summary) {
+    if (!summary?.byName) return parsedRows;
+    (Array.isArray(parsedRows) ? parsedRows : []).forEach(row => {
+      const key = coupangDistanceKey(row.rawName || row.name);
+      row.outsideCallCount = Math.max(0, Math.round(summary.byName.get(key) || 0));
+    });
+    return parsedRows;
+  }
+
   async function parseSettlementFile({ file, password, drivers, period, formatId }) {
     const format = SettlementFormats.getFormat(formatId);
     const arrayBuffer = await file.arrayBuffer();
@@ -924,6 +948,12 @@ const BremSettlementParser = (function () {
         attachCoupangDeliveryDistances(parsedRows, sums);
       } catch (error) {
         console.warn('[BREM] 쿠팡 일정산 배달거리 시트를 읽지 못했습니다.', error?.message || error);
+      }
+      try {
+        const outside = await readCoupangOutsideCallSums(bytes.slice(), password);
+        attachCoupangOutsideCalls(parsedRows, outside);
+      } catch (error) {
+        console.warn('[BREM] 쿠팡 일정산 권외콜 시트를 읽지 못했습니다.', error?.message || error);
       }
     }
     const resolvedPeriod = period || filenamePeriod || '';
