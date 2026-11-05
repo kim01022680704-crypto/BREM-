@@ -680,8 +680,17 @@ const BremPromotionEngine = (function () {
     const action = condition.actionType || 'add_pay_per_order';
 
     switch (action) {
-      case 'add_pay_per_order':
-        return paidCallCount * Number(condition.addPayPerOrder ?? 0);
+      case 'add_pay_per_order': {
+        const perCall = Number(condition.addPayPerOrder ?? 0);
+        const paid = Number(paidCallCount || 0);
+        if (paid > 0) return paid * perCall;
+        // 건당 미션을 안 넣으면 지급 콜수가 0이라 가산이 전부 0원이 된다.
+        // 건당이 없으면 충족한 가산 금액은 그 구간마다 한 번 준다.
+        const base = rule?.base || {};
+        const perCallMission = Number(base.payPerCall || 0) > 0 && Number(base.payStartCallCount || 0) > 0;
+        if (!perCallMission && perCall > 0) return perCall;
+        return 0;
+      }
       case 'fixed_bonus':
         return Number(condition.fixedBonus ?? 0);
       case 'guarantee_unit_add': {

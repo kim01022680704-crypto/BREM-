@@ -347,5 +347,37 @@ console.log('\n[9] 거리 반복 가산 — 150km부터 50km마다 2만 원');
   check('칸 수 18', steps.length, 18);
 }
 
+console.log('\n[10] 건당 미션 없이 총콜 가산만 있어도 구간 금액이 나간다');
+{
+  const rule = makeRule({
+    platform: 'baemin',
+    base: { payStartCallCount: 0, payPerCall: 0 },
+    bonusConditions: [100, 150, 200, 250].map((min, index) => ({
+      id: `b${index}`,
+      conditionName: `총 콜수 ${min}건 이상`,
+      conditionType: 'total_orders_over',
+      processingMode: 'bonus',
+      actionType: 'add_pay_per_order',
+      addPayPerOrder: 50000,
+      minTotalOrders: min
+    }))
+  });
+  const run = totalOrders => engine.calculatePromotionForRider(rule, {
+    driverId: 'd1',
+    platform: 'baemin',
+    totalOrders,
+    rejectRate: 0,
+    acceptRate: 100,
+    dailyOrders: [],
+    weekStart: '2026-10-28',
+    weekEnd: '2026-11-03',
+    selectedPromotionRuleId: rule.id
+  }, SETTINGS);
+  const result = run(225);
+  check('225콜은 100·150·200 세 구간 15만 원', result.totalBonus, 150000);
+  check('건당이 없어도 지급', result.eligible, true);
+  check('29콜은 가산 0원', run(29).totalBonus, 0);
+}
+
 console.log(`\n결과: ${pass}건 통과, ${fail}건 실패`);
 process.exit(fail ? 1 : 0);
