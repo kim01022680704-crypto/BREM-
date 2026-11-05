@@ -1473,21 +1473,43 @@
     return meters / 1000;
   }
 
+  function normalizeDistanceLadder(raw) {
+    if (window.BremPromotionConditions?.normalizeDistanceAddonLadder) {
+      return window.BremPromotionConditions.normalizeDistanceAddonLadder(raw);
+    }
+    if (!raw || typeof raw !== 'object') return null;
+    const startKm = Math.round(Number(raw.startKm || 0));
+    const stepKm = Math.round(Number(raw.stepKm || 0));
+    const amount = Math.round(Number(raw.amount || 0));
+    const untilKm = Math.round(Number(raw.untilKm || 0));
+    if (!(startKm > 0 && stepKm > 0 && amount > 0 && untilKm >= startKm)) return null;
+    return { startKm, stepKm, amount, untilKm };
+  }
+
+  function expandDistanceLadder(spec) {
+    if (window.BremPromotionConditions?.expandDistanceAddonLadder) {
+      return window.BremPromotionConditions.expandDistanceAddonLadder(spec);
+    }
+    if (!spec) return [];
+    const rows = [];
+    for (let km = spec.startKm; km <= spec.untilKm && rows.length < 80; km += spec.stepKm) {
+      rows.push({ minKm: km, amount: spec.amount });
+    }
+    return rows;
+  }
+
   function distanceAddonLadderOf(mission) {
     const raw = mission?.base?.distanceAddonLadder
       || mission?.promotionRule?.base?.distanceAddonLadder
+      || mission?.raw_data?.base?.distanceAddonLadder
       || null;
-    return window.BremPromotionConditions?.normalizeDistanceAddonLadder
-      ? window.BremPromotionConditions.normalizeDistanceAddonLadder(raw)
-      : null;
+    return normalizeDistanceLadder(raw);
   }
 
   function distanceAddonView(mission, key) {
     const addons = distanceAddonsOf(mission);
     const ladder = distanceAddonLadderOf(mission);
-    const ladderRows = ladder && window.BremPromotionConditions?.expandDistanceAddonLadder
-      ? window.BremPromotionConditions.expandDistanceAddonLadder(ladder)
-      : [];
+    const ladderRows = expandDistanceLadder(ladder);
     if ((!addons.length && !ladderRows.length) || key === 'baemin') return { html: '', extra: 0 };
     const km = weekCoupangDistanceKm(state.currentDriver?.id);
     const extraRows = addons.reduce((sum, row) => sum + (km + 0.0001 >= row.minKm ? row.amount : 0), 0);
