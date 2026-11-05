@@ -171,6 +171,19 @@ const namguIndex = {
 check('남구중앙은 이글스에 붙음', T.riderMatchesRegion({ regionCoupang: '남구중앙' }, namguEagles, namguIndex));
 check('남구중앙은 Z119에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '남구중앙' }, namgu119, namguIndex));
 check('회사 태그가 없는 Z는 119에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '남구중앙(Z)' }, namgu119, namguIndex));
+check('수집 회사가 이글스면 포항중앙(Z) 이글스에 붙음', T.withCollectedCoupangCompany('포항중앙(Z)', '배달연합#plus_경북_포항중앙(Z)') === '포항중앙(Z) · 이글스');
+check('수집 회사가 119면 119 태그', T.withCollectedCoupangCompany('양산중앙(Z)', '119컴퍼니#plus_경남_양산중앙(Z)') === '양산중앙(Z) · 119');
+check('다른 권역 수집은 지역명을 안 바꿈', T.withCollectedCoupangCompany('포항중앙(Z)', '배달연합#plus_울산_남구중앙') === '포항중앙(Z)');
+const pohangEaglesZ = { key: '19749', vendorId: '19749', label: '포항중앙(Z)', vendorName: '배달연합#plus_경북_포항중앙(Z)', platform: 'coupang' };
+const pohang119Z = { key: '20924', vendorId: '20924', label: '포항중앙(Z) 119', vendorName: '119컴퍼니#plus_경북_포항중앙(Z)', platform: 'coupang' };
+const pohangDual = {
+  tagsByDisplay: new Map([['포항중앙(Z)', new Set(['이글스', '119'])]]),
+  ownersByKey: new Map(),
+  vendorIds: new Set(['19749', '20924']),
+  shorts: new Set(['포항중앙'])
+};
+check('이글스 태그가 붙으면 이글스 보드', T.riderMatchesRegion({ regionCoupang: '포항중앙(Z) · 이글스' }, pohangEaglesZ, pohangDual));
+check('이글스 태그는 119 보드에 안 붙음', !T.riderMatchesRegion({ regionCoupang: '포항중앙(Z) · 이글스' }, pohang119Z, pohangDual));
 check('남구처럼 Z 없는 권역은 그대로', T.riderMatchesRegion(
   { regionCoupang: '남구중앙' },
   { key: '1', vendorId: '1', label: '남구중앙', vendorName: '배달연합#plus_대구_남구중앙', platform: 'coupang' },

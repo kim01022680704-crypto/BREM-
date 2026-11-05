@@ -553,6 +553,59 @@ function regionIsCoupangZ(region, zClusters) {
   return Boolean(vendorId && info.vendorIds && info.vendorIds.has(vendorId));
 }
 
+function withCollectedCoupangCompany(stored, vendorName) {
+  const value = String(stored || '').trim();
+  const name = String(vendorName || '').trim();
+  if (!value || !name || coupangValueBranchTag(value)) return value;
+  if (displayCoupangRegionLabel(name) !== displayCoupangRegionLabel(value)) return value;
+  if (coupangRegionIsZ(name) !== coupangRegionIsZ(value)) return value;
+  return coupangRegionSelectLabel(name) || value;
+}
+
+/** 지역명만 저장된 기사(포항중앙(Z))를 최근 쿠팡 수집 회사(이글스/119)에 붙인다. */
+async function stampRidersCoupangCompany(supabase, riders) {
+  const list = Array.isArray(riders) ? riders : [];
+  const pending = list.filter(rider => {
+    const value = String(rider?.regionCoupang || '').trim();
+    return value && !coupangValueBranchTag(value);
+  });
+  if (!pending.length || !supabase) return list;
+  const phones = [...new Set(pending.map(rider => String(rider.phone || rider.raw_data?.phone || '').replace(/\D/g, '')).filter(phone => phone.length >= 10))];
+  if (!phones.length) return list;
+  const since = formatKstDateKey(new Date(Date.now() - 21 * 24 * 60 * 60 * 1000));
+  const latest = new Map();
+  for (let index = 0; index < phones.length; index += 80) {
+    const chunk = phones.slice(index, index + 80);
+    const { data, error } = await supabase
+      .from('coupang_collect_items')
+      .select('phone_number,vendor_name,collect_date')
+      .eq('source_menu', 'rider_daily')
+      .gte('collect_date', since)
+      .in('phone_number', chunk)
+      .order('collect_date', { ascending: false })
+      .limit(4000);
+    if (error) {
+      console.warn('[BREM][region-dashboard] coupang company stamp skipped:', error.message || error);
+      return list;
+    }
+    (data || []).forEach(row => {
+      const phone = String(row.phone_number || '').replace(/\D/g, '');
+      if (!phone) return;
+      const prev = latest.get(phone);
+      if (prev && String(row.collect_date || '') < String(prev.collect_date || '')) return;
+      latest.set(phone, row);
+    });
+  }
+  return list.map(rider => {
+    const phone = String(rider.phone || rider.raw_data?.phone || '').replace(/\D/g, '');
+    const hit = latest.get(phone);
+    if (!hit) return rider;
+    const next = withCollectedCoupangCompany(rider.regionCoupang, hit.vendor_name);
+    if (!next || next === rider.regionCoupang) return rider;
+    return { ...rider, regionCoupang: next };
+  });
+}
+
 function riderMatchesRegion(rider, region, zClusters) {
   if (!rider || !region) return false;
   if (region.platform === 'baemin') {
@@ -863,10 +916,13 @@ async function loadRidersForRegion(supabase, region) {
   const zClusters = region.platform === 'coupang'
     ? await loadCoupangZClusters(supabase)
     : null;
-  return (result.data || all)
+  let riders = (result.data || all)
     .map(mapRiderRow)
-    .filter(rider => !isInactiveRiderStatus(rider.status))
-    .filter(rider => riderMatchesRegion(rider, region, zClusters));
+    .filter(rider => !isInactiveRiderStatus(rider.status));
+  if (region.platform === 'coupang') {
+    riders = await stampRidersCoupangCompany(supabase, riders);
+  }
+  return riders.filter(rider => riderMatchesRegion(rider, region, zClusters));
 }
 
 /**
@@ -1658,15 +1714,19 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
 
   // 라이더 노출 ON 지역 중, 이 기사가 등록된 지역만 대시보드에 보이게 한다.
   // 미노출(hidden) 기사는 해당 지역 대시보드 자체를 숨긴다.
-  const riderRow = mapRiderRow({
+  let riderRow = mapRiderRow({
     id: me.rider?.id,
     name: me.rider?.name,
+    phone: me.rider?.phone,
     baemin_id: me.rider?.baemin_id || me.rider?.baeminId,
     raw_data: me.rider?.raw_data || {
       regionBaemin: me.rider?.regionBaemin,
       regionCoupang: me.rider?.regionCoupang
     }
   });
+  if (platform === 'coupang') {
+    riderRow = (await stampRidersCoupangCompany(supabase, [riderRow]))[0] || riderRow;
+  }
   const exposedRaw = listExposedRegions(exposure, platform);
   const zClusters = platform === 'coupang' ? await loadCoupangZClusters(supabase) : null;
   const exposedAll = platform === 'coupang'
@@ -2825,6 +2885,8 @@ module.exports = {
     decorateCoupangBranchRegion,
     collapseCoupangZTwins,
     riderMatchesRegion,
+    withCollectedCoupangCompany,
+    stampRidersCoupangCompany,
     escapePostgrestValue,
     mergeLiveDaySlots,
     sumBaeminDeliverySlotTotals,
