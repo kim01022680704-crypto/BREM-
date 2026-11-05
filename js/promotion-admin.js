@@ -600,7 +600,16 @@ const BremPromotionAdmin = (function () {
     if (!preview) return;
     const ladder = readDistanceAddonLadder();
     if (!ladder) {
-      preview.textContent = '시작 km, 간격, 칸마다 금액, 마지막 km를 넣으면 칸 수가 여기 보입니다.';
+      const raw = [
+        $('#promotionDistanceLadderStart')?.value,
+        $('#promotionDistanceLadderStep')?.value,
+        $('#promotionDistanceLadderAmount')?.value,
+        $('#promotionDistanceLadderUntil')?.value
+      ].map(value => String(value ?? '').trim());
+      const clearing = raw.some(value => value !== '') && raw.every(value => value === '' || Number(value) === 0);
+      preview.textContent = clearing
+        ? '0으로 저장하면 반복 가산을 지웁니다.'
+        : '시작 km, 간격, 칸마다 금액, 마지막 km를 넣으면 칸 수가 여기 보입니다.';
       return;
     }
     if (!(ladder.startKm > 0 && ladder.stepKm > 0 && ladder.amount > 0 && ladder.untilKm >= ladder.startKm)) {
