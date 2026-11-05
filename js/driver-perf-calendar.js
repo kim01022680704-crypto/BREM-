@@ -157,6 +157,8 @@
     render(true);
   });
 
+  document.addEventListener('brem-driver-data-ready', () => render(true));
+
   // 실적 탭이 열릴 때 정산금액까지 로드
   document.addEventListener('click', event => {
     const btn = event.target?.closest?.('[data-driver-tab="perf"]');

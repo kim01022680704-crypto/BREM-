@@ -96,10 +96,27 @@ const BremStorage = (function () {
   let adminPreviewToken = '';
   let adminPreviewRiderId = '';
 
+  function readPreviewDriverId(token) {
+    try {
+      let body = String(token || '').split('.')[1] || '';
+      if (!body) return '';
+      body = body.replace(/-/g, '+').replace(/_/g, '/');
+      while (body.length % 4) body += '=';
+      const json = JSON.parse(atob(body));
+      return String(json?.driverId || '').trim();
+    } catch {
+      return '';
+    }
+  }
+
   function captureAdminPreviewToken() {
     try {
       const token = new URLSearchParams(window.location.search).get('adminPreview') || '';
-      if (token.startsWith('brempreview.')) adminPreviewToken = token;
+      if (token.startsWith('brempreview.')) {
+        adminPreviewToken = token;
+        const driverId = readPreviewDriverId(token);
+        if (driverId) adminPreviewRiderId = driverId;
+      }
     } catch {
       adminPreviewToken = '';
     }
@@ -629,6 +646,9 @@ const BremStorage = (function () {
       if (isPayrollStorageKey(key) && isPayrollLocalStorageMode()) {
         return Promise.reject(new Error('개발 모드에서는 급여명세서를 Supabase에 저장할 수 없습니다.'));
       }
+      if (activeStorageAdapter.type === 'preview') {
+        return activeStorageAdapter.write(key, value);
+      }
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
         if (!isStoragePersistReady()) {
           console.warn('[BREM] Storage persist deferred until Supabase session is ready:', key);
@@ -1097,6 +1117,15 @@ const BremStorage = (function () {
       writeLocalDevJson(KEYS.drivers, list);
       window.BremDataCache?.set?.(KEYS.drivers, list, {
         source: 'local',
+        complete: driversLoadMeta.complete,
+        supabaseTotal: driversLoadMeta.supabaseTotal || list.length
+      });
+      return;
+    }
+    if (activeStorageAdapter.type === 'preview' && activeStorageAdapter.stage) {
+      activeStorageAdapter.stage(KEYS.drivers, list);
+      window.BremDataCache?.set?.(KEYS.drivers, list, {
+        source: 'preview',
         complete: driversLoadMeta.complete,
         supabaseTotal: driversLoadMeta.supabaseTotal || list.length
       });
@@ -3532,6 +3561,14 @@ const BremStorage = (function () {
   }
 
   function stageRiderScopedCache(key, value, meta = {}) {
+    if (key === KEYS.calls) {
+      normalizedCallsCache = null;
+      normalizedCallsSourceRef = null;
+    }
+    if (key === KEYS.rejections) {
+      normalizedRejectionsCache = null;
+      normalizedRejectionsSourceRef = null;
+    }
     if (activeStorageAdapter.stage) {
       activeStorageAdapter.stage(key, value);
     } else {
@@ -3635,7 +3672,7 @@ const BremStorage = (function () {
 
     const timeoutMs = Number(options.timeoutMs) > 0
       ? Number(options.timeoutMs)
-      : DRIVER_FETCH_TIMEOUT_MS;
+      : (adminPreviewToken ? 45000 : DRIVER_FETCH_TIMEOUT_MS);
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = controller
       ? setTimeout(() => controller.abort(), timeoutMs)
@@ -4292,12 +4329,14 @@ const BremStorage = (function () {
   }
 
   async function loadDriverAppBundle(options = {}) {
+    if (adminPreviewToken) options = { ...options, force: true };
     if (driverAppBundlePromise && !options.force) return driverAppBundlePromise;
 
     const run = async () => {
       console.info('[BREM:data] driver load start');
       const riderId = String(
         options.riderId
+        || adminPreviewRiderId
         || activeSupabaseProfile?.rider_id
         || sessionAdapter.read(SESSION_KEYS.driverId, '')
       ).trim();
@@ -4326,7 +4365,7 @@ const BremStorage = (function () {
       }
 
       const force = options.force === true;
-      const cache = window.BremDriverDataCache;
+      const cache = adminPreviewToken ? null : window.BremDriverDataCache;
 
       const snapshotCached = !force && riderId ? cache?.read?.(riderId, 'snapshot') : null;
       const liveCached = !force && riderId ? cache?.read?.(riderId, 'live') : null;

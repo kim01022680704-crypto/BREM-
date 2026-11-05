@@ -903,7 +903,13 @@
           freshDriver = BremStorage.drivers.getById(loadResult.rider.id) || freshDriver;
         }
 
-        refreshDriverDashboard(BremStorage.drivers.getById(driverId) || freshDriver);
+        const readyForRender = BremStorage.drivers.getById(driverId) || freshDriver;
+        if (window.BremStorage?.isAdminAppPreview?.()) {
+          state.currentDriver = readyForRender;
+          renderDriver(readyForRender);
+        } else {
+          refreshDriverDashboard(readyForRender);
+        }
         window.BremDriverPerfCalendar?.render?.();
         const readyDriver = BremStorage.drivers.getById(driverId) || freshDriver;
         if (isRiderAppBlocked(readyDriver)) {
@@ -2570,7 +2576,7 @@
           return;
         }
         showLoggedIn(fetched.driver);
-        void loadDriverAppDataThenRender(fetched.driver, { refreshProfile: false });
+        await loadDriverAppDataThenRender(fetched.driver, { refreshProfile: false, force: true });
       } catch (error) {
         showLoggedOut();
         showToast(error?.message || '기사 앱을 열지 못했습니다.');

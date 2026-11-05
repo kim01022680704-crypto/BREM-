@@ -686,7 +686,7 @@ const BremDriverDetailSearch = (function () {
       const frame = document.createElement('iframe');
       frame.className = 'driver-phone__frame';
       frame.title = driver?.name ? `${driver.name} 기사앱` : '기사앱';
-      frame.src = `driver.html?adminPreview=${encodeURIComponent(previewToken)}`;
+      frame.src = `driver.html?adminPreview=${encodeURIComponent(previewToken)}&appnav=1`;
       screen.replaceChildren(frame);
     } catch (error) {
       screen.innerHTML = `<p class="dphone-note">${escapeHtml(error?.message || '기사 앱을 열지 못했습니다.')}</p>`;

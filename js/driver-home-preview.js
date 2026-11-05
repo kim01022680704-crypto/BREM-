@@ -278,10 +278,14 @@
     }
 
     document.addEventListener('brem-rider-mission-rendered', schedule);
+    document.addEventListener('brem-driver-data-ready', schedule);
+    document.addEventListener('brem-cache-status-changed', schedule);
 
     // 초기 동기화 (로그인 전이면 값이 없다가, 렌더되면 observer가 다시 호출)
     sync();
     setTimeout(sync, 400);
     setTimeout(sync, 1500);
+    setTimeout(sync, 4000);
+    setTimeout(sync, 8000);
   });
 })();
