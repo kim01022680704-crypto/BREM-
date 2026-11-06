@@ -200,12 +200,15 @@
         rawRegion,
         label: labelFor(platform, rowPlatform, rawRegion),
         calls: Number(row.orderCount) || 0,
+        outsideCalls: rowPlatform === 'coupang'
+          ? Math.max(0, Math.round(Number(row.outsideCallCount) || 0))
+          : 0,
         deliveryPay,
         processPay,
         meters,
         distancePay: rowPlatform === 'coupang' ? processPay : 0
       };
-    }).filter(part => part.calls > 0 || part.deliveryPay || part.processPay || part.meters);
+    }).filter(part => part.calls > 0 || part.outsideCalls > 0 || part.deliveryPay || part.processPay || part.meters);
   }
 
   function foldParts(parts, platform) {
@@ -1178,6 +1181,31 @@
       });
       return { name: p.name, color: p.color, calls, pay };
     });
+    const outsideStart = focusWeeks[0];
+    const outsideEnd = addDays(focusWeeks[focusWeeks.length - 1], 6);
+    const outsideParts = settlementParts('coupang', outsideStart, outsideEnd).filter(part => (
+      !trendScope || part.label === trendScope
+    ));
+    const outsideByDay = new Map();
+    outsideParts.forEach(part => {
+      outsideByDay.set(part.day, (outsideByDay.get(part.day) || 0) + part.outsideCalls);
+    });
+    const outsideColor = '#fb923c';
+    const weekOutsideSeries = [{
+      name: '쿠팡 권외콜',
+      color: outsideColor,
+      values: focusWeeks.map(start => {
+        const end = addDays(start, 6);
+        return Math.round(outsideParts.reduce((sum, part) => (
+          part.day >= start && part.day <= end ? sum + part.outsideCalls : sum
+        ), 0));
+      })
+    }];
+    const dayOutsideSeries = [{
+      name: '쿠팡 권외콜',
+      color: outsideColor,
+      values: dayList.map(day => Math.round(outsideByDay.get(day) || 0))
+    }];
     return {
       trendRegion,
       focusStart,
@@ -1196,6 +1224,8 @@
         color: p.color,
         values: dayList.map(d => Math.round(p.pay.get(d) || 0))
       })),
+      weekOutsideSeries,
+      dayOutsideSeries,
       callFmt,
       payFmt
     };
@@ -1204,7 +1234,7 @@
   function printSeries(series) {
     return series.map(item => ({
       ...item,
-      color: item.name === '배민' ? '#1d4ed8' : '#b8860b'
+      color: item.name === '배민' ? '#1d4ed8' : (String(item.name).includes('권외') ? '#c2410c' : '#b8860b')
     }));
   }
 
@@ -1315,6 +1345,18 @@
         sub: `${rangeText} · 일정산 배달비`,
         svg: chartMulti(model.dayLabels, printSeries(model.dayPaySeries), model.payFmt, { height: 250, rotate: true, markTurning: true, padLeft: 78, print: true }),
         height: 250
+      },
+      {
+        title: '주별 쿠팡 권외콜 완료',
+        sub: '최근 5주 · 일정산 권외콜',
+        svg: chartMulti(model.weekLabels, printSeries(model.weekOutsideSeries), model.callFmt, { height: 200, showValues: true, print: true }),
+        height: 200
+      },
+      {
+        title: '일별 쿠팡 권외콜 완료',
+        sub: `${rangeText} · 일정산 권외콜`,
+        svg: chartMulti(model.dayLabels, printSeries(model.dayOutsideSeries), model.callFmt, { height: 220, rotate: true, markTurning: true, print: true }),
+        height: 220
       }
     ];
     const images = await Promise.all(charts.map(chart => loadSvgImage(chart.svg, 860, chart.height)));
@@ -1337,7 +1379,7 @@
     ctx.fillText('BREM  지사데이터 분석', margin + 22, 62);
     ctx.fillStyle = '#1c1917';
     ctx.font = '800 34px "Malgun Gothic", sans-serif';
-    ctx.fillText('콜수 · 배달비', margin + 22, 100);
+    ctx.fillText('콜수 · 배달비 · 쿠팡 권외콜', margin + 22, 100);
     ctx.fillStyle = '#57534e';
     ctx.font = '16px "Malgun Gothic", sans-serif';
     ctx.fillText(`${model.trendRegion}  ·  ${model.focusStart} ~ ${model.focusEnd}  ·  쿠팡 · 배민`, margin + 22, 128);
@@ -1496,7 +1538,7 @@
 
     // 콜수 기준데이터 (2주전~현재) · 쿠팡·배민 한번에
     const focus = focusModel();
-    const { focusStart, focusEnd, weekLabels, weekSeries, weekPaySeries, dayLabels, daySeries, dayPaySeries, callFmt } = focus;
+    const { focusStart, focusEnd, weekLabels, weekSeries, weekPaySeries, dayLabels, daySeries, dayPaySeries, weekOutsideSeries, dayOutsideSeries, callFmt } = focus;
 
     const focusSection = `
       <section class="sa-region">
@@ -1524,6 +1566,14 @@
           <article class="sa-chart-card">
             <div class="sa-chart-card__head"><h3>일간 배달비</h3><span>${focusStart.slice(5).replace('-', '/')} ~ ${focusEnd.slice(5).replace('-', '/')} · 일정산 배달비</span></div>
             ${chartMulti(dayLabels, dayPaySeries, focus.payFmt, { height: 300, rotate: true, markTurning: true, padLeft: 78 })}
+          </article>
+          <article class="sa-chart-card">
+            <div class="sa-chart-card__head"><h3>주별 쿠팡 권외콜 완료</h3><span>최근 5주 · 일정산 권외콜 완료건수</span></div>
+            ${chartMulti(weekLabels, weekOutsideSeries, callFmt, { height: 260, showValues: true })}
+          </article>
+          <article class="sa-chart-card">
+            <div class="sa-chart-card__head"><h3>일별 쿠팡 권외콜 완료</h3><span>${focusStart.slice(5).replace('-', '/')} ~ ${focusEnd.slice(5).replace('-', '/')} · 일정산 권외콜 완료건수</span></div>
+            ${chartMulti(dayLabels, dayOutsideSeries, callFmt, { height: 300, rotate: true, markTurning: true })}
           </article>
         </div>
       </section>`;
