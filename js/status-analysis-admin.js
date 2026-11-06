@@ -4,7 +4,8 @@
     ['current', '현재 현황'],
     ['region', '지역별현황'],
     ['all', '전체현황'],
-    ['trend', '상황추이']
+    ['trend', '상황추이'],
+    ['namgu', '남구 권외']
   ];
 
   // 표 열 정의. value(row) 로 정렬·표시 값을 뽑는다.
@@ -61,6 +62,8 @@
 
   let rangeKey = '';
   let loading = false;
+  let namguLogsReady = false;
+  let namguLogsLoading = false;
 
   function todayIso() { return isoOf(new Date()); }
 
@@ -828,12 +831,12 @@
         <div class="sa-tabs" role="tablist">
           ${VIEWS.map(([id, label]) => `<button type="button" class="sa-tab ${state.view === id ? 'is-on' : ''}" data-sa-view="${id}" data-readonly-allow="true">${label}</button>`).join('')}
         </div>
-        <div class="sa-seg">
+        ${state.view === 'namgu' ? '' : `<div class="sa-seg">
           <button type="button" class="sa-pill ${state.view === 'all' || state.platform === 'coupang' ? 'is-on' : ''}" data-sa-platform="coupang" data-readonly-allow="true">쿠팡</button>
           <button type="button" class="sa-pill ${state.view === 'all' || state.platform === 'baemin' ? 'is-on' : ''}" data-sa-platform="baemin" data-readonly-allow="true">배민</button>
           <button type="button" class="sa-pill ${state.view === 'all' || state.platform === 'all' ? 'is-on' : ''}" data-sa-platform="all" data-readonly-allow="true">합산</button>
-        </div>
-        ${state.view === 'all' || state.platform === 'all' ? '<button type="button" class="sa-bundle-open" data-sa-bundle-open="1" data-readonly-allow="true">지역 묶기</button>' : ''}
+        </div>`}
+        ${state.view !== 'namgu' && (state.view === 'all' || state.platform === 'all') ? '<button type="button" class="sa-bundle-open" data-sa-bundle-open="1" data-readonly-allow="true">지역 묶기</button>' : ''}
         <div class="sa-filters">${extra || ''}</div>
       </div>`;
   }
@@ -1436,6 +1439,224 @@
     saveBytes(pdf, 'application/pdf', `${base}.pdf`);
   }
 
+  function namguFileBranch(fileName) {
+    const name = String(fileName || '').replace(/\s+/g, '');
+    if (!name.includes('남구중앙')) return '';
+    if (name.includes('119')) return '119';
+    if (name.includes('배달연합')) return 'union';
+    return '';
+  }
+
+  function latestNamguLogs(start, end) {
+    const logs = BremStorage.settlementUploadLogs?.getAll?.() || [];
+    const latest = new Map();
+    logs.forEach(log => {
+      if (log.kind && log.kind !== 'daily') return;
+      if (String(log.platform || 'coupang') !== 'coupang') return;
+      if (log.status && log.status !== 'applied') return;
+      const branch = namguFileBranch(log.fileName);
+      if (!branch) return;
+      const day = String(log.period || log.startDate || '').slice(0, 10);
+      if (!day || day < start || day > end) return;
+      const key = `${branch}|${day}`;
+      const prev = latest.get(key);
+      const at = String(log.appliedAt || log.uploadedAt || '');
+      if (prev && String(prev.appliedAt || prev.uploadedAt || '') > at) return;
+      latest.set(key, log);
+    });
+    return latest;
+  }
+
+  function outsideByDriverDay(start, end) {
+    const map = new Map();
+    settlementParts('coupang', start, end).forEach(part => {
+      const key = `${part.driverId}|${part.day}`;
+      map.set(key, (map.get(key) || 0) + part.outsideCalls);
+    });
+    return map;
+  }
+
+  function namguSpan(logs, branch, days, outsideMap) {
+    let calls = 0;
+    let outside = 0;
+    const people = new Set();
+    const outsidePeople = new Set();
+    days.forEach(day => {
+      const log = logs.get(`${branch}|${day}`);
+      const records = Array.isArray(log?.appliedRecords) ? log.appliedRecords : [];
+      const seen = new Set();
+      records.forEach(record => {
+        const count = Number(record.orderCount) || 0;
+        if (count <= 0) return;
+        calls += count;
+        const id = String(record.driverId || '');
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        people.add(id);
+        const out = outsideMap.get(`${id}|${day}`) || 0;
+        outside += out;
+        if (out > 0) outsidePeople.add(id);
+      });
+    });
+    return { calls, outside, people, outsidePeople };
+  }
+
+  function namguCount(span) {
+    return {
+      calls: span.calls,
+      outside: span.outside,
+      people: span.people.size,
+      outsidePeople: span.outsidePeople.size
+    };
+  }
+
+  function namguMerge(spans) {
+    let calls = 0;
+    let outside = 0;
+    const people = new Set();
+    const outsidePeople = new Set();
+    spans.forEach(span => {
+      calls += span.calls;
+      outside += span.outside;
+      span.people.forEach(id => people.add(id));
+      span.outsidePeople.forEach(id => outsidePeople.add(id));
+    });
+    return namguCount({ calls, outside, people, outsidePeople });
+  }
+
+  function namguNum(value) {
+    return Math.round(Number(value) || 0).toLocaleString('ko-KR');
+  }
+
+  function namguPeopleCell(row) {
+    return `<span class="sa-band">${namguNum(row.people)}명<small>권외 ${namguNum(row.outsidePeople)}명</small></span>`;
+  }
+
+  function namguCells(row) {
+    return `<td>${namguNum(row.calls)}</td><td class="sa-out">${namguNum(row.outside)}</td><td>${namguPeopleCell(row)}</td>`;
+  }
+
+  function namguTable(title, rows) {
+    const body = rows.map(row => `
+      <tr>
+        <td class="sa-left">${esc(row.label)}</td>
+        ${namguCells(row.b119)}
+        ${namguCells(row.union)}
+        ${namguCells(row.total)}
+      </tr>`).join('');
+    const total = namguMerge(rows.map(row => row.rawTotal));
+    const foot119 = namguMerge(rows.map(row => row.raw119));
+    const footUnion = namguMerge(rows.map(row => row.rawUnion));
+    return `
+      <section class="sa-region">
+        <div class="sa-region__head"><h3>${esc(title)}</h3></div>
+        <div class="sa-scroll">
+          <table class="sa-table sa-namgu">
+            <thead>
+              <tr>
+                <th class="sa-left" rowspan="2">기간</th>
+                <th colspan="3">119 남구중앙</th>
+                <th colspan="3">배달연합 남구중앙</th>
+                <th colspan="3">전체</th>
+              </tr>
+              <tr>
+                <th>완료</th><th>권외</th><th>사람</th>
+                <th>완료</th><th>권외</th><th>사람</th>
+                <th>완료</th><th>권외</th><th>사람</th>
+              </tr>
+            </thead>
+            <tbody>${body || '<tr><td class="sa-empty" colspan="10">이 기간에 올린 남구 파일이 없습니다.</td></tr>'}</tbody>
+            <tfoot>
+              <tr>
+                <td class="sa-left">합계</td>
+                ${namguCells(foot119)}
+                ${namguCells(footUnion)}
+                ${namguCells(total)}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>`;
+  }
+
+  function namguRows(logs, outsideMap, slots) {
+    return slots.map(slot => {
+      const raw119 = namguSpan(logs, '119', slot.days, outsideMap);
+      const rawUnion = namguSpan(logs, 'union', slot.days, outsideMap);
+      const rawTotal = namguMerge([raw119, rawUnion]);
+      return {
+        label: slot.label,
+        b119: namguCount(raw119),
+        union: namguCount(rawUnion),
+        total: rawTotal,
+        raw119,
+        rawUnion,
+        rawTotal: {
+          calls: rawTotal.calls,
+          outside: rawTotal.outside,
+          people: raw119.people,
+          outsidePeople: raw119.outsidePeople
+        }
+      };
+    }).map(row => {
+      const people = new Set([...row.raw119.people, ...row.rawUnion.people]);
+      const outsidePeople = new Set([...row.raw119.outsidePeople, ...row.rawUnion.outsidePeople]);
+      row.total = {
+        calls: row.raw119.calls + row.rawUnion.calls,
+        outside: row.raw119.outside + row.rawUnion.outside,
+        people: people.size,
+        outsidePeople: outsidePeople.size
+      };
+      row.rawTotal = {
+        calls: row.total.calls,
+        outside: row.total.outside,
+        people,
+        outsidePeople
+      };
+      return row;
+    });
+  }
+
+  function renderNamgu(week) {
+    const weeks = weekOptions();
+    const rangeStart = weeks[0];
+    const rangeEnd = addDays(weeks[weeks.length - 1], 6);
+    const logs = latestNamguLogs(rangeStart, rangeEnd);
+    const outsideMap = outsideByDriverDay(rangeStart, rangeEnd);
+    const weekSlots = weeks.map(start => ({
+      label: weekLabel(start),
+      days: Array.from({ length: 7 }, (_, index) => addDays(start, index))
+    }));
+    const daySlots = Array.from({ length: 7 }, (_, index) => {
+      const day = addDays(week, index);
+      return { label: `${day.slice(5).replace('-', '/')} ${['수', '목', '금', '토', '일', '월', '화'][index]}`, days: [day] };
+    });
+    const weekRows = namguRows(logs, outsideMap, weekSlots);
+    const dayRows = namguRows(logs, outsideMap, daySlots);
+    const weekTotal = weekRows.find(row => row.label === weekLabel(week)) || weekRows[weekRows.length - 1];
+    const cards = weekTotal ? [
+      { label: '전체 완료', value: `${namguNum(weekTotal.total.calls)}콜`, accent: true },
+      { label: '전체 권외', value: `${namguNum(weekTotal.total.outside)}콜` },
+      { label: '전체 사람', value: `${namguNum(weekTotal.total.people)}명`, hint: `권외 ${namguNum(weekTotal.total.outsidePeople)}명` },
+      { label: '119 완료', value: `${namguNum(weekTotal.b119.calls)}콜` },
+      { label: '119 권외', value: `${namguNum(weekTotal.b119.outside)}콜`, hint: `${namguNum(weekTotal.b119.outsidePeople)}명` },
+      { label: '배달연합 완료', value: `${namguNum(weekTotal.union.calls)}콜` },
+      { label: '배달연합 권외', value: `${namguNum(weekTotal.union.outside)}콜`, hint: `${namguNum(weekTotal.union.outsidePeople)}명` }
+    ] : [];
+    const kpis = `<div class="sa-kpis">${cards.map(card => `
+      <div class="sa-kpi${card.accent ? ' sa-kpi--accent' : ''}">
+        <span class="sa-kpi__label">${esc(card.label)}</span>
+        <strong class="sa-kpi__value">${esc(card.value)}</strong>
+        ${card.hint ? `<span class="sa-kpi__hint">${esc(card.hint)}</span>` : ''}
+      </div>`).join('')}</div>`;
+    return `
+      ${controls(weekSelect(true))}
+      <p class="sa-note">119 남구중앙, 배달연합 남구중앙 쿠팡 일정산입니다. 완료는 그 파일 콜수, 권외는 픽업이나 배달이 남구가 아닌 완료건, 사람은 완료가 있는 기사입니다. 사람 아래는 권외가 있는 기사 수입니다. 위 숫자는 선택한 정산주입니다.</p>
+      ${kpis}
+      ${namguTable('주별', weekRows)}
+      ${namguTable(`일별 · ${weekLabel(week)}`, dayRows)}`;
+  }
+
   function renderBody() {
     const platform = state.platform;
     const week = state.view === 'current' ? currentWeek() : (state.weekStart || currentWeek());
@@ -1443,6 +1664,8 @@
     const rows = aggregate(platform, week, end, '');
     const grouped = regionBuckets(platform, week, end);
     const regions = grouped.map(([name]) => name);
+
+    if (state.view === 'namgu') return renderNamgu(week);
 
     if (state.view === 'current') {
       const extra = searchBox();
@@ -1692,6 +1915,22 @@
         .then(() => { rangeKey = key; })
         .catch(error => { rangeKey = key; root.dataset.error = error?.message || ''; })
         .finally(() => { loading = false; render(); });
+      return;
+    }
+    if (state.view === 'namgu' && !namguLogsReady) {
+      root.innerHTML = '<p class="sa-note">남구 업로드 기록을 불러오는 중입니다…</p>';
+      if (namguLogsLoading) return;
+      namguLogsLoading = true;
+      const cached = BremStorage.settlementUploadLogs?.getAll?.() || [];
+      const ready = window.BremDataCache?.isValid?.('brem_admin_settlement_upload_logs') && cached.length;
+      const job = ready
+        ? Promise.resolve()
+        : Promise.resolve(BremStorage.refetchDataKey?.('brem_admin_settlement_upload_logs'));
+      job.catch(() => {}).finally(() => {
+        namguLogsReady = true;
+        namguLogsLoading = false;
+        render();
+      });
       return;
     }
     const activeId = document.activeElement && document.activeElement.id;

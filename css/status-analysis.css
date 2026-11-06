@@ -376,6 +376,9 @@
 }
 .sa-name .sa-sub { color: #6b6b73; font-size: 11px; }
 
+.sa-namgu th { position: static; cursor: default; }
+.sa-namgu td.sa-out { color: #fb923c; font-weight: 800; }
+
 .sa-table tfoot td {
   position: sticky;
   bottom: 0;
