@@ -584,12 +584,22 @@
       }
     }
 
+    const accountLocked = Boolean(driver?.accountEditLocked);
+    ['driverEditBankName', 'driverEditAccountHolder', 'driverEditAccountNumber'].forEach(id => {
+      const input = document.getElementById(id);
+      if (!input) return;
+      input.readOnly = accountLocked;
+      input.title = accountLocked ? '계좌 수정이 잠겨 있습니다.' : '';
+    });
+    const lockNote = document.getElementById('driverAccountLockNote');
+    if (lockNote) lockNote.hidden = !accountLocked;
+
     const accountField = document.getElementById('driverEditAccountNumberField');
     const accountInput = document.getElementById('driverEditAccountNumber');
     if (accountField) accountField.hidden = accountHidden;
     if (accountInput) {
-      accountInput.disabled = accountHidden;
-      accountInput.readOnly = accountHidden;
+      accountInput.disabled = accountHidden || accountLocked;
+      accountInput.readOnly = accountHidden || accountLocked;
       if (accountHidden) accountInput.value = '';
       else accountInput.value = driver.accountNumber || '';
     }
@@ -2290,10 +2300,12 @@
     const residentHidden = BremDriverUtils.isDriverFieldHidden(driver, 'residentNumber');
     const accountHidden = BremDriverUtils.isDriverFieldHidden(driver, 'accountNumber');
 
-    const changes = {
-      bankName: document.getElementById('driverEditBankName').value.trim(),
-      accountHolder: document.getElementById('driverEditAccountHolder').value.trim()
-    };
+    const accountLocked = Boolean(driver.accountEditLocked);
+    const changes = {};
+    if (!accountLocked) {
+      changes.bankName = document.getElementById('driverEditBankName').value.trim();
+      changes.accountHolder = document.getElementById('driverEditAccountHolder').value.trim();
+    }
 
     if (!residentHidden) {
       const residentRaw = document.getElementById('driverEditResidentNumber').value;
@@ -2305,7 +2317,7 @@
       changes.residentNumber = residentNumber;
     }
 
-    if (!accountHidden) {
+    if (!accountHidden && !accountLocked) {
       changes.accountNumber = document.getElementById('driverEditAccountNumber').value.trim();
     }
 

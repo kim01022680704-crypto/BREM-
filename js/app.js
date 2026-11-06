@@ -121,6 +121,27 @@
     }
   }
 
+  function applyAccountLockUi(driver) {
+    const locked = Boolean(driver?.accountEditLocked);
+    [bankNameInput, accountHolderInput, accountNumberInput].forEach(input => {
+      if (!input) return;
+      input.readOnly = locked;
+      input.title = locked ? '계좌 수정이 잠겨 있습니다.' : '';
+    });
+    let note = document.getElementById('accountEditLockNote');
+    if (!note && accountNumberInput) {
+      note = document.createElement('p');
+      note.id = 'accountEditLockNote';
+      note.className = 'form-note form-note--subtle';
+      const section = accountNumberInput.closest('details, .form-section') || accountNumberInput.parentElement;
+      section?.appendChild(note);
+    }
+    if (note) {
+      note.hidden = !locked;
+      note.textContent = '계좌 수정이 잠겨 있습니다. 기사상세검색에서 잠금을 해제해야 은행·예금주·계좌번호를 바꿀 수 있습니다.';
+    }
+  }
+
   function applySensitiveFieldUi(driver) {
     const editing = Boolean(driver?.id);
     SENSITIVE_FIELDS.forEach(field => {
@@ -340,6 +361,7 @@
     passwordInput.value = DEFAULT_DRIVER_PASSWORD;
     configurePasswordFieldForMode(false);
     resetSensitiveFieldUi();
+    applyAccountLockUi(null);
     platformCoupangInput.checked = true;
     platformBaeminInput.checked = false;
     formTitle.textContent = '기사 등록';
@@ -501,6 +523,18 @@
     };
   }
 
+  function keepLockedAccount(data) {
+    const editingId = driverIdInput?.value || '';
+    const driver = editingId ? BremStorage.drivers.getById(editingId) : null;
+    if (!driver?.accountEditLocked) return data;
+    return {
+      ...data,
+      bankName: String(driver.bankName || '').trim(),
+      accountHolder: String(driver.accountHolder || '').trim(),
+      accountNumber: String(driver.accountNumber || '').trim()
+    };
+  }
+
   function validateFormData(data) {
     if (!data.name || !data.phone || !data.password || !data.joinDate || !data.status) {
       showToast('필수 항목을 모두 입력해주세요.');
@@ -559,7 +593,7 @@
   async function handleSubmit(event) {
     event.preventDefault();
 
-    const data = getFormData();
+    const data = keepLockedAccount(getFormData());
     if (!validateFormData(data)) return;
 
     const queryEditId = new URLSearchParams(window.location.search).get('edit');
@@ -660,6 +694,7 @@
     joinDateInput.value = driver.joinDate;
     statusInput.value = driver.status;
     memoInput.value = driver.memo || '';
+    applyAccountLockUi(driver);
     formTitle.textContent = '기사 수정';
     submitBtn.textContent = editSubmitLabel();
     updateLoginIdPreview();

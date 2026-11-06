@@ -6354,6 +6354,7 @@ const BremStorage = (function () {
         selectedMissionIdCoupang: String(next.selectedMissionIdCoupang || '').trim(),
         selectedMissionIdCombined: String(next.selectedMissionIdCombined || '').trim(),
         missionAssignmentLocked: Boolean(next.missionAssignmentLocked),
+        accountEditLocked: Boolean(next.accountEditLocked),
         promotionRuleIdCombined: String(
           next.promotionRuleIdCombined || next.promotionSelectorCombined || next.selectedMissionIdCombined || ''
         ).trim(),
@@ -6779,6 +6780,12 @@ const BremStorage = (function () {
         }
         if ('hiddenFields' in changes) {
           merged.hiddenFields = normalizeHiddenFields(changes.hiddenFields);
+        }
+        if (driver.accountEditLocked && changes.accountEditLocked !== false) {
+          ['bankName', 'accountHolder', 'accountNumber'].forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(changes, key)) merged[key] = driver[key];
+          });
+          merged.accountEditLocked = true;
         }
         return {
           ...merged,

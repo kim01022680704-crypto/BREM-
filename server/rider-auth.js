@@ -735,6 +735,18 @@ async function updateRiderProfile(accessToken, body = {}) {
     raw_data: raw
   };
 
+  if (raw.accountEditLocked && (bankName !== undefined || accountHolder !== undefined || accountNumber !== undefined)) {
+    const nextBank = bankName === undefined ? String(rider.bank_name || '').trim() : String(bankName || '').trim();
+    const nextHolder = accountHolder === undefined ? String(rider.account_holder || '').trim() : String(accountHolder || '').trim();
+    const nextNumber = accountNumber === undefined ? String(rider.account_number || '').trim() : String(accountNumber || '').trim();
+    const changed = nextBank !== String(rider.bank_name || '').trim()
+      || nextHolder !== String(rider.account_holder || '').trim()
+      || nextNumber !== String(rider.account_number || '').trim();
+    if (changed) {
+      return { ok: false, status: 400, error: '계좌 수정이 잠겨 있습니다. 관리자에게 잠금 해제를 요청하세요.' };
+    }
+  }
+
   if (bankName !== undefined) {
     updatePayload.bank_name = String(bankName || '').trim();
     raw.bankName = updatePayload.bank_name;

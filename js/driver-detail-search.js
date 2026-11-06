@@ -384,7 +384,7 @@ const BremDriverDetailSearch = (function () {
         <span>${escapeHtml(driver.status || '근무중')}</span>
         <span>배민ID ${escapeHtml(driver.baeminId || '-')}</span>
         <span>쿠팡ID ${escapeHtml(coupangId(driver) || '-')}</span>
-        <span>계좌 ${escapeHtml(String(driver.bankName || '').trim() || '-')}</span>
+        <span>계좌 ${escapeHtml(String(driver.bankName || '').trim() || '-')}${driver.accountEditLocked ? ' · 수정잠금' : ''}</span>
         <span>계좌번호 ${escapeHtml(String(driver.accountNumber || '').trim() || '-')}</span>
       </div>
       <div class="driver-detail-regions">
@@ -398,6 +398,13 @@ const BremDriverDetailSearch = (function () {
             <small>근무 상태 · 연락처 · 계좌 · 아이디</small>
           </span>
           <em>수정</em>
+        </button>
+        <button type="button" class="driver-detail-mobile-open driver-detail-account-lock${driver.accountEditLocked ? ' is-locked' : ''}" data-driver-detail-account-lock>
+          <span>
+            <b>${driver.accountEditLocked ? '계좌 수정 잠김' : '계좌 수정 잠그기'}</b>
+            <small>${driver.accountEditLocked ? '은행 · 예금주 · 계좌번호 변경 불가' : '누르면 이 기사 계좌를 더 이상 못 바꿉니다'}</small>
+          </span>
+          <em>${driver.accountEditLocked ? '해제' : '잠금'}</em>
         </button>
         <button type="button" class="driver-detail-mobile-open" data-driver-detail-mobile>
           <span>
@@ -699,6 +706,24 @@ const BremDriverDetailSearch = (function () {
     }
   }
 
+  async function toggleAccountLock() {
+    const driver = drivers().find(item => String(item.id || '') === state.selectedId);
+    if (!driver || !window.BremStorage?.drivers?.update) return;
+    const next = !driver.accountEditLocked;
+    const name = String(driver.name || '이 기사').trim();
+    const message = next
+      ? `${name} 계좌 수정을 잠글까요?\n은행, 예금주, 계좌번호가 바뀌지 않습니다.`
+      : `${name} 계좌 수정 잠금을 해제할까요?`;
+    if (!window.confirm(message)) return;
+    try {
+      await Promise.resolve(window.BremStorage.drivers.update(String(driver.id), { accountEditLocked: next }));
+      await window.BremStorage.flushStorage?.();
+    } catch (error) {
+      window.alert(error?.message || '계좌 잠금을 저장하지 못했습니다.');
+    }
+    if (state.selectedId === String(driver.id)) void renderDetail();
+  }
+
   function bind() {
     if (state.bound) return;
     state.bound = true;
@@ -731,6 +756,10 @@ const BremDriverDetailSearch = (function () {
     document.addEventListener('click', event => {
       if (event.target.closest('[data-driver-detail-edit]')) {
         openRiderEdit();
+        return;
+      }
+      if (event.target.closest('[data-driver-detail-account-lock]')) {
+        void toggleAccountLock();
         return;
       }
       if (event.target.closest('[data-driver-detail-mobile]')) {

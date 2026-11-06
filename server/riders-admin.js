@@ -524,6 +524,41 @@ async function getRider(accessToken, riderId) {
   return { ok: true, rider: data };
 }
 
+async function preserveLockedAccountOnUpsert(supabase, row, rider) {
+  const { data: existing } = await queryRidersWithSelectFallback(
+    RIDER_DETAIL_SELECT_VARIANTS,
+    columns => supabase.from('riders').select(columns).eq('id', row.id).maybeSingle()
+  );
+  if (!existing) return row;
+  const stored = existing.raw_data && typeof existing.raw_data === 'object' ? existing.raw_data : {};
+  const wasLocked = Boolean(stored.accountEditLocked);
+  const unlocking = rider && rider.accountEditLocked === false;
+  if (!wasLocked) {
+    if (rider && Object.prototype.hasOwnProperty.call(rider, 'accountEditLocked')) {
+      row.raw_data = { ...(row.raw_data || {}), accountEditLocked: Boolean(rider.accountEditLocked) };
+    }
+    return row;
+  }
+  if (unlocking) {
+    row.raw_data = { ...(row.raw_data || {}), accountEditLocked: false };
+    return row;
+  }
+  const bank = String(existing.bank_name || stored.bankName || '').trim();
+  const holder = String(existing.account_holder || stored.accountHolder || '').trim();
+  const number = String(existing.account_number || stored.accountNumber || '').trim();
+  row.bank_name = bank;
+  row.account_holder = holder;
+  row.account_number = number;
+  row.raw_data = {
+    ...(row.raw_data || {}),
+    bankName: bank,
+    accountHolder: holder,
+    accountNumber: number,
+    accountEditLocked: true
+  };
+  return row;
+}
+
 async function upsertRider(accessToken, rider) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
@@ -543,6 +578,7 @@ async function upsertRider(accessToken, rider) {
     Boolean(rider.passwordExplicit),
     rider.password
   );
+  row = await preserveLockedAccountOnUpsert(supabase, row, rider);
   const { error } = await upsertRiderRowWithFallback(supabase, row);
   if (error) {
     return { ok: false, status: 400, error: error.message || '기사 저장에 실패했습니다.' };

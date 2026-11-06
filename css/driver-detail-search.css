@@ -435,8 +435,17 @@ button.driver-link {
   margin-bottom: 14px;
 }
 
-.driver-detail-actions .driver-detail-edit {
+.driver-detail-actions .driver-detail-edit,
+.driver-detail-actions .driver-detail-account-lock {
   grid-column: 1 / -1;
+}
+
+.driver-detail-account-lock.is-locked {
+  border-color: #c2410c;
+}
+
+.driver-detail-account-lock.is-locked em {
+  color: #c2410c;
 }
 
 .driver-detail-actions .driver-detail-mobile-open {
