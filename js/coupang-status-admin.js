@@ -619,9 +619,16 @@
     }
   }
 
-  function isCoupangOnline(status) {
+  function coupangDuty(status) {
     const compact = String(status || '').replace(/[\s_-]+/g, '').toUpperCase();
-    return compact === 'ONLINE';
+    if (compact === 'ONLINE') return 'run';
+    if (compact === 'IDLE') return 'idle';
+    return '';
+  }
+
+  // 대시보드 운행 숫자는 쿠팡 onLineCount. 그 값은 배달중(ON_LINE)과 대기(IDLE)의 합이다.
+  function isCoupangOnline(status) {
+    return coupangDuty(status) !== '';
   }
 
   function coupangRateLabel(value) {
@@ -650,6 +657,7 @@
       const cancel = Math.max(0, Number(parsed.cancelCount) || 0);
       const denom = complete + reject + cancel;
       const status = String(parsed.edpStatus || '').trim();
+      const duty = coupangDuty(status);
       latest.set(key, {
         at,
         rider: {
@@ -660,6 +668,7 @@
           complete,
           acceptRate: denom > 0 ? (complete / denom) * 100 : null,
           rejectRate: denom > 0 ? (reject / denom) * 100 : null,
+          duty,
           online: isCoupangOnline(status),
           hasStatus: Boolean(status)
         },
@@ -721,6 +730,7 @@
             matchKey: String(row?.matchKey || '').trim(),
             courierId: String(row?.courierId || '').trim(),
             complete: Math.max(0, Number(row?.complete || 0) || 0),
+            duty: row?.duty === 'idle' || row?.duty === 'run' ? row.duty : '',
             acceptRate: row?.acceptRate == null || !Number.isFinite(Number(row.acceptRate)) ? null : Number(row.acceptRate),
             rejectRate: row?.rejectRate == null || !Number.isFinite(Number(row.rejectRate)) ? null : Number(row.rejectRate)
           }))
@@ -780,9 +790,10 @@
     return `<ul class="dashboard-region-riders">${view.filtered.map(({ rider, index }) => {
       const acceptClass = rider.acceptRate == null ? '' : (rider.acceptRate >= 95 ? ' is-good' : ' is-bad');
       const rejectClass = rider.rejectRate == null ? '' : (rider.rejectRate <= 5 ? ' is-good' : ' is-bad');
-      const idLine = rider.matchKey || rider.courierId
-        ? `<small>${esc(rider.matchKey || rider.courierId)}</small>`
-        : '';
+      const dutyLabel = rider.duty === 'idle' ? '대기' : (rider.duty === 'run' ? '배달중' : '');
+      const idText = rider.matchKey || rider.courierId || '';
+      const meta = [dutyLabel, idText].filter(Boolean).join(' · ');
+      const idLine = meta ? `<small>${esc(meta)}</small>` : '';
       return `<li>
         <button type="button" class="dashboard-region-rider" data-dashboard-coupang-rider="${esc(vendorId)}" data-dashboard-coupang-index="${index}">
           <span class="dashboard-region-rider__name">${esc(rider.name)}${idLine}</span>
@@ -820,6 +831,11 @@
     const view = filterCoupangOperatingRiders(riders);
     const sortLabel = view.sort === 'calls' ? '콜 많은 순' : '가나다순';
     const head = bag.statusKnown === false ? '오늘 콜' : '운행중';
+    const runCount = riders.filter(rider => rider.duty === 'run').length;
+    const idleCount = riders.filter(rider => rider.duty === 'idle').length;
+    const dutyText = (runCount || idleCount)
+      ? ` · 배달중 ${n(runCount)} · 대기 ${n(idleCount)}`
+      : '';
     if (summary) {
       if (!riders.length) {
         summary.textContent = bag.statusKnown === false
@@ -827,10 +843,10 @@
           : '지금 운행중인 기사가 없습니다.';
       } else if (view.query) {
         summary.textContent = view.filtered.length
-          ? `${head} ${n(riders.length)}명 중 ${n(view.filtered.length)}명 · ${sortLabel}`
+          ? `${head} ${n(riders.length)}명 중 ${n(view.filtered.length)}명${dutyText} · ${sortLabel}`
           : `${head} ${n(riders.length)}명 중 검색 결과 없음`;
       } else {
-        summary.textContent = `${head} ${n(riders.length)}명 · ${sortLabel} · 기사를 누르면 상세가 열립니다.`;
+        summary.textContent = `${head} ${n(riders.length)}명${dutyText} · ${sortLabel} · 기사를 누르면 상세가 열립니다.`;
       }
     }
     body.innerHTML = renderCoupangRegionRiderList(id, riders);

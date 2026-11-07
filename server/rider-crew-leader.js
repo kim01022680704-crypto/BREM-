@@ -46,7 +46,8 @@ function isDrivingStatus(statusDesc) {
 function isCoupangDrivingStatus(edpStatus) {
   const compact = String(edpStatus || '').replace(/[\s_-]+/g, '').toUpperCase();
   if (!compact) return false;
-  return compact === 'ONLINE';
+  // 쿠팡 운행(onLineCount)은 배달중(ON_LINE)과 대기(IDLE)를 같이 센다.
+  return compact === 'ONLINE' || compact === 'IDLE';
 }
 
 function normalizeBaeminUserId(value) {
@@ -504,7 +505,7 @@ async function loadBaeminLiveByRiders(supabase, riders) {
 
 /**
  * 쿠팡 라이더일일(rider_daily)에서 운행중·오늘완료콜 매칭
- * edpStatus: ON_LINE / OFF_LINE / IDLE
+ * edpStatus: ON_LINE·IDLE 은 운행중, OFF_LINE 은 운행종료
  */
 async function loadCoupangLiveByRiders(supabase, riders) {
   const result = new Map();

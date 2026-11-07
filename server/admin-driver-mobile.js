@@ -16,7 +16,8 @@ function isDrivingStatus(statusDesc) {
 
 function isCoupangDrivingStatus(edpStatus) {
   const compact = String(edpStatus || '').replace(/[\s_-]+/g, '').toUpperCase();
-  return compact === 'ONLINE';
+  // 쿠팡 운행(onLineCount)은 배달중(ON_LINE)과 대기(IDLE)를 같이 센다.
+  return compact === 'ONLINE' || compact === 'IDLE';
 }
 
 function baeminIdVariants(value) {
