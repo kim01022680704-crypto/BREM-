@@ -1704,9 +1704,9 @@ window.BremSupabaseStorageAdapter = (function () {
       }
     }
 
-    async function persistWeeklySettlements(value) {
-      await persistTableCollection('weekly_settlements', keys.weeklySettlements, value, item => Mapper().weeklySettlementRecordToRow(item));
-      if (!isLocalReadOnlySupabase()) {
+    async function persistWeeklySettlements(value, options = {}) {
+      await persistTableCollection('weekly_settlements', keys.weeklySettlements, value, item => Mapper().weeklySettlementRecordToRow(item), options);
+      if (!isLocalReadOnlySupabase() && !options.incrementalRows?.length) {
         try {
           await client.from('settings').delete().eq('key', keys.weeklySettlements);
         } catch (error) {
@@ -1737,13 +1737,22 @@ window.BremSupabaseStorageAdapter = (function () {
       }
     }
 
-    async function persistPromotionApplyResults(value) {
+    async function persistPromotionApplyResults(value, options = {}) {
       if (!(await probeTable('promotion_apply_results'))) {
         await persistSetting(keys.promotionApplyResults, value);
         return;
       }
-      const rows = (value || []).map(item => Mapper().promotionApplyResultToRow(item)).filter(row => row.id);
+      // [동시작업] 증분 저장이면 이번에 만진 결과만 업서트해 남의 결과를 덮지 않는다.
+      const incremental = Array.isArray(options.incrementalRows) ? options.incrementalRows : null;
+      const source = incremental?.length ? incremental : (value || []);
+      const rows = source.map(item => Mapper().promotionApplyResultToRow(item)).filter(row => row.id);
       await upsertRowsInChunks('promotion_apply_results', rows);
+      const deletedRowIds = Array.isArray(options.deletedRowIds)
+        ? options.deletedRowIds.map(id => String(id || '').trim()).filter(Boolean)
+        : [];
+      if (deletedRowIds.length) {
+        await deleteRowsInChunks('promotion_apply_results', deletedRowIds);
+      }
       setCache(keys.promotionApplyResults, value);
       loadedTableKeys.add(keys.promotionApplyResults);
       window.BremDataCache?.set?.(keys.promotionApplyResults, value, { source: 'write', tableLoaded: true });
@@ -1754,6 +1763,38 @@ window.BremSupabaseStorageAdapter = (function () {
       if (!targetId) return;
       if (!(await probeTable('promotion_apply_results'))) return;
       await deleteRowsInChunks('promotion_apply_results', [targetId]);
+    }
+
+    // [동시작업] egress 최소화용 가벼운 변경 신호. 행 전체를 받지 않고
+    // "총 개수 + 가장 최근 updated_at" 한 줄만 읽어 revision 문자열을 만든다.
+    // 이 값이 바뀌었을 때만 호출부가 전체 목록을 다시 받는다.
+    async function fetchOperationTableRevision(tableName) {
+      if (isLocalReadOnlySupabase()) return null;
+      const table = String(tableName || '').trim();
+      if (!table) return null;
+      if (!(await probeTable(table))) return null;
+      const { data, count, error } = await client
+        .from(table)
+        .select('updated_at', { count: 'exact' })
+        .order('updated_at', { ascending: false })
+        .limit(1);
+      if (error) throw error;
+      const latest = Array.isArray(data) && data[0] ? (data[0].updated_at || '') : '';
+      return `${count ?? 0}:${latest || ''}`;
+    }
+
+    // [동시작업] settings 블롭 키(직계약 주정산서 등)의 변경 신호. updated_at만 읽는다.
+    async function fetchSettingRevision(key) {
+      if (isLocalReadOnlySupabase()) return null;
+      const settingKey = String(key || '').trim();
+      if (!settingKey) return null;
+      const { data, error } = await client
+        .from('settings')
+        .select('updated_at')
+        .eq('key', settingKey)
+        .maybeSingle();
+      if (error) throw error;
+      return data ? (data.updated_at || '') : '';
     }
 
     async function loadNotices(options = {}) {
@@ -2395,13 +2436,13 @@ window.BremSupabaseStorageAdapter = (function () {
       } else if (key === keys.settlements) {
         await persistDailySettlements(value, options);
       } else if (key === keys.weeklySettlements) {
-        await persistWeeklySettlements(value);
+        await persistWeeklySettlements(value, options);
       } else if (key === keys.settlementUploadLogs) {
         await persistSettlementUploadLogs(value, options);
       } else if (key === keys.settlementUnmatched) {
         await persistSettlementUnmatched(value, options);
       } else if (key === keys.promotionApplyResults) {
-        await persistPromotionApplyResults(value);
+        await persistPromotionApplyResults(value, options);
       } else {
         const backed = TABLE_BACKED_KEYS.find(config => config.key === key);
         if (backed) {
@@ -2504,6 +2545,8 @@ window.BremSupabaseStorageAdapter = (function () {
       deleteRider,
       deleteTableRow,
       deletePromotionApplyResultById,
+      fetchOperationTableRevision,
+      fetchSettingRevision,
       upsertMission,
       upsertRider,
       stage,

@@ -325,7 +325,9 @@ window.BremSupabaseMapper = (function () {
       summary: record.summary && typeof record.summary === 'object' ? record.summary : {},
       riders: Array.isArray(record.riders) ? record.riders : [],
       uploaded_at: toIso(record.uploadedAt),
-      updated_at: toIso(record.uploadedAt)
+      // [동시작업] 자동 최신화의 변경 감지(revision)가 수정 저장도 잡아내도록,
+      // 최초 업로드 시각이 아니라 마지막 저장 시각을 기록한다.
+      updated_at: new Date().toISOString()
     };
   }
 

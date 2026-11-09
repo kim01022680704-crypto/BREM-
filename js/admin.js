@@ -2980,6 +2980,7 @@
     startAdminSessionSecurity();
     window.BremSessionSecurity?.touchActivity?.();
     startInquiryWatch();
+    startSettlementCollabWatch();
 
     const loadPromise = (async () => {
       const core = await (BremStorage.hydrateAdminDataInBackground?.() || Promise.resolve({ ok: true }));
@@ -4557,6 +4558,73 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         void watchNewRiderInquiries({ announce: false });
+      }
+    });
+  }
+
+  // [동시작업] 주정산서/프로모션 화면을 여러 명이 지역별로 나눠 작업할 때,
+  // 새로고침 없이 서로의 저장이 보이도록 가벼운 revision 폴링으로 변경만 감지해 다시 그린다.
+  let settlementWatchTimer = null;
+  let settlementWatchBusy = false;
+  let lastLocalSettlementWriteAt = 0;
+  const settlementRevisions = {};
+  document.addEventListener('brem-settlement-local-write', () => {
+    lastLocalSettlementWriteAt = Date.now();
+  });
+
+  function settlementCollabKindFor(sectionId) {
+    if (sectionId === 'weekly-settlement') return 'weekly-bro';
+    if (sectionId === 'weekly-settlement-direct') return 'weekly-direct';
+    if (sectionId === 'promotion-apply') return 'promotion';
+    return null;
+  }
+
+  function refreshSettlementCollabSection(kind) {
+    if (kind === 'weekly-bro') {
+      if (typeof BremWeeklySettlementAdmin !== 'undefined') BremWeeklySettlementAdmin.refresh('bro');
+    } else if (kind === 'weekly-direct') {
+      if (typeof BremWeeklySettlementAdmin !== 'undefined') BremWeeklySettlementAdmin.refresh('direct');
+    } else if (kind === 'promotion') {
+      if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
+    }
+  }
+
+  async function watchSettlementCollab({ announce = true } = {}) {
+    if (settlementWatchBusy) return;
+    if (document.visibilityState !== 'visible') return;
+    const kind = settlementCollabKindFor(state.currentSection);
+    if (!kind) return;
+    settlementWatchBusy = true;
+    try {
+      const rev = await BremStorage.fetchSettlementCollabRevision?.(kind);
+      if (rev == null) return; // supabase 아님/조회 실패 → 조용히 패스
+      const prev = settlementRevisions[kind];
+      settlementRevisions[kind] = rev;
+      if (prev === undefined) return; // 첫 관측은 기준선만 잡는다 (불필요한 토스트 방지)
+      if (prev === rev) return;       // 변경 없음 → 전체 목록을 받지 않는다 (egress 절감)
+      await BremStorage.reloadSettlementCollabData?.(kind);
+      // 재조회 동안 사용자가 다른 섹션으로 옮겼으면 다시 그리지 않는다.
+      if (settlementCollabKindFor(state.currentSection) !== kind) return;
+      refreshSettlementCollabSection(kind);
+      // 내 저장으로 생긴 변경이면 조용히 반영만 하고 토스트는 띄우지 않는다.
+      const selfRecent = Date.now() - lastLocalSettlementWriteAt < 25000;
+      if (announce && !selfRecent) showToast('다른 사용자의 정산 변경이 반영됐습니다.');
+    } catch {
+      /* 폴링 실패는 무시 */
+    } finally {
+      settlementWatchBusy = false;
+    }
+  }
+
+  function startSettlementCollabWatch() {
+    if (settlementWatchTimer) return;
+    void watchSettlementCollab({ announce: false });
+    settlementWatchTimer = window.setInterval(() => {
+      void watchSettlementCollab({ announce: true });
+    }, 15000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        void watchSettlementCollab({ announce: true });
       }
     });
   }
@@ -8236,6 +8304,13 @@
     }
 
     state.currentSection = sectionId;
+    // [동시작업] 섹션 진입 시 진입 로직이 이미 최신 데이터를 받으므로, 폴링 기준선을
+    // 비워 다음 틱에 다시 잡게 한다. (재진입 시 가짜 "변경됨" 토스트/이중 리프레시 방지)
+    const enteringCollabKind = settlementCollabKindFor(sectionId);
+    if (enteringCollabKind) {
+      delete settlementRevisions[enteringCollabKind];
+      window.setTimeout(() => { void watchSettlementCollab({ announce: false }); }, 1500);
+    }
     updateDriverSearchBarVisibility(sectionId);
     $$('.section').forEach(section => section.classList.toggle('active', section.id === sectionId));
     $$('.nav-btn').forEach(button => button.classList.toggle('active', button.dataset.section === sectionId));

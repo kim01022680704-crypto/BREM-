@@ -3935,6 +3935,91 @@ const BremStorage = (function () {
     return riderApiFetch(`/api/rider/inquiries/revision?t=${Date.now()}`, 'rider-inquiries-revision');
   }
 
+  // [동시작업] 주정산/프로모션 화면이 egress를 아끼며 변경 여부만 확인하도록,
+  // 운영 테이블의 가벼운 revision(개수+최신 updated_at)을 반환한다.
+  // supabase 어댑터가 아니면(로컬 등) null → 호출부 폴링은 아무 것도 안 한다.
+  async function fetchOperationTableRevision(table) {
+    if (activeStorageAdapter?.type !== 'supabase') return null;
+    if (typeof activeStorageAdapter.fetchOperationTableRevision !== 'function') return null;
+    try {
+      return await activeStorageAdapter.fetchOperationTableRevision(table);
+    } catch (error) {
+      console.warn('[BREM] operation table revision fetch failed:', table, error?.message || error);
+      return null;
+    }
+  }
+
+  async function fetchSettingRevisionValue(key) {
+    if (activeStorageAdapter?.type !== 'supabase') return null;
+    if (typeof activeStorageAdapter.fetchSettingRevision !== 'function') return null;
+    try {
+      return await activeStorageAdapter.fetchSettingRevision(key);
+    } catch (error) {
+      console.warn('[BREM] setting revision fetch failed:', key, error?.message || error);
+      return null;
+    }
+  }
+
+  // [동시작업] 섹션별로 묶은 가벼운 변경 신호. 한 문자열로 합쳐 호출부가 비교만 하면 된다.
+  // kind: 'weekly-bro' | 'weekly-direct' | 'promotion'
+  async function fetchSettlementCollabRevision(kind) {
+    if (activeStorageAdapter?.type !== 'supabase') return null;
+    try {
+      if (kind === 'weekly-bro') {
+        return `wb:${await fetchOperationTableRevision('weekly_settlements')}`;
+      }
+      if (kind === 'weekly-direct') {
+        return `wd:${await fetchSettingRevisionValue(KEYS.weeklySettlementsDirect)}`;
+      }
+      if (kind === 'promotion') {
+        const [pr, wb, wd] = await Promise.all([
+          fetchOperationTableRevision('promotion_apply_results'),
+          fetchOperationTableRevision('weekly_settlements'),
+          fetchSettingRevisionValue(KEYS.weeklySettlementsDirect)
+        ]);
+        return `pr:${pr}|wb:${wb}|wd:${wd}`;
+      }
+    } catch (error) {
+      console.warn('[BREM] settlement collab revision failed:', kind, error?.message || error);
+    }
+    return null;
+  }
+
+  // [동시작업] 변경이 감지됐을 때만 해당 섹션 데이터를 최신으로 다시 받는다.
+  async function reloadSettlementCollabData(kind) {
+    if (activeStorageAdapter?.type !== 'supabase') return;
+    const tableKeys = [];
+    const settingKeys = [];
+    if (kind === 'weekly-bro') {
+      tableKeys.push(KEYS.weeklySettlements);
+    } else if (kind === 'weekly-direct') {
+      settingKeys.push(KEYS.weeklySettlementsDirect);
+    } else if (kind === 'promotion') {
+      tableKeys.push(KEYS.promotionApplyResults, KEYS.weeklySettlements);
+      settingKeys.push(KEYS.weeklySettlementsDirect);
+    }
+    const tasks = [];
+    if (tableKeys.length && typeof activeStorageAdapter.ensureKeysLoaded === 'function') {
+      tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeys, { force: true }));
+    }
+    settingKeys.forEach(key => {
+      if (typeof activeStorageAdapter.reloadSettingKey === 'function') {
+        tasks.push(activeStorageAdapter.reloadSettingKey(key).catch(error => {
+          console.warn('[BREM] setting reload failed:', key, error?.message || error);
+        }));
+      }
+    });
+    await Promise.all(tasks);
+  }
+
+  // [동시작업] 이 탭이 정산/프로모션을 저장하면 revision이 바뀌어 자기 폴링이
+  // "다른 사용자 변경" 토스트를 띄우는 문제를 막기 위해, 로컬 쓰기를 알린다.
+  function notifyLocalSettlementWrite() {
+    try {
+      document.dispatchEvent(new CustomEvent('brem-settlement-local-write'));
+    } catch (_) { /* 이벤트 실패 무시 */ }
+  }
+
   async function fetchRiderInquiriesFromServer() {
     return riderApiFetch(`/api/rider/inquiries?t=${Date.now()}`, 'rider-inquiries');
   }
@@ -12233,7 +12318,23 @@ const BremStorage = (function () {
       }
       const list = weeklySettlements.getAll(next.channel).filter(item => item.id !== next.id);
       list.unshift(next);
-      storageAdapter.write(key, list);
+      // [동시작업] 지역별로 여러 명이 동시에 정산할 때, 내 화면 목록 전체를 올리면
+      // 내 사본이 오래된 경우 남이 방금 고친 다른 지역 행을 옛 값으로 덮을 수 있다.
+      if (next.channel === 'direct') {
+        // 직계약 주정산서는 settings JSON 블롭이라 증분 업서트가 안 먹는다.
+        // 서버 최신 블롭 위에 이번 지역 행만 다시 얹는(rebase) 방식으로 남의 지역을 보존한다.
+        storageAdapter.write(key, list, {
+          rebaseOps: [(current) => {
+            const arr = Array.isArray(current) ? current.filter(item => item && item.id !== next.id) : [];
+            arr.unshift(next);
+            return arr;
+          }]
+        });
+      } else {
+        // 지사 주정산서는 weekly_settlements 테이블이라 이번에 만진 행(next) 하나만 증분 업서트한다.
+        storageAdapter.write(key, list, { incrementalRows: [next] });
+      }
+      notifyLocalSettlementWrite();
       return next;
     },
 
@@ -12242,12 +12343,23 @@ const BremStorage = (function () {
         const before = weeklySettlements.getAll(ch);
         const next = before.filter(item => item.id !== id);
         if (next.length === before.length) return;
+        if (ch === 'direct') {
+          // [동시작업] 직계약은 settings 블롭이라, 전체를 다시 올리면 그 사이 저장된
+          // 다른 지역이 지워진다. 서버 최신 블롭에서 이 id만 제거하는 rebase로 처리한다.
+          storageAdapter.write(weeklySettlementsKey(ch), next, {
+            allowEmpty: true,
+            rebaseOps: [(current) => (Array.isArray(current) ? current.filter(item => item && item.id !== id) : [])]
+          });
+          notifyLocalSettlementWrite();
+          return;
+        }
         // 마지막 정산서를 지우면 빈 배열이 된다. allowEmpty 없이 쓰면
         // 데이터 보호가 막아 Supabase에 삭제가 안 남고 새로고침 때 되살아난다.
         storageAdapter.write(weeklySettlementsKey(ch), next, {
           allowEmpty: true,
           deletedRowIds: [id]
         });
+        notifyLocalSettlementWrite();
       };
       if (channel === 'direct' || channel === 'bro') {
         writeRemoved(channel);
@@ -12924,8 +13036,11 @@ const BremStorage = (function () {
       const next = normalizePromotionApplyResult(record);
       const list = promotionApplyResults.readRaw().filter(item => item.id !== next.id);
       list.unshift(next);
-      storageAdapter.write(KEYS.promotionApplyResults, list);
+      // [동시작업] 전체 목록을 올리면 오래된 사본이 남의 최근 결과를 덮을 수 있어,
+      // 이번에 저장한 결과(next) 한 건만 증분 업서트한다.
+      storageAdapter.write(KEYS.promotionApplyResults, list, { incrementalRows: [next] });
       window.BremDataCache?.set?.(KEYS.promotionApplyResults, list, { source: 'write' });
+      notifyLocalSettlementWrite();
       return next;
     },
 
@@ -12933,6 +13048,7 @@ const BremStorage = (function () {
       const list = promotionApplyResults.readRaw().filter(item => item.id !== id);
       storageAdapter.write(KEYS.promotionApplyResults, list);
       window.BremDataCache?.set?.(KEYS.promotionApplyResults, list, { source: 'write' });
+      notifyLocalSettlementWrite();
       if (activeStorageAdapter.deletePromotionApplyResultById) {
         void activeStorageAdapter.deletePromotionApplyResultById(id).catch(error => {
           console.error('[BREM] promotion apply result delete failed:', error);
@@ -16378,6 +16494,9 @@ const BremStorage = (function () {
     saveRiderMaintenanceLog,
     saveRiderMaintenanceExpense,
     fetchRiderInquiryRevision,
+    fetchOperationTableRevision,
+    fetchSettlementCollabRevision,
+    reloadSettlementCollabData,
     fetchRiderInquiriesFromServer,
     submitRiderInquiryToServer,
     ackRiderInquiryOnServer,
