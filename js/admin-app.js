@@ -134,15 +134,8 @@
 
   function rememberInquiries(list) {
     const incoming = Array.isArray(list) ? list : [];
-    const previous = new Map((inquiryListCache || []).map(item => [String(item.id), item]));
-    inquiryListCache = incoming.map(item => {
-      const older = previous.get(String(item.id));
-      if (!older || older.status !== 'done' || item.status === 'done') return item;
-      const olderAt = Date.parse(older.updatedAt || '') || 0;
-      const incomingAt = Date.parse(item.updatedAt || '') || 0;
-      if (item.updatedAt && incomingAt >= olderAt) return item;
-      return { ...item, status: older.status, updatedAt: older.updatedAt || item.updatedAt };
-    });
+    const merge = window.BremRiderInquiryApi?.mergeInquiryLists;
+    inquiryListCache = merge ? merge(inquiryListCache, incoming) : incoming;
     return inquiryListCache;
   }
 
@@ -572,36 +565,18 @@
     });
   }
 
-  const SEEN_KEY = 'brem_seen_rider_inquiry_ids';
-
-  function readSeen() {
-    try {
-      const parsed = JSON.parse(sessionStorage.getItem(SEEN_KEY) || '[]');
-      return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
-    } catch {
-      return new Set();
-    }
-  }
-
-  function writeSeen(ids) {
-    try {
-      sessionStorage.setItem(SEEN_KEY, JSON.stringify([...ids]));
-    } catch {
-      /* ignore */
-    }
-  }
+  let inquiryWatchBusy = false;
 
   async function watchInquiries() {
+    if (inquiryWatchBusy) return;
+    inquiryWatchBusy = true;
     try {
       const before = inquiryListCache.slice();
       const list = await loadInquiries();
       const fresh = list.filter(item => item.status === 'new');
       updateInquiryBadge(fresh.length);
       if ($('adminAppStatInquiry')) $('adminAppStatInquiry').textContent = String(fresh.length);
-      const seen = readSeen();
-      const unseen = fresh.filter(item => !seen.has(String(item.id)));
-      fresh.forEach(item => seen.add(String(item.id)));
-      writeSeen(seen);
+      const unseen = window.BremRiderInquiryApi?.freshInquiryAlerts?.(list) || [];
       const inquiryPanel = document.querySelector('[data-admin-app-panel="inquiry"]');
       const popup = $('adminInquiryPopup');
       if ((inquiryPanel && !inquiryPanel.hidden) || (popup && popup.dataset.motionOpen === '1')) {
@@ -638,13 +613,18 @@
       }
     } catch {
       /* ignore */
+    } finally {
+      inquiryWatchBusy = false;
     }
   }
 
   function startInquiryWatch() {
     if (inquiryWatchTimer) return;
     void watchInquiries();
-    inquiryWatchTimer = window.setInterval(() => void watchInquiries(), 8000);
+    inquiryWatchTimer = window.setInterval(() => void watchInquiries(), 10000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void watchInquiries();
+    });
   }
 
   async function login(event) {

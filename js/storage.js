@@ -575,12 +575,13 @@ const BremStorage = (function () {
     if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.enqueuePersist) return;
     const guard = window.BremStorageGuard;
     const productionServerKeys = new Set([KEYS.drivers, KEYS.missions]);
+    // 라이더 문의는 /api/rider-inquiries 만 저장한다.
+    // 브라우저에 남아 있는 목록을 통째로 올리면 답장이 지워지고, 삭제한 예전 문의가 다시 생긴다.
     const persistKeys = [
       KEYS.drivers,
       KEYS.notices,
       KEYS.missions,
       KEYS.promotionRules,
-      KEYS.riderInquiries,
       KEYS.leaseVehicles,
       KEYS.leaseContracts,
       KEYS.leasePayments,
@@ -3930,8 +3931,12 @@ const BremStorage = (function () {
     });
   }
 
+  async function fetchRiderInquiryRevision() {
+    return riderApiFetch(`/api/rider/inquiries/revision?t=${Date.now()}`, 'rider-inquiries-revision');
+  }
+
   async function fetchRiderInquiriesFromServer() {
-    return riderApiFetch('/api/rider/inquiries', 'rider-inquiries');
+    return riderApiFetch(`/api/rider/inquiries?t=${Date.now()}`, 'rider-inquiries');
   }
 
   async function submitRiderInquiryToServer(payload = {}) {
@@ -16372,6 +16377,7 @@ const BremStorage = (function () {
     saveRiderMaintenanceBike,
     saveRiderMaintenanceLog,
     saveRiderMaintenanceExpense,
+    fetchRiderInquiryRevision,
     fetchRiderInquiriesFromServer,
     submitRiderInquiryToServer,
     ackRiderInquiryOnServer,

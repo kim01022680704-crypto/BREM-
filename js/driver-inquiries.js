@@ -13,6 +13,9 @@
 
   const HINT_APP = '문의내용 남기면 확인후 차례대로 답변이나 전화드리겠습니다.\n확인할경우 확인중이라고 테그가 바뀝니다.';
   const ALERT_KEY = 'brem_rider_inquiry_alerts';
+  const ALERT_AT_KEY = 'brem_rider_inquiry_alert_at';
+  const ALERT_WINDOW_MS = 15 * 60 * 1000;
+  const ALERT_KEEP = 300;
 
   const state = {
     open: false,
@@ -89,43 +92,79 @@
   function writeAlertSeen(seen) {
     try {
       localStorage.setItem(ALERT_KEY, JSON.stringify({
-        read: [...seen.read],
-        reply: [...seen.reply]
+        read: [...seen.read].slice(-ALERT_KEEP),
+        reply: [...seen.reply].slice(-ALERT_KEEP)
       }));
     } catch {
       /* ignore */
     }
   }
 
-  function replyKey(item) {
-    return `${item.id}:${String(item.adminReply || '')}:${String(item.adminRepliedAt || '')}`;
+  function replyToken(item) {
+    return `${item.id}|${item.adminRepliedAt || 'reply'}`;
+  }
+
+  function readAlertSince() {
+    try {
+      return Number(localStorage.getItem(ALERT_AT_KEY) || 0) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function writeAlertSince(now) {
+    try {
+      localStorage.setItem(ALERT_AT_KEY, String(now));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function isRecentAlert(timestamp, since, now) {
+    if (!timestamp) return false;
+    if (now - timestamp <= ALERT_WINDOW_MS) return true;
+    return Boolean(since && timestamp + 2000 >= since);
   }
 
   function collectAlerts(list, announce) {
     const seen = readAlertSeen();
+    const now = Date.now();
+    const since = readAlertSince();
     const alerts = [];
     (list || []).forEach(item => {
       const id = String(item.id || '');
       if (!id) return;
-      const hasReply = Boolean(item.adminReply);
-      if (hasReply) {
-        const key = replyKey(item);
-        if (!seen.reply.has(key)) {
-          if (announce) alerts.push({ kind: 'reply', id });
-          seen.reply.add(key);
-        }
+      const reply = String(item.adminReply || '').trim();
+      const handled = item.status === 'done' || replySeen(item);
+      if (handled) {
+        seen.read.add(id);
+        if (reply) seen.reply.add(replyToken(item));
+        return;
       }
-      if (item.status === 'read' || item.status === 'done' || hasReply) {
-        if (!seen.read.has(id)) {
-          if (announce && !hasReply && item.status === 'read') {
-            alerts.push({ kind: 'read', id });
-          }
+      if (reply) {
+        const token = replyToken(item);
+        if (seen.reply.has(token)) {
           seen.read.add(id);
+          return;
         }
+        const repliedAt = Date.parse(item.adminRepliedAt || item.updatedAt || '') || 0;
+        const recent = isRecentAlert(repliedAt, since, now);
+        if (announce && recent) alerts.push({ kind: 'reply', id, at: repliedAt });
+        if (!recent || announce) seen.reply.add(token);
+        seen.read.add(id);
+        return;
+      }
+      if (item.status === 'read' && !seen.read.has(id)) {
+        const updated = Date.parse(item.updatedAt || '') || 0;
+        const recent = isRecentAlert(updated, since, now);
+        if (announce && recent) alerts.push({ kind: 'read', id, at: updated });
+        if (!recent || announce) seen.read.add(id);
       }
     });
     writeAlertSeen(seen);
-    return alerts;
+    if (announce) writeAlertSince(now);
+    alerts.sort((a, b) => b.at - a.at);
+    return alerts.slice(0, 3);
   }
 
   function showMotion(popupEl) {
@@ -244,7 +283,29 @@
 
   async function syncInquiries({ announce = false, toastOnError = false } = {}) {
     if (!window.BremStorage?.fetchRiderInquiriesFromServer) return;
-    const result = await window.BremStorage.fetchRiderInquiriesFromServer();
+    if (state.syncing) return;
+    state.syncing = true;
+    let result;
+    let unchanged = false;
+    try {
+      const rev = await window.BremStorage.fetchRiderInquiryRevision?.();
+      const revision = String(rev?.revision || '');
+      if (rev?.ok && revision && state.revision && revision === state.revision) {
+        unchanged = true;
+      } else {
+        result = await window.BremStorage.fetchRiderInquiriesFromServer();
+        if (result?.ok && revision) state.revision = revision;
+      }
+    } finally {
+      state.syncing = false;
+    }
+    if (unchanged) {
+      const shouldAnnounce = announce && state.watchSeeded;
+      const alerts = collectAlerts(state.inquiries, shouldAnnounce);
+      if (!state.watchSeeded) state.watchSeeded = true;
+      if (shouldAnnounce) queueInquiryAlerts(alerts);
+      return;
+    }
     if (!result?.ok) {
       if (toastOnError) showToast(result?.message || '문의 내역을 불러오지 못했습니다.');
       return;
@@ -323,12 +384,15 @@
 
   function startPoll() {
     stopPoll();
+    if (state.watchTimer || state.watchStarting) return;
     state.pollTimer = window.setInterval(() => {
-      if (state.open) void loadHistory();
-    }, 20000);
+      if (state.open) void syncInquiries({ announce: false, toastOnError: false });
+    }, 15000);
   }
 
   function stopWatch() {
+    state.watchGeneration = (state.watchGeneration || 0) + 1;
+    state.watchStarting = false;
     if (state.watchTimer) {
       window.clearInterval(state.watchTimer);
       state.watchTimer = null;
@@ -336,11 +400,26 @@
   }
 
   function startWatch() {
-    if (state.watchTimer) return;
+    if (state.watchTimer || state.watchStarting) return;
+    if (!state.watchVisibilityBound) {
+      state.watchVisibilityBound = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') void syncInquiries({ announce: false });
+      });
+    }
+    state.watchStarting = true;
+    const generation = (state.watchGeneration || 0) + 1;
+    state.watchGeneration = generation;
     void syncInquiries({ announce: false }).then(() => {
+      if (state.watchGeneration !== generation) return null;
+      return syncInquiries({ announce: true });
+    }).then(() => {
+      if (state.watchGeneration !== generation || state.watchTimer) return;
       state.watchTimer = window.setInterval(() => {
         void syncInquiries({ announce: true });
       }, 15000);
+    }).finally(() => {
+      if (state.watchGeneration === generation) state.watchStarting = false;
     });
   }
 

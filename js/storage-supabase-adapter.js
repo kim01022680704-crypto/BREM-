@@ -153,7 +153,7 @@ window.BremSupabaseStorageAdapter = (function () {
 
   const NOTICE_SELECT = 'id,title,content,pinned,raw_data,created_at,updated_at';
   const PROMOTION_SELECT = 'id,name,platform,type,enabled,selector_key,start_date,end_date,priority,payload,created_at,updated_at';
-  const INQUIRY_SELECT = 'id,name,phone,area,inquiry_type,message,status,created_at,updated_at';
+  const INQUIRY_SELECT = 'id,name,phone,area,inquiry_type,message,status,raw_data,created_at,updated_at';
   const MISSION_SELECT = 'id,title,description,type,conditions,is_active,raw_data,created_at,updated_at';
 
   const ADMIN_SCHEDULE_SELECT = 'id,date,title,memo,created_by,created_by_id,raw_data,created_at,updated_at';
@@ -2194,13 +2194,84 @@ window.BremSupabaseStorageAdapter = (function () {
       return mission;
     }
 
+    function inquiryRaw(value) {
+      if (!value) return {};
+      if (typeof value === 'object') return { ...value };
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          if (parsed && typeof parsed === 'object') return { ...parsed };
+        } catch {
+          /* raw_data가 문자로 오면 답장이 빠지지 않게 한 번 더 읽는다 */
+        }
+      }
+      return {};
+    }
+
     async function persistRiderInquiries(value) {
-      const rows = (value || []).map(item => Mapper().inquiryToRow(item)).filter(row => row.id);
+      const incoming = (value || []).map(item => Mapper().inquiryToRow(item)).filter(row => row.id);
       const check = validatePersistPayload(keys.riderInquiries, value);
       if (!check.ok) {
         window.BremStorageGuard?.logBlocked?.(check);
         throw new Error(check.message || '문의 저장이 차단되었습니다.');
       }
+      if (!incoming.length) return;
+
+      const { data, error } = await client
+        .from('rider_inquiries')
+        .select('id,status,raw_data,updated_at,created_at');
+      if (error) throw error;
+
+      const existing = new Map((data || []).map(row => [String(row.id), row]));
+      const replyKeys = ['adminReply', 'adminRepliedAt', 'adminReplyBy', 'adminReplyById', 'riderAckAt'];
+      const statusRank = { new: 0, read: 1, done: 2 };
+      const now = Date.now();
+      const rows = [];
+
+      incoming.forEach(row => {
+        const prev = existing.get(String(row.id));
+        if (!prev) {
+          const created = Date.parse(row.created_at || '') || 0;
+          if (!created || now - created > 2 * 60 * 1000) return;
+          rows.push(row);
+          return;
+        }
+
+        const prevRaw = inquiryRaw(prev.raw_data);
+        const nextRaw = inquiryRaw(row.raw_data);
+        replyKeys.forEach(key => {
+          if (!String(nextRaw[key] || '').trim() && prevRaw[key]) nextRaw[key] = prevRaw[key];
+        });
+
+        const prevAt = Date.parse(prev.updated_at || '') || 0;
+        const nextAt = Date.parse(row.updated_at || '') || 0;
+        let status = String(row.status || prev.status || 'new');
+        const incomingNewer = nextAt > prevAt + 1000;
+        const incomingRank = statusRank[status] ?? 0;
+        const previousRank = statusRank[String(prev.status || '')] ?? 0;
+        if (!incomingNewer && incomingRank < previousRank) {
+          status = String(prev.status || status);
+        }
+        if (!incomingNewer) {
+          replyKeys.forEach(key => {
+            if (prevRaw[key]) nextRaw[key] = prevRaw[key];
+          });
+        }
+        nextRaw.status = status;
+
+        const unchanged = status === String(prev.status || '')
+          && replyKeys.every(key => String(nextRaw[key] || '') === String(prevRaw[key] || ''));
+        if (unchanged) return;
+
+        rows.push({
+          ...row,
+          status,
+          raw_data: { ...prevRaw, ...nextRaw },
+          updated_at: incomingNewer ? (row.updated_at || prev.updated_at) : (prev.updated_at || row.updated_at)
+        });
+      });
+
+      if (!rows.length) return;
       await upsertTableRows('rider_inquiries', rows);
       loadedTableKeys.add(keys.riderInquiries);
     }

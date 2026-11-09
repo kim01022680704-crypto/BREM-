@@ -63,15 +63,75 @@ function rowToRecord(row) {
 }
 
 const INQUIRY_SELECT = 'id,name,phone,area,inquiry_type,message,status,raw_data,created_at,updated_at';
+const LIST_CACHE_MS = 8000;
+const REVISION_CACHE_MS = 8000;
+const PURGE_INTERVAL_MS = 10 * 60 * 1000;
+
+let listCache = { at: 0, list: null };
+let revisionCache = { at: 0, value: null };
+let lastPurgeAt = 0;
+
+function clearInquiryCache() {
+  listCache = { at: 0, list: null };
+  revisionCache = { at: 0, value: null };
+}
+
+function revisionFromList(list) {
+  let updatedAt = '';
+  (list || []).forEach(item => {
+    const stamp = String(item?.updatedAt || '');
+    if (stamp > updatedAt) updatedAt = stamp;
+  });
+  return {
+    revision: `${(list || []).length}:${updatedAt}`,
+    count: (list || []).length,
+    updatedAt
+  };
+}
 
 async function purgeExpired() {
+  if (Date.now() - lastPurgeAt < PURGE_INTERVAL_MS) return;
   const supabase = getClient();
   if (!supabase) return;
+  lastPurgeAt = Date.now();
   const cutoff = new Date(Date.now() - require('./rider-inquiries-shared').RETENTION_MS).toISOString();
   await supabase.from('rider_inquiries').delete().lt('created_at', cutoff);
 }
 
+async function readRevision() {
+  if (revisionCache.value && Date.now() - revisionCache.at < REVISION_CACHE_MS) {
+    return revisionCache.value;
+  }
+  if (listCache.list && Date.now() - listCache.at < LIST_CACHE_MS) {
+    const value = revisionFromList(listCache.list);
+    revisionCache = { at: Date.now(), value };
+    return value;
+  }
+
+  const supabase = getClient();
+  if (!supabase) throw new Error('Supabase 문의 저장소가 설정되지 않았습니다.');
+
+  const { data, error, count } = await supabase
+    .from('rider_inquiries')
+    .select('updated_at', { count: 'exact' })
+    .order('updated_at', { ascending: false })
+    .limit(1);
+  if (error) throw error;
+
+  const value = {
+    revision: `${count || 0}:${data?.[0]?.updated_at || ''}`,
+    count: count || 0,
+    updatedAt: data?.[0]?.updated_at || ''
+  };
+  revisionCache = { at: Date.now(), value };
+  return value;
+}
+
 async function readAll() {
+  if (listCache.list && Date.now() - listCache.at < LIST_CACHE_MS) {
+    return listCache.list;
+  }
+
   const supabase = getClient();
   if (!supabase) throw new Error('Supabase 문의 저장소가 설정되지 않았습니다.');
 
@@ -83,13 +143,17 @@ async function readAll() {
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return (data || []).map(rowToRecord).filter(item => !isExpired(item));
+  const list = (data || []).map(rowToRecord).filter(item => !isExpired(item));
+  listCache = { at: Date.now(), list };
+  revisionCache = { at: Date.now(), value: revisionFromList(list) };
+  return list;
 }
 
 async function createInquiry(payload) {
   const supabase = getClient();
   if (!supabase) throw new Error('Supabase 문의 저장소가 설정되지 않았습니다.');
 
+  clearInquiryCache();
   const now = nowIso();
   const extra = extraFromPayload(payload);
   const record = {
@@ -112,6 +176,7 @@ async function createInquiry(payload) {
     .single();
 
   if (error) throw error;
+  clearInquiryCache();
   return rowToRecord(data);
 }
 
@@ -149,6 +214,7 @@ function applyInquiryPatch(raw, patch, row) {
 async function updateInquiry(id, patch = {}) {
   const supabase = getClient();
   if (!supabase) throw new Error('Supabase 문의 저장소가 설정되지 않았습니다.');
+  clearInquiryCache();
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const { data: row, error: readError } = await supabase
@@ -205,6 +271,7 @@ async function removeById(id) {
   const supabase = getClient();
   if (!supabase) throw new Error('Supabase 문의 저장소가 설정되지 않았습니다.');
 
+  clearInquiryCache();
   const { error } = await supabase
     .from('rider_inquiries')
     .delete()
@@ -217,6 +284,7 @@ async function removeById(id) {
 module.exports = {
   isEnabled,
   readAll,
+  readRevision,
   createInquiry,
   updateInquiry,
   updateStatus,

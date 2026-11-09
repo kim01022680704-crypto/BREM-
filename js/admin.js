@@ -1493,15 +1493,8 @@
 
   function rememberInquiries(list) {
     const incoming = Array.isArray(list) ? list : [];
-    const previous = new Map((inquiryListCache || []).map(item => [String(item.id), item]));
-    inquiryListCache = incoming.map(item => {
-      const older = previous.get(String(item.id));
-      if (!older || older.status !== 'done' || item.status === 'done') return item;
-      const olderAt = Date.parse(older.updatedAt || '') || 0;
-      const incomingAt = Date.parse(item.updatedAt || '') || 0;
-      if (item.updatedAt && incomingAt >= olderAt) return item;
-      return { ...item, status: older.status, updatedAt: older.updatedAt || item.updatedAt };
-    });
+    const merge = window.BremRiderInquiryApi?.mergeInquiryLists;
+    inquiryListCache = merge ? merge(inquiryListCache, incoming) : incoming;
     return inquiryListCache;
   }
 
@@ -4535,25 +4528,6 @@
     });
   }
 
-  const SEEN_INQUIRY_KEY = 'brem_seen_rider_inquiry_ids';
-
-  function readSeenInquiryIds() {
-    try {
-      const parsed = JSON.parse(sessionStorage.getItem(SEEN_INQUIRY_KEY) || '[]');
-      return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
-    } catch {
-      return new Set();
-    }
-  }
-
-  function writeSeenInquiryIds(ids) {
-    try {
-      sessionStorage.setItem(SEEN_INQUIRY_KEY, JSON.stringify([...ids]));
-    } catch {
-      /* ignore */
-    }
-  }
-
   function closeInquiryAlertPopup() {
     hideMotionPopup($('#adminInquiryAlertPopup'));
   }
@@ -4572,13 +4546,19 @@
   }
 
   let inquiryWatchTimer = null;
+  let inquiryWatchBusy = false;
 
   function startInquiryWatch() {
     if (inquiryWatchTimer) return;
     void watchNewRiderInquiries({ announce: true });
     inquiryWatchTimer = window.setInterval(() => {
       void watchNewRiderInquiries({ announce: true });
-    }, 8000);
+    }, 10000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        void watchNewRiderInquiries({ announce: false });
+      }
+    });
   }
 
   function setSidebarNavBadge(section, count) {
@@ -4599,15 +4579,14 @@
   }
 
   async function watchNewRiderInquiries({ announce = true } = {}) {
+    if (inquiryWatchBusy) return;
+    inquiryWatchBusy = true;
     try {
       const before = inquiryListCache.slice();
       const list = await loadRiderInquiries();
       const fresh = list.filter(item => item.status === 'new');
       setSidebarNavBadge('rider-inquiries', fresh.length);
-      const seen = readSeenInquiryIds();
-      const unseen = fresh.filter(item => !seen.has(String(item.id)));
-      fresh.forEach(item => seen.add(String(item.id)));
-      writeSeenInquiryIds(seen);
+      const unseen = window.BremRiderInquiryApi?.freshInquiryAlerts?.(list) || [];
       if (announce && unseen.length) showInquiryAlertPopup(unseen);
       const section = document.getElementById('rider-inquiries');
       const popup = $('#adminInquiryPopup');
@@ -4636,6 +4615,8 @@
       }
     } catch {
       /* 목록 실패는 무시 */
+    } finally {
+      inquiryWatchBusy = false;
     }
     void window.BremAdminWorkRequests?.refreshBadge?.();
   }

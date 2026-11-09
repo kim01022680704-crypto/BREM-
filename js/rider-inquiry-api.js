@@ -2,6 +2,8 @@
   const API_BASE = '/api/rider-inquiries';
   let apiAvailable = null;
   let configReady = null;
+  let lastRemoteList = null;
+  let lastRevision = '';
 
   function waitForConfig() {
     if (!configReady) {
@@ -57,17 +59,49 @@
     return [];
   }
 
+  function inquiryStamp(item) {
+    return Math.max(
+      Date.parse(item?.updatedAt || '') || 0,
+      Date.parse(item?.adminRepliedAt || '') || 0,
+      Date.parse(item?.riderAckAt || '') || 0
+    );
+  }
+
+  function mergeInquiryLists(previous, incoming) {
+    const prev = new Map((previous || []).map(item => [String(item.id), item]));
+    return (Array.isArray(incoming) ? incoming : []).map(item => {
+      const older = prev.get(String(item.id));
+      if (!older) return item;
+      return inquiryStamp(item) >= inquiryStamp(older) ? item : older;
+    });
+  }
+
   async function list() {
     await waitForConfig();
-
-    if (await checkApi()) {
-      try {
-        const remote = await request(API_BASE);
-        return Array.isArray(remote) ? remote : [];
-      } catch (error) {
-        console.error('[BREM] Inquiry API list failed:', error);
+    let revision = '';
+    try {
+      const rev = await request(`${API_BASE}/revision?t=${Date.now()}`);
+      revision = String(rev?.revision || '');
+      if (revision && revision === lastRevision && Array.isArray(lastRemoteList)) {
+        apiAvailable = true;
+        return lastRemoteList;
       }
+    } catch (error) {
+      revision = '';
     }
+    try {
+      const remote = await request(`${API_BASE}?t=${Date.now()}`);
+      if (Array.isArray(remote)) {
+        apiAvailable = true;
+        lastRevision = revision;
+        lastRemoteList = remote;
+        return remote;
+      }
+    } catch (error) {
+      console.error('[BREM] Inquiry API list failed:', error);
+    }
+
+    if (Array.isArray(lastRemoteList)) return lastRemoteList;
 
     const cached = await listFromStorage();
     if (cached.length) return cached;
@@ -174,6 +208,64 @@
     return ack >= replied - 2000;
   }
 
+  const SEEN_INQUIRY_KEY = 'brem_seen_rider_inquiry_ids';
+  const SEEN_INQUIRY_AT_KEY = 'brem_seen_rider_inquiry_at';
+  const INQUIRY_ALERT_WINDOW_MS = 15 * 60 * 1000;
+  const SEEN_INQUIRY_LIMIT = 400;
+
+  function readSeenInquiryIds() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(SEEN_INQUIRY_KEY) || '[]');
+      return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  function writeSeenInquiryIds(ids) {
+    try {
+      localStorage.setItem(SEEN_INQUIRY_KEY, JSON.stringify([...ids].slice(-SEEN_INQUIRY_LIMIT)));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function freshInquiryAlerts(list) {
+    const now = Date.now();
+    let since = 0;
+    try {
+      since = Number(localStorage.getItem(SEEN_INQUIRY_AT_KEY) || 0) || 0;
+    } catch {
+      since = 0;
+    }
+    const seen = readSeenInquiryIds();
+    const fresh = (list || []).filter(item => (
+      item
+      && item.status === 'new'
+      && !String(item.adminReply || '').trim()
+    ));
+    const unseen = fresh.filter(item => {
+      const id = String(item.id || '');
+      if (!id || seen.has(id)) return false;
+      const created = Date.parse(item.createdAt || '') || 0;
+      if (!created) return false;
+      if (now - created > INQUIRY_ALERT_WINDOW_MS) return false;
+      if (since && created + 2000 < since) return false;
+      return true;
+    });
+    fresh.forEach(item => {
+      const id = String(item.id || '');
+      if (id) seen.add(id);
+    });
+    writeSeenInquiryIds(seen);
+    try {
+      localStorage.setItem(SEEN_INQUIRY_AT_KEY, String(now));
+    } catch {
+      /* ignore */
+    }
+    return unseen;
+  }
+
   function inquiryMenu(inquiry) {
     if (inquiry?.status === 'done') return 'done';
     if (replySeen(inquiry) || inquiry?.adminReply) return 'ack';
@@ -258,6 +350,7 @@
 
   window.BremRiderInquiryApi = {
     list,
+    mergeInquiryLists,
     create,
     updateInquiry,
     updateStatus,
@@ -269,6 +362,7 @@
     statusClass,
     inquiryMenu,
     menuCounts,
+    freshInquiryAlerts,
     listExtraHtml,
     replyNote,
     ready: waitForConfig()

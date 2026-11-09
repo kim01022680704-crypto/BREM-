@@ -101,6 +101,9 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (req.path.startsWith('/api/rider-inquiries') || req.path.startsWith('/api/rider/inquiries')) {
+    res.setHeader('Cache-Control', 'private, no-store');
+  }
   next();
 });
 
@@ -600,6 +603,19 @@ app.get('/api/rider/weekly-payslip', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '주급명세서를 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/rider/inquiries/revision', async (req, res) => {
+  try {
+    if (useSupabaseInquiries()) {
+      return res.json(await riderInquiriesSupabase.readRevision());
+    }
+    const list = riderInquiriesStore.readAll();
+    const updatedAt = list.reduce((max, item) => String(item.updatedAt || '') > max ? String(item.updatedAt || '') : max, '');
+    res.json({ revision: `${list.length}:${updatedAt}`, count: list.length, updatedAt });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '문의 변경 확인에 실패했습니다.' });
   }
 });
 
@@ -2339,6 +2355,19 @@ app.get('/api/admin/crawl/operator-access', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '크롤링 권한 확인에 실패했습니다.' });
+  }
+});
+
+app.get('/api/rider-inquiries/revision', async (req, res) => {
+  try {
+    if (useSupabaseInquiries()) {
+      return res.json(await riderInquiriesSupabase.readRevision());
+    }
+    const list = riderInquiriesStore.readAll();
+    const updatedAt = list.reduce((max, item) => String(item.updatedAt || '') > max ? String(item.updatedAt || '') : max, '');
+    res.json({ revision: `${list.length}:${updatedAt}`, count: list.length, updatedAt });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '문의 변경 확인에 실패했습니다.' });
   }
 });
 
