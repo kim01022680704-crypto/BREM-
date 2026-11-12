@@ -579,12 +579,21 @@ const BremWeeklySettlementAdmin = (function () {
       columnConfig.amountColumns = readDirectCoupangAmountColumns(channel);
     }
     const files = [];
+    const passwords = [];
+    // 정산서마다 비밀번호가 다를 수 있어 파일별 비밀번호를 각각 읽는다.
+    const password1 = q(channel, 'Password', platform)?.value || '';
     const file1 = q(channel, 'File', platform)?.files?.[0];
-    if (file1) files.push(file1);
+    if (file1) { files.push(file1); passwords.push(password1); }
     // 배민 월말 분할, 쿠팡 이글스·119: 두 번째 파일을 같이 올리면 한 건으로 합친다.
     if (platform === 'baemin' || platform === 'coupang') {
       const file2 = q(channel, 'File2', platform)?.files?.[0];
-      if (file2) files.push(file2);
+      if (file2) {
+        const pw2El = q(channel, 'Password2', platform);
+        const password2 = pw2El ? pw2El.value : '';
+        // 파일 2 비밀번호를 비워두면 파일 1 비밀번호를 그대로 쓴다.
+        files.push(file2);
+        passwords.push(password2 || password1);
+      }
     }
     return {
       platform,
@@ -598,7 +607,8 @@ const BremWeeklySettlementAdmin = (function () {
       settlementWeekLabel: q(channel, 'WeekLabel', platform)?.value?.trim() || '',
       partSlot: readPartSlot(channel, platform),
       partTag: readPartTag(channel, platform),
-      password: q(channel, 'Password', platform)?.value || '',
+      password: password1,
+      passwords,
       file: files[0] || null,
       files,
       columnConfig

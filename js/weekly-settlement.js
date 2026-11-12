@@ -2536,12 +2536,18 @@ const BremWeeklySettlement = (function () {
 
   async function auditCoupangOutsideCallsForFiles(files, password, record) {
     const list = (Array.isArray(files) ? files : []).filter(Boolean);
+    // 정산서마다 비밀번호가 다를 수 있어 파일별 비밀번호를 쓴다. 없으면 공통 비밀번호.
+    const passwords = Array.isArray(password) ? password : [];
+    const passwordFor = index => (passwords[index] != null && passwords[index] !== ''
+      ? passwords[index]
+      : (Array.isArray(password) ? '' : password));
     if (list.length <= 1) {
-      return auditCoupangOutsideCalls(list[0], password, record);
+      return auditCoupangOutsideCalls(list[0], passwordFor(0), record);
     }
     const byKey = new Map();
-    for (const file of list) {
-      const rows = await auditCoupangOutsideCalls(file, password, record);
+    for (let i = 0; i < list.length; i += 1) {
+      const file = list[i];
+      const rows = await auditCoupangOutsideCalls(file, passwordFor(i), record);
       (rows || []).forEach(row => {
         const key = String(row?.key || row?.name || '').trim();
         if (!key) return;
@@ -2638,14 +2644,20 @@ const BremWeeklySettlement = (function () {
     // 배민 여러 파일: 파일별 추출 후 지역·주차로 묶고 배민ID별 금액 합산
     if (platform === 'baemin' && files.length > 1) {
       const parts = [];
-      for (const file of files) {
+      const baeminPasswords = Array.isArray(options.passwords) ? options.passwords : [];
+      for (let i = 0; i < files.length; i += 1) {
+        const file = files[i];
         const parsed = parseBaeminFileName(file.name);
         // 파일별 기간·지역은 파일명을 우선 (폼에 합친 기간이 들어와 반쪽 날짜가 덮이지 않게)
         const startDate = parsed.startDate || options.startDate || '';
         const endDate = parsed.endDate || options.endDate || '';
         const region = canonicalBaeminTeamRegion(parsed.teamName || options.region || '')
           || parsed.teamName || options.region || '';
-        const riders = await extractBaeminWeeklyRiders(file, options.password, columnConfig);
+        // 정산서마다 비밀번호가 다를 수 있어 파일별 비밀번호로 연다. 없으면 공통 비밀번호.
+        const filePassword = baeminPasswords[i] != null && baeminPasswords[i] !== ''
+          ? baeminPasswords[i]
+          : options.password;
+        const riders = await extractBaeminWeeklyRiders(file, filePassword, columnConfig);
         parts.push({
           fileName: file.name,
           startDate,
@@ -2736,8 +2748,12 @@ const BremWeeklySettlement = (function () {
       const startDate = dates.startDate || options.startDate || '';
       const endDate = dates.endDate || options.endDate || '';
       const parts = [];
-      for (const file of files) {
-        const riders = await extractCoupangWeeklyRiders(file, options.password, columnConfig);
+      const passwords = Array.isArray(options.passwords) ? options.passwords : [];
+      for (let i = 0; i < files.length; i += 1) {
+        const file = files[i];
+        // 정산서마다 비밀번호가 다를 수 있어 파일별 비밀번호로 연다. 없으면 공통 비밀번호.
+        const filePassword = passwords[i] != null && passwords[i] !== '' ? passwords[i] : options.password;
+        const riders = await extractCoupangWeeklyRiders(file, filePassword, columnConfig);
         parts.push({
           fileName: file.name,
           label: coupangVendorLabel(file.name) || file.name,
@@ -2776,7 +2792,11 @@ const BremWeeklySettlement = (function () {
         matchedRiders,
         unmatchedRiders
       });
-      const outsideCallMismatches = await auditCoupangOutsideCallsForFiles(files, options.password, record);
+      const outsideCallMismatches = await auditCoupangOutsideCallsForFiles(
+        files,
+        Array.isArray(options.passwords) && options.passwords.length ? options.passwords : options.password,
+        record
+      );
       return {
         ...record,
         sourceParts,
