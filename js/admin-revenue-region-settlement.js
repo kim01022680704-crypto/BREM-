@@ -177,19 +177,27 @@
     }
   }
 
+  function draftKeyFor(regions, region) {
+    const key = regionCompareKey(region);
+    const found = Object.keys(regions || {}).find(name => regionCompareKey(name) === key);
+    return found || region;
+  }
+
   function collectDraftFromInputs() {
     const regions = migrateDraftRegionKeys(state.draftRegions);
     document.querySelectorAll('[data-region-supply]').forEach(input => {
       const region = String(input.dataset.regionSupply || '').trim();
       if (!region) return;
-      if (!regions[region]) regions[region] = { supplyPaid: 0, vat: 0, source: region };
-      regions[region].supplyPaid = parseMoneyText(input.value);
+      const key = draftKeyFor(regions, region);
+      if (!regions[key]) regions[key] = { supplyPaid: 0, vat: 0, source: region };
+      regions[key].supplyPaid = parseMoneyText(input.value);
     });
     document.querySelectorAll('[data-region-vat]').forEach(input => {
       const region = String(input.dataset.regionVat || '').trim();
       if (!region) return;
-      if (!regions[region]) regions[region] = { supplyPaid: 0, vat: 0, source: region };
-      regions[region].vat = parseMoneyText(input.value);
+      const key = draftKeyFor(regions, region);
+      if (!regions[key]) regions[key] = { supplyPaid: 0, vat: 0, source: region };
+      regions[key].vat = parseMoneyText(input.value);
     });
     state.draftRegions = regions;
     return regions;
@@ -388,16 +396,48 @@
     }
   }
 
-  function addPayoutRow(byKey, region, row) {
+  function addPayoutAmount(byKey, region, netPay, prepaid) {
     const key = regionCompareKey(region);
     if (!key) return;
     const bucket = byKey.get(key) || emptyRegionBucket(region);
     if (String(region).includes('·')) bucket.region = region;
-    const net = Math.round(Number(row?.netPay || 0));
+    const net = Math.round(Number(netPay || 0));
     if (net > 0) bucket.finalDeposit += net;
-    bucket.prepaid += Math.round(Number(row?.prepaid || 0));
+    bucket.prepaid += Math.round(Number(prepaid || 0));
     bucket.riderCount += 1;
     byKey.set(key, bucket);
+  }
+
+  function addPayoutRow(byKey, region, row) {
+    const net = Math.round(Number(row?.netPay || 0));
+    addPayoutAmount(byKey, region, net > 0 ? net : 0, row?.prepaid);
+  }
+
+  // 두 파일에 있는 사람은 최종입금·선정산을 그 파일 배달료 비율로 나눈다.
+  function addSplitPayout(byKey, slots, settlement, row) {
+    const id = rowIdentity(row);
+    const hits = [];
+    (slots || []).forEach(slot => {
+      if (!id || !slot.ids.has(id)) return;
+      hits.push({ label: slot.label, weight: Math.max(1, slot.ids.get(id) || 1) });
+    });
+    if (!hits.length) {
+      addPayoutRow(byKey, payoutRegionForRow(settlement, row, []), row);
+      return;
+    }
+    const total = hits.reduce((sum, hit) => sum + hit.weight, 0);
+    const net = Math.max(0, Math.round(Number(row?.netPay || 0)));
+    const prepaid = Math.max(0, Math.round(Number(row?.prepaid || 0)));
+    let usedNet = 0;
+    let usedPrepaid = 0;
+    hits.forEach((hit, index) => {
+      const last = index === hits.length - 1;
+      const partNet = last ? net - usedNet : Math.round(net * hit.weight / total);
+      const partPrepaid = last ? prepaid - usedPrepaid : Math.round(prepaid * hit.weight / total);
+      usedNet += partNet;
+      usedPrepaid += partPrepaid;
+      addPayoutAmount(byKey, hit.label, partNet, partPrepaid);
+    });
   }
 
   function buildPayoutLookup(settlements, weekKey) {
@@ -409,7 +449,8 @@
       const rows = settlementRows(calc, settlement, rowOptions);
       const slots = sourcePartSlots(settlement);
       rows.forEach(row => {
-        addPayoutRow(byKey, payoutRegionForRow(settlement, row, slots), row);
+        if (slots.length) addSplitPayout(byKey, slots, settlement, row);
+        else addPayoutRow(byKey, payoutRegionForRow(settlement, row, slots), row);
       });
     });
     return byKey;
@@ -496,6 +537,7 @@
       });
     });
 
+    const seenDraftSupply = new Map();
     Object.entries(state.draftRegions || {}).forEach(([name, values]) => {
       const unmatched = values?.unmatched === true;
       const source = String(values?.source || name || '').trim();
@@ -521,6 +563,12 @@
       }
       if (!supplyPaid && !vat) return;
       const key = regionCompareKey(region) || region;
+      const signature = `${supplyPaid}|${vat}`;
+      const seen = seenDraftSupply.get(key) || new Set();
+      // 남구중앙 과 남구중앙 · 이글스 처럼 같은 계산서가 이름만 두 번이면 한 번만 더한다.
+      if (seen.has(signature)) return;
+      seen.add(signature);
+      seenDraftSupply.set(key, seen);
       const prev = byKey.get(key);
       const pay = prev || payoutForRegion(lookup, region);
       byKey.set(key, {
@@ -1051,20 +1099,29 @@
         ? (source || name)
         : (canonicalRegionLabel(name) || name);
       if (!canon) return;
-      if (!out[canon]) {
+      const compareKey = unmatched ? `unmatched:${canon}` : (regionCompareKey(canon) || canon);
+      const existingName = Object.keys(out).find(item => (
+        unmatched ? item === canon : regionCompareKey(item) === compareKey
+      ));
+      const supplyPaid = parseMoneyText(values?.supplyPaid);
+      const vat = parseMoneyText(values?.vat);
+      if (!existingName) {
         out[canon] = {
-          supplyPaid: 0,
-          vat: 0,
+          supplyPaid,
+          vat,
           source: source || canon,
           unmatched,
           kind: values?.kind || ''
         };
+        return;
       }
-      out[canon].supplyPaid += parseMoneyText(values?.supplyPaid);
-      out[canon].vat += parseMoneyText(values?.vat);
-      if (values?.kind && !out[canon].kind) out[canon].kind = values.kind;
-      if (source) out[canon].source = source;
-      if (unmatched) out[canon].unmatched = true;
+      const slot = out[existingName];
+      if (slot.supplyPaid === supplyPaid && slot.vat === vat) return;
+      slot.supplyPaid += supplyPaid;
+      slot.vat += vat;
+      if (values?.kind && !slot.kind) slot.kind = values.kind;
+      if (source) slot.source = source;
+      if (unmatched) slot.unmatched = true;
     });
     return out;
   }

@@ -411,6 +411,7 @@ window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
   taxFeePercent: 20,
   regions: {
     '울산_남구중앙': { supplyPaid: 28000000, vat: 2700000, source: '울산_남구중앙' },
+    '남구중앙 · 이글스': { supplyPaid: 28000000, vat: 2700000, source: '남구중앙 · 이글스' },
     '울산_남구중앙(Z)': { supplyPaid: 8000000, vat: 750000, source: '울산_남구중앙(Z)' }
   }
 });
@@ -420,12 +421,13 @@ const split119 = splitRows.find(row => row.region === '남구중앙(Z) · 119');
 const splitEagles = splitRows.find(row => row.region === '남구중앙 · 이글스');
 check('119 줄이 있다', !!split119, 'true');
 check('이글스 줄이 있다', !!splitEagles, 'true');
-check('119 최종입금은 119 기사만', split119?.finalDeposit, 8000);
-check('119 선정산은 119 기사만', split119?.prepaid, 1000);
-check('이글스 최종입금은 배달연합 기사', splitEagles?.finalDeposit, 25000);
-check('이글스 선정산은 배달연합 기사', splitEagles?.prepaid, 3500);
+check('119 최종입금은 119 비율', split119?.finalDeposit, 8500);
+check('119 선정산은 119 비율', split119?.prepaid, 1050);
+check('이글스 최종입금은 배달연합 비율', splitEagles?.finalDeposit, 24500);
+check('이글스 선정산은 배달연합 비율', splitEagles?.prepaid, 3450);
 check('선정산 합은 한 번만', (split119?.prepaid || 0) + (splitEagles?.prepaid || 0), 4500);
-check('같은 사람은 배달료 큰 쪽에만', (split119?.riderCount || 0) + (splitEagles?.riderCount || 0), 3);
+check('최종입금 합은 한 번만', (split119?.finalDeposit || 0) + (splitEagles?.finalDeposit || 0), 33000);
+check('두 파일에 있는 사람은 양쪽에 센다', (split119?.riderCount || 0) + (splitEagles?.riderCount || 0), 4);
 check('119 실지급은 Z 계산서', split119?.supplyPaid, 8000000);
 check('이글스 실지급은 일반 계산서', splitEagles?.supplyPaid, 28000000);
 
