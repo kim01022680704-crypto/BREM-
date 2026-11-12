@@ -4883,7 +4883,7 @@
             <h2>쿠팡 주정산서 업로드</h2>
             <span class="settlement-format-badge settlement-format-badge--coupang">쿠팡</span>
           </div>
-          <p class="form-help">정산서에서 <strong>기사명만</strong> 추출해 기존 기사와 매칭합니다. 매칭된 기사만 지역별로 저장합니다. (금액·프로모션은 나중에)</p>
+          <p class="form-help">정산서에서 <strong>기사명</strong>을 읽어 기존 기사와 매칭합니다. <strong>이글스·119처럼 같은 주가 두 장</strong>이면 파일 1·파일 2에 넣고 올리세요. 성함칸이 같은 사람은 콜수·배달료·보험·세금을 합쳐 한 건으로 저장합니다.</p>
           <form class="weekly-settlement-form" id="weeklySettlementUploadForm-coupang">
             <div class="promotion-form-grid">
               <label>
@@ -4919,8 +4919,14 @@
                 <input type="text" id="weeklySettlementPassword-coupang" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
               </label>
               <label>
-                정산서 파일 (.xlsx)
+                정산서 파일 1 (.xlsx)
                 <input type="file" id="weeklySettlementFile-coupang" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                <span class="form-help">이글스 또는 119</span>
+              </label>
+              <label>
+                정산서 파일 2 (.xlsx · 선택)
+                <input type="file" id="weeklySettlementFile2-coupang" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                <span class="form-help">다른 회사 장. 같은 이름은 콜수·금액을 합칩니다.</span>
               </label>
             </div>
             <div class="weekly-part-box weekly-part-box--compact">
@@ -4985,7 +4991,7 @@
           <div class="card-header settlement-upload-log-header">
             <div>
               <h2>쿠팡 주정산 업로드 기록</h2>
-              <p class="form-help">수요일 기준 적용주별 업로드·저장된 주정산서 파일명입니다.</p>
+              <p class="form-help">수요일 기준 적용주별 업로드·저장된 주정산서 파일명입니다. 이글스·119처럼 같은 이름이 두 장이면 선택 후 합치기하세요. 콜수·배달료·보험·세금이 같이 더해지고, 상세에 합산 내역이 남습니다.</p>
             </div>
             <div class="settlement-week-filter" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <button type="button" class="primary-btn small-btn" id="weeklySettlementMergeBtn-coupang">선택 합치기</button>
@@ -5227,7 +5233,7 @@
             <h2>쿠팡 주정산서 업로드 (직계약)</h2>
             <span class="settlement-format-badge settlement-format-badge--coupang">쿠팡</span>
           </div>
-          <p class="form-help">정산서에서 <strong>기사명만</strong> 추출해 기존 기사와 매칭합니다. 매칭된 기사만 지역별로 저장합니다. (직계약 채널로 별도 보관)</p>
+          <p class="form-help">정산서에서 <strong>기사명·금액</strong>을 읽어 기존 기사와 매칭합니다. <strong>이글스·119처럼 같은 주가 두 장</strong>이면 파일 1·파일 2에 넣고 올리세요. 성함칸이 같은 사람은 콜수·배달료·보험·세금을 합쳐 한 건으로 저장합니다. (직계약 채널로 별도 보관)</p>
           <form class="weekly-settlement-form" id="weeklySettlementDirectUploadForm-coupang">
             <div class="promotion-form-grid">
               <label>
@@ -5263,8 +5269,14 @@
                 <input type="text" id="weeklySettlementDirectPassword-coupang" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
               </label>
               <label>
-                정산서 파일 (.xlsx)
+                정산서 파일 1 (.xlsx)
                 <input type="file" id="weeklySettlementDirectFile-coupang" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                <span class="form-help">이글스 또는 119</span>
+              </label>
+              <label>
+                정산서 파일 2 (.xlsx · 선택)
+                <input type="file" id="weeklySettlementDirectFile2-coupang" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                <span class="form-help">다른 회사 장. 같은 이름은 콜수·금액을 합칩니다.</span>
               </label>
             </div>
             <div class="weekly-part-box weekly-part-box--compact">
@@ -5361,7 +5373,7 @@
           <div class="card-header settlement-upload-log-header">
             <div>
               <h2>쿠팡 주정산 업로드 기록 (직계약)</h2>
-              <p class="form-help">수요일 기준 적용주별 업로드·저장된 주정산서입니다. 중일 부분은 태그로 구분되고, 나중에 선택 합치기할 수 있습니다.</p>
+              <p class="form-help">수요일 기준 적용주별 업로드·저장된 주정산서입니다. 중일 부분은 태그로 구분되고, 나중에 선택 합치기할 수 있습니다. 이글스·119처럼 같은 이름이 두 장이면 콜수·배달료·보험·세금이 같이 더해지고, 상세에 합산 내역이 남습니다.</p>
             </div>
             <div class="settlement-week-filter" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <button type="button" class="primary-btn small-btn" id="weeklySettlementDirectFeeBtn-coupang">이 주 수수료 설정</button>
@@ -6692,6 +6704,14 @@
                   <span>저장된 쿠팡 주정산</span>
                   <select id="promotionApplySettlementSelect-coupang"></select>
                 </label>
+                <label class="promotion-combine-parts-toggle" title="이글스·119처럼 같은 이름이 두 정산서에 있으면 콜수·배달료·보험·세금을 더해 계산합니다">
+                  <input type="checkbox" id="promotionApplyCombineParts-coupang">
+                  <span>이글스·119 두 장 직접 선택해 합산</span>
+                </label>
+                <label class="promotion-settlement-picker-select" id="promotionApplySettlementSelect2Wrap-coupang" hidden>
+                  <span>합칠 쿠팡 주정산 (이글스/119)</span>
+                  <select id="promotionApplySettlementSelect2-coupang"></select>
+                </label>
               </div>
               <div class="promotion-apply-mode">
                 <p class="form-help">적용 방식</p>
@@ -6799,6 +6819,14 @@
                   <label class="promotion-settlement-picker-select">
                     <span>저장된 쿠팡 주정산</span>
                     <select id="promotionApplySettlementSelect-combined-coupang"></select>
+                  </label>
+                  <label class="promotion-combine-parts-toggle" title="이글스·119처럼 같은 이름이 두 정산서에 있으면 콜수·배달료·보험·세금을 더해 계산합니다">
+                    <input type="checkbox" id="promotionApplyCombineParts-combined-coupang">
+                    <span>이글스·119 두 장 직접 선택해 합산</span>
+                  </label>
+                  <label class="promotion-settlement-picker-select" id="promotionApplySettlementSelect2Wrap-combined-coupang" hidden>
+                    <span>합칠 쿠팡 주정산 (이글스/119)</span>
+                    <select id="promotionApplySettlementSelect2-combined-coupang"></select>
                   </label>
                 </div>
                 <div class="promotion-settlement-picker">
@@ -10444,8 +10472,8 @@
   <script src="js/promotion-admin.js?v=20261105ladder0"></script>
   <script src="js/friend-invite-admin.js?v=20261030invite3"></script>
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
-  <script src="js/weekly-settlement.js?v=20261105outside1"></script>
-  <script src="js/weekly-settlement-admin.js?v=20261105outside1"></script>
+  <script src="js/weekly-settlement.js?v=20261113coupang3"></script>
+  <script src="js/weekly-settlement-admin.js?v=20261113coupang3"></script>
   <script src="js/baemin-delivery-fee.js?v=20260917ai1"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20261104op2"></script>
@@ -10455,8 +10483,8 @@
     <script src="js/contribution-admin.js?v=20260924peak20"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
-  <script src="js/promotion-apply.js?v=20261105outside1"></script>
-  <script src="js/promotion-apply-admin.js?v=20261025settle2"></script>
+  <script src="js/promotion-apply.js?v=20261113coupang2"></script>
+  <script src="js/promotion-apply-admin.js?v=20261113coupang2"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>

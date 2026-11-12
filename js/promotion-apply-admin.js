@@ -171,7 +171,7 @@ const BremPromotionApplyAdmin = (function () {
                 <tr class="promotion-row-rate-missing">
                   ${identityCells}
                   ${isCombined ? `<td>${escapeHtml(BremPlatforms.label(rowPlatform))}</td>` : ''}
-                  <td>${formatNumber(row.callCount)}</td>
+                  <td>${formatNumber(row.callCount)}${row.sheetMergeNote ? `<div class="form-help">${escapeHtml(row.sheetMergeNote)}</div>` : ''}</td>
                   <td>${formatRate(row.platformRate, rowPlatform, { highlightMissing: true })}</td>
                   <td>${escapeHtml((row.failureReasons || []).join(', ') || `${BremPlatforms.rateLabel(rowPlatform)} 미등록`)}</td>
                 </tr>
@@ -1275,6 +1275,21 @@ const BremPromotionApplyAdmin = (function () {
     };
   }
 
+  function readSecondSettlement(selectId, channel, platform) {
+    const id2 = $(`#${selectId}`)?.value || '';
+    const label = platform === 'coupang' ? '쿠팡' : '배민';
+    if (!id2) {
+      showToast(`합칠 ${label} 정산서를 선택하세요.`);
+      return null;
+    }
+    const second = BremStorage.weeklySettlements.getById(id2, channel);
+    if (!second || BremStorage.resolveWeeklySettlementPlatform(second) !== platform) {
+      showToast(`합칠 ${label} 정산서를 확인하세요.`);
+      return null;
+    }
+    return second;
+  }
+
   function deliveryFeePanelKey(platform) {
     return platform === 'combined' ? 'combined' : 'baemin';
   }
@@ -1432,6 +1447,7 @@ const BremPromotionApplyAdmin = (function () {
 
     fillSettlementSelect(select, options, emptyLabel);
     if (platform === 'baemin') fillSecondPartSelect('promotionApplySettlementSelect2-baemin', options);
+    if (platform === 'coupang') fillSecondPartSelect('promotionApplySettlementSelect2-coupang', options);
   }
 
   // 부분1·2 직접 선택용 두 번째 배민 정산서 목록을 채운다(같은 옵션).
@@ -1461,6 +1477,9 @@ const BremPromotionApplyAdmin = (function () {
         fillSecondPartSelect('promotionApplySettlementSelect2-combined-baemin', options);
         const twoHint = $('#promotionApplyBaeminTwoRegionHint');
         if (twoHint) twoHint.hidden = options.length < 2;
+      }
+      if (platform === 'coupang') {
+        fillSecondPartSelect('promotionApplySettlementSelect2-combined-coupang', options);
       }
     });
   }
@@ -1631,6 +1650,7 @@ const BremPromotionApplyAdmin = (function () {
       <p>적용 방식: <strong>${escapeHtml(result.assignmentMode === 'per_driver' ? '기사별 미션 배정' : '선택 조건 시뮬레이션')}</strong></p>
       <p>적용 조건: <strong>${escapeHtml(result.appliedRuleLabel || (result.selectedPromotionRuleNames || []).join(', ') || '-')}</strong>${result.unassignedRiderCount ? ` · 미배정 <strong>${formatNumber(result.unassignedRiderCount)}</strong>명` : ''}</p>
       <p>기사 <strong>${formatNumber(result.summary.riderCount)}</strong>명 · 총 프로모션 <strong>${formatMoney(result.summary.totalPromotionAmount)}</strong>${rateMissingSummary}</p>
+      ${result.sheetMergeSummary ? `<p>${escapeHtml(result.sheetMergeSummary)} 같은 이름의 오더·배달료·보험·세금 내역은 콜수 칸에 있습니다.</p>` : ''}
       ${deliveryFeeSummary}
       ${result.rainApply ? '<p>우천적용: <strong>기상할증(AC) 건은 AH-500원 후 단가보장</strong></p>' : ''}
       ${slaCount > 0
@@ -1711,7 +1731,7 @@ const BremPromotionApplyAdmin = (function () {
           <td>${escapeHtml(BremPlatforms.label(rowPlatform))}</td>
           <td>${escapeHtml(row.assignmentSource || '-')}</td>
         ` : ''}
-        <td>${formatNumber(row.callCount)}${row.slaApply && Number(row.slaOutComplete || 0) > 0 ? ` <span class="form-help">(시간외 ${formatNumber(row.slaOutComplete)})</span>` : ''}${row.slaApply ? ' <span class="promotion-sla-tag">SLA시간</span>' : ''}</td>
+        <td>${formatNumber(row.callCount)}${row.slaApply && Number(row.slaOutComplete || 0) > 0 ? ` <span class="form-help">(시간외 ${formatNumber(row.slaOutComplete)})</span>` : ''}${row.slaApply ? ' <span class="promotion-sla-tag">SLA시간</span>' : ''}${row.sheetMergeNote ? `<div class="form-help">${escapeHtml(row.sheetMergeNote)}</div>` : ''}</td>
         <td>${formatRate(row.platformRate, rowPlatform, { highlightMissing: rateMissing })}</td>
         <td>${escapeHtml(row.ruleName || '-')}${regionMismatch ? ' <span class="promotion-region-mismatch-tag">기본과 다름</span>' : ''}</td>
         ${showDeliveryFee ? `
@@ -1911,8 +1931,23 @@ const BremPromotionApplyAdmin = (function () {
           }
           baeminForCalc = BremPromotionApply.mergePartSettlementsList([baeminSettlement, second], baeminSettlement);
         }
+        // 쿠팡 이글스·119: 두 정산서에 같은 이름이 있으면 콜수·금액을 더해 계산한다.
+        let coupangForCalc = coupangSettlement;
+        if ($('#promotionApplyCombineParts-combined-coupang')?.checked) {
+          const second = readSecondSettlement(
+            'promotionApplySettlementSelect2-combined-coupang',
+            coupangChannel,
+            'coupang'
+          );
+          if (!second) return;
+          if (second.id === coupangSettlement.id) {
+            showToast('같은 쿠팡 정산서를 두 번 골랐습니다.');
+            return;
+          }
+          coupangForCalc = BremPromotionApply.mergePartSettlementsList([coupangSettlement, second], coupangSettlement);
+        }
         state.lastResult = BremPromotionApply.applyPromotionToCombinedSettlements(
-          coupangSettlement,
+          coupangForCalc,
           baeminForCalc,
           ruleIds,
           undefined,
@@ -1965,13 +2000,22 @@ const BremPromotionApplyAdmin = (function () {
           }
         }
 
-        // 배민 부분1·2 합산: 두 번째로 고른 배민 정산서를 사람별로 합쳐 계산한다.
+        // 배민 부분1·2, 쿠팡 이글스·119: 두 번째로 고른 정산서를 사람별로 합쳐 계산한다.
         let settlementForCalc = settlement;
-        if (platform === 'baemin' && $('#promotionApplyCombineParts-baemin')?.checked) {
-          const id2 = $('#promotionApplySettlementSelect2-baemin')?.value || '';
-          const second = id2 ? BremStorage.weeklySettlements.getById(id2, state.channel) : null;
-          if (!second) {
-            showToast('합칠 배민 부분2 정산서를 선택하세요.');
+        const combineId = platform === 'baemin'
+          ? 'promotionApplyCombineParts-baemin'
+          : (platform === 'coupang' ? 'promotionApplyCombineParts-coupang' : '');
+        if (combineId && $(`#${combineId}`)?.checked) {
+          const second = readSecondSettlement(
+            platform === 'baemin'
+              ? 'promotionApplySettlementSelect2-baemin'
+              : 'promotionApplySettlementSelect2-coupang',
+            state.channel,
+            platform
+          );
+          if (!second) return;
+          if (second.id === settlement.id) {
+            showToast('같은 정산서를 두 번 골랐습니다.');
             return;
           }
           settlementForCalc = BremPromotionApply.mergePartSettlementsList([settlement, second], settlement);
@@ -2487,9 +2531,11 @@ const BremPromotionApplyAdmin = (function () {
       });
     });
 
-    // 부분1·2 직접 선택 합산 토글: 두 번째 배민 정산서 선택칸을 보이고 숨긴다.
+    // 부분1·2 / 이글스·119 직접 선택 합산 토글: 두 번째 정산서 선택칸을 보이고 숨긴다.
     [['promotionApplyCombineParts-baemin', 'promotionApplySettlementSelect2Wrap-baemin'],
-     ['promotionApplyCombineParts-combined-baemin', 'promotionApplySettlementSelect2Wrap-combined-baemin']]
+     ['promotionApplyCombineParts-combined-baemin', 'promotionApplySettlementSelect2Wrap-combined-baemin'],
+     ['promotionApplyCombineParts-coupang', 'promotionApplySettlementSelect2Wrap-coupang'],
+     ['promotionApplyCombineParts-combined-coupang', 'promotionApplySettlementSelect2Wrap-combined-coupang']]
       .forEach(([cbId, wrapId]) => {
         $(`#${cbId}`)?.addEventListener('change', event => {
           const wrap = $(`#${wrapId}`);

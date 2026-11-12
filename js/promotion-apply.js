@@ -1167,6 +1167,7 @@ const BremPromotionApply = (function () {
       appliedPlatform: statsPlatform,
       assignmentSource,
       callCount: stats.callCount,
+      sheetMergeNote: String(rider.sheetMergeNote || ''),
       slaApply: slaOn,
       slaOutComplete: slaAdjusted.slaOutComplete,
       callCountBeforeSla: slaAdjusted.callCountBeforeSla,
@@ -1255,6 +1256,7 @@ const BremPromotionApply = (function () {
         ? BremBaeminDeliveryFee.formatMetaLabel(options.deliveryFeeMeta)
         : '',
       rainApply: options.rainApply === true,
+      sheetMergeSummary: String(settlement._sheetMergeSummary || ''),
       ...summarizeSlaApply(results),
       results,
       summary: {
@@ -1897,6 +1899,10 @@ const BremPromotionApply = (function () {
       appliedPlatform: assignment.appliedPlatform || ratePlatform,
       assignmentSource: assignment.assignmentSource || '',
       callCount: totalOrders,
+      sheetMergeNote: [assignment.coupangRider?.sheetMergeNote, assignment.baeminRider?.sheetMergeNote]
+        .map(note => String(note || '').trim())
+        .filter(Boolean)
+        .join(' · '),
       coupangCallCount,
       baeminCallCount,
       slaApply: slaOn,
@@ -2003,6 +2009,10 @@ const BremPromotionApply = (function () {
       deliveryFeeFileName: feeFiles.join(' / '),
       deliveryFeeLabel: feeLabels.join(' / '),
       rainApply: options.rainApply === true,
+      sheetMergeSummary: [coupangSettlement._sheetMergeSummary, baeminSettlement._sheetMergeSummary]
+        .map(note => String(note || '').trim())
+        .filter(Boolean)
+        .join(' '),
       ...summarizeSlaApply(results),
       results,
       summary: {
@@ -2450,6 +2460,40 @@ const BremPromotionApply = (function () {
     }));
 
     const ordered = [...parts].sort((a, b) => String(a.startDate || '').localeCompare(String(b.startDate || '')));
+    const startDate = ordered.map(r => String(r.startDate || '').slice(0, 10)).filter(Boolean).sort()[0] || settlement.startDate;
+    const endDate = ordered.map(r => String(r.endDate || '').slice(0, 10)).filter(Boolean).sort().slice(-1)[0] || settlement.endDate;
+    if (
+      normalizePlatform(settlement.platform) === 'coupang'
+      && typeof BremWeeklySettlement?.mergeRidersBySheetIdentity === 'function'
+    ) {
+      const merged = BremWeeklySettlement.mergeRidersBySheetIdentity(ordered.map((rec, index) => ({
+        label: BremWeeklySettlement.coupangVendorLabel?.(rec.fileName)
+          || BremWeeklySettlement.coupangVendorLabel?.(rec.region)
+          || String(rec.region || '').trim()
+          || `정산${index + 1}`,
+        riders: rec.riders || []
+      })), 'coupang');
+      const coupangRegions = [];
+      const seenCoupangRegion = new Set();
+      ordered.forEach(rec => {
+        const region = String(rec.region || '').trim();
+        if (!region || seenCoupangRegion.has(region)) return;
+        seenCoupangRegion.add(region);
+        coupangRegions.push(region);
+      });
+      return {
+        ...settlement,
+        id: `combined-parts:${settlement.id}`,
+        region: coupangRegions.join(' + ') || settlement.region,
+        startDate,
+        endDate,
+        riders: merged.riders,
+        _combinedPartIds: ordered.map(r => r.id),
+        _combinedPartRegions: coupangRegions,
+        _combinedParts: true,
+        _sheetMergeSummary: merged.summary || ''
+      };
+    }
     const byKey = new Map();
     function riderKey(rider) {
       const mid = String(rider.matchedRiderId || '').trim();
@@ -2475,8 +2519,6 @@ const BremPromotionApply = (function () {
       if (!existing.baeminUserId && rider.baeminUserId) existing.baeminUserId = rider.baeminUserId;
     }));
 
-    const startDate = ordered.map(r => String(r.startDate || '').slice(0, 10)).filter(Boolean).sort()[0] || settlement.startDate;
-    const endDate = ordered.map(r => String(r.endDate || '').slice(0, 10)).filter(Boolean).sort().slice(-1)[0] || settlement.endDate;
     // 합친 부분(부분1·부분2)의 지역을 모두 라벨·지역에 남긴다. 부분1만 보이던 표기를 둘 다 보이게 한다.
     const partRegions = [];
     const seenRegion = new Set();

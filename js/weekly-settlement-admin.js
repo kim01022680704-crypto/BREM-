@@ -581,8 +581,8 @@ const BremWeeklySettlementAdmin = (function () {
     const files = [];
     const file1 = q(channel, 'File', platform)?.files?.[0];
     if (file1) files.push(file1);
-    // 배민: 월말 쪼개짐용 두 번째 칸
-    if (platform === 'baemin') {
+    // 배민 월말 분할, 쿠팡 이글스·119: 두 번째 파일을 같이 올리면 한 건으로 합친다.
+    if (platform === 'baemin' || platform === 'coupang') {
       const file2 = q(channel, 'File2', platform)?.files?.[0];
       if (file2) files.push(file2);
     }
@@ -839,7 +839,9 @@ const BremWeeklySettlementAdmin = (function () {
       const mismatchCount = record.summary?.callCountMismatches || 0;
       const parts = Array.isArray(record.fileNames) ? record.fileNames.length : 1;
       let toastMessage = parts > 1
-        ? `월말 분할 ${parts}파일 합산 · 인수 ${record.summary.totalExtracted}명 · 매칭 ${record.summary.matchedRiders}명`
+        ? (platform === 'coupang'
+          ? `이글스·119 ${parts}파일 합산 · 인수 ${record.summary.totalExtracted}명 · 매칭 ${record.summary.matchedRiders}명${record.mergeNote ? ` · ${record.mergeNote}` : ''}`
+          : `월말 분할 ${parts}파일 합산 · 인수 ${record.summary.totalExtracted}명 · 매칭 ${record.summary.matchedRiders}명`)
         : `정산 인수 ${record.summary.totalExtracted}명 · 매칭 ${record.summary.matchedRiders}명`;
       if (mismatchCount > 0) {
         toastMessage += ` · ⚠ 콜수 불일치 ${mismatchCount}명 (정산표/콜수입력 확인)`;
@@ -990,7 +992,9 @@ const BremWeeklySettlementAdmin = (function () {
   }
 
   function formatCallMismatchWarnings(rider) {
-    const lines = (rider.warnings || []).filter(Boolean);
+    const lines = [];
+    if (rider?.sheetMergeNote) lines.push(rider.sheetMergeNote);
+    (rider.warnings || []).filter(Boolean).forEach(line => lines.push(line));
     if (!lines.length) return '-';
     return lines.map(line => `<span class="weekly-mismatch-line">${escapeHtml(line)}</span>`).join('');
   }
@@ -1800,7 +1804,10 @@ const BremWeeklySettlementAdmin = (function () {
       return;
     }
     const labels = records.map(item => item.region || item.fileName || item.id).join('\n+ ');
-    if (!window.confirm(`선택한 ${records.length}건을 합칠까요?\n같은 기사는 콜수·배달료를 더하고, 표기는 지역A + 지역B 로 남습니다.\n\n${labels}`)) {
+    const mergeHelp = platform === 'coupang'
+      ? '같은 이름(이글스·119처럼 두 장에 있는 사람)은 콜수·배달료·보험·세금을 더합니다. 상세에서 항목별 합산을 볼 수 있습니다.'
+      : '같은 기사는 콜수·배달료를 더하고, 표기는 지역A + 지역B 로 남습니다.';
+    if (!window.confirm(`선택한 ${records.length}건을 합칠까요?\n${mergeHelp}\n\n${labels}`)) {
       return;
     }
     const result = BremWeeklySettlement.mergeSelectedWeeklySettlements(records, { channel: ch });
@@ -1810,7 +1817,9 @@ const BremWeeklySettlementAdmin = (function () {
     }
     await BremStorage.flushStorage?.();
     renderSavedList(ch, platform);
-    showToast(`정산서 ${result.mergedCount}건을 합쳤습니다. 같은 기사 콜수·금액이 다시 계산됩니다.`);
+    showToast(
+      `정산서 ${result.mergedCount}건을 합쳤습니다. ${result.mergeNote || '같은 기사 콜수·금액이 다시 계산됩니다.'}`
+    );
   }
 
   function renderDetail(record) {
@@ -2018,6 +2027,12 @@ const BremWeeklySettlementAdmin = (function () {
       }
       applyFilenameHints(ch, platform, q(ch, 'File', platform)?.files?.[0]?.name || '');
     });
+    if (platform === 'coupang') {
+      q(ch, 'File2', platform)?.addEventListener('change', () => {
+        const first = q(ch, 'File', platform)?.files?.[0]?.name;
+        applyFilenameHints(ch, platform, first || q(ch, 'File2', platform)?.files?.[0]?.name || '');
+      });
+    }
     if (platform === 'baemin') {
       q(ch, 'File2', platform)?.addEventListener('change', () => {
         syncBaeminPeriodFields(ch, collectBaeminFileNames(ch));

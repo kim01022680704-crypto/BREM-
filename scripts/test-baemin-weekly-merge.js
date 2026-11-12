@@ -602,6 +602,131 @@ check('selected merge summed tax', store[0].riders[0].amounts.withholdingTax, 39
 check('selected merge region plus', store[0].region.includes(' + '), true);
 check('selected merge file plus', store[0].fileName.includes(' + '), true);
 
+const coupangMerged = WS.mergeRidersBySheetIdentity([
+  {
+    label: '이글스',
+    riders: [{
+      riderName: '김철수',
+      originalName: '김철수1234',
+      coupangLoginKey: '김철수1234',
+      weeklyOrderCount: 40,
+      amounts: {
+        deliveryFee: 400000,
+        withholdingTax: 13200,
+        employmentInsurance: 1000,
+        accidentInsurance: 800,
+        hourlyInsurance: 500,
+        useSheetPayout: true,
+        sheetPayout: 100000,
+        payoutOverride: 100000
+      }
+    }, {
+      riderName: '박민수',
+      originalName: '박민수9999',
+      coupangLoginKey: '박민수9999',
+      weeklyOrderCount: 3,
+      amounts: { deliveryFee: 30000 }
+    }]
+  },
+  {
+    label: '119',
+    riders: [{
+      riderName: '김철수',
+      originalName: '김철수1234',
+      coupangLoginKey: '김철수1234',
+      matched: true,
+      matchedRiderId: 'd-kim',
+      weeklyOrderCount: 25,
+      amounts: {
+        deliveryFee: 250000,
+        withholdingTax: 8250,
+        employmentInsurance: 500,
+        accidentInsurance: 400,
+        hourlyInsurance: 200,
+        useSheetPayout: true,
+        sheetPayout: 50000,
+        payoutOverride: 50000
+      }
+    }]
+  }
+], 'coupang');
+const kim = coupangMerged.riders.find(rider => rider.riderName === '김철수');
+const park = coupangMerged.riders.find(rider => rider.riderName === '박민수');
+check('coupang same name stays one person', coupangMerged.riders.length, 2);
+check('coupang calls summed', kim && kim.weeklyOrderCount, 65);
+check('coupang delivery fee summed', kim && kim.amounts.deliveryFee, 650000);
+check('coupang tax summed', kim && kim.amounts.withholdingTax, 21450);
+check('coupang employment summed', kim && kim.amounts.employmentInsurance, 1500);
+check('coupang accident summed', kim && kim.amounts.accidentInsurance, 1200);
+check('coupang hourly summed', kim && kim.amounts.hourlyInsurance, 700);
+check('coupang sheet payout summed', kim && kim.amounts.sheetPayout, 150000);
+check('coupang z payout summed', kim && kim.amounts.payoutOverride, 150000);
+check('coupang keeps matched id', kim && kim.matchedRiderId, 'd-kim');
+check('coupang note shows both sheets', Boolean(kim && kim.sheetMergeNote.includes('이글스 40') && kim.sheetMergeNote.includes('119 25') && kim.sheetMergeNote.includes('배달료')), true);
+check('coupang single sheet has no note', park && park.sheetMergeNote, undefined);
+check('coupang single sheet fee kept', park && park.amounts.deliveryFee, 30000);
+check('coupang merged people count', coupangMerged.mergedCount, 1);
+
+const homonyms = WS.mergeRidersBySheetIdentity([
+  { label: '이글스', riders: [{ riderName: '홍길동', coupangLoginKey: '홍길동1111', originalName: '홍길동1111', weeklyOrderCount: 10, amounts: { deliveryFee: 1000 } }] },
+  { label: '119', riders: [{ riderName: '홍길동', coupangLoginKey: '홍길동2222', originalName: '홍길동2222', weeklyOrderCount: 7, amounts: { deliveryFee: 700 } }] }
+], 'coupang');
+check('coupang different tail stays two', homonyms.riders.length, 2);
+check('coupang different tail not summed', homonyms.riders.map(rider => rider.weeklyOrderCount).sort((a, b) => a - b).join(','), '7,10');
+
+const nameOnly = WS.mergeRidersBySheetIdentity([
+  { label: '이글스', riders: [{ riderName: '김철수', originalName: '김철수', weeklyOrderCount: 4, amounts: { deliveryFee: 400 } }] },
+  { label: '119', riders: [{ riderName: '김철수', coupangLoginKey: '김철수1234', originalName: '김철수1234', weeklyOrderCount: 6, amounts: { deliveryFee: 600 } }] }
+], 'coupang');
+check('coupang bare name folds into same tail', nameOnly.riders.length, 1);
+check('coupang bare name calls summed', nameOnly.riders[0].weeklyOrderCount, 10);
+check('coupang bare name fee summed', nameOnly.riders[0].amounts.deliveryFee, 1000);
+
+store.length = 0;
+const coupangEagles = {
+  id: 'weekly-coupang-eagles',
+  platform: 'coupang',
+  channel: 'direct',
+  region: '배달 이글스_울산남구',
+  fileName: '배달이글스_울산남구.xlsx',
+  startDate: '2026-09-02',
+  endDate: '2026-09-08',
+  riders: [{
+    riderName: '김철수',
+    originalName: '김철수1234',
+    coupangLoginKey: '김철수1234',
+    weeklyOrderCount: 40,
+    amounts: { deliveryFee: 400000, employmentInsurance: 1000 }
+  }]
+};
+const coupang119 = {
+  id: 'weekly-coupang-119',
+  platform: 'coupang',
+  channel: 'direct',
+  region: '주식회사 119컴퍼니_울산남구',
+  fileName: '119컴퍼니_울산남구.xlsx',
+  startDate: '2026-09-02',
+  endDate: '2026-09-08',
+  riders: [{
+    riderName: '김철수',
+    originalName: '김철수1234',
+    coupangLoginKey: '김철수1234',
+    matched: true,
+    matchedRiderId: 'd-kim',
+    weeklyOrderCount: 25,
+    amounts: { deliveryFee: 250000, employmentInsurance: 500 }
+  }]
+};
+store.push(coupangEagles, coupang119);
+const selectedCoupang = WS.mergeSelectedWeeklySettlements([coupangEagles, coupang119], { channel: 'direct' });
+check('coupang selected merge ok', selectedCoupang.ok, true);
+check('coupang selected merge one record', store.length, 1);
+check('coupang selected merge calls', store[0].riders[0].weeklyOrderCount, 65);
+check('coupang selected merge fee', store[0].riders[0].amounts.deliveryFee, 650000);
+check('coupang selected merge insurance', store[0].riders[0].amounts.employmentInsurance, 1500);
+check('coupang selected merge note', Boolean(store[0].riders[0].sheetMergeNote), true);
+check('coupang selected merge summary', Boolean(selectedCoupang.mergeNote), true);
+
 if (failures.length) {
   failures.forEach(msg => console.log('FAIL:', msg));
   process.exit(1);

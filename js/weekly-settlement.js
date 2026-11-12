@@ -345,6 +345,195 @@ const BremWeeklySettlement = (function () {
     return out;
   }
 
+  // 쿠팡 이글스→119 이관: 같은 이름(성함칸)이면 콜수와 금액 항목을 모두 더한다.
+  // 배민 합산의 Z지급은 큰 쪽만 남기므로, 쿠팡은 지급액도 더한다.
+  function sumCoupangAmountMaps(a = {}, b = {}) {
+    const left = a && typeof a === 'object' ? a : {};
+    const right = b && typeof b === 'object' ? b : {};
+    const out = {};
+    new Set([...Object.keys(left), ...Object.keys(right)]).forEach(key => {
+      if (key === 'useSheetPayout') return;
+      const leftValue = Number(left[key] || 0);
+      const rightValue = Number(right[key] || 0);
+      out[key] = Math.round(
+        (Number.isFinite(leftValue) ? leftValue : 0) + (Number.isFinite(rightValue) ? rightValue : 0)
+      );
+    });
+    if (left.useSheetPayout || right.useSheetPayout) {
+      out.useSheetPayout = true;
+      const leftPay = Math.abs(Number(left.payoutOverride || left.sheetPayout || 0));
+      const rightPay = Math.abs(Number(right.payoutOverride || right.sheetPayout || 0));
+      out.payoutOverride = Math.round(leftPay + rightPay);
+      out.sheetPayout = Math.round(
+        Math.abs(Number(left.sheetPayout || 0)) + Math.abs(Number(right.sheetPayout || 0))
+      );
+    }
+    return out;
+  }
+
+  function coupangVendorLabel(text) {
+    const raw = String(text || '').replace(/\s+/g, '');
+    if (!raw) return '';
+    if (raw.includes('119')) return '119';
+    if (raw.includes('이글스')) return '이글스';
+    return '';
+  }
+
+  const COUPANG_MERGE_AMOUNT_LABELS = [
+    ['deliveryFee', '배달료'],
+    ['withholdingTax', '원천세'],
+    ['employmentInsurance', '고용보험'],
+    ['accidentInsurance', '산재보험'],
+    ['hourlyInsurance', '시간제보험'],
+    ['deductionDetail', '차감'],
+    ['deductionBase', '공제기준'],
+    ['sheetPayout', '실지급'],
+    ['payoutOverride', 'Z지급']
+  ];
+
+  function formatMergeMoney(value) {
+    return `${Math.round(Number(value) || 0).toLocaleString('ko-KR')}원`;
+  }
+
+  function buildCoupangSheetMergeNote(parts) {
+    const pieces = (Array.isArray(parts) ? parts : []).filter(Boolean);
+    if (pieces.length < 2) return '';
+    const orders = pieces.reduce((sum, item) => sum + Math.round(Number(item.orders || 0)), 0);
+    const orderText = pieces.map(item => `${item.label} ${Math.round(Number(item.orders || 0))}`).join('+');
+    const bits = [`같은 이름 합산 · 오더 ${orderText}=${orders}`];
+    COUPANG_MERGE_AMOUNT_LABELS.forEach(([key, label]) => {
+      const values = pieces.map(item => Math.round(Number(item.amounts?.[key] || 0)));
+      const total = values.reduce((sum, value) => sum + value, 0);
+      if (!total) return;
+      bits.push(`${label} ${values.map(value => formatMergeMoney(value)).join('+')}=${formatMergeMoney(total)}`);
+    });
+    return bits.join(' · ');
+  }
+
+  function coupangMergeIdentity(rider) {
+    const login = normalizeCoupangLoginKey(rider?.coupangLoginKey || rider?.originalName || '');
+    const name = normalizeCoupangName(rider?.riderName || rider?.driverName || rider?.originalName || '');
+    const tail = (login.match(/(\d{4})$/) || [])[1] || '';
+    return { login, name, tail };
+  }
+
+  function cloneRiderForCoupangMerge(rider) {
+    const cloned = { ...rider };
+    delete cloned.sheetMergeNote;
+    delete cloned.sheetMergeParts;
+    cloned.weeklyOrderCount = Math.round(Number(rider?.weeklyOrderCount || 0));
+    cloned.amounts = rider?.amounts && typeof rider.amounts === 'object' ? { ...rider.amounts } : {};
+    cloned.warnings = Array.isArray(rider?.warnings) ? [...rider.warnings] : [];
+    cloned.sheetMergeParts = [];
+    return cloned;
+  }
+
+  function fillCoupangMergeIdentity(target, rider) {
+    if (!target.riderName && rider.riderName) target.riderName = rider.riderName;
+    if (!target.originalName && rider.originalName) target.originalName = rider.originalName;
+    if (!target.driverName && rider.driverName) target.driverName = rider.driverName;
+    if (!target.coupangLoginKey && rider.coupangLoginKey) target.coupangLoginKey = rider.coupangLoginKey;
+    if (!target.matchedRiderId && rider.matchedRiderId) {
+      target.matchedRiderId = rider.matchedRiderId;
+      target.matched = true;
+    }
+    const incomingLogin = normalizeCoupangLoginKey(rider.coupangLoginKey || rider.originalName);
+    const currentLogin = normalizeCoupangLoginKey(target.coupangLoginKey || target.originalName);
+    if (/\d{4}$/.test(incomingLogin) && !/\d{4}$/.test(currentLogin)) {
+      target.coupangLoginKey = rider.coupangLoginKey || incomingLogin;
+      if (rider.originalName) target.originalName = rider.originalName;
+    }
+  }
+
+  function appendCoupangMergePiece(target, rider, label) {
+    const orders = Math.round(Number(rider?.weeklyOrderCount || 0));
+    const amounts = rider?.amounts && typeof rider.amounts === 'object' ? { ...rider.amounts } : {};
+    if (target.sheetMergeParts.length) {
+      target.weeklyOrderCount = Math.round(Number(target.weeklyOrderCount || 0) + orders);
+      target.amounts = sumCoupangAmountMaps(target.amounts, amounts);
+      fillCoupangMergeIdentity(target, rider);
+    }
+    target.sheetMergeParts.push({ label, orders, amounts });
+  }
+
+  function absorbCoupangMergedRider(target, source) {
+    target.weeklyOrderCount = Math.round(
+      Number(target.weeklyOrderCount || 0) + Number(source.weeklyOrderCount || 0)
+    );
+    target.amounts = sumCoupangAmountMaps(target.amounts, source.amounts);
+    fillCoupangMergeIdentity(target, source);
+    target.sheetMergeParts = (target.sheetMergeParts || []).concat(source.sheetMergeParts || []);
+  }
+
+  /**
+   * 쿠팡 정산서 여러 장을 성함칸(이름+뒤4자리)으로 합친다.
+   * 이글스·119에 같은 이름이 있으면 콜수·배달료·보험·세금을 더하고, 무엇을 더했는지 노트에 남긴다.
+   * 뒤 4자리가 다른 동명이인은 합치지 않는다.
+   */
+  function mergeRidersBySheetIdentity(parts = [], platform = 'coupang') {
+    if (normalizePlatform(platform) !== 'coupang') {
+      const riders = mergeBaeminRiders((Array.isArray(parts) ? parts : []).map(part => part?.riders || part));
+      return { riders, mergedCount: 0, summary: '' };
+    }
+
+    const buckets = new Map();
+    const nameIndex = new Map();
+    let looseIndex = 0;
+    (Array.isArray(parts) ? parts : []).forEach(part => {
+      const label = String(part?.label || part?.fileName || '').trim() || '정산서';
+      (Array.isArray(part?.riders) ? part.riders : []).forEach(rider => {
+        if (!rider) return;
+        const identity = coupangMergeIdentity(rider);
+        let key = '';
+        if (identity.login && identity.tail) key = `login:${identity.login}`;
+        else if (identity.name) key = `name:${identity.name}`;
+        else if (rider.matchedRiderId) key = `id:${String(rider.matchedRiderId).trim()}`;
+        else {
+          looseIndex += 1;
+          key = `raw:${looseIndex}`;
+        }
+        if (!buckets.has(key)) buckets.set(key, cloneRiderForCoupangMerge(rider));
+        appendCoupangMergePiece(buckets.get(key), rider, label);
+        if (identity.name && identity.tail) {
+          const list = nameIndex.get(identity.name) || [];
+          if (!list.includes(key)) list.push(key);
+          nameIndex.set(identity.name, list);
+        }
+      });
+    });
+
+    [...buckets.keys()].forEach(key => {
+      if (!key.startsWith('name:')) return;
+      const loginKeys = nameIndex.get(key.slice(5)) || [];
+      if (loginKeys.length !== 1) return;
+      const target = buckets.get(loginKeys[0]);
+      const source = buckets.get(key);
+      if (!target || !source || target === source) return;
+      absorbCoupangMergedRider(target, source);
+      buckets.delete(key);
+    });
+
+    let mergedCount = 0;
+    const riders = [...buckets.values()].map(rider => {
+      const note = buildCoupangSheetMergeNote(rider.sheetMergeParts);
+      delete rider.sheetMergeParts;
+      if (note) {
+        mergedCount += 1;
+        rider.sheetMergeNote = note;
+      } else {
+        delete rider.sheetMergeNote;
+      }
+      return rider;
+    });
+    return {
+      riders,
+      mergedCount,
+      summary: mergedCount
+        ? `같은 이름 ${mergedCount}명은 콜수·배달료·보험·세금을 더했습니다.`
+        : ''
+    };
+  }
+
   /** 배민ID 기준 기사 목록 합치기 — 콜수·amounts 전 항목 합산 */
   function mergeBaeminRiders(riderLists = []) {
     const byKey = new Map();
@@ -1786,8 +1975,9 @@ const BremWeeklySettlement = (function () {
           ? Boolean(matched)
           : (matched && hasSystemData ? callMatch.callCountMatched : false),
         callStatsByDay: callMatch.callStatsByDay || {},
-        // 직계약 금액/공제(있으면) 보존
+        // 직계약 금액/공제(있으면) 보존. 두 장 합산 내역도 미리보기·상세에 남긴다.
         ...(rider.amounts ? { amounts: rider.amounts } : {}),
+        ...(rider.sheetMergeNote ? { sheetMergeNote: rider.sheetMergeNote } : {}),
         warnings: matched
           ? warnings
           : [...priorWarnings, unmatchedReasonForRider(p, driver, hasSystemData, rider)].filter(Boolean)
@@ -2250,7 +2440,32 @@ const BremWeeklySettlement = (function () {
         riders: Array.isArray(record.riders) ? record.riders : []
       }];
     });
-    const riders = mergeBaeminRiders(parts.map(part => part.riders));
+    let riders;
+    let mergeNote = '';
+    if (platform === 'coupang') {
+      const labeled = [];
+      list.forEach(record => {
+        const chunks = listBaeminSourceParts(record);
+        const source = chunks.length ? chunks : [{
+          fileName: String(record.fileName || '').trim(),
+          riders: Array.isArray(record.riders) ? record.riders : []
+        }];
+        source.forEach(part => {
+          labeled.push({
+            label: coupangVendorLabel(part.fileName)
+              || coupangVendorLabel(record.region)
+              || coupangVendorLabel(record.fileName)
+              || `정산${labeled.length + 1}`,
+            riders: Array.isArray(part.riders) ? part.riders : []
+          });
+        });
+      });
+      const merged = mergeRidersBySheetIdentity(labeled, 'coupang');
+      riders = merged.riders;
+      mergeNote = merged.summary || '';
+    } else {
+      riders = mergeBaeminRiders(parts.map(part => part.riders));
+    }
     const startDate = list.map(item => String(item.startDate || '').slice(0, 10)).filter(Boolean).sort()[0] || '';
     const endDate = list.map(item => String(item.endDate || '').slice(0, 10)).filter(Boolean).sort().pop() || '';
     const region = uniqueJoinLabels(list.map(item => item.region)).join(' + ');
@@ -2294,7 +2509,7 @@ const BremWeeklySettlement = (function () {
       relinkWeeklyUploadLogs(id, saved, channel);
     });
     collapseWeeklyUploadLogsForMerge(saved, extraIds, channel);
-    return { ok: true, record: saved, mergedCount: list.length };
+    return { ok: true, record: saved, mergedCount: list.length, mergeNote };
   }
 
   function collapseWeeklyUploadLogsForMerge(saved, extraIds, channel) {
@@ -2391,6 +2606,29 @@ const BremWeeklySettlement = (function () {
       throw new Error('정산서 삭제가 반영되지 않았습니다. 잠시 후 다시 시도하세요.');
     }
     return record;
+  }
+
+  async function auditCoupangOutsideCallsForFiles(files, password, record, auditOptions) {
+    const list = (Array.isArray(files) ? files : []).filter(Boolean);
+    if (list.length <= 1) {
+      return auditCoupangOutsideCalls(list[0], password, record);
+    }
+    const byKey = new Map();
+    for (const file of list) {
+      const rows = await auditCoupangOutsideCalls(file, password, record);
+      (rows || []).forEach(row => {
+        const key = String(row?.key || row?.name || '').trim();
+        if (!key) return;
+        const prev = byKey.get(key);
+        if (!prev) {
+          byKey.set(key, { ...row });
+          return;
+        }
+        prev.weekly = Math.round(Number(prev.weekly || 0) + Number(row.weekly || 0));
+        prev.delta = prev.weekly - Number(prev.daily || 0);
+      });
+    }
+    return [...byKey.values()].filter(row => Number(row.daily || 0) !== Number(row.weekly || 0));
   }
 
   async function auditCoupangOutsideCalls(file, password, record) {
@@ -2566,6 +2804,63 @@ const BremWeeklySettlement = (function () {
       return { ok: true, multi: true, records };
     }
 
+    // 쿠팡 이글스·119: 파일 1·2를 올릴 때 성함칸이 같은 사람은 콜수·금액을 합친다.
+    if (platform === 'coupang' && files.length > 1) {
+      const dates = calculateCoupangSettlementDates(options.baseSettlementDate || options.startDate);
+      const startDate = dates.startDate || options.startDate || '';
+      const endDate = dates.endDate || options.endDate || '';
+      const parts = [];
+      for (const file of files) {
+        const riders = await extractCoupangWeeklyRiders(file, options.password, columnConfig);
+        parts.push({
+          fileName: file.name,
+          label: coupangVendorLabel(file.name) || file.name,
+          startDate,
+          endDate,
+          riders
+        });
+      }
+      const merged = mergeRidersBySheetIdentity(parts, 'coupang');
+      const allMatched = matchSettlementRidersWithExistingData(merged.riders, platform, {
+        startDate,
+        endDate
+      });
+      const matchedRiders = allMatched.filter(item => item.matched);
+      const unmatchedRiders = allMatched.filter(item => !item.matched);
+      const sourceParts = parts.map(part => ({
+        fileName: part.fileName,
+        startDate,
+        endDate,
+        riders: part.riders
+      }));
+      const record = buildWeeklySettlementRecord({
+        platform,
+        channel,
+        region: options.region || '',
+        fileName: files.map(file => file.name).join(' + '),
+        fileNames: files.map(file => file.name),
+        sourceParts,
+        partSlot: options.partSlot,
+        partTag: options.partTag,
+        baseSettlementDate: options.baseSettlementDate || startDate,
+        startDate,
+        endDate,
+        paymentDate: options.paymentDate,
+        settlementWeekLabel: options.settlementWeekLabel,
+        matchedRiders,
+        unmatchedRiders
+      });
+      const outsideCallMismatches = await auditCoupangOutsideCallsForFiles(files, options.password, record);
+      return {
+        ...record,
+        sourceParts,
+        fileNames: files.map(file => file.name),
+        previewUnmatched: unmatchedRiders,
+        outsideCallMismatches,
+        mergeNote: merged.summary || ''
+      };
+    }
+
     const file = files[0];
     const parsedMeta = platform === 'baemin' ? parseBaeminFileName(file.name) : {};
     let startDate = options.startDate || parsedMeta.startDate || '';
@@ -2713,6 +3008,8 @@ const BremWeeklySettlement = (function () {
     baeminWeekStartKey,
     mergeBaeminRiders,
     mergeBaeminRidersFromParts,
+    mergeRidersBySheetIdentity,
+    coupangVendorLabel,
     listBaeminSourceParts,
     normalizePartSlot,
     normalizePartTag,
