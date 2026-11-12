@@ -183,6 +183,7 @@
         <div class="facts">${factsHtml}</div>
         ${PRINT_LEGEND}
         <table>
+          <colgroup><col class="col-start">${RATES.map(() => '<col>').join('')}</colgroup>
           <thead>
             <tr><th>시작 건수</th>${RATES.map(rate => `<th>건당 ${rate.toLocaleString('ko-KR')}</th>`).join('')}</tr>
           </thead>
@@ -195,40 +196,42 @@
     return self + members;
   }
 
-  function buildPrintDoc(snap) {
+  function buildPrintDoc(snap, lines) {
     const stamp = snap.weekStart ? `정산주 ${snap.weekStart} ~ ${snap.weekEnd}` : '';
-    const blocks = snap.lines.map(line => printLineHtml(line, false, stamp)).join('');
+    const useLines = (lines && lines.length) ? lines : snap.lines;
+    const blocks = useLines.map(line => printLineHtml(line, false, stamp)).join('');
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
 <title>미션조정 ${stamp}</title>
 <style>
-  @page { size: A4 landscape; margin: 10mm; }
+  @page { size: A4 landscape; margin: 7mm; }
   * { box-sizing: border-box; }
   html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body { font-family: "Malgun Gothic", "맑은 고딕", sans-serif; color: #111; margin: 0; padding: 16px; font-size: 11px; }
-  /* 지역별로 한 페이지씩 인쇄 */
-  .blk { page-break-inside: avoid; break-inside: avoid; page-break-after: always; break-after: page; margin: 0; border: 1px solid #d0d0d0; border-radius: 6px; padding: 12px 14px; }
+  body { font-family: "Malgun Gothic", "맑은 고딕", sans-serif; color: #111; margin: 0; padding: 0; font-size: 10px; }
+  /* 지역별로 한 페이지씩 인쇄, A4 가로 폭에 딱 맞춤 */
+  .blk { page-break-inside: avoid; break-inside: avoid; page-break-after: always; break-after: page; margin: 0; border: 1px solid #d0d0d0; border-radius: 6px; padding: 8px 10px; }
   .blk:last-child { page-break-after: auto; break-after: auto; }
   .blk.group { border-color: #4b5563; border-width: 1.5px; }
   .blk.member { border-style: dashed; background: #fafafa; }
-  .blk-head { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 6px; }
-  .blk h2 { font-size: 15px; margin: 0; }
-  .blk h2 small { font-weight: normal; color: #666; font-size: 12px; }
-  .blk-stamp { color: #555; font-size: 12px; }
-  .facts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 6px; color: #333; font-size: 12px; }
+  .blk-head { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 5px; }
+  .blk h2 { font-size: 14px; margin: 0; }
+  .blk h2 small { font-weight: normal; color: #666; font-size: 11px; }
+  .blk-stamp { color: #555; font-size: 11px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 3px 14px; margin: 0 0 5px; color: #333; font-size: 11px; }
   .facts b { color: #000; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #c8c8c8; padding: 5px 4px; text-align: center; line-height: 1.3; }
-  thead th { background: #f1f1f1; font-size: 11px; }
-  tbody th { background: #f6f6f6; white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  col.col-start { width: 8%; }
+  th, td { border: 1px solid #c8c8c8; padding: 4px 2px; text-align: center; line-height: 1.25; word-break: keep-all; overflow: hidden; }
+  thead th { background: #f1f1f1; font-size: 10px; }
+  tbody th { background: #f6f6f6; }
   td.c-ok { background: #e8f5e9; }
   td.c-over { background: #fdecea; }
   td.c-over b { color: #c0392b; }
   td.c-empty { background: #f3f4f6; color: #999; }
-  td b { font-size: 12px; }
-  .legend { margin: 0 0 8px; color: #555; font-size: 11px; }
-  .legend span { display: inline-block; margin-right: 14px; }
-  .sw { display: inline-block; width: 11px; height: 11px; border: 1px solid #c8c8c8; vertical-align: -1px; margin-right: 4px; }
+  td b { font-size: 11px; }
+  .legend { margin: 0 0 6px; color: #555; font-size: 10px; }
+  .legend span { display: inline-block; margin-right: 12px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border: 1px solid #c8c8c8; vertical-align: -1px; margin-right: 4px; }
   .sw-ok { background: #e8f5e9; }
   .sw-over { background: #fdecea; }
   .sw-empty { background: #f3f4f6; }
@@ -239,23 +242,86 @@
 </body></html>`;
   }
 
-  function printPdf() {
-    const snap = state.snap;
-    if (!snap || !snap.lines || !snap.lines.length) {
-      showToast('먼저 정산주를 불러오세요. 인쇄할 미션조정 표가 없습니다.');
-      return;
-    }
+  function doPrint(snap, lines) {
     const win = window.open('', '_blank');
     if (!win) {
       showToast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.');
       return;
     }
     win.document.open();
-    win.document.write(buildPrintDoc(snap));
+    win.document.write(buildPrintDoc(snap, lines));
     win.document.close();
     win.focus();
     // 폰트·레이아웃이 적용된 뒤 인쇄 대화상자를 연다.
     win.addEventListener('load', () => setTimeout(() => win.print(), 150));
+  }
+
+  // 인쇄 전에 어떤 지역을 뽑을지 고르는 선택 창을 띄운다.
+  function openPrintPicker() {
+    const snap = state.snap;
+    if (!snap || !snap.lines || !snap.lines.length) {
+      showToast('먼저 정산주를 불러오세요. 인쇄할 미션조정 표가 없습니다.');
+      return;
+    }
+    const prev = document.getElementById('missionAdjustPrintPicker');
+    if (prev) prev.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'missionAdjustPrintPicker';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100000;display:flex;align-items:center;justify-content:center;';
+
+    const listHtml = snap.lines.map((line, i) => {
+      const sub = line.kind === 'group'
+        ? `묶음 ${(line.memberLines || []).length}개 지역`
+        : '지역';
+      return `<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid #eee;cursor:pointer;">
+        <input type="checkbox" class="ma-pick" data-idx="${i}" checked>
+        <span>${escapeHtml(line.title)} <small style="color:#888;">${sub} · 기사 ${line.riderCount}명</small></span>
+      </label>`;
+    }).join('');
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;color:#111;border-radius:10px;padding:18px 20px;max-width:440px;width:92%;max-height:82vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.35);font-family:inherit;';
+    box.innerHTML = `
+      <h3 style="margin:0 0 4px;font-size:16px;">인쇄할 지역 선택</h3>
+      <p style="margin:0 0 10px;color:#777;font-size:12px;">선택한 지역만 한 장씩 인쇄/PDF로 나옵니다. 묶음은 합산표 + 소속 지역표가 함께 나옵니다.</p>
+      <label style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:2px solid #ddd;font-weight:bold;cursor:pointer;">
+        <input type="checkbox" id="maPickAll" checked><span>전체 선택</span>
+      </label>
+      <div style="margin:4px 0 14px;">${listHtml}</div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button type="button" id="maPickCancel" style="padding:8px 16px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;">취소</button>
+        <button type="button" id="maPickPrint" style="padding:8px 16px;border:none;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;">인쇄 / PDF</button>
+      </div>`;
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    const picks = () => Array.from(box.querySelectorAll('.ma-pick'));
+    const all = box.querySelector('#maPickAll');
+
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+    box.querySelector('#maPickCancel').addEventListener('click', close);
+    all.addEventListener('change', () => picks().forEach(pick => { pick.checked = all.checked; }));
+    picks().forEach(pick => pick.addEventListener('change', () => {
+      all.checked = picks().every(item => item.checked);
+    }));
+    box.querySelector('#maPickPrint').addEventListener('click', () => {
+      const chosen = picks()
+        .filter(pick => pick.checked)
+        .map(pick => snap.lines[Number(pick.dataset.idx)]);
+      if (!chosen.length) {
+        showToast('지역을 하나 이상 선택하세요.');
+        return;
+      }
+      close();
+      doPrint(snap, chosen);
+    });
+  }
+
+  function printPdf() {
+    openPrintPicker();
   }
 
   function render() {
