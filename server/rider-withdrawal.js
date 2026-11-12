@@ -811,6 +811,16 @@ function livePlatformAvailable(summary, requests, platform, feesByPlatform) {
   const mine = (Array.isArray(requests) ? requests : []).filter(item => (
     item.driverId === driverId && item.weekStart === weekStart
   ));
+  // 아카이브로 옮겨진 처리완료 출금도 합산해 '이미 지급한 돈'을 반드시 차감한다.
+  const archived = Array.isArray(summary?.archivedCompletedRequests)
+    ? summary.archivedCompletedRequests
+    : [];
+  if (archived.length) {
+    const seen = new Set(mine.map(item => item.id));
+    archived.forEach(item => {
+      if (!seen.has(item.id)) mine.push(item);
+    });
+  }
   const buckets = accumulateRequestBuckets(mine, feesByPlatform);
   const available = computeAvailableByPlatform(
     summary?.netPayByPlatform,
@@ -943,16 +953,42 @@ function archiveCutoffWeekStart(now = new Date()) {
   return normalizeSettlementWeekStart(toLocalDateKey(base));
 }
 
-function isArchivableRequest(item, cutoffWeekStart) {
+/** 전체 마무리된 정산주(수요일 시작) 집합. 부분 마무리/미마무리 주는 포함하지 않는다. */
+function fullyFinalizedWeekSet(finalizedRaw) {
+  const set = new Set();
+  normalizeFinalizedWeeks(finalizedRaw).forEach(entry => {
+    if (isWeekFullyFinalized(entry)) set.add(entry.weekStart);
+  });
+  return set;
+}
+
+function isArchivableRequest(item, cutoffWeekStart, finalizedWeekSet) {
   if (!item) return false;
   if (item.status !== 'completed' && item.status !== 'cancelled') return false;
   const week = String(item.weekStart || '');
-  return Boolean(week) && week < cutoffWeekStart;
+  if (!week || week >= cutoffWeekStart) return false;
+  // 마무리되지 않은 주의 출금 기록은 절대 아카이브하지 않는다.
+  // 아카이브되면 '이미 지급한 돈(처리완료)'이 출금가능 계산에서 사라져
+  // 같은 주의 실지급이 통째로 다시 출금가능으로 되살아나는 사고가 난다.
+  return finalizedWeekSet instanceof Set && finalizedWeekSet.has(week);
 }
 
 async function readRequestsArchive(supabase) {
   const raw = await readSettingValue(supabase, REQUESTS_ARCHIVE_KEY, []);
   return normalizeRequestList(raw);
+}
+
+// 아카이브로 옮겨진 '처리완료' 출금도 출금가능 계산에서 빼야 같은 주가 되살아나지 않는다.
+// 아카이브는 cutoff(8주)보다 오래된 주에만 존재하므로, 최근 주는 조회 자체를 건너뛴다.
+async function archivedCompletedForWeek(supabase, weekStart) {
+  const week = String(weekStart || '').slice(0, 10);
+  if (!week || week >= archiveCutoffWeekStart()) return [];
+  try {
+    const archive = await readRequestsArchive(supabase);
+    return archive.filter(item => item.status === 'completed' && item.weekStart === week);
+  } catch (_error) {
+    return [];
+  }
 }
 
 // 프로세스당 과도한 아카이브 시도를 막는 쿨다운(관리자 목록 조회 시에만 기회적으로 실행).
@@ -963,12 +999,15 @@ async function maybeArchiveOldRequests(supabase) {
   lastArchiveRunAt = now;
   const cutoff = archiveCutoffWeekStart();
   try {
+    const finalizedWeekSet = fullyFinalizedWeekSet(
+      await readSettingValue(supabase, FINALIZED_WEEKS_KEY, [])
+    );
     let moved = [];
     const outcome = await withRequestsLock(() => mutateRequestsList(supabase, (list) => {
       const keep = [];
       const move = [];
       list.forEach(item => {
-        if (isArchivableRequest(item, cutoff)) move.push(item);
+        if (isArchivableRequest(item, cutoff, finalizedWeekSet)) move.push(item);
         else keep.push(item);
       });
       if (!move.length) return { shortCircuit: true, result: { moved: [] } };
@@ -1315,6 +1354,15 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   const myWeekRequests = allRequests.filter(item => (
     item.driverId === driverId && item.weekStart === weekStart
   ));
+  // 레거시로 아카이브된 처리완료 출금도 합산해 '이미 지급한 돈'을 빠짐없이 차감한다.
+  const archivedCompleted = (await archivedCompletedForWeek(supabase, weekStart))
+    .filter(item => String(item.driverId) === driverId);
+  if (archivedCompleted.length) {
+    const seen = new Set(myWeekRequests.map(item => item.id));
+    archivedCompleted.forEach(item => {
+      if (!seen.has(item.id)) myWeekRequests.push(item);
+    });
+  }
   const pendingRequests = myWeekRequests.filter(item => item.status === 'pending');
   const completedRequests = myWeekRequests.filter(item => item.status === 'completed');
   const requestBuckets = accumulateRequestBuckets(myWeekRequests, feesByPlatform);
@@ -1426,6 +1474,7 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     requestedFeeTotal,
     withdrawnTotal,
     withdrawnAmountTotal,
+    archivedCompletedRequests: archivedCompleted,
     availableAmount,
     weekFinalized,
     weekFinalizedAt: finalizedEntry?.finalizedAt || '',
@@ -2264,13 +2313,20 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
 
   // 이번주 출금신청을 기사별로 그룹핑
   const requestsByDriver = new Map();
-  allRequests
-    .filter(item => item.weekStart === weekStart)
-    .forEach(item => {
-      const id = String(item.driverId || '');
-      if (!requestsByDriver.has(id)) requestsByDriver.set(id, []);
-      requestsByDriver.get(id).push(item);
+  const weekRequests = allRequests.filter(item => item.weekStart === weekStart);
+  // 레거시로 아카이브된 처리완료 출금도 합산해 '이미 지급한 돈'을 빠짐없이 차감한다.
+  const archivedCompletedWeek = await archivedCompletedForWeek(supabase, weekStart);
+  if (archivedCompletedWeek.length) {
+    const seen = new Set(weekRequests.map(item => item.id));
+    archivedCompletedWeek.forEach(item => {
+      if (!seen.has(item.id)) weekRequests.push(item);
     });
+  }
+  weekRequests.forEach(item => {
+    const id = String(item.driverId || '');
+    if (!requestsByDriver.has(id)) requestsByDriver.set(id, []);
+    requestsByDriver.get(id).push(item);
+  });
 
   // 대상 기사 = 정산서가 있는 전체 기사 ∪ 명단 등록 기사 ∪ 이번주 출금신청 기사
   const driverIdSet = new Set();
@@ -2559,6 +2615,8 @@ module.exports = {
     buildBulkCompleteResult,
     computeAutoFixPlatformChanges,
     isArchivableRequest,
+    fullyFinalizedWeekSet,
+    isWeekFullyFinalized,
     archiveCutoffWeekStart,
     readRequestsSnapshot,
     commitRequestsSnapshot

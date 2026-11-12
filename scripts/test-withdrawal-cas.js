@@ -12,6 +12,7 @@ const {
   markWithdrawalCompleted,
   buildBulkCompleteResult,
   isArchivableRequest,
+  fullyFinalizedWeekSet,
   archiveCutoffWeekStart
 } = __audit;
 
@@ -156,13 +157,24 @@ function makeRequests(n, status = 'pending', weekStart = '2026-09-16') {
     assert.strictEqual(r2.status, 404, '없는 건 404 아님');
   }
 
-  // 4) 아카이브 대상 판정: 오래된 완료/취소만, 최근·대기건은 제외
+  // 4) 아카이브 대상 판정: '마무리된' 오래된 완료/취소만, 최근·대기·미마무리 주는 제외
   {
     const cutoff = archiveCutoffWeekStart(new Date('2026-09-17T00:00:00+09:00'));
-    assert.ok(isArchivableRequest({ status: 'completed', weekStart: '2026-06-10' }, cutoff), '오래된 완료 미아카이브');
-    assert.ok(isArchivableRequest({ status: 'cancelled', weekStart: '2026-06-10' }, cutoff), '오래된 취소 미아카이브');
-    assert.ok(!isArchivableRequest({ status: 'pending', weekStart: '2026-06-10' }, cutoff), '대기건이 아카이브됨');
-    assert.ok(!isArchivableRequest({ status: 'completed', weekStart: '2026-09-16' }, cutoff), '최근 완료가 아카이브됨');
+    const finalized = fullyFinalizedWeekSet([
+      { weekStart: '2026-06-10', full: true }
+    ]);
+    assert.ok(isArchivableRequest({ status: 'completed', weekStart: '2026-06-10' }, cutoff, finalized), '오래된 완료(마무리됨) 미아카이브');
+    assert.ok(isArchivableRequest({ status: 'cancelled', weekStart: '2026-06-10' }, cutoff, finalized), '오래된 취소(마무리됨) 미아카이브');
+    assert.ok(!isArchivableRequest({ status: 'pending', weekStart: '2026-06-10' }, cutoff, finalized), '대기건이 아카이브됨');
+    assert.ok(!isArchivableRequest({ status: 'completed', weekStart: '2026-09-16' }, cutoff, finalized), '최근 완료가 아카이브됨');
+    // 핵심 회귀 방지: 마무리되지 않은 오래된 주의 완료건은 절대 아카이브하지 않는다.
+    // (아카이브되면 이미 지급한 돈이 출금가능에서 사라져 같은 주가 되살아난다.)
+    assert.ok(!isArchivableRequest({ status: 'completed', weekStart: '2026-06-10' }, cutoff, new Set()), '미마무리 주 완료가 아카이브됨(되살아남 위험)');
+    // 부분 마무리(batches)는 '전체 마무리'가 아니므로 아카이브 대상에서 제외한다.
+    const partial = fullyFinalizedWeekSet([
+      { weekStart: '2026-06-10', full: false, batches: [{ id: 'coupang:2026-06-10:2026-06-16', platform: 'coupang', startDate: '2026-06-10', endDate: '2026-06-16' }] }
+    ]);
+    assert.ok(!isArchivableRequest({ status: 'completed', weekStart: '2026-06-10' }, cutoff, partial), '부분 마무리 주 완료가 아카이브됨');
   }
 
   console.log('OK: 출금 CAS·대량완료 동치·아카이브 판정 통과');
