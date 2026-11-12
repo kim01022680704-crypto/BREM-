@@ -1805,7 +1805,7 @@ const BremWeeklySettlementAdmin = (function () {
     }
     const labels = records.map(item => item.region || item.fileName || item.id).join('\n+ ');
     const mergeHelp = platform === 'coupang'
-      ? '같은 이름(이글스·119처럼 두 장에 있는 사람)은 콜수·배달료·보험·세금을 더합니다. 상세에서 항목별 합산을 볼 수 있습니다.'
+      ? '쿠팡ID(ERP ID)가 같은 사람은 콜수·배달료·보험·세금을 더합니다. 그 기사에 배민ID가 있으면 같이 붙습니다. 상세에서 항목별 합산을 볼 수 있습니다.'
       : '같은 기사는 콜수·배달료를 더하고, 표기는 지역A + 지역B 로 남습니다.';
     if (!window.confirm(`선택한 ${records.length}건을 합칠까요?\n${mergeHelp}\n\n${labels}`)) {
       return;

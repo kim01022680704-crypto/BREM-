@@ -345,7 +345,7 @@ const BremWeeklySettlement = (function () {
     return out;
   }
 
-  // 쿠팡 이글스→119 이관: 같은 이름(성함칸)이면 콜수와 금액 항목을 모두 더한다.
+  // 쿠팡 이글스→119 이관: 쿠팡ID(ERP ID)가 같은 행만 콜수와 금액 항목을 더한다.
   // 배민 합산의 Z지급은 큰 쪽만 남기므로, 쿠팡은 지급액도 더한다.
   function sumCoupangAmountMaps(a = {}, b = {}) {
     const left = a && typeof a === 'object' ? a : {};
@@ -400,7 +400,7 @@ const BremWeeklySettlement = (function () {
     if (pieces.length < 2) return '';
     const orders = pieces.reduce((sum, item) => sum + Math.round(Number(item.orders || 0)), 0);
     const orderText = pieces.map(item => `${item.label} ${Math.round(Number(item.orders || 0))}`).join('+');
-    const bits = [`같은 이름 합산 · 오더 ${orderText}=${orders}`];
+    const bits = [`같은 쿠팡ID 합산 · 오더 ${orderText}=${orders}`];
     COUPANG_MERGE_AMOUNT_LABELS.forEach(([key, label]) => {
       const values = pieces.map(item => Math.round(Number(item.amounts?.[key] || 0)));
       const total = values.reduce((sum, value) => sum + value, 0);
@@ -410,11 +410,8 @@ const BremWeeklySettlement = (function () {
     return bits.join(' · ');
   }
 
-  function coupangMergeIdentity(rider) {
-    const login = normalizeCoupangLoginKey(rider?.coupangLoginKey || rider?.originalName || '');
-    const name = normalizeCoupangName(rider?.riderName || rider?.driverName || rider?.originalName || '');
-    const tail = (login.match(/(\d{4})$/) || [])[1] || '';
-    return { login, name, tail };
+  function coupangIdMergeKey(rider) {
+    return normalizeCoupangLoginKey(rider?.coupangLoginKey || rider?.originalName || '');
   }
 
   function cloneRiderForCoupangMerge(rider) {
@@ -456,19 +453,10 @@ const BremWeeklySettlement = (function () {
     target.sheetMergeParts.push({ label, orders, amounts });
   }
 
-  function absorbCoupangMergedRider(target, source) {
-    target.weeklyOrderCount = Math.round(
-      Number(target.weeklyOrderCount || 0) + Number(source.weeklyOrderCount || 0)
-    );
-    target.amounts = sumCoupangAmountMaps(target.amounts, source.amounts);
-    fillCoupangMergeIdentity(target, source);
-    target.sheetMergeParts = (target.sheetMergeParts || []).concat(source.sheetMergeParts || []);
-  }
-
   /**
-   * 쿠팡 정산서 여러 장을 성함칸(이름+뒤4자리)으로 합친다.
-   * 이글스·119에 같은 이름이 있으면 콜수·배달료·보험·세금을 더하고, 무엇을 더했는지 노트에 남긴다.
-   * 뒤 4자리가 다른 동명이인은 합치지 않는다.
+   * 쿠팡 정산서 여러 장을 쿠팡ID(ERP ID, 성함칸 전체)가 같은 행만 합친다.
+   * 이글스·119에 같은 쿠팡ID가 있으면 콜수·배달료·보험·세금을 더한다.
+   * 이름만 같고 ID가 다르면 다른 사람으로 둔다.
    */
   function mergeRidersBySheetIdentity(parts = [], platform = 'coupang') {
     if (normalizePlatform(platform) !== 'coupang') {
@@ -477,40 +465,16 @@ const BremWeeklySettlement = (function () {
     }
 
     const buckets = new Map();
-    const nameIndex = new Map();
     let looseIndex = 0;
     (Array.isArray(parts) ? parts : []).forEach(part => {
       const label = String(part?.label || part?.fileName || '').trim() || '정산서';
       (Array.isArray(part?.riders) ? part.riders : []).forEach(rider => {
         if (!rider) return;
-        const identity = coupangMergeIdentity(rider);
-        let key = '';
-        if (identity.login && identity.tail) key = `login:${identity.login}`;
-        else if (identity.name) key = `name:${identity.name}`;
-        else if (rider.matchedRiderId) key = `id:${String(rider.matchedRiderId).trim()}`;
-        else {
-          looseIndex += 1;
-          key = `raw:${looseIndex}`;
-        }
+        const coupangId = coupangIdMergeKey(rider);
+        const key = coupangId ? `id:${coupangId}` : `raw:${looseIndex += 1}`;
         if (!buckets.has(key)) buckets.set(key, cloneRiderForCoupangMerge(rider));
         appendCoupangMergePiece(buckets.get(key), rider, label);
-        if (identity.name && identity.tail) {
-          const list = nameIndex.get(identity.name) || [];
-          if (!list.includes(key)) list.push(key);
-          nameIndex.set(identity.name, list);
-        }
       });
-    });
-
-    [...buckets.keys()].forEach(key => {
-      if (!key.startsWith('name:')) return;
-      const loginKeys = nameIndex.get(key.slice(5)) || [];
-      if (loginKeys.length !== 1) return;
-      const target = buckets.get(loginKeys[0]);
-      const source = buckets.get(key);
-      if (!target || !source || target === source) return;
-      absorbCoupangMergedRider(target, source);
-      buckets.delete(key);
     });
 
     let mergedCount = 0;
@@ -529,7 +493,7 @@ const BremWeeklySettlement = (function () {
       riders,
       mergedCount,
       summary: mergedCount
-        ? `같은 이름 ${mergedCount}명은 콜수·배달료·보험·세금을 더했습니다.`
+        ? `같은 쿠팡ID ${mergedCount}명은 콜수·배달료·보험·세금을 더했습니다.`
         : ''
     };
   }
@@ -939,10 +903,7 @@ const BremWeeklySettlement = (function () {
 
   function resolveDriverByUniqueName(rider, platform) {
     const p = normalizePlatform(platform);
-    if (p !== 'baemin') {
-      const login = normalizeCoupangLoginKey(rider?.coupangLoginKey || rider?.originalName);
-      if (/\d{4}$/.test(login)) return null;
-    }
+    if (p !== 'baemin') return null;
     const name = normalizeName(rider?.riderName || rider?.originalName, p);
     if (!name) return null;
     const hits = (BremStorage.drivers.getAll() || []).filter(driver => (
@@ -956,16 +917,20 @@ const BremWeeklySettlement = (function () {
     const p = normalizePlatform(platform);
     const driver = p === 'baemin'
       ? (resolveBaeminDriver(rider) || resolveDriverByUniqueName(rider, p))
-      : (resolveCoupangDriver(rider) || resolveDriverByUniqueName(rider, p));
+      : resolveCoupangDriver(rider);
     if (!driver) return rider;
+    const baeminUserId = (p === 'baemin' || driver.baeminId)
+      ? (preferRegisteredBaeminId(rider.baeminUserId, driver) || rider.baeminUserId || '')
+      : (rider.baeminUserId || '');
     return {
       ...rider,
       matched: true,
       matchedRiderId: driver.id,
       driverName: driver.name || rider.driverName || rider.riderName,
-      baeminUserId: p === 'baemin'
-        ? (preferRegisteredBaeminId(rider.baeminUserId, driver) || rider.baeminUserId)
-        : rider.baeminUserId
+      baeminUserId,
+      ...(p === 'coupang' && !rider.coupangLoginKey
+        ? { coupangLoginKey: window.BremDriverUtils?.getErpCoupangId?.(driver) || '' }
+        : {})
     };
   }
 
@@ -1079,10 +1044,9 @@ const BremWeeklySettlement = (function () {
     return `${name}${phone}`;
   }
 
-  // erpId·이름+뒤4 둘 다 인덱싱. 동일 키에 기사가 둘 이상이면 ambiguous.
+  // ERP 쿠팡ID(등록 ID 또는 이름+전화뒤4)만 인덱싱. 이름만으로는 찾지 않는다.
   function buildCoupangDriverLookup(driverList) {
     const byKey = new Map();
-    const byName = new Map();
     (Array.isArray(driverList) ? driverList : []).forEach(driver => {
       if (!driver?.id) return;
       const keys = new Set();
@@ -1097,21 +1061,8 @@ const BremWeeklySettlement = (function () {
           byKey.set(key, 'ambiguous');
         }
       });
-      const nameKey = normalizeCoupangName(driver.name);
-      if (!nameKey) return;
-      const list = byName.get(nameKey) || [];
-      list.push(driver);
-      byName.set(nameKey, list);
     });
-    return { byKey, byName };
-  }
-
-  function sheetPhoneTail(rawName) {
-    return (String(rawName || '').match(/(\d{4})\s*$/) || [])[1] || '';
-  }
-
-  function driverPhoneTail(driver) {
-    return String(driver?.phone || '').replace(/[^0-9]/g, '').slice(-4);
+    return { byKey };
   }
 
   function resolveCoupangDriverFromLookup(rider, lookup) {
@@ -1121,22 +1072,10 @@ const BremWeeklySettlement = (function () {
       if (hit && hit !== 'ambiguous') return hit;
     }
 
-    // 정확한 키 기사가 없을 때만 수동매핑 (같은 사람·번호만 다른 경우)
+    // 쿠팡ID가 ERP ID와 정확히 같을 때만 붙인다. 이름만 같은 기사에는 붙이지 않는다.
+    // 수동매핑은 관리자가 그 성함칸을 특정 기사로 지정한 경우만 쓴다.
     const manual = resolveDriverByManualMapping(rider.originalName, rider.riderName, 'coupang');
     if (manual) return manual;
-
-    // 이름+뒤4 쿠팡ID 가 있는데 목록에 없으면, 이름만으로 동명이인에게 붙이지 않는다.
-    if (loginKey && /\d{4}$/.test(loginKey)) return null;
-
-    const nameKey = normalizeCoupangName(rider.riderName || rider.originalName);
-    if (nameKey && lookup?.byName) {
-      const list = lookup.byName.get(nameKey) || [];
-      if (list.length === 1) {
-        const sheetTail = sheetPhoneTail(rider.coupangLoginKey || rider.originalName);
-        const ownTail = driverPhoneTail(list[0]);
-        if (!sheetTail || !ownTail || sheetTail === ownTail) return list[0];
-      }
-    }
     return null;
   }
 
@@ -1784,21 +1723,6 @@ const BremWeeklySettlement = (function () {
         if (makeCoupangLoginKeyForDriver(driver) === loginKey) return driver;
         if (makeCoupangNamePhoneKey(driver) === loginKey) return driver;
       }
-      // 쿠팡ID(이름+뒤4)가 있는데 기간 데이터에 없으면 이름만으로 동명이인에게 붙이지 않는다.
-      if (/\d{4}$/.test(loginKey)) return null;
-    }
-    const normalizedTarget = normalizeCoupangName(rider.riderName || rider.originalName);
-    if (normalizedTarget) {
-      const nameHits = [];
-      for (const driverId of driverIdsInPeriod) {
-        const driver = BremStorage.drivers.getById(driverId);
-        if (driver && normalizeCoupangName(driver.name) === normalizedTarget) nameHits.push(driver);
-      }
-      if (nameHits.length === 1) {
-        const sheetTail = sheetPhoneTail(rider.coupangLoginKey || rider.originalName);
-        const ownTail = driverPhoneTail(nameHits[0]);
-        if (!sheetTail || !ownTail || sheetTail === ownTail) return nameHits[0];
-      }
     }
     return null;
   }
@@ -1965,7 +1889,9 @@ const BremWeeklySettlement = (function () {
         // 엑셀에서 앞 0 이 빠졌어도 기사 등록 배민 ID(010…)로 복원
         baeminUserId: p === 'baemin'
           ? preferRegisteredBaeminId(rider.baeminUserId, driver)
-          : (rider.baeminUserId || ''),
+          : (driver?.baeminId
+            ? preferRegisteredBaeminId(rider.baeminUserId, driver)
+            : (rider.baeminUserId || '')),
         driverName: driver?.name || '',
         matchedRiderId: driver?.id || '',
         matched,
@@ -2608,7 +2534,7 @@ const BremWeeklySettlement = (function () {
     return record;
   }
 
-  async function auditCoupangOutsideCallsForFiles(files, password, record, auditOptions) {
+  async function auditCoupangOutsideCallsForFiles(files, password, record) {
     const list = (Array.isArray(files) ? files : []).filter(Boolean);
     if (list.length <= 1) {
       return auditCoupangOutsideCalls(list[0], password, record);

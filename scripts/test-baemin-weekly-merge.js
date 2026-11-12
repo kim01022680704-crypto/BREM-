@@ -678,9 +678,8 @@ const nameOnly = WS.mergeRidersBySheetIdentity([
   { label: '이글스', riders: [{ riderName: '김철수', originalName: '김철수', weeklyOrderCount: 4, amounts: { deliveryFee: 400 } }] },
   { label: '119', riders: [{ riderName: '김철수', coupangLoginKey: '김철수1234', originalName: '김철수1234', weeklyOrderCount: 6, amounts: { deliveryFee: 600 } }] }
 ], 'coupang');
-check('coupang bare name folds into same tail', nameOnly.riders.length, 1);
-check('coupang bare name calls summed', nameOnly.riders[0].weeklyOrderCount, 10);
-check('coupang bare name fee summed', nameOnly.riders[0].amounts.deliveryFee, 1000);
+check('coupang bare name is not the same id', nameOnly.riders.length, 2);
+check('coupang bare name calls stay apart', nameOnly.riders.map(rider => rider.weeklyOrderCount).sort((a, b) => a - b).join(','), '4,6');
 
 store.length = 0;
 const coupangEagles = {

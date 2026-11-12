@@ -1650,7 +1650,7 @@ const BremPromotionApplyAdmin = (function () {
       <p>적용 방식: <strong>${escapeHtml(result.assignmentMode === 'per_driver' ? '기사별 미션 배정' : '선택 조건 시뮬레이션')}</strong></p>
       <p>적용 조건: <strong>${escapeHtml(result.appliedRuleLabel || (result.selectedPromotionRuleNames || []).join(', ') || '-')}</strong>${result.unassignedRiderCount ? ` · 미배정 <strong>${formatNumber(result.unassignedRiderCount)}</strong>명` : ''}</p>
       <p>기사 <strong>${formatNumber(result.summary.riderCount)}</strong>명 · 총 프로모션 <strong>${formatMoney(result.summary.totalPromotionAmount)}</strong>${rateMissingSummary}</p>
-      ${result.sheetMergeSummary ? `<p>${escapeHtml(result.sheetMergeSummary)} 같은 이름의 오더·배달료·보험·세금 내역은 콜수 칸에 있습니다.</p>` : ''}
+      ${result.sheetMergeSummary ? `<p>${escapeHtml(result.sheetMergeSummary)} 같은 쿠팡ID의 오더·배달료·보험·세금 내역은 콜수 칸에 있습니다.</p>` : ''}
       ${deliveryFeeSummary}
       ${result.rainApply ? '<p>우천적용: <strong>기상할증(AC) 건은 AH-500원 후 단가보장</strong></p>' : ''}
       ${slaCount > 0
@@ -1931,7 +1931,7 @@ const BremPromotionApplyAdmin = (function () {
           }
           baeminForCalc = BremPromotionApply.mergePartSettlementsList([baeminSettlement, second], baeminSettlement);
         }
-        // 쿠팡 이글스·119: 두 정산서에 같은 이름이 있으면 콜수·금액을 더해 계산한다.
+        // 쿠팡 이글스·119: 쿠팡ID(ERP ID)가 같은 행의 콜수·금액을 더해 계산한다.
         let coupangForCalc = coupangSettlement;
         if ($('#promotionApplyCombineParts-combined-coupang')?.checked) {
           const second = readSecondSettlement(

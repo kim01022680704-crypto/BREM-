@@ -230,10 +230,19 @@ const BremPromotionApply = (function () {
       return BremWeeklySettlement.resolveBaeminDriver(rider)
         || findDriverByBaeminIdLoose(rider?.baeminUserId);
     }
+    const exact = window.BremWeeklySettlement?.resolveCoupangDriver?.(rider) || null;
+    if (exact?.id) return exact;
     const storedId = String(rider?.matchedRiderId || '').trim();
     const stored = storedId ? BremStorage.drivers.getById(storedId) || null : null;
-    if (stored) return stored;
-    return window.BremWeeklySettlement?.resolveCoupangDriver?.(rider) || null;
+    if (!stored) return null;
+    const sheetKey = String(rider?.coupangLoginKey || rider?.originalName || '').replace(/\s+/g, '');
+    const erpKey = String(
+      window.BremDriverUtils?.getErpCoupangId?.(stored)
+      || stored.coupangId
+      || stored.coupangLoginId
+      || ''
+    ).replace(/\s+/g, '');
+    return sheetKey && erpKey && sheetKey === erpKey ? stored : null;
   }
 
   function enrichCoupangRider(rider, driver) {
@@ -242,7 +251,10 @@ const BremPromotionApply = (function () {
       ...rider,
       matched: true,
       matchedRiderId: driver.id,
-      driverName: driver.name || rider.driverName || rider.riderName
+      driverName: driver.name || rider.driverName || rider.riderName,
+      coupangLoginKey: rider.coupangLoginKey
+        || (window.BremDriverUtils?.getErpCoupangId?.(driver) || ''),
+      baeminUserId: getBaeminUserId(rider, driver)
     };
   }
 
