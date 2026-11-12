@@ -378,6 +378,57 @@ const alreadyMerged = M.canonicalRegionLabel(
 );
 check('이미 합친 주정산도 권역명', alreadyMerged, '표준울산남A');
 
+console.log('\n[5c] 합친 쿠팡 남구중앙은 119·이글스로 나누고 선정산은 한 번만');
+window.BremDirectSettlementCalc.computeRows = () => [
+  { idLabel: '119only', netPay: 8000, prepaid: 1000 },
+  { idLabel: 'uniononly', netPay: 20000, prepaid: 3000 },
+  { idLabel: 'both', netPay: 5000, prepaid: 500 }
+];
+window.BremStorage.weeklySettlements.getAll = () => [{
+  id: 'merged-namgu',
+  region: '남구중앙(Z)',
+  platform: 'coupang',
+  startDate: '2026-08-19',
+  sourceParts: [
+    {
+      fileName: '119컴퍼니_울산_남구중앙(Z)_2026_11-2.xlsx',
+      riders: [
+        { coupangLoginKey: '119only', amounts: { deliveryFee: 100 } },
+        { coupangLoginKey: 'both', amounts: { deliveryFee: 10 } }
+      ]
+    },
+    {
+      fileName: '배달연합_울산_남구중앙_2026_11-2.xlsx',
+      riders: [
+        { coupangLoginKey: 'uniononly', amounts: { deliveryFee: 100 } },
+        { coupangLoginKey: 'both', amounts: { deliveryFee: 90 } }
+      ]
+    }
+  ]
+}];
+window.BremStorage.revenue.getRegionSettlementByWeek = () => ({
+  weekStart: '2026-08-19',
+  taxFeePercent: 20,
+  regions: {
+    '울산_남구중앙': { supplyPaid: 28000000, vat: 2700000, source: '울산_남구중앙' },
+    '울산_남구중앙(Z)': { supplyPaid: 8000000, vat: 750000, source: '울산_남구중앙(Z)' }
+  }
+});
+M.setWeekStart('2026-08-19');
+const splitRows = M.aggregateRegions('2026-08-19').regions;
+const split119 = splitRows.find(row => row.region === '남구중앙(Z) · 119');
+const splitEagles = splitRows.find(row => row.region === '남구중앙 · 이글스');
+check('119 줄이 있다', !!split119, 'true');
+check('이글스 줄이 있다', !!splitEagles, 'true');
+check('119 최종입금은 119 기사만', split119?.finalDeposit, 8000);
+check('119 선정산은 119 기사만', split119?.prepaid, 1000);
+check('이글스 최종입금은 배달연합 기사', splitEagles?.finalDeposit, 25000);
+check('이글스 선정산은 배달연합 기사', splitEagles?.prepaid, 3500);
+check('선정산 합은 한 번만', (split119?.prepaid || 0) + (splitEagles?.prepaid || 0), 4500);
+check('같은 사람은 배달료 큰 쪽에만', (split119?.riderCount || 0) + (splitEagles?.riderCount || 0), 3);
+check('119 실지급은 Z 계산서', split119?.supplyPaid, 8000000);
+check('이글스 실지급은 일반 계산서', splitEagles?.supplyPaid, 28000000);
+
 console.log('\n[6] 엑셀 붙여넣기 · 배민 2파일 합산 · 미매칭');
 const paste = M.parsePasteRows('권역매칭\t실지급액\t부가세\n울산_남구중앙\t57685065\t5353208\n경남_양산동부(Z)\t10717232\t1001958');
 check('헤더 제외 2줄', paste.length, 2);

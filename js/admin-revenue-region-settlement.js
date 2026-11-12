@@ -284,33 +284,132 @@
     };
   }
 
+  function stripCompanySuffix(value) {
+    return String(value || '').replace(/\s*·\s*(119|이글스)\s*$/u, '').trim();
+  }
+
+  function companyTagFromFile(fileName) {
+    const raw = String(fileName || '').replace(/\s+/g, '');
+    if (!raw) return '';
+    if (raw.includes('119')) return '119';
+    if (raw.includes('이글스') || raw.includes('배달연합')) return '이글스';
+    return '';
+  }
+
+  function coupangFileRegion(fileName) {
+    const parsed = window.BremWeeklySettlement?.parseCoupangFileName?.(fileName);
+    const fromParser = String(parsed?.region || '').trim();
+    if (fromParser) return fromParser;
+    const parts = String(fileName || '').replace(/\.(xlsx|xls)$/i, '').split('_').filter(Boolean);
+    const yearAt = parts.findIndex((part, index) => index > 0 && /^\d{4}$/.test(part));
+    return yearAt > 0 ? String(parts[yearAt - 1] || '').trim() : '';
+  }
+
+  function regionWithCompany(region, company) {
+    const base = stripCompanySuffix(region);
+    if (!base || !company) return base;
+    return `${base} · ${company}`;
+  }
+
+  function rowIdentity(row) {
+    const label = String(row?.idLabel || row?.coupangLoginKey || row?.originalName || '').trim();
+    if (label && label !== '-') return label.replace(/\s+/g, '').toLowerCase();
+    return '';
+  }
+
+  // 119·이글스(배달연합)를 한 정산서로 합쳤어도 권역 이름이 다르면 돈을 나누어 붙인다.
+  // 남구중앙(Z) 파일과 남구중앙 파일이 한 장으로 합쳐져도 선정산이 두 줄에 복사되지 않게 한다.
+  function sourcePartSlots(settlement) {
+    const parts = Array.isArray(settlement?.sourceParts) ? settlement.sourceParts : [];
+    if (parts.length < 2) return [];
+    const slots = parts.map(part => {
+      const fileName = String(part?.fileName || part?.label || '').trim();
+      const region = coupangFileRegion(fileName);
+      const riders = Array.isArray(part?.riders) ? part.riders : [];
+      const ids = new Map();
+      riders.forEach(rider => {
+        const id = rowIdentity(rider);
+        if (!id) return;
+        const weight = Math.abs(Math.round(Number(rider?.amounts?.deliveryFee || 0)))
+          || Math.abs(Math.round(Number(rider?.weeklyOrderCount || 0)))
+          || 1;
+        const prev = ids.get(id) || 0;
+        if (weight > prev) ids.set(id, weight);
+      });
+      return {
+        fileName,
+        region,
+        company: companyTagFromFile(fileName),
+        ids
+      };
+    }).filter(slot => slot.region && slot.ids.size);
+    const keys = new Set(slots.map(slot => regionCompareKey(slot.region)));
+    if (keys.size < 2) return [];
+    const companies = new Set(slots.map(slot => slot.company).filter(Boolean));
+    const showCompany = companies.size > 1;
+    return slots.map(slot => ({
+      ...slot,
+      label: showCompany ? regionWithCompany(slot.region, slot.company) : slot.region
+    }));
+  }
+
+  function slotForRow(slots, row) {
+    const id = rowIdentity(row);
+    if (!id || !slots.length) return null;
+    let best = null;
+    let bestWeight = -1;
+    slots.forEach(slot => {
+      if (!slot.ids.has(id)) return;
+      const weight = slot.ids.get(id);
+      if (weight > bestWeight) {
+        best = slot;
+        bestWeight = weight;
+      }
+    });
+    return best;
+  }
+
+  function payoutRegionForRow(settlement, row, slots) {
+    const slot = slotForRow(slots, row);
+    if (slot?.label) return slot.label;
+    return canonicalRegionLabel(row?.region || settlement?.region) || '미지정';
+  }
+
+  function settlementRows(calc, settlement, rowOptions) {
+    try {
+      return calc.computeRows(settlement, rowOptions) || [];
+    } catch (error) {
+      console.warn('[revenue region] computeRows failed', error);
+      try {
+        return calc.computeRows(settlement, { withdrawals: [] }) || [];
+      } catch (_) {
+        return [{ region: settlement.region, netPay: 0, prepaid: 0 }];
+      }
+    }
+  }
+
+  function addPayoutRow(byKey, region, row) {
+    const key = regionCompareKey(region);
+    if (!key) return;
+    const bucket = byKey.get(key) || emptyRegionBucket(region);
+    if (String(region).includes('·')) bucket.region = region;
+    const net = Math.round(Number(row?.netPay || 0));
+    if (net > 0) bucket.finalDeposit += net;
+    bucket.prepaid += Math.round(Number(row?.prepaid || 0));
+    bucket.riderCount += 1;
+    byKey.set(key, bucket);
+  }
+
   function buildPayoutLookup(settlements, weekKey) {
     const byKey = new Map();
     const calc = Calc();
     if (!calc || !weekKey) return byKey;
     const rowOptions = buildPayoutComputeOptions(settlements, weekKey);
     (settlements || []).forEach(settlement => {
-      let rows = [];
-      try {
-        rows = calc.computeRows(settlement, rowOptions) || [];
-      } catch (error) {
-        console.warn('[revenue region] computeRows failed', error);
-        try {
-          rows = calc.computeRows(settlement, { withdrawals: [] }) || [];
-        } catch (_) {
-          rows = [{ region: settlement.region, netPay: 0, prepaid: 0 }];
-        }
-      }
+      const rows = settlementRows(calc, settlement, rowOptions);
+      const slots = sourcePartSlots(settlement);
       rows.forEach(row => {
-        const region = canonicalRegionLabel(row.region || settlement.region) || '미지정';
-        const key = regionCompareKey(region);
-        if (!key) return;
-        const bucket = byKey.get(key) || emptyRegionBucket(region);
-        const net = Math.round(Number(row.netPay || 0));
-        if (net > 0) bucket.finalDeposit += net;
-        bucket.prepaid += Math.round(Number(row.prepaid || 0));
-        bucket.riderCount += 1;
-        byKey.set(key, bucket);
+        addPayoutRow(byKey, payoutRegionForRow(settlement, row, slots), row);
       });
     });
     return byKey;
@@ -323,9 +422,20 @@
     const matched = matchRegionByLabel(region, names, Revenue()?.getRegionAliasMap?.() || {});
     if (matched) {
       const matchedKey = regionCompareKey(matched);
+      // (Z)와 일반은 다른 정산서다. 한쪽에만 있는 최종입금·선정산을 다른 쪽에 복사하지 않는다.
+      if (matchedKey && key && !sameRegionZFlag(key, matchedKey)) return emptyRegionBucket(region);
       if (matchedKey && lookup.has(matchedKey)) return lookup.get(matchedKey);
     }
     return emptyRegionBucket(region);
+  }
+
+  function displayRegion(fallback, pay) {
+    const label = String(pay?.region || '').trim();
+    const base = String(fallback || '').trim();
+    if (!label) return base;
+    const baseKey = regionCompareKey(base);
+    if (baseKey && regionCompareKey(label) === baseKey) return label;
+    return base || label;
   }
 
   function rowMoney(row) {
@@ -356,9 +466,10 @@
       const key = regionCompareKey(region);
       if (!region || !key || byKey.has(key)) return;
       const pay = payoutForRegion(lookup, region);
+      const shown = displayRegion(region, pay);
       byKey.set(key, {
-        region,
-        source: region,
+        region: shown,
+        source: shown,
         unmatched: false,
         riderCount: pay.riderCount,
         finalDeposit: pay.finalDeposit,
@@ -366,6 +477,22 @@
         supplyPaid: 0,
         vat: 0,
         kind: record.platform || ''
+      });
+    });
+
+    lookup.forEach(bucket => {
+      const key = regionCompareKey(bucket.region);
+      if (!key || byKey.has(key)) return;
+      byKey.set(key, {
+        region: bucket.region,
+        source: bucket.region,
+        unmatched: false,
+        riderCount: bucket.riderCount,
+        finalDeposit: bucket.finalDeposit,
+        prepaid: bucket.prepaid,
+        supplyPaid: 0,
+        vat: 0,
+        kind: ''
       });
     });
 
@@ -862,7 +989,7 @@
 
   // 시도 접두사(울산_ 경남_)는 떼고, (Z)는 남겨 포항중앙과 포항중앙(Z)를 구분한다.
   function normalizeRegionKey(value) {
-    const raw = String(value || '');
+    const raw = stripCompanySuffix(value);
     const isZ = /\(\s*z\s*\)/i.test(raw);
     const key = raw
       .replace(/\(\s*z\s*\)/gi, '')
@@ -2084,8 +2211,9 @@
         console.warn('[revenue region] mission adjust rows failed', error);
         rows = [];
       }
+      const slots = sourcePartSlots(settlement);
       rows.forEach(row => {
-        const region = canonicalRegionLabel(row.region || settlement.region) || '미지정';
+        const region = payoutRegionForRow(settlement, row, slots);
         const key = regionCompareKey(region);
         const id = String(row.driverId || row.name || '').trim();
         if (!key || !id) return;
