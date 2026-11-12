@@ -147,7 +147,13 @@
   // ── PDF / 인쇄 ─────────────────────────────────────────────
   // 화면과 같은 STARTS×RATES 표를 인쇄 전용 깨끗한 문서로 만들어 새 창에서 print() 한다.
   // 브라우저 인쇄 대화상자에서 "PDF로 저장"을 고르면 표 PDF가 나온다.
-  function printLineHtml(line, isMember) {
+  const PRINT_LEGEND = `<p class="legend">
+    <span><i class="sw sw-ok"></i>가능</span>
+    <span><i class="sw sw-over"></i>적자</span>
+    <span><i class="sw sw-empty"></i>기준 없음</span>
+  </p>`;
+
+  function printLineHtml(line, isMember, stamp) {
     const cells = STARTS.map(start => RATES.map(rate => cellQuote(line, start, rate)));
     const factsHtml = [
       ['실지급액', money(line.supplyPaid)],
@@ -159,7 +165,7 @@
       ['선정산', money(line.prepaid)],
       ['프로모션 없을 때 남은 돈', money(line.pureRemain)]
     ].map(([label, value]) => `<span><b>${escapeHtml(label)}</b> ${escapeHtml(value)}</span>`).join('');
-    const kindLabel = line.kind === 'group' ? '묶음 합산미션' : '지역 따로';
+    const kindLabel = line.kind === 'group' ? '묶음 합산미션' : (isMember ? '묶음 소속 지역' : '지역 따로');
     const body = cells.map(row => `
       <tr>
         <th>${row[0].start}건</th>
@@ -168,60 +174,67 @@
           return `<td class="c-${cell.status}"><b>${word}</b><br>미션 ${compactMoney(cell.net)}<br>남음 ${compactMoney(cell.left)}</td>`;
         }).join('')}
       </tr>`).join('');
-    return `
+    const self = `
       <section class="blk${isMember ? ' member' : ''}${line.kind === 'group' ? ' group' : ''}">
-        <h2>${escapeHtml(line.title)} <small>${kindLabel} · 기사 ${line.riderCount}명</small></h2>
+        <div class="blk-head">
+          <h2>${escapeHtml(line.title)} <small>${kindLabel} · 기사 ${line.riderCount}명</small></h2>
+          <span class="blk-stamp">${escapeHtml(stamp)}</span>
+        </div>
         <div class="facts">${factsHtml}</div>
+        ${PRINT_LEGEND}
         <table>
           <thead>
             <tr><th>시작 건수</th>${RATES.map(rate => `<th>건당 ${rate.toLocaleString('ko-KR')}</th>`).join('')}</tr>
           </thead>
           <tbody>${body}</tbody>
         </table>
-      </section>
-      ${line.kind === 'group' ? (line.memberLines || []).map(member => printLineHtml(member, true)).join('') : ''}`;
+      </section>`;
+    const members = line.kind === 'group'
+      ? (line.memberLines || []).map(member => printLineHtml(member, true, stamp)).join('')
+      : '';
+    return self + members;
   }
 
   function buildPrintDoc(snap) {
     const stamp = snap.weekStart ? `정산주 ${snap.weekStart} ~ ${snap.weekEnd}` : '';
-    const blocks = snap.lines.map(line => printLineHtml(line, false)).join('');
+    const blocks = snap.lines.map(line => printLineHtml(line, false, stamp)).join('');
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
 <title>미션조정 ${stamp}</title>
 <style>
   @page { size: A4 landscape; margin: 10mm; }
   * { box-sizing: border-box; }
+  html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-family: "Malgun Gothic", "맑은 고딕", sans-serif; color: #111; margin: 0; padding: 16px; font-size: 11px; }
-  h1 { font-size: 18px; margin: 0 0 2px; }
-  .sub { color: #555; font-size: 12px; margin: 0 0 14px; }
-  .blk { page-break-inside: avoid; margin: 0 0 16px; border: 1px solid #d0d0d0; border-radius: 6px; padding: 10px 12px; }
+  /* 지역별로 한 페이지씩 인쇄 */
+  .blk { page-break-inside: avoid; break-inside: avoid; page-break-after: always; break-after: page; margin: 0; border: 1px solid #d0d0d0; border-radius: 6px; padding: 12px 14px; }
+  .blk:last-child { page-break-after: auto; break-after: auto; }
   .blk.group { border-color: #4b5563; border-width: 1.5px; }
-  .blk.member { margin-left: 18px; border-style: dashed; background: #fafafa; }
-  .blk h2 { font-size: 13px; margin: 0 0 6px; }
-  .blk h2 small { font-weight: normal; color: #666; font-size: 11px; }
-  .facts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 8px; color: #333; }
+  .blk.member { border-style: dashed; background: #fafafa; }
+  .blk-head { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 6px; }
+  .blk h2 { font-size: 15px; margin: 0; }
+  .blk h2 small { font-weight: normal; color: #666; font-size: 12px; }
+  .blk-stamp { color: #555; font-size: 12px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 6px; color: #333; font-size: 12px; }
   .facts b { color: #000; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #c8c8c8; padding: 3px 4px; text-align: center; line-height: 1.25; }
-  thead th { background: #f1f1f1; font-size: 10.5px; }
+  th, td { border: 1px solid #c8c8c8; padding: 5px 4px; text-align: center; line-height: 1.3; }
+  thead th { background: #f1f1f1; font-size: 11px; }
   tbody th { background: #f6f6f6; white-space: nowrap; }
   td.c-ok { background: #e8f5e9; }
   td.c-over { background: #fdecea; }
+  td.c-over b { color: #c0392b; }
   td.c-empty { background: #f3f4f6; color: #999; }
-  td b { font-size: 11px; }
-  .legend { margin: 10px 0 0; color: #555; font-size: 11px; }
+  td b { font-size: 12px; }
+  .legend { margin: 0 0 8px; color: #555; font-size: 11px; }
   .legend span { display: inline-block; margin-right: 14px; }
   .sw { display: inline-block; width: 11px; height: 11px; border: 1px solid #c8c8c8; vertical-align: -1px; margin-right: 4px; }
+  .sw-ok { background: #e8f5e9; }
+  .sw-over { background: #fdecea; }
+  .sw-empty { background: #f3f4f6; }
   @media print { button { display: none; } }
 </style></head>
 <body>
-  <h1>미션조정</h1>
-  <p class="sub">${escapeHtml(stamp)} · 지역 ${snap.lines.length}곳 · 칸 금액은 미션 순손해(3.3% 제외), 남음은 그만큼 뺀 남는 돈</p>
-  <p class="legend">
-    <span><i class="sw" style="background:#e8f5e9"></i>가능</span>
-    <span><i class="sw" style="background:#fdecea"></i>적자</span>
-    <span><i class="sw" style="background:#f3f4f6"></i>기준 없음</span>
-  </p>
   ${blocks}
 </body></html>`;
   }
