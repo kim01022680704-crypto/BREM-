@@ -2876,13 +2876,15 @@ textarea {
   background: rgba(255, 212, 0, 0.12);
 }
 
-.outside-region-map-dialog {
-  width: min(960px, 100%);
+.call-fee-setup-dialog__panel.outside-region-map-dialog {
+  width: min(1480px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);
 }
 
 .outside-region-map {
   width: 100%;
-  height: min(520px, 62vh);
+  height: calc(100vh - 168px);
+  min-height: 560px;
   margin-top: 12px;
   border-radius: 12px;
   background: #0f0f0f;
