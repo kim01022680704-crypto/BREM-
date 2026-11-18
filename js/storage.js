@@ -16468,6 +16468,32 @@ const BremStorage = (function () {
         updatedAt: entry.updatedAt || ''
       };
     },
+    rememberAll(regions) {
+      const all = { ...outsideCallRegions.getAll() };
+      let changed = false;
+      (Array.isArray(regions) ? regions : []).forEach(item => {
+        const cityName = String(item?.city || '').trim();
+        const regionName = String(item?.region || '').trim();
+        if (!cityName || !regionName) return;
+        const key = `${cityName}\t${regionName}`;
+        if (all[key]) return;
+        all[key] = {
+          city: cityName,
+          region: regionName,
+          large: [],
+          gu: [],
+          dong: [],
+          updatedAt: ''
+        };
+        changed = true;
+      });
+      if (!changed) return all;
+      const persist = storageAdapter.write(KEYS.outsideCallRegions, all);
+      if (persist === undefined) {
+        throw new Error('Supabase 저장 준비가 되지 않았습니다. 로그인 상태를 확인한 뒤 다시 시도하세요.');
+      }
+      return all;
+    },
     save(city, region, patch = {}) {
       const cityName = String(city || '').trim();
       const regionName = String(region || '').trim();

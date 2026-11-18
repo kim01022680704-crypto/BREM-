@@ -37,34 +37,47 @@
     return items.map(item => `<span class="settlement-call-fee-log-badge">${escapeHtml(item)}</span>`).join(' ');
   }
 
-  function regionsFromLogs() {
+  function fixedRegions() {
     const parse = parser()?.parseDailyFileRegion;
-    if (typeof parse !== 'function') return [];
+    const map = new Map();
+    const saved = store()?.getAll?.() || {};
+    Object.keys(saved).forEach(key => {
+      const entry = saved[key] || {};
+      const parts = String(key).split('\t');
+      const city = String(entry.city || parts[0] || '').trim();
+      const region = String(entry.region || parts[1] || '').trim();
+      if (!city || !region) return;
+      const stableKey = `${city}\t${region}`;
+      map.set(stableKey, { city, region, label: `${city} ${region}`, key: stableKey });
+    });
     const logs = window.BremStorage?.settlementUploadLogs?.getFiltered?.({
       kind: 'daily',
       platform: 'coupang'
     }) || [];
-    const map = new Map();
-    logs.forEach(log => {
-      const region = parse(log.fileName || '');
-      if (!region?.city || !region.region) return;
-      const prev = map.get(region.key);
-      const seenAt = String(log.uploadedAt || log.appliedAt || '');
-      if (!prev || seenAt > prev.seenAt) {
+    const fresh = [];
+    if (typeof parse === 'function') {
+      logs.forEach(log => {
+        const region = parse(log.fileName || '');
+        if (!region?.city || !region.region || map.has(region.key)) return;
         map.set(region.key, {
-          ...region,
-          seenAt,
-          fileName: String(log.fileName || '')
+          city: region.city,
+          region: region.region,
+          label: region.label,
+          key: region.key
         });
-      }
-    });
+        fresh.push(region);
+      });
+    }
+    if (fresh.length) {
+      try { store()?.rememberAll?.(fresh); } catch (error) { console.warn('[BREM] 권역 목록 고정 실패', error); }
+    }
     return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, 'ko'));
   }
 
   function render() {
     const body = document.getElementById(BODY_ID);
     if (!body) return;
-    const regions = regionsFromLogs();
+    const regions = fixedRegions();
     const saved = store();
     if (!regions.length) {
       body.innerHTML = '<p class="form-help">올린 쿠팡 일정산이 없습니다. 일정산서를 반영하면 시·지역 메뉴가 생깁니다.</p>';
@@ -76,7 +89,7 @@
         ${regions.map(region => {
           const entry = saved?.get?.(region.city, region.region) || { large: [], gu: [], dong: [] };
           return `<tr>
-            <td><strong>${escapeHtml(region.label)}</strong><div class="form-help">${escapeHtml(region.fileName)}</div></td>
+            <td><strong>${escapeHtml(region.label)}</strong></td>
             <td>${preview(entry.large)}</td>
             <td>${preview(entry.gu)}</td>
             <td>${preview(entry.dong)}</td>
@@ -110,7 +123,7 @@
   }
 
   function findRegion(key) {
-    return regionsFromLogs().find(region => region.key === key) || null;
+    return fixedRegions().find(region => region.key === key) || null;
   }
 
   function bind() {
