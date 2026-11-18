@@ -1,6 +1,7 @@
 (function () {
   let activeResolve = null;
   let initialized = false;
+  let outsideCount = false;
 
   const $ = selector => document.querySelector(selector);
 
@@ -39,14 +40,20 @@
       }
       error.textContent = '';
       input.removeAttribute('aria-invalid');
+      const outsideBox = $('#callFeeSetupOutsideCount');
+      outsideCount = !!(outsideBox && !outsideBox.hidden && outsideBox.checked);
       close(unit);
     });
     root.querySelectorAll('[data-close-call-fee-dialog]').forEach(button => {
-      button.addEventListener('click', () => close(null));
+      button.addEventListener('click', () => {
+        outsideCount = false;
+        close(null);
+      });
     });
     root.addEventListener('keydown', event => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        outsideCount = false;
         close(null);
       }
     });
@@ -78,6 +85,18 @@
       calls.textContent = `${Number(options.totalCalls || 0).toLocaleString('ko-KR')}콜`;
     }
     if (error) error.textContent = '';
+    const outsideWrap = $('#callFeeSetupOutsideWrap');
+    const outsideHelp = $('#callFeeSetupOutsideHelp');
+    const outsideBox = $('#callFeeSetupOutsideCount');
+    const showOutside = options.kind !== 'weekly'
+      && String(options.platform || '').toLowerCase() === 'coupang';
+    outsideCount = false;
+    if (outsideWrap) outsideWrap.hidden = !showOutside;
+    if (outsideHelp) outsideHelp.hidden = !showOutside;
+    if (outsideBox) {
+      outsideBox.hidden = !showOutside;
+      outsideBox.checked = false;
+    }
     input.removeAttribute('aria-invalid');
     input.value = initial == null ? '' : String(initial);
     root.hidden = false;
@@ -91,8 +110,15 @@
     });
   }
 
+  function takeOutsideCount() {
+    const value = outsideCount === true;
+    outsideCount = false;
+    return value;
+  }
+
   window.BremCallFeeDialog = {
     open,
-    normalizeUnit
+    normalizeUnit,
+    takeOutsideCount
   };
 })();

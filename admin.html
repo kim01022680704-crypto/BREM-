@@ -158,6 +158,7 @@
         <button class="nav-btn" data-section="baemin-status" data-baemin-menu-focus="calls_rejection_sync">콜수·거절율 동기화</button>
         <button class="nav-btn" data-section="coupang-rider-status">쿠팡현황</button>
         <button class="nav-btn" data-section="coupang-status">쿠팡 밴더현황</button>
+        <button class="nav-btn" data-section="outside-call-regions">권외 권역설정</button>
         <button class="nav-btn" data-section="contribution">기여도</button>
         <button class="nav-btn" data-section="rejections">거절율 입력</button>
         <button class="nav-btn" data-section="targets">목표 콜수</button>
@@ -4349,6 +4350,57 @@
             </div>
           </form>
         </article>
+      </section>
+
+      <section class="section" id="outside-call-regions">
+        <div class="promotion-platform-tabs admin-section-tabs" role="tablist">
+          <button type="button" class="promotion-tab active" data-outside-region-tab="coupang">쿠팡</button>
+          <button type="button" class="promotion-tab" data-outside-region-tab="baemin">배민</button>
+        </div>
+        <div id="outsideCallRegionsCoupang">
+          <article class="card">
+            <div class="card-header">
+              <h2>쿠팡 권외 권역</h2>
+            </div>
+            <p class="form-help">이미 올린 쿠팡 일정산 파일명에서 시와 지역을 읽어 목록을 만듭니다. 줄을 누르면 큰 키워드, 구 키워드, 동 키워드를 넣습니다. 세 칸이 모두 맞는 주소만 권내이고, 하나라도 없으면 권외입니다.</p>
+            <div id="outsideCallRegionsBody"></div>
+          </article>
+        </div>
+        <div id="outsideCallRegionsBaemin" hidden>
+          <article class="card">
+            <div class="card-header">
+              <h2>배민 권외 권역</h2>
+            </div>
+            <p class="form-help">배민 권역 설정은 메뉴만 열어 두었습니다.</p>
+          </article>
+        </div>
+        <div class="call-fee-setup-dialog" id="outsideRegionKeywordDialog" hidden>
+          <button type="button" class="call-fee-setup-dialog__backdrop" data-close-outside-region-dialog aria-label="닫기"></button>
+          <section class="call-fee-setup-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="outsideRegionKeywordTitle">
+            <form id="outsideRegionKeywordForm">
+              <p class="call-fee-setup-dialog__eyebrow">권역 키워드</p>
+              <h2 id="outsideRegionKeywordTitle">키워드 설정</h2>
+              <p class="call-fee-setup-dialog__meta" id="outsideRegionKeywordMeta"></p>
+              <label class="call-fee-setup-dialog__field">
+                <span>큰 키워드 (시)</span>
+                <textarea id="outsideRegionKeywordLarge" rows="3" placeholder="울산&#10;울산광역시"></textarea>
+              </label>
+              <label class="call-fee-setup-dialog__field">
+                <span>구 키워드</span>
+                <textarea id="outsideRegionKeywordGu" rows="3" placeholder="남구"></textarea>
+              </label>
+              <label class="call-fee-setup-dialog__field">
+                <span>동 키워드</span>
+                <textarea id="outsideRegionKeywordDong" rows="4" placeholder="삼산&#10;달동&#10;신정"></textarea>
+              </label>
+              <p class="form-help">한 줄에 하나, 또는 쉼표로 여러 개. 무거동은 무거, 신정동은 신정처럼 넣으면 됩니다. 세 칸이 모두 있어야 그 지역 권외를 셉니다.</p>
+              <div class="call-fee-setup-dialog__actions">
+                <button type="button" class="small-btn" data-close-outside-region-dialog>닫기</button>
+                <button type="submit" class="primary-btn">저장</button>
+              </div>
+            </form>
+          </section>
+        </div>
       </section>
 
       <section class="section" id="settlements">
@@ -10423,6 +10475,11 @@
           <input type="number" id="callFeeSetupUnit" min="0" step="1" inputmode="numeric" placeholder="예: 100" required>
         </label>
         <p class="call-fee-setup-dialog__help">이 단가는 현재 정산서에 고정 저장됩니다. 수수료가 없으면 0을 입력하세요.</p>
+        <label class="settlement-payroll-eligible-check" id="callFeeSetupOutsideWrap" hidden>
+          <input type="checkbox" id="callFeeSetupOutsideCount">
+          <span>권외 카운팅</span>
+        </label>
+        <p class="form-help" id="callFeeSetupOutsideHelp" hidden>체크한 파일만 권외 권역설정의 시·구·동 키워드 밖 주문을 셉니다.</p>
         <p class="call-fee-setup-dialog__error" id="callFeeSetupError" role="alert"></p>
         <div class="call-fee-setup-dialog__actions">
           <button type="button" class="small-btn" data-close-call-fee-dialog>미리보기로 돌아가기</button>
@@ -10465,15 +10522,15 @@
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20261109collab1"></script>
   <script src="js/storage.js?v=20261109collab1"></script>
-  <script src="js/call-fee-dialog.js?v=20260906a"></script>
+  <script src="js/call-fee-dialog.js?v=20261119region1"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js?v=20261109inq4"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
   <script src="js/driver-utils.js?v=20260921off1"></script>
   <script src="js/driver-duplicate-dialog.js?v=20260820c"></script>
   <script src="js/settlement-formats.js?v=20260917ai1"></script>
-  <script src="js/outside-call.js?v=20261105outside1"></script>
-  <script src="js/settlement-client.js?v=20261105outside1"></script>
+  <script src="js/outside-call.js?v=20261119region1"></script>
+  <script src="js/settlement-client.js?v=20261119region1"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
   <script src="js/promotion-conditions.js?v=20261105outside1"></script>
@@ -10481,8 +10538,9 @@
   <script src="js/promotion-admin.js?v=20261105ladder0"></script>
   <script src="js/friend-invite-admin.js?v=20261030invite3"></script>
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
-  <script src="js/weekly-settlement.js?v=20261113coupang5"></script>
+  <script src="js/weekly-settlement.js?v=20261119region1"></script>
   <script src="js/weekly-settlement-admin.js?v=20261113coupang5"></script>
+  <script src="js/outside-call-regions-admin.js?v=20261119region1"></script>
   <script src="js/baemin-delivery-fee.js?v=20260917ai1"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20261104op2"></script>

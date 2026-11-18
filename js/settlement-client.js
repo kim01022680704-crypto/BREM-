@@ -909,7 +909,7 @@ const BremSettlementParser = (function () {
     return parsedRows;
   }
 
-  async function readCoupangOutsideCallSums(buffer, password) {
+  async function readCoupangOutsideCallSums(buffer, password, options) {
     const rows = await openWorkbookSheetRows(buffer, normalizePassword(password), {
       sheetName: '오더별',
       sheetMatcher: (name) => {
@@ -918,7 +918,22 @@ const BremSettlementParser = (function () {
       }
     });
     if (!window.BremOutsideCall?.sumFromSheetRows) return null;
-    return window.BremOutsideCall.sumFromSheetRows(rows);
+    return window.BremOutsideCall.sumFromSheetRows(rows, options || {});
+  }
+
+  function applyOutsideCallChoice(records, summary, enabled) {
+    const byName = enabled && summary?.byName && typeof summary.byName.get === 'function'
+      ? summary.byName
+      : null;
+    (Array.isArray(records) ? records : []).forEach(row => {
+      if (!byName) {
+        row.outsideCallCount = 0;
+        return;
+      }
+      const key = coupangDistanceKey(row.rawName || row.name);
+      row.outsideCallCount = Math.max(0, Math.round(Number(byName.get(key) || 0)));
+    });
+    return records;
   }
 
   function attachCoupangOutsideCalls(parsedRows, summary) {
@@ -930,7 +945,7 @@ const BremSettlementParser = (function () {
     return parsedRows;
   }
 
-  async function parseSettlementFile({ file, password, drivers, period, formatId }) {
+  async function parseSettlementFile({ file, password, drivers, period, formatId, outsideCall }) {
     const format = SettlementFormats.getFormat(formatId);
     const arrayBuffer = await file.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
@@ -942,6 +957,7 @@ const BremSettlementParser = (function () {
     );
     const parsed = parseRowsWithFormat(rows, format);
     const parsedRows = parsed.parsedRows;
+    let outsideSummary = null;
     if (format?.platform === 'coupang' && format?.mode === 'driver-row') {
       try {
         const sums = await readCoupangOrderDistanceSums(bytes.slice(), password, 1);
@@ -950,8 +966,17 @@ const BremSettlementParser = (function () {
         console.warn('[BREM] 쿠팡 일정산 배달거리 시트를 읽지 못했습니다.', error?.message || error);
       }
       try {
-        const outside = await readCoupangOutsideCallSums(bytes.slice(), password);
-        attachCoupangOutsideCalls(parsedRows, outside);
+        const region = outsideCall?.region
+          || window.BremOutsideCall?.parseDailyFileRegion?.(file.name)
+          || null;
+        const stored = (!outsideCall?.keywords && region)
+          ? window.BremStorage?.outsideCallRegions?.get?.(region.city, region.region)
+          : null;
+        outsideSummary = await readCoupangOutsideCallSums(bytes.slice(), password, {
+          keywordMode: true,
+          keywords: outsideCall?.keywords || stored || null
+        });
+        if (outsideSummary) outsideSummary.region = region;
       } catch (error) {
         console.warn('[BREM] 쿠팡 일정산 권외콜 시트를 읽지 못했습니다.', error?.message || error);
       }
@@ -972,7 +997,8 @@ const BremSettlementParser = (function () {
       totalDeliveries: parsed.totalDeliveries || 0,
       totalDeliveryAmount,
       totalRiders: parsedRows.length,
-      skippedBaeminRows: parsed.skippedRows || null
+      skippedBaeminRows: parsed.skippedRows || null,
+      outsideSummary
     };
   }
 
@@ -1460,6 +1486,7 @@ const BremSettlementParser = (function () {
 
   return {
     parseSettlementFile,
+    applyOutsideCallChoice,
     parseBaeminHourlyInsuranceFile,
     parseSettlementDateFromFilename,
     parseRowsWithFormat,

@@ -221,6 +221,7 @@
     { id: 'baemin-rider-hourly', label: '라이더별내역' },
     { id: 'coupang-rider-status', label: '쿠팡현황' },
     { id: 'coupang-status', label: '쿠팡 밴더현황' },
+    { id: 'outside-call-regions', label: '권외 권역설정' },
     { id: 'contribution', label: '기여도' },
     { id: 'rejections', label: '거절율 입력' },
     { id: 'targets', label: '목표 콜수' },
@@ -4948,7 +4949,10 @@
       deductionBase: Math.abs(Number(record.deductionBase || 0)),
       deliveryAmount: settlementAmountValue(record),
       settlementAmount: settlementAmountValue(record),
-      reason: record.reason || ''
+      reason: record.reason || '',
+      ...(record.outsideCallCount != null && record.outsideCallCount !== ''
+        ? { outsideCallCount: Math.max(0, Math.round(Number(record.outsideCallCount) || 0)) }
+        : {})
     }));
   }
 
@@ -7263,6 +7267,28 @@
 
       renderSettlements();
       const selectedCallFeeUnit = await requestSettlementPreviewCallFeeUnit(p);
+      let outsideHint = '';
+      if (p === 'coupang') {
+        const countOutside = window.BremCallFeeDialog?.takeOutsideCount?.() === true;
+        const summary = result.outsideSummary;
+        const ready = !!(countOutside && summary?.ready);
+        window.BremSettlementParser?.applyOutsideCallChoice?.(result.matched, summary, ready);
+        window.BremSettlementParser?.applyOutsideCallChoice?.(result.unmatched, summary, ready);
+        if (state.settlementPreviewByPlatform[p]) {
+          state.settlementPreviewByPlatform[p].matched = result.matched;
+          state.settlementPreviewByPlatform[p].unmatched = result.unmatched;
+          state.settlementPreviewByPlatform[p].countOutside = ready;
+        }
+        if (uploadLog?.id && BremStorage.settlementUploadLogs?.update) {
+          BremStorage.settlementUploadLogs.update(uploadLog.id, {
+            matchedRecords: serializeSettlementLogRecords(result.matched),
+            unmatchedRecords: serializeSettlementLogRecords(result.unmatched)
+          });
+        }
+        outsideHint = ready
+          ? ' · 권외 카운팅 반영'
+          : (countOutside ? ' · 권역 키워드(시·구·동)가 없어 권외를 세지 않음' : ' · 권외 카운팅 안 함');
+      }
       if (selectedCallFeeUnit != null && result.unmatched.length) {
         saveSettlementUnmatched({
           period,
@@ -7295,7 +7321,7 @@
           : '';
         showToast(`${platformLabel(p)} 미리보기 · 유효 배달 ${result.totalDeliveries || 0}건 · 라이더 ${result.totalRiders || result.totalRows}명 · 매칭 ${result.matched.length}명${skipLabel}${unmatchedHint}${callFeeHint}`);
       } else {
-        showToast(`${platformLabel(p)} 미리보기 준비 · 매칭 ${result.matched.length}명 / 실패 ${result.unmatched.length}명${unmatchedHint}${callFeeHint}`);
+        showToast(`${platformLabel(p)} 미리보기 준비 · 매칭 ${result.matched.length}명 / 실패 ${result.unmatched.length}명${unmatchedHint}${callFeeHint}${outsideHint}`);
       }
     } catch (error) {
       showToast(error.message || '정산표를 처리하지 못했습니다.');
@@ -8054,6 +8080,9 @@
         break;
       case 'settlements':
         renderSettlements();
+        break;
+      case 'outside-call-regions':
+        window.BremOutsideCallRegionsAdmin?.refresh?.();
         break;
       case 'promotions':
         renderPromotions();

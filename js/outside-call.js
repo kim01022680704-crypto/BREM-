@@ -32,6 +32,81 @@
     return `${match[1]} ${match[2]}`;
   }
 
+  function isDateToken(token) {
+    const text = String(token || '').trim();
+    if (!text) return false;
+    if (/^\d{8}$/.test(text)) return true;
+    if (/^\d{6}$/.test(text)) return true;
+    if (/^\d{4}$/.test(text)) return true;
+    if (/^\d{1,2}-\d{1,2}$/.test(text)) return true;
+    return false;
+  }
+
+  // 배달연합_울산_남구중앙_20261108.xlsx → 시 울산, 지역 남구중앙.
+  // 남구중앙만 보면 다른 시와 섞이므로 시 토큰을 같이 남긴다. (Z)는 지역 이름에 남긴다.
+  function parseDailyFileRegion(fileName) {
+    let base = String(fileName || '').replace(/\.(xlsx|xls)$/i, '').trim();
+    base = base.replace(/(\s*-\s*복사본|\s*-\s*copy)+$/i, '');
+    base = base.replace(/(\s*\(\d+\))+$/g, '').trim();
+    const tokens = base.split('_').map(part => part.trim()).filter(Boolean);
+    while (tokens.length && isDateToken(tokens[tokens.length - 1])) tokens.pop();
+    if (tokens.length < 2) return null;
+    const region = tokens[tokens.length - 1];
+    const city = tokens[tokens.length - 2];
+    if (!city || !region || isDateToken(city) || isDateToken(region)) return null;
+    return {
+      city,
+      region,
+      label: `${city} ${region}`,
+      key: `${city}\t${region}`
+    };
+  }
+
+  function normalizeKeywordList(value) {
+    const source = Array.isArray(value)
+      ? value
+      : String(value || '').split(/[\n,，、]/);
+    const seen = new Set();
+    const out = [];
+    source.forEach(item => {
+      const text = String(item || '').replace(/\s+/g, ' ').trim();
+      if (!text || seen.has(text)) return;
+      seen.add(text);
+      out.push(text);
+    });
+    return out;
+  }
+
+  function keywordSpec(keywords) {
+    const source = keywords && typeof keywords === 'object' ? keywords : {};
+    return {
+      large: normalizeKeywordList(source.large),
+      gu: normalizeKeywordList(source.gu),
+      dong: normalizeKeywordList(source.dong)
+    };
+  }
+
+  function keywordsReady(spec) {
+    return !!(spec && spec.large.length && spec.gu.length && spec.dong.length);
+  }
+
+  function textHasKeyword(text, keyword) {
+    const hay = String(text || '').replace(/\s+/g, '');
+    const needle = String(keyword || '').replace(/\s+/g, '');
+    if (!hay || !needle) return false;
+    return hay.includes(needle);
+  }
+
+  function levelHit(text, list) {
+    return (Array.isArray(list) ? list : []).some(keyword => textHasKeyword(text, keyword));
+  }
+
+  // 시·구·동 키워드가 모두 들어 있으면 권내. 하나라도 없으면 권외.
+  function isInsideAddress(text, spec) {
+    if (!keywordsReady(spec)) return false;
+    return levelHit(text, spec.large) && levelHit(text, spec.gu) && levelHit(text, spec.dong);
+  }
+
   function findHeader(rows) {
     const list = Array.isArray(rows) ? rows : [];
     const scan = Math.min(list.length, 30);
@@ -49,7 +124,7 @@
     return null;
   }
 
-  function sumFromSheetRows(rows) {
+  function collectValidRows(rows) {
     const header = findHeader(rows);
     if (!header) return null;
     const list = Array.isArray(rows) ? rows : [];
@@ -57,15 +132,57 @@
     for (let index = header.index + 1; index < list.length; index += 1) {
       const row = list[index] || [];
       const name = nameKey(row[header.nameIndex]);
-      const pickup = districtKey(row[header.pickupIndex]);
-      const delivery = districtKey(row[header.deliveryIndex]);
+      const pickup = cellText(row[header.pickupIndex]);
+      const delivery = cellText(row[header.deliveryIndex]);
       const accept = cellText(row[header.acceptIndex]);
       if (!name || name === '성함' || name === '이름') continue;
-      if (!pickup || !delivery || !accept) continue;
-      valid.push({ name, pickup, delivery });
+      if (!pickup || pickup === 'set' || !delivery || delivery === 'set' || !accept) continue;
+      valid.push({
+        name,
+        pickup,
+        delivery,
+        pickupDistrict: districtKey(pickup),
+        deliveryDistrict: districtKey(delivery)
+      });
     }
+    return valid;
+  }
+
+  function sumByKeywords(rows, keywords) {
+    const header = findHeader(rows);
+    if (!header) return null;
+    const valid = collectValidRows(rows) || [];
+    const spec = keywordSpec(keywords);
+    const ready = keywordsReady(spec);
+    const byName = new Map();
+    if (ready) {
+      valid.forEach(row => {
+        const inHome = isInsideAddress(row.pickup, spec) && isInsideAddress(row.delivery, spec);
+        if (inHome) return;
+        byName.set(row.name, (byName.get(row.name) || 0) + 1);
+      });
+    }
+    return {
+      byName,
+      ready,
+      validCount: valid.length,
+      homeDistrict: '',
+      mode: 'keyword'
+    };
+  }
+
+  function sumFromSheetRows(rows, options) {
+    const opts = options || {};
+    if (opts.keywordMode) return sumByKeywords(rows, opts.keywords);
+    const header = findHeader(rows);
+    if (!header) return null;
+    const valid = collectValidRows(rows) || [];
     const pickupCounts = new Map();
-    valid.forEach(row => pickupCounts.set(row.pickup, (pickupCounts.get(row.pickup) || 0) + 1));
+    valid.forEach(row => {
+      const pickup = row.pickupDistrict;
+      if (!pickup) return;
+      pickupCounts.set(pickup, (pickupCounts.get(pickup) || 0) + 1);
+    });
     let home = '';
     let homeCount = 0;
     pickupCounts.forEach((count, key) => {
@@ -77,11 +194,12 @@
     const byName = new Map();
     if (home) {
       valid.forEach(row => {
-        if (row.pickup === home && row.delivery === home) return;
+        if (!row.pickupDistrict || !row.deliveryDistrict) return;
+        if (row.pickupDistrict === home && row.deliveryDistrict === home) return;
         byName.set(row.name, (byName.get(row.name) || 0) + 1);
       });
     }
-    return { byName, homeDistrict: home, validCount: valid.length };
+    return { byName, homeDistrict: home, validCount: valid.length, ready: true, mode: 'auto' };
   }
 
   function payAmount(count, startCount, amountPerCall) {
@@ -100,6 +218,11 @@
     districtKey,
     nameKey,
     findHeader,
+    parseDailyFileRegion,
+    normalizeKeywordList,
+    keywordSpec,
+    keywordsReady,
+    isInsideAddress,
     sumFromSheetRows,
     payAmount
   };

@@ -71,7 +71,8 @@ const BremStorage = (function () {
     adminCredentials: 'brem_admin_credentials',
     driverOrgChart: 'brem_admin_driver_org_chart_v1',
     workRequests: 'brem_work_requests_v1',
-    taxInvoices: 'brem_admin_tax_invoices_v1'
+    taxInvoices: 'brem_admin_tax_invoices_v1',
+    outsideCallRegions: 'brem_admin_outside_call_regions_v1'
   });
 
   const SCHEMA = Object.freeze({
@@ -1686,15 +1687,17 @@ const BremStorage = (function () {
     targets: [KEYS.drivers, KEYS.targets],
     missions: [KEYS.drivers, KEYS.calls],
     'mission-results': [KEYS.drivers, KEYS.calls],
-    settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.payrollDailyExcludedSettlements],
-    'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.settlements],
+    settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.payrollDailyExcludedSettlements, KEYS.outsideCallRegions],
+    'outside-call-regions': [KEYS.settlementUploadLogs, KEYS.outsideCallRegions],
+    'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.settlements, KEYS.outsideCallRegions],
     // 직계약 정산서·업로드로그·미매칭은 settings JSON이라 콜/일정산처럼 무겁지 않다.
     // 기사 전체 + 이 키들을 같이 읽어야 매칭 저장 기록이 화면에 남는다.
     'weekly-settlement-direct': [
       KEYS.drivers,
       KEYS.weeklySettlementsDirect,
       KEYS.settlementUploadLogsDirect,
-      KEYS.settlementUnmatchedDirect
+      KEYS.settlementUnmatchedDirect,
+      KEYS.outsideCallRegions
     ],
     'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
     'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementHolds, KEYS.deductionLedger, KEYS.leaseLoans, KEYS.leaseContracts, KEYS.payrollSlipLines],
@@ -12383,7 +12386,10 @@ const BremStorage = (function () {
       deductionBase: Math.abs(Number(record.deductionBase || 0)),
       deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
       settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
-      reason: String(record.reason || '')
+      reason: String(record.reason || ''),
+      ...(record.outsideCallCount != null && record.outsideCallCount !== ''
+        ? { outsideCallCount: Math.max(0, Math.round(Number(record.outsideCallCount) || 0)) }
+        : {})
     };
   }
 
@@ -14513,6 +14519,7 @@ const BremStorage = (function () {
     'baemin-rider-hourly',
     'coupang-rider-status',
     'coupang-status',
+    'outside-call-regions',
     'contribution',
     'rejections',
     'targets',
@@ -14671,6 +14678,13 @@ const BremStorage = (function () {
       } else {
         normalized.push('coupang-status');
       }
+    }
+
+    if (!normalized.includes('outside-call-regions')
+      && (normalized.includes('calls') || normalized.includes('coupang-status') || normalized.includes('settlements'))) {
+      const coupangIndex = normalized.indexOf('coupang-status');
+      if (coupangIndex >= 0) normalized.splice(coupangIndex + 1, 0, 'outside-call-regions');
+      else normalized.push('outside-call-regions');
     }
 
     if (!normalized.includes('contribution')) {
@@ -14850,6 +14864,12 @@ const BremStorage = (function () {
     }
     if (next.includes('mission-management') && allowed.has('mission-assignment') && !next.includes('mission-assignment')) {
       next.splice(next.indexOf('mission-management') + 1, 0, 'mission-assignment');
+    }
+    if (allowed.has('outside-call-regions') && !next.includes('outside-call-regions')
+      && (next.includes('calls') || next.includes('coupang-status') || next.includes('settlements'))) {
+      const after = next.indexOf('coupang-status');
+      if (after >= 0) next.splice(after + 1, 0, 'outside-call-regions');
+      else next.push('outside-call-regions');
     }
     if (allowed.has('work-requests') && !next.includes('work-requests')) {
       const scheduleIndex = next.indexOf('admin-schedule');
@@ -16414,6 +16434,63 @@ const BremStorage = (function () {
     }
   };
 
+  function normalizeOutsideKeywordList(value) {
+    const source = Array.isArray(value) ? value : String(value || '').split(/[\n,，、]/);
+    const seen = new Set();
+    const out = [];
+    source.forEach(item => {
+      const text = String(item || '').replace(/\s+/g, ' ').trim();
+      if (!text || seen.has(text)) return;
+      seen.add(text);
+      out.push(text);
+    });
+    return out;
+  }
+
+  const outsideCallRegions = {
+    getAll() {
+      const raw = storageAdapter.read(KEYS.outsideCallRegions, {});
+      return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    },
+    get(city, region) {
+      const key = `${String(city || '').trim()}\t${String(region || '').trim()}`;
+      if (key === '\t') return null;
+      const entry = outsideCallRegions.getAll()[key];
+      if (!entry || typeof entry !== 'object') {
+        return { city: String(city || '').trim(), region: String(region || '').trim(), large: [], gu: [], dong: [] };
+      }
+      return {
+        city: String(entry.city || city || '').trim(),
+        region: String(entry.region || region || '').trim(),
+        large: normalizeOutsideKeywordList(entry.large),
+        gu: normalizeOutsideKeywordList(entry.gu),
+        dong: normalizeOutsideKeywordList(entry.dong),
+        updatedAt: entry.updatedAt || ''
+      };
+    },
+    save(city, region, patch = {}) {
+      const cityName = String(city || '').trim();
+      const regionName = String(region || '').trim();
+      if (!cityName || !regionName) return null;
+      const key = `${cityName}\t${regionName}`;
+      const all = { ...outsideCallRegions.getAll() };
+      const next = {
+        city: cityName,
+        region: regionName,
+        large: normalizeOutsideKeywordList(patch.large),
+        gu: normalizeOutsideKeywordList(patch.gu),
+        dong: normalizeOutsideKeywordList(patch.dong),
+        updatedAt: new Date().toISOString()
+      };
+      all[key] = next;
+      const persist = storageAdapter.write(KEYS.outsideCallRegions, all);
+      if (persist === undefined) {
+        throw new Error('Supabase 저장 준비가 되지 않았습니다. 로그인 상태를 확인한 뒤 다시 시도하세요.');
+      }
+      return next;
+    }
+  };
+
   const workRequests = {
     getAll() {
       const raw = storageAdapter.read(KEYS.workRequests, []);
@@ -16430,6 +16507,7 @@ const BremStorage = (function () {
     STORAGE_KEYS: KEYS,
     taxInvoices,
     friendInvites,
+    outsideCallRegions,
     workRequests,
     SCHEMA,
     DATA_GROUPS,

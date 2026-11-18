@@ -2577,8 +2577,16 @@ const BremWeeklySettlement = (function () {
       console.warn('[BREM] 주정산 권외콜 시트를 읽지 못했습니다.', error?.message || error);
       return [];
     }
-    const summary = window.BremOutsideCall.sumFromSheetRows(rows);
-    if (!summary?.byName) return [];
+    const region = window.BremOutsideCall.parseDailyFileRegion?.(file?.name || record.fileName || '')
+      || null;
+    const keywords = region
+      ? window.BremStorage?.outsideCallRegions?.get?.(region.city, region.region)
+      : null;
+    const summary = window.BremOutsideCall.sumFromSheetRows(rows, {
+      keywordMode: true,
+      keywords
+    });
+    if (!summary?.byName || !summary.ready) return [];
     try {
       await BremStorage.ensureSectionLoaded?.('settlements');
       await BremStorage.ensureSectionLoaded?.('drivers');
