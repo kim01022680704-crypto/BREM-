@@ -16459,12 +16459,24 @@ const BremStorage = (function () {
       if (!entry || typeof entry !== 'object') {
         return { city: String(city || '').trim(), region: String(region || '').trim(), large: [], gu: [], dong: [] };
       }
+      if (entry.closed === true) {
+        return {
+          city: String(entry.city || city || '').trim(),
+          region: String(entry.region || region || '').trim(),
+          large: [],
+          gu: [],
+          dong: [],
+          closed: true,
+          updatedAt: entry.updatedAt || ''
+        };
+      }
       return {
         city: String(entry.city || city || '').trim(),
         region: String(entry.region || region || '').trim(),
         large: normalizeOutsideKeywordList(entry.large),
         gu: normalizeOutsideKeywordList(entry.gu),
         dong: normalizeOutsideKeywordList(entry.dong),
+        closed: false,
         updatedAt: entry.updatedAt || ''
       };
     },
@@ -16506,6 +16518,7 @@ const BremStorage = (function () {
         large: normalizeOutsideKeywordList(patch.large),
         gu: normalizeOutsideKeywordList(patch.gu),
         dong: normalizeOutsideKeywordList(patch.dong),
+        closed: false,
         updatedAt: new Date().toISOString()
       };
       all[key] = next;
@@ -16514,6 +16527,27 @@ const BremStorage = (function () {
         throw new Error('Supabase 저장 준비가 되지 않았습니다. 로그인 상태를 확인한 뒤 다시 시도하세요.');
       }
       return next;
+    },
+    remove(city, region) {
+      const cityName = String(city || '').trim();
+      const regionName = String(region || '').trim();
+      if (!cityName || !regionName) return null;
+      const key = `${cityName}\t${regionName}`;
+      const all = { ...outsideCallRegions.getAll() };
+      all[key] = {
+        city: cityName,
+        region: regionName,
+        large: [],
+        gu: [],
+        dong: [],
+        closed: true,
+        updatedAt: new Date().toISOString()
+      };
+      const persist = storageAdapter.write(KEYS.outsideCallRegions, all);
+      if (persist === undefined) {
+        throw new Error('Supabase 저장 준비가 되지 않았습니다. 로그인 상태를 확인한 뒤 다시 시도하세요.');
+      }
+      return all[key];
     }
   };
 

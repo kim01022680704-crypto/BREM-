@@ -46,7 +46,7 @@
       const parts = String(key).split('\t');
       const city = String(entry.city || parts[0] || '').trim();
       const region = String(entry.region || parts[1] || '').trim();
-      if (!city || !region) return;
+      if (!city || !region || entry.closed === true) return;
       const stableKey = `${city}\t${region}`;
       map.set(stableKey, { city, region, label: `${city} ${region}`, key: stableKey });
     });
@@ -59,6 +59,7 @@
       logs.forEach(log => {
         const region = parse(log.fileName || '');
         if (!region?.city || !region.region || map.has(region.key)) return;
+        if (saved[region.key]?.closed === true) return;
         map.set(region.key, {
           city: region.city,
           region: region.region,
@@ -80,7 +81,7 @@
     const regions = fixedRegions();
     const saved = store();
     if (!regions.length) {
-      body.innerHTML = '<p class="form-help">올린 쿠팡 일정산이 없습니다. 일정산서를 반영하면 시·지역 메뉴가 생깁니다.</p>';
+      body.innerHTML = '<p class="form-help">표시할 권역이 없습니다. 새 시·지역 일정산을 올리면 줄이 생깁니다.</p>';
       return;
     }
     body.innerHTML = `<div class="table-wrap"><table class="settlement-preview-table">
@@ -93,7 +94,10 @@
             <td>${preview(entry.large)}</td>
             <td>${preview(entry.gu)}</td>
             <td>${preview(entry.dong)}</td>
-            <td><button type="button" class="small-btn" data-outside-city="${escapeHtml(region.city)}" data-outside-region="${escapeHtml(region.region)}">키워드 설정</button></td>
+            <td>
+              <button type="button" class="small-btn" data-outside-edit data-outside-city="${escapeHtml(region.city)}" data-outside-region="${escapeHtml(region.region)}">키워드 설정</button>
+              <button type="button" class="small-btn danger-btn" data-outside-delete data-outside-city="${escapeHtml(region.city)}" data-outside-region="${escapeHtml(region.region)}">삭제</button>
+            </td>
           </tr>`;
         }).join('')}
       </tbody>
@@ -131,7 +135,23 @@
     bound = true;
     const body = document.getElementById(BODY_ID);
     body?.addEventListener('click', event => {
-      const button = event.target.closest('[data-outside-city]');
+      const removeButton = event.target.closest('[data-outside-delete]');
+      if (removeButton) {
+        const city = removeButton.getAttribute('data-outside-city') || '';
+        const regionName = removeButton.getAttribute('data-outside-region') || '';
+        const label = `${city} ${regionName}`.trim();
+        if (!city || !regionName) return;
+        if (!window.confirm(`${label} 권역을 목록에서 뺄까요?\n접은 지역은 예전 일정산이 있어도 다시 나오지 않습니다.`)) return;
+        try {
+          store()?.remove?.(city, regionName);
+          showToast(`${label} 권역을 목록에서 뺐습니다.`);
+          render();
+        } catch (error) {
+          showToast(error?.message || '권역을 빼지 못했습니다.');
+        }
+        return;
+      }
+      const button = event.target.closest('[data-outside-edit]');
       if (!button) return;
       const region = findRegion(
         `${button.getAttribute('data-outside-city') || ''}\t${button.getAttribute('data-outside-region') || ''}`
