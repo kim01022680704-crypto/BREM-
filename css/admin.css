@@ -2876,6 +2876,18 @@ textarea {
   background: rgba(255, 212, 0, 0.12);
 }
 
+.outside-region-map-dialog {
+  width: min(960px, 100%);
+}
+
+.outside-region-map {
+  width: 100%;
+  height: min(520px, 62vh);
+  margin-top: 12px;
+  border-radius: 12px;
+  background: #0f0f0f;
+}
+
 .outside-area-registered {
   display: inline-block;
   margin-left: 8px;

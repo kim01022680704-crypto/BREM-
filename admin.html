@@ -35,7 +35,7 @@
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
   <script>try{var t=localStorage.getItem('bremAdminTheme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}</script>
-  <link rel="stylesheet" href="css/admin.css?v=20261119region8">
+  <link rel="stylesheet" href="css/admin.css?v=20261119region9">
   <link rel="stylesheet" href="css/status-analysis.css?v=20261106namgu1">
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261106acct1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
@@ -4442,6 +4442,18 @@
                 <button type="submit" class="primary-btn">저장</button>
               </div>
             </form>
+          </section>
+        </div>
+        <div class="call-fee-setup-dialog" id="outsideRegionMapDialog" hidden>
+          <button type="button" class="call-fee-setup-dialog__backdrop" data-close-outside-region-map aria-label="닫기"></button>
+          <section class="call-fee-setup-dialog__panel outside-region-map-dialog" role="dialog" aria-modal="true" aria-labelledby="outsideRegionMapTitle">
+            <p class="call-fee-setup-dialog__eyebrow">권역 지도</p>
+            <h2 id="outsideRegionMapTitle">지도</h2>
+            <p class="form-help" id="outsideRegionMapMeta"></p>
+            <div id="outsideRegionMapCanvas" class="outside-region-map"></div>
+            <div class="call-fee-setup-dialog__actions">
+              <button type="button" class="small-btn" data-close-outside-region-map>닫기</button>
+            </div>
           </section>
         </div>
       </section>
@@ -10583,7 +10595,7 @@
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
   <script src="js/weekly-settlement.js?v=20261119region1"></script>
   <script src="js/weekly-settlement-admin.js?v=20261113coupang5"></script>
-  <script src="js/outside-call-regions-admin.js?v=20261119region8"></script>
+  <script src="js/outside-call-regions-admin.js?v=20261119region9"></script>
   <script src="js/baemin-delivery-fee.js?v=20260917ai1"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20261104op2"></script>

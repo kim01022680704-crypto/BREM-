@@ -3,11 +3,13 @@
   'use strict';
 
   const BODY_ID = 'outsideCallRegionsBody';
+  const KAKAO_MAP_KEY = '7767a9f4bbb17e3c1c905caecc533cef';
   let bound = false;
   let active = null;
   let fileRegion = null;
   let keywordDirty = false;
   let loadedAreas = [];
+  let kakaoMapPromise = null;
 
   function store() {
     return window.BremStorage?.outsideCallRegions || null;
@@ -309,6 +311,7 @@
             <td>${preview(entry.gu)}</td>
             <td>${preview(entry.dong)}</td>
             <td>
+              <button type="button" class="small-btn" data-outside-map data-outside-city="${escapeHtml(region.city)}" data-outside-region="${escapeHtml(region.region)}">지도</button>
               <button type="button" class="small-btn" data-outside-edit data-outside-city="${escapeHtml(region.city)}" data-outside-region="${escapeHtml(region.region)}">키워드 설정</button>
               <button type="button" class="small-btn danger-btn" data-outside-delete data-outside-city="${escapeHtml(region.city)}" data-outside-region="${escapeHtml(region.region)}">삭제</button>
             </td>
@@ -340,6 +343,145 @@
     large?.focus?.();
   }
 
+  function loadKakaoMaps() {
+    if (window.kakao?.maps?.services && window.kakao.maps.Map) return Promise.resolve();
+    if (!kakaoMapPromise) {
+      kakaoMapPromise = new Promise((resolve, reject) => {
+        const ready = () => {
+          if (window.kakao?.maps?.load && !window.kakao.maps.Map) {
+            window.kakao.maps.load(() => resolve());
+            return;
+          }
+          resolve();
+        };
+        if (window.kakao?.maps?.load && !window.kakao.maps.Map) {
+          ready();
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_MAP_KEY}&autoload=false&libraries=services`;
+        script.onload = ready;
+        script.onerror = () => {
+          kakaoMapPromise = null;
+          reject(new Error('카카오맵을 불러오지 못했습니다.'));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    return kakaoMapPromise;
+  }
+
+  function mapQueries(region, entry) {
+    const large = Array.isArray(entry?.large) ? entry.large : [];
+    const city = large.find(item => /(?:광역시|특별시|시|도)$/.test(item)) || large[0] || region.city;
+    const gu = (Array.isArray(entry?.gu) ? entry.gu : [])[0] || '';
+    const places = Array.isArray(entry?.dong) ? entry.dong : [];
+    const prefix = [city, gu].filter(Boolean).join(' ');
+    if (!places.length) return prefix ? [{ label: prefix, query: prefix }] : [];
+    return places.map(place => ({
+      label: place,
+      query: [prefix, place].filter(Boolean).join(' ')
+    }));
+  }
+
+  function searchKakaoPlace(query) {
+    const geocoder = new window.kakao.maps.services.Geocoder();
+    const places = new window.kakao.maps.services.Places();
+    const ok = window.kakao.maps.services.Status.OK;
+    return new Promise(resolve => {
+      geocoder.addressSearch(query, (result, status) => {
+        if (status === ok && result?.[0]) {
+          resolve({ x: result[0].x, y: result[0].y });
+          return;
+        }
+        places.keywordSearch(query, (list, placeStatus) => {
+          if (placeStatus === ok && list?.[0]) {
+            resolve({ x: list[0].x, y: list[0].y });
+            return;
+          }
+          resolve(null);
+        }, { size: 1 });
+      });
+    });
+  }
+
+  async function searchMapQueries(items) {
+    const found = [];
+    const missed = [];
+    const queue = items.slice();
+    const workers = Array.from({ length: 4 }, async () => {
+      while (queue.length) {
+        const item = queue.shift();
+        const point = await searchKakaoPlace(item.query);
+        if (point) found.push({ ...item, ...point });
+        else missed.push(item.label);
+      }
+    });
+    await Promise.all(workers);
+    return { found, missed };
+  }
+
+  function drawRegionMap(found) {
+    const canvas = document.getElementById('outsideRegionMapCanvas');
+    if (!canvas || !found.length) return;
+    canvas.innerHTML = '';
+    const first = new window.kakao.maps.LatLng(Number(found[0].y), Number(found[0].x));
+    const map = new window.kakao.maps.Map(canvas, { center: first, level: 6 });
+    const bounds = new window.kakao.maps.LatLngBounds();
+    const info = new window.kakao.maps.InfoWindow({ removable: true });
+    found.forEach(item => {
+      const position = new window.kakao.maps.LatLng(Number(item.y), Number(item.x));
+      bounds.extend(position);
+      const marker = new window.kakao.maps.Marker({ position, map });
+      window.kakao.maps.event.addListener(marker, 'click', () => {
+        info.setContent(`<div style="padding:6px 8px;font-size:13px;">${escapeHtml(item.label)}</div>`);
+        info.open(map, marker);
+      });
+    });
+    if (found.length > 1) map.setBounds(bounds);
+    window.setTimeout(() => {
+      map.relayout();
+      if (found.length > 1) map.setBounds(bounds);
+      else map.setCenter(first);
+    }, 80);
+  }
+
+  function closeRegionMap() {
+    const dialog = document.getElementById('outsideRegionMapDialog');
+    if (dialog) dialog.hidden = true;
+  }
+
+  async function openRegionMap(region) {
+    const entry = store()?.get?.(region.city, region.region) || { large: [], gu: [], dong: [] };
+    const queries = mapQueries(region, entry);
+    if (!queries.length) {
+      showToast('키워드가 없어 지도에 찍을 곳이 없습니다.');
+      return;
+    }
+    const dialog = document.getElementById('outsideRegionMapDialog');
+    const title = document.getElementById('outsideRegionMapTitle');
+    const meta = document.getElementById('outsideRegionMapMeta');
+    if (title) title.textContent = region.label;
+    if (meta) meta.textContent = '키워드 위치를 찾는 중입니다.';
+    if (dialog) dialog.hidden = false;
+    try {
+      await loadKakaoMaps();
+      const { found, missed } = await searchMapQueries(queries);
+      if (!found.length) {
+        if (meta) meta.textContent = '키워드 위치를 찾지 못했습니다.';
+        return;
+      }
+      drawRegionMap(found);
+      if (meta) {
+        meta.textContent = missed.length
+          ? `${found.length}곳을 표시했습니다. 못 찾은 키워드: ${missed.join(', ')}`
+          : `${found.length}곳을 표시했습니다. 핀을 누르면 이름이 나옵니다.`;
+      }
+    } catch (error) {
+      if (meta) meta.textContent = error?.message || '지도를 열지 못했습니다.';
+    }
+  }
+
   function findRegion(key) {
     return fixedRegions().find(region => region.key === key) || null;
   }
@@ -365,6 +507,14 @@
         }
         return;
       }
+      const mapButton = event.target.closest('[data-outside-map]');
+      if (mapButton) {
+        const region = findRegion(
+          `${mapButton.getAttribute('data-outside-city') || ''}\t${mapButton.getAttribute('data-outside-region') || ''}`
+        );
+        if (region) openRegionMap(region);
+        return;
+      }
       const button = event.target.closest('[data-outside-edit]');
       if (!button) return;
       const region = findRegion(
@@ -386,6 +536,9 @@
     });
     document.querySelectorAll('[data-close-outside-region-dialog]').forEach(button => {
       button.addEventListener('click', closeDialog);
+    });
+    document.querySelectorAll('[data-close-outside-region-map]').forEach(button => {
+      button.addEventListener('click', closeRegionMap);
     });
     document.getElementById('outsideWeeklyAreaForm')?.addEventListener('submit', event => {
       loadWeeklyFile(event);
