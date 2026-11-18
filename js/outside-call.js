@@ -274,6 +274,28 @@
     };
   }
 
+  function keywordCovered(name, saved) {
+    const hay = String(name || '').replace(/\s+/g, '');
+    if (!hay) return true;
+    return (Array.isArray(saved) ? saved : []).some(keyword => {
+      const needle = String(keyword || '').replace(/\s+/g, '');
+      if (!needle) return false;
+      return hay.includes(needle) || needle.includes(hay);
+    });
+  }
+
+  function addressAlreadyRegistered(text, keywords) {
+    const spec = keywordSpec(keywords);
+    const extracted = keywordsFromAddresses([text]);
+    const groups = [
+      [extracted.large, spec.large],
+      [extracted.gu, spec.gu],
+      [extracted.dong, spec.dong]
+    ];
+    if (!groups.some(([list]) => list.length)) return false;
+    return groups.every(([list, saved]) => list.every(name => keywordCovered(name, saved)));
+  }
+
   function findHeader(rows) {
     const list = Array.isArray(rows) ? rows : [];
     const scan = Math.min(list.length, 30);
@@ -392,6 +414,7 @@
     isInsideAddress,
     listOrderAreas,
     keywordsFromAddresses,
+    addressAlreadyRegistered,
     sumFromSheetRows,
     payAmount
   };

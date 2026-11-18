@@ -7,6 +7,7 @@
   let active = null;
   let fileRegion = null;
   let keywordDirty = false;
+  let loadedAreas = [];
 
   function store() {
     return window.BremStorage?.outsideCallRegions || null;
@@ -142,26 +143,38 @@
     return [...document.querySelectorAll('[data-outside-area]:checked')].map(input => input.value).filter(Boolean);
   }
 
+  function savedKeywords() {
+    const region = selectedRegion();
+    if (!region) return { large: [], gu: [], dong: [] };
+    return store()?.get?.(region.city, region.region) || { large: [], gu: [], dong: [] };
+  }
+
   function renderAreas(areas) {
     const box = document.getElementById('outsideWeeklyAreaResult');
     if (!box) return;
     const list = Array.isArray(areas) ? areas : [];
+    loadedAreas = list;
     if (!list.length) {
       box.innerHTML = '<p class="form-help outside-area-panel">오더별 상세내역에서 지역이 비어 있습니다.</p>';
       return;
     }
+    const saved = savedKeywords();
+    const registeredCount = list.filter(area => parser()?.addressAlreadyRegistered?.(area.text, saved)).length;
     box.innerHTML = `<div class="outside-area-panel">
-      <p class="form-help">지역 ${list.length}개. 권내인 것만 체크하세요.</p>
+      <p class="form-help">지역 ${list.length}개. 권내인 것만 체크하세요.${registeredCount ? ` 이미 등록된 키워드 ${registeredCount}개는 등록됨으로 표시됩니다.` : ''}</p>
       <div class="outside-area-actions">
         <button type="button" class="small-btn" id="outsideWeeklyCheckAll">모두 체크</button>
         <button type="button" class="small-btn" id="outsideWeeklyCheckNone">체크 해제</button>
       </div>
       <div class="outside-area-list">
-        ${list.map(area => `<label class="outside-area-list__item">
+        ${list.map(area => {
+          const registered = parser()?.addressAlreadyRegistered?.(area.text, saved);
+          return `<label class="outside-area-list__item">
           <input type="checkbox" data-outside-area value="${escapeHtml(area.text)}">
-          <span>${escapeHtml(area.text)}</span>
+          <span>${escapeHtml(area.text)}${registered ? '<span class="outside-area-registered">등록됨</span>' : ''}</span>
           <span class="form-help">${area.count}건</span>
-        </label>`).join('')}
+        </label>`;
+        }).join('')}
       </div>
     </div>`;
     box.querySelector('#outsideWeeklyCheckAll')?.addEventListener('click', () => {
@@ -238,9 +251,16 @@
       return;
     }
     const spec = parser()?.keywordsFromAddresses?.(checked) || { large: [], gu: [], dong: [] };
-    writeKeywordFields(spec);
+    const normalize = parser()?.normalizeKeywordList
+      || (value => String(value || '').split(/[\n,，]/).map(item => item.trim()).filter(Boolean));
+    const saved = savedKeywords();
+    writeKeywordFields({
+      large: normalize([...(saved.large || []), ...normalize(document.getElementById('outsideWeeklyLarge')?.value), ...spec.large]),
+      gu: normalize([...(saved.gu || []), ...normalize(document.getElementById('outsideWeeklyGu')?.value), ...spec.gu]),
+      dong: normalize([...(saved.dong || []), ...normalize(document.getElementById('outsideWeeklyDong')?.value), ...spec.dong])
+    });
     keywordDirty = true;
-    showToast(`시 ${spec.large.length}개, 구 ${spec.gu.length}개, 동 ${spec.dong.length}개를 채웠습니다. 고친 뒤 저장하세요.`);
+    showToast(`시 ${spec.large.length}개, 구 ${spec.gu.length}개, 동 ${spec.dong.length}개를 기존 키워드에 더했습니다. 고친 뒤 저장하세요.`);
   }
 
   function saveWeeklyKeywords() {
@@ -261,6 +281,7 @@
       fileRegion = null;
       showToast(`${region.label} 권역 키워드를 저장했습니다.`);
       render();
+      if (loadedAreas.length) renderAreas(loadedAreas);
     } catch (error) {
       showToast(error?.message || '권역 키워드를 저장하지 못했습니다.');
     }
@@ -371,6 +392,7 @@
     });
     document.getElementById('outsideWeeklyRegion')?.addEventListener('change', () => {
       syncKeywordFields(true);
+      if (loadedAreas.length) renderAreas(loadedAreas);
     });
     ['outsideWeeklyLarge', 'outsideWeeklyGu', 'outsideWeeklyDong'].forEach(id => {
       document.getElementById(id)?.addEventListener('input', () => {
@@ -392,6 +414,7 @@
         showToast(`${active.label} 권역 키워드를 저장했습니다.`);
         closeDialog();
         render();
+        if (loadedAreas.length) renderAreas(loadedAreas);
       } catch (error) {
         showToast(error?.message || '권역 키워드를 저장하지 못했습니다.');
       }
