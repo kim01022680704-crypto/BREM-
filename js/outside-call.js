@@ -101,25 +101,39 @@
     return (Array.isArray(list) ? list : []).some(keyword => textHasKeyword(text, keyword));
   }
 
-  const ADMIN_SUFFIXES = ['특별자치도', '특별자치시', '특별시', '광역시', '시', '도', '구', '군', '읍', '면', '동', '리'];
+  const ADMIN_SUFFIXES = ['특별자치도', '특별자치시', '특별시', '광역시', '시', '도', '구', '군', '읍', '면', '동', '리', '로', '길'];
   const METRO_CITIES = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종'];
 
   function compactText(text) {
     return String(text || '').replace(/\s+/g, '');
   }
 
+  function stripAddressNumbers(text) {
+    return compactText(text)
+      .replace(/\d+번길/g, '')
+      .replace(/\d+번지/g, '')
+      .replace(/[0-9]+/g, '')
+      .replace(/번길|번지/g, '');
+  }
+
   function suffixKind(suffix) {
     if (suffix === '구' || suffix === '군') return 'gu';
     if (suffix === '읍' || suffix === '면' || suffix === '동' || suffix === '리') return 'dong';
+    if (suffix === '로' || suffix === '길') return 'road';
     return 'city';
   }
 
   function adminParts(text) {
-    const hay = compactText(text);
+    const hay = stripAddressNumbers(text);
     const parts = [];
     let index = 0;
     let stem = '';
     while (index < hay.length) {
+      if (hay.startsWith('길', index) && hay.startsWith('로', index + 1)) {
+        stem += '길';
+        index += 1;
+        continue;
+      }
       const suffix = ADMIN_SUFFIXES.find(item => hay.startsWith(item, index));
       if (suffix && stem) {
         const metro = suffixKind(suffix) === 'gu'
@@ -157,11 +171,12 @@
     });
   }
 
-  // 칸에 적힌 것만 본다. 시·구·동 중 하나만 있어도 그 키워드가 맞으면 권내.
-  // 시나 구가 다른 이름으로 적혀 있으면 권외. 목록에 없는 동·읍·면도 권외.
+  // 칸에 적힌 것만 본다. 숫자·번길은 빼고 시·구·동·로까지만 본다.
+  // 시·구·동·로 중 하나만 있어도 그 키워드가 맞으면 권내.
+  // 다른 시·구이거나 목록에 없는 동·로이면 권외.
   function isInsideAddress(text, spec) {
     if (!keywordsReady(spec)) return false;
-    const hay = compactText(text);
+    const hay = stripAddressNumbers(text);
     if (!hay) return false;
     if (!levelHit(hay, spec.large) && !levelHit(hay, spec.gu) && !levelHit(hay, spec.dong)) return false;
     const parts = adminParts(hay);
@@ -169,11 +184,31 @@
     const guParts = parts.filter(part => part.kind === 'gu');
     const dongParts = parts.filter(part => part.kind === 'dong' && !part.name.endsWith('리'));
     const riParts = parts.filter(part => part.kind === 'dong' && part.name.endsWith('리'));
+    const roadParts = parts.filter(part => part.kind === 'road');
     if (cityParts.length && !cityParts.every(part => partCovered(part, spec.large))) return false;
     if (guParts.length && !guParts.every(part => partCovered(part, spec.gu))) return false;
     if (dongParts.length && !dongParts.every(part => partCovered(part, spec.dong))) return false;
     if (!dongParts.length && riParts.length && !riParts.some(part => partCovered(part, spec.dong))) return false;
+    if (roadParts.length && !roadParts.every(part => partCovered(part, spec.dong))) return false;
     return true;
+  }
+
+  function shortenOrderArea(text) {
+    const parts = adminParts(text);
+    const city = parts.find(part => part.kind === 'city');
+    const gu = parts.find(part => part.kind === 'gu');
+    const dong = parts.find(part => part.kind === 'dong' && !part.name.endsWith('리'));
+    const road = parts.find(part => part.kind === 'road');
+    const bits = [];
+    if (city) {
+      const metro = METRO_CITIES.find(name => city.name.startsWith(name));
+      bits.push(metro || city.name);
+    }
+    if (gu) bits.push(gu.name);
+    if (dong) bits.push(dong.name);
+    if (road) bits.push(road.name);
+    if (bits.length) return bits.join(' ');
+    return stripAddressNumbers(text) || compactText(text);
   }
 
   function listOrderAreas(rows) {
@@ -188,7 +223,9 @@
         if (!text || text === 'set') return;
         const compact = text.replace(/\s+/g, '');
         if (!compact || compact === '픽업지역' || compact === '배달지역') return;
-        counts.set(text, (counts.get(text) || 0) + 1);
+        const label = shortenOrderArea(text);
+        if (!label) return;
+        counts.set(label, (counts.get(label) || 0) + 1);
       });
     }
     return [...counts.entries()]
@@ -221,6 +258,10 @@
         }
         if (part.kind === 'gu') {
           gu.push(part.name);
+          return;
+        }
+        if (part.kind === 'road') {
+          dong.push(part.name);
           return;
         }
         dong.push(dongKeyword(part.name));

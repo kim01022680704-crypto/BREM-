@@ -4362,7 +4362,7 @@
             <div class="card-header">
               <h2>주정산서로 권내 지역 고르기</h2>
             </div>
-            <p class="form-help">주정산서와 비밀번호를 넣으면 오더별 상세내역의 픽업·배달 지역을 나열합니다. 권내인 것만 체크한 뒤 키워드를 채우고, 칸을 고친 다음 저장합니다. 아래 표의 키워드 입력도 그대로 됩니다.</p>
+            <p class="form-help">주정산서와 비밀번호를 넣으면 오더별 상세내역의 픽업·배달 지역을 나열합니다. 숫자와 번길은 빼고 시·구·동·로까지만 보여 주고, 같은 주소는 한 줄로 합칩니다. 권내인 것만 체크한 뒤 키워드를 채우고, 칸을 고친 다음 저장합니다. 아래 표의 키워드 입력도 그대로 됩니다.</p>
             <form class="settlement-upload-form" id="outsideWeeklyAreaForm">
               <label>
                 주정산서
@@ -4436,7 +4436,7 @@
                 <span>동 키워드</span>
                 <textarea id="outsideRegionKeywordDong" rows="4" placeholder="삼산&#10;달동&#10;신정"></textarea>
               </label>
-              <p class="form-help">한 줄에 하나, 또는 쉼표로 여러 개. 무거동은 무거, 신정동은 신정처럼 넣으면 됩니다. 시·구·동 세 칸을 모두 넣어야 셉니다. 주소에 남구만 있거나 선암동만 있어도 그 키워드가 맞으면 권내입니다. 다른 시·다른 구가 적혀 있으면 권외이고, 목록에 없는 동도 권외입니다.</p>
+              <p class="form-help">한 줄에 하나, 또는 쉼표로 여러 개. 무거동은 무거, 신정동은 신정처럼 넣으면 됩니다. 로는 남금로, 문길로처럼 숫자 없이 넣습니다. 시·구·동 세 칸을 모두 넣어야 셉니다. 주소에 남구만 있거나 선암동만 있어도 그 키워드가 맞으면 권내입니다. 다른 시·다른 구, 목록에 없는 동·로는 권외입니다.</p>
               <div class="call-fee-setup-dialog__actions">
                 <button type="button" class="small-btn" data-close-outside-region-dialog>닫기</button>
                 <button type="submit" class="primary-btn">저장</button>
@@ -10572,7 +10572,7 @@
   <script src="js/driver-utils.js?v=20260921off1"></script>
   <script src="js/driver-duplicate-dialog.js?v=20260820c"></script>
   <script src="js/settlement-formats.js?v=20260917ai1"></script>
-  <script src="js/outside-call.js?v=20261119region5"></script>
+  <script src="js/outside-call.js?v=20261119region6"></script>
   <script src="js/settlement-client.js?v=20261119region1"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
