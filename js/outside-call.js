@@ -101,10 +101,136 @@
     return (Array.isArray(list) ? list : []).some(keyword => textHasKeyword(text, keyword));
   }
 
-  // 시·구·동 키워드가 모두 들어 있으면 권내. 하나라도 없으면 권외.
+  const ADMIN_SUFFIXES = ['특별자치도', '특별자치시', '특별시', '광역시', '시', '도', '구', '군', '읍', '면', '동', '리'];
+  const METRO_CITIES = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종'];
+
+  function compactText(text) {
+    return String(text || '').replace(/\s+/g, '');
+  }
+
+  function suffixKind(suffix) {
+    if (suffix === '구' || suffix === '군') return 'gu';
+    if (suffix === '읍' || suffix === '면' || suffix === '동' || suffix === '리') return 'dong';
+    return 'city';
+  }
+
+  function adminParts(text) {
+    const hay = compactText(text);
+    const parts = [];
+    let index = 0;
+    let stem = '';
+    while (index < hay.length) {
+      const suffix = ADMIN_SUFFIXES.find(item => hay.startsWith(item, index));
+      if (suffix && stem) {
+        const metro = suffixKind(suffix) === 'gu'
+          ? METRO_CITIES.find(name => stem.startsWith(name) && stem.length > name.length)
+          : '';
+        if (metro) {
+          parts.push({ name: metro, kind: 'city' });
+          stem = stem.slice(metro.length);
+        }
+        if (stem && !(suffix === '리' && stem.length < 2)) {
+          parts.push({ name: stem + suffix, kind: suffixKind(suffix) });
+        }
+        stem = '';
+        index += suffix.length;
+        continue;
+      }
+      const ch = hay.charAt(index);
+      if (/[가-힣]/.test(ch)) stem += ch;
+      else stem = '';
+      index += 1;
+    }
+    METRO_CITIES.forEach(name => {
+      if (!hay.includes(name)) return;
+      if (parts.some(part => part.kind === 'city' && part.name.includes(name))) return;
+      parts.push({ name, kind: 'city' });
+    });
+    return parts;
+  }
+
+  function partCovered(part, keywords) {
+    return (Array.isArray(keywords) ? keywords : []).some(keyword => {
+      const needle = String(keyword || '').replace(/\s+/g, '');
+      if (!needle) return false;
+      return part.name.includes(needle) || needle.includes(part.name);
+    });
+  }
+
+  // 칸에 적힌 것만 본다. 시·구·동 중 하나만 있어도 그 키워드가 맞으면 권내.
+  // 시나 구가 다른 이름으로 적혀 있으면 권외. 목록에 없는 동·읍·면도 권외.
   function isInsideAddress(text, spec) {
     if (!keywordsReady(spec)) return false;
-    return levelHit(text, spec.large) && levelHit(text, spec.gu) && levelHit(text, spec.dong);
+    const hay = compactText(text);
+    if (!hay) return false;
+    if (!levelHit(hay, spec.large) && !levelHit(hay, spec.gu) && !levelHit(hay, spec.dong)) return false;
+    const parts = adminParts(hay);
+    const cityParts = parts.filter(part => part.kind === 'city');
+    const guParts = parts.filter(part => part.kind === 'gu');
+    const dongParts = parts.filter(part => part.kind === 'dong' && !part.name.endsWith('리'));
+    const riParts = parts.filter(part => part.kind === 'dong' && part.name.endsWith('리'));
+    if (cityParts.length && !cityParts.every(part => partCovered(part, spec.large))) return false;
+    if (guParts.length && !guParts.every(part => partCovered(part, spec.gu))) return false;
+    if (dongParts.length && !dongParts.every(part => partCovered(part, spec.dong))) return false;
+    if (!dongParts.length && riParts.length && !riParts.some(part => partCovered(part, spec.dong))) return false;
+    return true;
+  }
+
+  function listOrderAreas(rows) {
+    const header = findHeader(rows);
+    if (!header) return null;
+    const counts = new Map();
+    const list = Array.isArray(rows) ? rows : [];
+    for (let index = header.index + 1; index < list.length; index += 1) {
+      const row = list[index] || [];
+      [row[header.pickupIndex], row[header.deliveryIndex]].forEach(value => {
+        const text = cellText(value);
+        if (!text || text === 'set') return;
+        const compact = text.replace(/\s+/g, '');
+        if (!compact || compact === '픽업지역' || compact === '배달지역') return;
+        counts.set(text, (counts.get(text) || 0) + 1);
+      });
+    }
+    return [...counts.entries()]
+      .map(([text, count]) => ({ text, count }))
+      .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text, 'ko'));
+  }
+
+  function dongKeyword(name) {
+    const suffix = ['읍', '면', '동', '리'].find(item => name.endsWith(item));
+    if (!suffix) return name;
+    const stem = name.slice(0, -suffix.length);
+    return stem.length >= 2 ? stem : name;
+  }
+
+  function keywordsFromAddresses(addresses) {
+    const large = [];
+    const gu = [];
+    const dong = [];
+    (Array.isArray(addresses) ? addresses : []).forEach(text => {
+      adminParts(text).forEach(part => {
+        if (part.kind === 'city') {
+          large.push(part.name);
+          const metro = METRO_CITIES.find(name => part.name.startsWith(name));
+          if (metro) large.push(metro);
+          else if (/(시|도)$/.test(part.name)) {
+            const stem = part.name.replace(/(특별자치도|특별자치시|특별시|광역시|시|도)$/, '');
+            if (stem.length >= 2) large.push(stem);
+          }
+          return;
+        }
+        if (part.kind === 'gu') {
+          gu.push(part.name);
+          return;
+        }
+        dong.push(dongKeyword(part.name));
+      });
+    });
+    return {
+      large: normalizeKeywordList(large),
+      gu: normalizeKeywordList(gu),
+      dong: normalizeKeywordList(dong)
+    };
   }
 
   function findHeader(rows) {
@@ -223,6 +349,8 @@
     keywordSpec,
     keywordsReady,
     isInsideAddress,
+    listOrderAreas,
+    keywordsFromAddresses,
     sumFromSheetRows,
     payAmount
   };

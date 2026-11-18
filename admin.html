@@ -35,7 +35,7 @@
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
   <script>try{var t=localStorage.getItem('bremAdminTheme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}</script>
-  <link rel="stylesheet" href="css/admin.css?v=20261104hour2">
+  <link rel="stylesheet" href="css/admin.css?v=20261119region5">
   <link rel="stylesheet" href="css/status-analysis.css?v=20261106namgu1">
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261106acct1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
@@ -4360,6 +4360,49 @@
         <div id="outsideCallRegionsCoupang">
           <article class="card">
             <div class="card-header">
+              <h2>주정산서로 권내 지역 고르기</h2>
+            </div>
+            <p class="form-help">주정산서와 비밀번호를 넣으면 오더별 상세내역의 픽업·배달 지역을 나열합니다. 권내인 것만 체크한 뒤 키워드를 채우고, 칸을 고친 다음 저장합니다. 아래 표의 키워드 입력도 그대로 됩니다.</p>
+            <form class="settlement-upload-form" id="outsideWeeklyAreaForm">
+              <label>
+                주정산서
+                <input type="file" id="outsideWeeklyFile" accept=".xlsx,.xls" required>
+              </label>
+              <label>
+                엑셀 비밀번호
+                <input type="text" id="outsideWeeklyPassword" placeholder="주정산서 열람 비밀번호" autocomplete="off" spellcheck="false" required>
+              </label>
+              <label>
+                저장할 권역
+                <select id="outsideWeeklyRegion"></select>
+              </label>
+              <button type="submit" class="primary-btn" id="outsideWeeklyLoadBtn">지역 불러오기</button>
+            </form>
+            <div id="outsideWeeklyAreaResult"></div>
+            <div class="outside-area-panel" id="outsideWeeklyKeywordPanel">
+              <p class="form-help" id="outsideWeeklyFileMeta">권내 지역을 체크하면 아래 칸에 시·구·동 키워드를 채웁니다. 칸은 직접 고쳐도 됩니다.</p>
+              <div class="outside-area-keywords">
+                <label class="call-fee-setup-dialog__field">
+                  <span>큰 키워드 (시)</span>
+                  <textarea id="outsideWeeklyLarge" rows="4" placeholder="울산&#10;울산광역시"></textarea>
+                </label>
+                <label class="call-fee-setup-dialog__field">
+                  <span>구 키워드</span>
+                  <textarea id="outsideWeeklyGu" rows="4" placeholder="남구"></textarea>
+                </label>
+                <label class="call-fee-setup-dialog__field">
+                  <span>동 키워드</span>
+                  <textarea id="outsideWeeklyDong" rows="4" placeholder="삼산&#10;달동&#10;신정"></textarea>
+                </label>
+              </div>
+              <div class="outside-area-actions">
+                <button type="button" class="small-btn" id="outsideWeeklyFillBtn">체크한 지역으로 키워드 채우기</button>
+                <button type="button" class="primary-btn" id="outsideWeeklySaveBtn">이 권역에 저장</button>
+              </div>
+            </div>
+          </article>
+          <article class="card">
+            <div class="card-header">
               <h2>쿠팡 권외 권역</h2>
             </div>
             <p class="form-help">줄은 시와 지역 이름으로 고정됩니다. 내일 날짜만 다른 일정산이 올라와도 같은 줄이고, 저장한 키워드는 그대로입니다. 새 시·지역이 처음 올라올 때만 줄이 추가됩니다. 접은 지역은 삭제를 누르면 목록에서 빠지고, 예전 일정산이 있어도 다시 나오지 않습니다.</p>
@@ -4393,7 +4436,7 @@
                 <span>동 키워드</span>
                 <textarea id="outsideRegionKeywordDong" rows="4" placeholder="삼산&#10;달동&#10;신정"></textarea>
               </label>
-              <p class="form-help">한 줄에 하나, 또는 쉼표로 여러 개. 무거동은 무거, 신정동은 신정처럼 넣으면 됩니다. 세 칸이 모두 있어야 그 지역 권외를 셉니다.</p>
+              <p class="form-help">한 줄에 하나, 또는 쉼표로 여러 개. 무거동은 무거, 신정동은 신정처럼 넣으면 됩니다. 시·구·동 세 칸을 모두 넣어야 셉니다. 주소에 남구만 있거나 선암동만 있어도 그 키워드가 맞으면 권내입니다. 다른 시·다른 구가 적혀 있으면 권외이고, 목록에 없는 동도 권외입니다.</p>
               <div class="call-fee-setup-dialog__actions">
                 <button type="button" class="small-btn" data-close-outside-region-dialog>닫기</button>
                 <button type="submit" class="primary-btn">저장</button>
@@ -10529,7 +10572,7 @@
   <script src="js/driver-utils.js?v=20260921off1"></script>
   <script src="js/driver-duplicate-dialog.js?v=20260820c"></script>
   <script src="js/settlement-formats.js?v=20260917ai1"></script>
-  <script src="js/outside-call.js?v=20261119region1"></script>
+  <script src="js/outside-call.js?v=20261119region5"></script>
   <script src="js/settlement-client.js?v=20261119region1"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
@@ -10540,7 +10583,7 @@
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
   <script src="js/weekly-settlement.js?v=20261119region1"></script>
   <script src="js/weekly-settlement-admin.js?v=20261113coupang5"></script>
-  <script src="js/outside-call-regions-admin.js?v=20261119region3"></script>
+  <script src="js/outside-call-regions-admin.js?v=20261119region5"></script>
   <script src="js/baemin-delivery-fee.js?v=20260917ai1"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20261104op2"></script>
