@@ -230,7 +230,7 @@
     }
     return [...counts.entries()]
       .map(([text, count]) => ({ text, count }))
-      .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text, 'ko'));
+      .sort((a, b) => a.text.localeCompare(b.text, 'ko'));
   }
 
   function dongKeyword(name) {
