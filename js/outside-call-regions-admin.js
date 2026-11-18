@@ -10,6 +10,7 @@
   let keywordDirty = false;
   let loadedAreas = [];
   let kakaoMapPromise = null;
+  let dongBoundsPromise = null;
 
   function store() {
     return window.BremStorage?.outsideCallRegions || null;
@@ -421,15 +422,111 @@
     return { found, missed };
   }
 
-  function drawRegionMap(found) {
+  function loadDongBounds() {
+    if (!dongBoundsPromise) {
+      dongBoundsPromise = fetch('js/admin-dong-bounds.json?v=20261119region10')
+        .then(response => {
+          if (!response.ok) throw new Error('동 경계를 불러오지 못했습니다.');
+          return response.json();
+        })
+        .catch(error => {
+          dongBoundsPromise = null;
+          throw error;
+        });
+    }
+    return dongBoundsPromise;
+  }
+
+  function sidoMatches(sidonm, cities) {
+    const hay = String(sidonm || '');
+    const alias = {
+      경남: '경상남',
+      경북: '경상북',
+      전남: '전라남',
+      전북: '전라북',
+      충남: '충청남',
+      충북: '충청북'
+    };
+    return (Array.isArray(cities) ? cities : []).some(city => {
+      const raw = String(city || '').trim();
+      if (!raw) return false;
+      if (hay.includes(raw)) return true;
+      const stem = raw.replace(/(특별자치도|특별자치시|특별시|광역시|시|도)$/, '');
+      if (stem && hay.includes(stem)) return true;
+      return alias[stem] ? hay.includes(alias[stem]) : false;
+    });
+  }
+
+  function isRoadKeyword(keyword) {
+    return /(?:로|길)$/.test(String(keyword || '').replace(/\s+/g, ''));
+  }
+
+  function emdMatches(emd, keyword) {
+    const name = String(emd || '').replace(/\s+/g, '');
+    const key = String(keyword || '').replace(/\s+/g, '');
+    if (!name || !key || isRoadKeyword(key)) return false;
+    if (name === key) return true;
+    const full = /(?:동|읍|면)$/.test(key) ? key : `${key}동`;
+    if (name === full) return true;
+    return key.length >= 2 && name.startsWith(key) && /(?:동|읍|면)$/.test(name);
+  }
+
+  function findDongPolygons(bounds, region, entry) {
+    const cities = [...(entry.large || []), region.city];
+    const gus = entry.gu || [];
+    const keywords = (entry.dong || []).filter(keyword => !isRoadKeyword(keyword));
+    const matched = [];
+    const seen = new Set();
+    const covered = new Set();
+    keywords.forEach(keyword => {
+      (bounds?.items || []).forEach(item => {
+        if (!sidoMatches(item.sido, cities)) return;
+        if (gus.length && !gus.some(gu => item.sgg === gu || String(item.sgg || '').includes(gu))) return;
+        if (!emdMatches(item.emd, keyword)) return;
+        covered.add(keyword);
+        const id = `${item.sido}\t${item.sgg}\t${item.emd}`;
+        if (seen.has(id)) return;
+        seen.add(id);
+        matched.push(item);
+      });
+    });
+    const pins = (entry.dong || []).filter(keyword => !covered.has(keyword));
+    return { matched, pins };
+  }
+
+  function drawRegionMap(pins, polygons) {
     const canvas = document.getElementById('outsideRegionMapCanvas');
-    if (!canvas || !found.length) return;
+    if (!canvas || (!pins.length && !polygons.length)) return;
     canvas.innerHTML = '';
-    const first = new window.kakao.maps.LatLng(Number(found[0].y), Number(found[0].x));
-    const map = new window.kakao.maps.Map(canvas, { center: first, level: 6 });
     const bounds = new window.kakao.maps.LatLngBounds();
+    const seed = pins[0]
+      ? new window.kakao.maps.LatLng(Number(pins[0].y), Number(pins[0].x))
+      : new window.kakao.maps.LatLng(polygons[0].rings[0][0][1], polygons[0].rings[0][0][0]);
+    const map = new window.kakao.maps.Map(canvas, { center: seed, level: 6 });
     const info = new window.kakao.maps.InfoWindow({ removable: true });
-    found.forEach(item => {
+    let spotCount = 0;
+    polygons.forEach(item => {
+      (item.rings || []).forEach(ring => {
+        const path = ring.map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng));
+        path.forEach(position => bounds.extend(position));
+        const polygon = new window.kakao.maps.Polygon({
+          map,
+          path,
+          strokeWeight: 2,
+          strokeColor: '#ffd400',
+          strokeOpacity: 0.95,
+          fillColor: '#ffd400',
+          fillOpacity: 0.22
+        });
+        window.kakao.maps.event.addListener(polygon, 'click', () => {
+          info.setContent(`<div style="padding:6px 8px;font-size:13px;">${escapeHtml(item.emd)}</div>`);
+          info.setPosition(path[0]);
+          info.open(map);
+        });
+        spotCount += 1;
+      });
+    });
+    pins.forEach(item => {
       const position = new window.kakao.maps.LatLng(Number(item.y), Number(item.x));
       bounds.extend(position);
       const marker = new window.kakao.maps.Marker({ position, map });
@@ -437,13 +534,14 @@
         info.setContent(`<div style="padding:6px 8px;font-size:13px;">${escapeHtml(item.label)}</div>`);
         info.open(map, marker);
       });
+      spotCount += 1;
     });
-    if (found.length > 1) map.setBounds(bounds);
-    window.setTimeout(() => {
+    const fit = () => {
       map.relayout();
-      if (found.length > 1) map.setBounds(bounds);
-      else map.setCenter(first);
-    }, 80);
+      if (spotCount > 1) map.setBounds(bounds);
+      else map.setCenter(seed);
+    };
+    window.setTimeout(fit, 80);
   }
 
   function closeRegionMap() {
@@ -462,20 +560,25 @@
     const title = document.getElementById('outsideRegionMapTitle');
     const meta = document.getElementById('outsideRegionMapMeta');
     if (title) title.textContent = region.label;
-    if (meta) meta.textContent = '키워드 위치를 찾는 중입니다.';
+    if (meta) meta.textContent = '동 경계와 키워드 위치를 찾는 중입니다.';
     if (dialog) dialog.hidden = false;
     try {
-      await loadKakaoMaps();
-      const { found, missed } = await searchMapQueries(queries);
-      if (!found.length) {
+      const [bounds] = await Promise.all([loadDongBounds(), loadKakaoMaps()]);
+      const { matched, pins: pinKeywords } = findDongPolygons(bounds, region, entry);
+      const pinQueries = pinKeywords.length
+        ? mapQueries(region, { ...entry, dong: pinKeywords })
+        : [];
+      const { found, missed } = pinQueries.length
+        ? await searchMapQueries(pinQueries)
+        : { found: [], missed: [] };
+      if (!matched.length && !found.length) {
         if (meta) meta.textContent = '키워드 위치를 찾지 못했습니다.';
         return;
       }
-      drawRegionMap(found);
+      drawRegionMap(found, matched);
+      const missedText = missed.length ? ` 못 찾은 키워드: ${missed.join(', ')}` : '';
       if (meta) {
-        meta.textContent = missed.length
-          ? `${found.length}곳을 표시했습니다. 못 찾은 키워드: ${missed.join(', ')}`
-          : `${found.length}곳을 표시했습니다. 핀을 누르면 이름이 나옵니다.`;
+        meta.textContent = `동 테두리 ${matched.length}곳, 도로 핀 ${found.length}곳.${missedText} 테두리나 핀을 누르면 이름이 나옵니다.`;
       }
     } catch (error) {
       if (meta) meta.textContent = error?.message || '지도를 열지 못했습니다.';
