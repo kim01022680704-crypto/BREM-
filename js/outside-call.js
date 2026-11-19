@@ -526,12 +526,191 @@
     )).filter(ring => ring.length >= 3);
   }
 
+  function ringContains(lat, lng, ring) {
+    return pointInRing(lat, lng, ring);
+  }
+
+  function solidOuterRings(rings) {
+    const source = (Array.isArray(rings) ? rings : []).filter(ring => Array.isArray(ring) && ring.length >= 3);
+    if (!source.length) return [];
+    const boxes = source.map(ring => {
+      let minLat = Infinity;
+      let maxLat = -Infinity;
+      let minLng = Infinity;
+      let maxLng = -Infinity;
+      ring.forEach(point => {
+        minLat = Math.min(minLat, point[0]);
+        maxLat = Math.max(maxLat, point[0]);
+        minLng = Math.min(minLng, point[1]);
+        maxLng = Math.max(maxLng, point[1]);
+      });
+      return { ring, minLat, maxLat, minLng, maxLng };
+    });
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    let minLng = Infinity;
+    let maxLng = -Infinity;
+    boxes.forEach(box => {
+      minLat = Math.min(minLat, box.minLat);
+      maxLat = Math.max(maxLat, box.maxLat);
+      minLng = Math.min(minLng, box.minLng);
+      maxLng = Math.max(maxLng, box.maxLng);
+    });
+    const padLat = Math.max((maxLat - minLat) * 0.03, 0.001);
+    const padLng = Math.max((maxLng - minLng) * 0.03, 0.001);
+    minLat -= padLat;
+    maxLat += padLat;
+    minLng -= padLng;
+    maxLng += padLng;
+    const cols = 160;
+    const rows = 160;
+    const inside = new Uint8Array(cols * rows);
+    const latOf = row => minLat + ((row + 0.5) / rows) * (maxLat - minLat);
+    const lngOf = col => minLng + ((col + 0.5) / cols) * (maxLng - minLng);
+    for (let row = 0; row < rows; row += 1) {
+      const lat = latOf(row);
+      for (let col = 0; col < cols; col += 1) {
+        const lng = lngOf(col);
+        const hit = boxes.some(box => (
+          lat >= box.minLat && lat <= box.maxLat && lng >= box.minLng && lng <= box.maxLng && ringContains(lat, lng, box.ring)
+        ));
+        if (hit) inside[row * cols + col] = 1;
+      }
+    }
+    const sealed = inside.slice();
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        if (inside[row * cols + col]) continue;
+        let touch = 0;
+        [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dc, dr]) => {
+          const nextCol = col + dc;
+          const nextRow = row + dr;
+          if (nextCol < 0 || nextRow < 0 || nextCol >= cols || nextRow >= rows) return;
+          if (inside[nextRow * cols + nextCol]) touch += 1;
+        });
+        if (touch >= 2) sealed[row * cols + col] = 1;
+      }
+    }
+    const outside = new Uint8Array(cols * rows);
+    const stack = [];
+    const pushOutside = (col, row) => {
+      if (col < 0 || row < 0 || col >= cols || row >= rows) return;
+      const id = row * cols + col;
+      if (outside[id] || sealed[id]) return;
+      outside[id] = 1;
+      stack.push(id);
+    };
+    for (let col = 0; col < cols; col += 1) {
+      pushOutside(col, 0);
+      pushOutside(col, rows - 1);
+    }
+    for (let row = 0; row < rows; row += 1) {
+      pushOutside(0, row);
+      pushOutside(cols - 1, row);
+    }
+    while (stack.length) {
+      const id = stack.pop();
+      const col = id % cols;
+      const row = (id - col) / cols;
+      pushOutside(col + 1, row);
+      pushOutside(col - 1, row);
+      pushOutside(col, row + 1);
+      pushOutside(col, row - 1);
+    }
+    const solid = new Uint8Array(cols * rows);
+    for (let index = 0; index < solid.length; index += 1) {
+      if (!outside[index]) solid[index] = 1;
+    }
+    const on = (col, row) => col >= 0 && row >= 0 && col < cols && row < rows && solid[row * cols + col] === 1;
+    const moore = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+    const used = new Uint8Array(cols * rows);
+    const paths = [];
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        if (!on(col, row) || on(col - 1, row) || used[row * cols + col]) continue;
+        let cursorCol = col;
+        let cursorRow = row;
+        let dir = 4;
+        const cells = [];
+        for (let step = 0; step < cols * rows * 2; step += 1) {
+          cells.push([cursorCol, cursorRow]);
+          used[cursorRow * cols + cursorCol] = 1;
+          let found = false;
+          for (let turn = 0; turn < 8; turn += 1) {
+            const nextDir = (dir + 1 + turn) % 8;
+            const nextCol = cursorCol + moore[nextDir][0];
+            const nextRow = cursorRow + moore[nextDir][1];
+            if (!on(nextCol, nextRow)) continue;
+            cursorCol = nextCol;
+            cursorRow = nextRow;
+            dir = (nextDir + 4) % 8;
+            found = true;
+            break;
+          }
+          if (!found || (cursorCol === col && cursorRow === row)) break;
+        }
+        if (cells.length < 12) continue;
+        const points = cells.map(([cellCol, cellRow]) => [latOf(cellRow), lngOf(cellCol)]);
+        const simplified = simplifyClosedRing(points, 42);
+        if (simplified.length >= 3) paths.push(simplified);
+      }
+    }
+    return paths.length ? paths : source;
+  }
+
+  function simplifyClosedRing(points, maxPoints) {
+    const raw = points.slice();
+    if (raw.length <= maxPoints) return raw;
+    let epsilon = 0.0004;
+    let simplified = raw;
+    for (let attempt = 0; attempt < 16 && simplified.length > maxPoints; attempt += 1) {
+      simplified = douglasOpen(raw, epsilon);
+      epsilon *= 1.55;
+    }
+    if (simplified.length > maxPoints) {
+      const step = simplified.length / maxPoints;
+      const sampled = [];
+      for (let index = 0; index < maxPoints; index += 1) sampled.push(simplified[Math.floor(index * step)]);
+      simplified = sampled;
+    }
+    return simplified.length >= 3 ? simplified : raw.slice(0, maxPoints);
+  }
+
+  function lineDistancePair(point, start, end) {
+    const dx = end[1] - start[1];
+    const dy = end[0] - start[0];
+    const len2 = dx * dx + dy * dy;
+    if (!len2) return Math.hypot(point[1] - start[1], point[0] - start[0]);
+    const t = Math.max(0, Math.min(1, ((point[1] - start[1]) * dx + (point[0] - start[0]) * dy) / len2));
+    return Math.hypot(point[1] - (start[1] + t * dx), point[0] - (start[0] + t * dy));
+  }
+
+  function douglasOpen(points, epsilon) {
+    if (points.length <= 3) return points.slice();
+    let maxDist = 0;
+    let index = 0;
+    const start = points[0];
+    const end = points[points.length - 1];
+    for (let cursor = 1; cursor < points.length - 1; cursor += 1) {
+      const dist = lineDistancePair(points[cursor], start, end);
+      if (dist > maxDist) {
+        maxDist = dist;
+        index = cursor;
+      }
+    }
+    if (maxDist <= epsilon) return [start, end];
+    const left = douglasOpen(points.slice(0, index + 1), epsilon);
+    const right = douglasOpen(points.slice(index), epsilon);
+    return left.slice(0, -1).concat(right);
+  }
+
   function officialBorder(bounds, region, spec) {
     const rings = [];
     findMatchedDongs(bounds, region, spec).forEach(item => {
       ringsFromDong(item).forEach(ring => rings.push(ring));
     });
-    return rings;
+    const outer = solidOuterRings(rings);
+    return outer.length ? outer : rings;
   }
 
   function dongOverlapsBorder(text, border, bounds, region, spec) {
@@ -781,6 +960,7 @@
     sumFromSheetRowsAsync,
     addressIsDetailed,
     pointInRings,
+    solidOuterRings,
     payAmount
   };
 });

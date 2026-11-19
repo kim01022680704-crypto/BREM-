@@ -629,7 +629,7 @@
     }
   }
 
-  function addShape(session, label, path) {
+  function addShape(session, label, path, showBadge = true) {
     const polygon = new window.kakao.maps.Polygon({
       map: session.map,
       path,
@@ -637,16 +637,18 @@
       strokeColor: '#ffd400',
       strokeOpacity: 0.95,
       fillColor: '#ffd400',
-      fillOpacity: 0.18
+      fillOpacity: 0.28
     });
     const shape = { label, path, polygon, handles: [], mids: [], badge: null };
-    shape.badge = new window.kakao.maps.CustomOverlay({
-      map: session.map,
-      position: pathCentroid(path),
-      content: `<div class="outside-map-pin">${escapeHtml(label)} · 권내</div>`,
-      yAnchor: 1.3,
-      zIndex: 2
-    });
+    if (showBadge) {
+      shape.badge = new window.kakao.maps.CustomOverlay({
+        map: session.map,
+        position: pathCentroid(path),
+        content: `<div class="outside-map-pin">${escapeHtml(label)} · 권내</div>`,
+        yAnchor: 1.3,
+        zIndex: 2
+      });
+    }
     window.kakao.maps.event.addListener(polygon, 'click', () => {
       if (session.drawing) return;
       selectShape(session, shape);
@@ -701,20 +703,46 @@
       paintDraft(session);
     });
     if (saved.length) {
-      saved.forEach((ring, index) => {
+      const outer = parser()?.solidOuterRings?.(saved) || [];
+      const rings = outer.length ? outer : saved;
+      rings.forEach((ring, index) => {
         const path = ring
-          .map(([lat, lng]) => new window.kakao.maps.LatLng(Number(lat), Number(lng)))
+          .map(point => new window.kakao.maps.LatLng(Number(point[0]), Number(point[1])))
           .filter(point => Number.isFinite(point.getLat()) && Number.isFinite(point.getLng()));
-        const simple = simplifyPath(path);
-        if (simple.length >= 3) addShape(session, `테두리 ${index + 1}`, simple);
+        if (path.length >= 3) addShape(session, rings.length === 1 ? '권내' : `권내 ${index + 1}`, path);
       });
     } else {
+      const source = [];
       polygons.forEach(item => {
         (item.rings || []).forEach(ring => {
-          const path = ring.map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng));
-          const simple = simplifyPath(path);
-          if (simple.length >= 3) addShape(session, item.emd || '동', simple);
+          const path = ring
+            .map(([lng, lat]) => [Number(lat), Number(lng)])
+            .filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1]));
+          if (path.length >= 3) source.push(path);
         });
+        const first = item.rings?.[0];
+        if (!first?.length) return;
+        let lat = 0;
+        let lng = 0;
+        first.forEach(([ringLng, ringLat]) => {
+          lat += Number(ringLat);
+          lng += Number(ringLng);
+        });
+        const position = new window.kakao.maps.LatLng(lat / first.length, lng / first.length);
+        bounds.extend(position);
+        new window.kakao.maps.CustomOverlay({
+          map,
+          position,
+          content: `<div class="outside-map-pin">${escapeHtml(item.emd || '동')} · 권내</div>`,
+          yAnchor: 1.3,
+          zIndex: 2
+        });
+      });
+      const outer = parser()?.solidOuterRings?.(source) || [];
+      const rings = outer.length ? outer : source;
+      rings.forEach((ring, index) => {
+        const path = ring.map(([lat, lng]) => new window.kakao.maps.LatLng(lat, lng));
+        if (path.length >= 3) addShape(session, rings.length === 1 ? '권내' : `권내 ${index + 1}`, path, false);
       });
     }
     const info = new window.kakao.maps.InfoWindow({ removable: true });
@@ -856,7 +884,7 @@
         ? `저장된 테두리 ${saved.length}개를 불러왔습니다.`
         : `동 테두리 ${matched.length}곳.`;
       if (meta) {
-        meta.textContent = `${borderText} 도로 핀 ${found.length}곳.${missedText} 동 가운데 핀은 권내입니다. 동을 누르면 점 8개 안쪽만 나옵니다. 저장해야 다음 집계에 반영됩니다.`;
+        meta.textContent = `${borderText} 도로 핀 ${found.length}곳.${missedText} 노란 선 안은 전부 권내입니다. 선을 누르면 바깥 점만 나옵니다. 저장해야 다음 집계에 반영됩니다.`;
       }
     } catch (error) {
       if (meta) meta.textContent = error?.message || '지도를 열지 못했습니다.';
