@@ -7587,6 +7587,9 @@
         settlementAmount: settlementAmountValue(record),
         ...(record.deliveryDistanceM != null && record.deliveryDistanceM !== ''
           ? { deliveryDistanceM: Math.max(0, Math.round(Number(record.deliveryDistanceM) || 0)) }
+          : {}),
+        ...(record.outsideCallCount != null && record.outsideCallCount !== ''
+          ? { outsideCallCount: Math.max(0, Math.round(Number(record.outsideCallCount) || 0)) }
           : {})
       });
       let verifyResult = null;
