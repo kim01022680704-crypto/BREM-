@@ -308,12 +308,17 @@
       <tbody>
         ${regions.map(region => {
           const entry = saved?.get?.(region.city, region.region) || { large: [], gu: [], dong: [] };
+          const sibling = siblingRegion(region);
+          const copyButton = sibling
+            ? `<button type="button" class="small-btn" data-outside-copy data-outside-city="${escapeHtml(region.city)}" data-outside-region="${escapeHtml(region.region)}">${escapeHtml(sibling.region)}과 같게</button>`
+            : '';
           return `<tr>
             <td><strong>${escapeHtml(region.label)}</strong></td>
             <td>${preview(entry.large)}</td>
             <td>${preview(entry.gu)}</td>
             <td>${preview(entry.dong)}</td>
             <td>
+              ${copyButton}
               <button type="button" class="small-btn" data-outside-map data-outside-city="${escapeHtml(region.city)}" data-outside-region="${escapeHtml(region.region)}">지도</button>
               <button type="button" class="small-btn" data-outside-edit data-outside-city="${escapeHtml(region.city)}" data-outside-region="${escapeHtml(region.region)}">키워드 설정</button>
               <button type="button" class="small-btn danger-btn" data-outside-delete data-outside-city="${escapeHtml(region.city)}" data-outside-region="${escapeHtml(region.region)}">삭제</button>
@@ -931,6 +936,48 @@
     return fixedRegions().find(region => region.key === key) || null;
   }
 
+  function baseRegionName(name) {
+    return String(name || '').replace(/\s*\(Z\)\s*$/i, '').trim();
+  }
+
+  function siblingRegion(region) {
+    const base = baseRegionName(region?.region);
+    if (!region?.city || !base) return null;
+    return fixedRegions().find(item => (
+      item.city === region.city
+      && item.region !== region.region
+      && baseRegionName(item.region) === base
+    )) || null;
+  }
+
+  function copyFromSibling(region) {
+    const sibling = siblingRegion(region);
+    if (!sibling) {
+      showToast('같은 지역의 다른 권역이 없습니다.');
+      return;
+    }
+    const entry = store()?.get?.(sibling.city, sibling.region) || {};
+    const hasKeywords = (entry.large || []).length || (entry.gu || []).length || (entry.dong || []).length;
+    const hasRings = Array.isArray(entry.rings) && entry.rings.length > 0;
+    if (!hasKeywords && !hasRings) {
+      showToast(`${sibling.label}에 복사할 키워드나 테두리가 없습니다.`);
+      return;
+    }
+    if (!window.confirm(`${region.label}을 ${sibling.label}와 같게 저장할까요?\n키워드와 지도 테두리가 같이 복사됩니다.`)) return;
+    try {
+      store()?.save?.(region.city, region.region, {
+        large: entry.large || [],
+        gu: entry.gu || [],
+        dong: entry.dong || [],
+        rings: entry.rings || []
+      });
+      showToast(`${region.label}을 ${sibling.label}와 같게 저장했습니다.`);
+      render();
+    } catch (error) {
+      showToast(error?.message || '같은 설정을 저장하지 못했습니다.');
+    }
+  }
+
   function bind() {
     if (bound) return;
     bound = true;
@@ -950,6 +997,14 @@
         } catch (error) {
           showToast(error?.message || '권역을 빼지 못했습니다.');
         }
+        return;
+      }
+      const copyButton = event.target.closest('[data-outside-copy]');
+      if (copyButton) {
+        const region = findRegion(
+          `${copyButton.getAttribute('data-outside-city') || ''}\t${copyButton.getAttribute('data-outside-region') || ''}`
+        );
+        if (region) copyFromSibling(region);
         return;
       }
       const mapButton = event.target.closest('[data-outside-map]');
