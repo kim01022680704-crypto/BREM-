@@ -5353,6 +5353,30 @@
     `;
   }
 
+  function previewOutsideLookupKey(record) {
+    return String(record?.rawName || record?.name || record?.driverName || '')
+      .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '')
+      .replace(/\s+/g, '')
+      .trim();
+  }
+
+  function previewOutsideCount(record, preview) {
+    const byName = preview?.outsideByName;
+    if (!byName || typeof byName.get !== 'function' || !preview?.outsideReady) return null;
+    return Math.max(0, Math.round(Number(byName.get(previewOutsideLookupKey(record)) || 0)));
+  }
+
+  function previewOutsideCountText(record, preview) {
+    const count = previewOutsideCount(record, preview);
+    return count == null ? '-' : count.toLocaleString('ko-KR');
+  }
+
+  function previewOutsideTotal(preview) {
+    if (!preview?.outsideReady || !preview.outsideByName || typeof preview.outsideByName.get !== 'function') return null;
+    const rows = [...(preview.matched || []), ...(preview.unmatched || [])];
+    return rows.reduce((sum, record) => sum + (previewOutsideCount(record, preview) || 0), 0);
+  }
+
   function renderSettlementPreview(platform) {
     const p = normalizePlatform(platform);
     const previewCard = $(`#settlementPreviewCard-${p}`);
@@ -5405,16 +5429,22 @@
       $(`#settlementSuccessCount-${p}`).textContent = String(preview.matched.length);
       $(`#settlementFailedCount-${p}`).textContent = String(preview.unmatched.length);
 
+      const outsideTotalEl = $(`#settlementOutsideCount-${p}`);
+      if (outsideTotalEl) {
+        const outsideTotal = previewOutsideTotal(preview);
+        outsideTotalEl.textContent = outsideTotal == null ? '-' : outsideTotal.toLocaleString('ko-KR');
+      }
       $(`#settlementMatchedRows-${p}`).innerHTML = preview.matched.map(record => `
         <tr>
           <td><strong>${escapeHtml(record.driverName)}</strong></td>
           <td>${Number(record.orderCount || 0).toLocaleString('ko-KR')}</td>
+          <td>${previewOutsideCountText(record, preview)}</td>
           <td>${settlementDistanceText(record)}</td>
           <td>${callFeeUnit == null ? '설정 필요' : formatMoney(Number(record.orderCount || 0) * callFeeUnit)}</td>
           <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
           <td>${formatMoney(settlementAmountValue(record))}</td>
         </tr>
-      `).join('') || '<tr><td colspan="6" class="empty">매칭된 기사가 없습니다.</td></tr>';
+      `).join('') || '<tr><td colspan="7" class="empty">매칭된 기사가 없습니다.</td></tr>';
     }
 
     const failedBlock = $(`#settlementFailedBlock-${p}`);
@@ -5426,6 +5456,7 @@
             <td>${escapeHtml(record.rawName)}</td>
             <td>${escapeHtml(record.name)}</td>
             <td>${Number(record.orderCount || 0).toLocaleString('ko-KR')}</td>
+            <td>${previewOutsideCountText(record, preview)}</td>
             <td>${settlementDistanceText(record)}</td>
             <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
             <td>${formatMoney(settlementAmountValue(record))}</td>
@@ -7271,7 +7302,7 @@
       if (p === 'coupang') {
         const countOutside = window.BremCallFeeDialog?.takeOutsideCount?.() === true;
         let summary = result.outsideSummary;
-        if (countOutside && window.BremSettlementParser?.readCoupangOutsideCallSums) {
+        if (window.BremSettlementParser?.readCoupangOutsideCallSums) {
           uploadBtn.textContent = '권외 지역 계산 중...';
           try {
             const region = summary?.region
@@ -7293,6 +7324,10 @@
             console.warn('[BREM] 권외 테두리 계산을 넘기고 키워드로 집계했습니다.', error?.message || error);
           }
         }
+        if (state.settlementPreviewByPlatform[p]) {
+          state.settlementPreviewByPlatform[p].outsideByName = summary?.byName || null;
+          state.settlementPreviewByPlatform[p].outsideReady = !!summary?.ready;
+        }
         const ready = !!(countOutside && summary?.ready);
         window.BremSettlementParser?.applyOutsideCallChoice?.(result.matched, summary, ready);
         window.BremSettlementParser?.applyOutsideCallChoice?.(result.unmatched, summary, ready);
@@ -7309,7 +7344,8 @@
         }
         outsideHint = ready
           ? ' · 권외 카운팅 반영'
-          : (countOutside ? ' · 권역 키워드(시·구·동)가 없어 권외를 세지 않음' : ' · 권외 카운팅 안 함');
+          : (countOutside ? ' · 권역 키워드(시·구·동)가 없어 권외를 세지 않음' : ' · 권외는 미리보기만');
+        renderSettlementPreview(p);
       }
       if (selectedCallFeeUnit != null && result.unmatched.length) {
         saveSettlementUnmatched({
