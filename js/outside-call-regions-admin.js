@@ -658,6 +658,58 @@
     return shape;
   }
 
+  function insideLabelPoint(ring) {
+    const points = ring.map(([lng, lat]) => [Number(lat), Number(lng)]).filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1]));
+    if (!points.length) return null;
+    let lat = 0;
+    let lng = 0;
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    let minLng = Infinity;
+    let maxLng = -Infinity;
+    points.forEach(point => {
+      lat += point[0];
+      lng += point[1];
+      minLat = Math.min(minLat, point[0]);
+      maxLat = Math.max(maxLat, point[0]);
+      minLng = Math.min(minLng, point[1]);
+      maxLng = Math.max(maxLng, point[1]);
+    });
+    lat /= points.length;
+    lng /= points.length;
+    const contains = (la, ln) => parser()?.pointInRings?.(la, ln, [points]);
+    if (!contains || contains(lat, lng)) return { lat, lng };
+    for (let row = 1; row <= 7; row += 1) {
+      for (let col = 1; col <= 7; col += 1) {
+        const sampleLat = minLat + (row / 8) * (maxLat - minLat);
+        const sampleLng = minLng + (col / 8) * (maxLng - minLng);
+        if (contains(sampleLat, sampleLng)) return { lat: sampleLat, lng: sampleLng };
+      }
+    }
+    return { lat: points[0][0], lng: points[0][1] };
+  }
+
+  function placeDongLabels(map, bounds, polygons) {
+    (Array.isArray(polygons) ? polygons : []).forEach(item => {
+      const ring = (item.rings || []).reduce((best, current) => (
+        (current?.length || 0) > (best?.length || 0) ? current : best
+      ), null);
+      const spot = ring ? insideLabelPoint(ring) : null;
+      if (!spot) return;
+      const position = new window.kakao.maps.LatLng(spot.lat, spot.lng);
+      bounds.extend(position);
+      new window.kakao.maps.CustomOverlay({
+        map,
+        position,
+        content: `<div class="outside-map-pin">${escapeHtml(item.emd || '동')}</div>`,
+        xAnchor: 0.5,
+        yAnchor: 0.5,
+        zIndex: 20,
+        clickable: false
+      });
+    });
+  }
+
   function paintDraft(session) {
     if (session.draftLine) session.draftLine.setMap(null);
     if (session.draft.length < 2) {
@@ -720,23 +772,6 @@
             .filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1]));
           if (path.length >= 3) source.push(path);
         });
-        const first = item.rings?.[0];
-        if (!first?.length) return;
-        let lat = 0;
-        let lng = 0;
-        first.forEach(([ringLng, ringLat]) => {
-          lat += Number(ringLat);
-          lng += Number(ringLng);
-        });
-        const position = new window.kakao.maps.LatLng(lat / first.length, lng / first.length);
-        bounds.extend(position);
-        new window.kakao.maps.CustomOverlay({
-          map,
-          position,
-          content: `<div class="outside-map-pin">${escapeHtml(item.emd || '동')} · 권내</div>`,
-          yAnchor: 1.3,
-          zIndex: 2
-        });
       });
       const outer = parser()?.solidOuterRings?.(source) || [];
       const rings = outer.length ? outer : source;
@@ -745,6 +780,7 @@
         if (path.length >= 3) addShape(session, rings.length === 1 ? '권내' : `권내 ${index + 1}`, path, false);
       });
     }
+    placeDongLabels(map, bounds, polygons);
     const info = new window.kakao.maps.InfoWindow({ removable: true });
     pins.forEach(item => {
       const position = new window.kakao.maps.LatLng(Number(item.y), Number(item.x));
