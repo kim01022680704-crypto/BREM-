@@ -496,6 +496,67 @@
     return { matched, pins };
   }
 
+  const MAX_BORDER_POINTS = 8;
+
+  function pointOf(point) {
+    if (point && typeof point.getLat === 'function') return { lat: point.getLat(), lng: point.getLng() };
+    return { lat: Number(point?.[0]), lng: Number(point?.[1]) };
+  }
+
+  function lineDistance(point, start, end) {
+    const dx = end.lng - start.lng;
+    const dy = end.lat - start.lat;
+    const len2 = dx * dx + dy * dy;
+    if (!len2) return Math.hypot(point.lng - start.lng, point.lat - start.lat);
+    const t = Math.max(0, Math.min(1, ((point.lng - start.lng) * dx + (point.lat - start.lat) * dy) / len2));
+    return Math.hypot(point.lng - (start.lng + t * dx), point.lat - (start.lat + t * dy));
+  }
+
+  function douglasPeucker(points, epsilon) {
+    if (points.length <= 3) return points.slice();
+    let maxDist = 0;
+    let index = 0;
+    const start = points[0];
+    const end = points[points.length - 1];
+    for (let i = 1; i < points.length - 1; i += 1) {
+      const dist = lineDistance(points[i], start, end);
+      if (dist > maxDist) {
+        maxDist = dist;
+        index = i;
+      }
+    }
+    if (maxDist <= epsilon) return [start, end];
+    const left = douglasPeucker(points.slice(0, index + 1), epsilon);
+    const right = douglasPeucker(points.slice(index), epsilon);
+    return left.slice(0, -1).concat(right);
+  }
+
+  function simplifyPath(path) {
+    const raw = (Array.isArray(path) ? path : []).map(pointOf).filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+    if (raw.length > 1) {
+      const first = raw[0];
+      const last = raw[raw.length - 1];
+      if (Math.abs(first.lat - last.lat) < 1e-7 && Math.abs(first.lng - last.lng) < 1e-7) raw.pop();
+    }
+    if (raw.length <= MAX_BORDER_POINTS) {
+      return raw.map(point => new window.kakao.maps.LatLng(point.lat, point.lng));
+    }
+    let epsilon = 0.0008;
+    let simplified = raw;
+    for (let attempt = 0; attempt < 14 && simplified.length > MAX_BORDER_POINTS; attempt += 1) {
+      simplified = douglasPeucker(raw, epsilon);
+      epsilon *= 1.65;
+    }
+    if (simplified.length > MAX_BORDER_POINTS) {
+      const step = simplified.length / MAX_BORDER_POINTS;
+      const sampled = [];
+      for (let index = 0; index < MAX_BORDER_POINTS; index += 1) sampled.push(simplified[Math.floor(index * step)]);
+      simplified = sampled;
+    }
+    if (simplified.length < 3) return path;
+    return simplified.map(point => new window.kakao.maps.LatLng(point.lat, point.lng));
+  }
+
   function circleImage(fill, size) {
     try {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${(size / 2) - 1}" fill="${fill}" stroke="#111" stroke-width="1"/></svg>`;
@@ -517,13 +578,6 @@
       lng += point.getLng();
     });
     return new window.kakao.maps.LatLng(lat / path.length, lng / path.length);
-  }
-
-  function midpoint(start, end) {
-    return new window.kakao.maps.LatLng(
-      (start.getLat() + end.getLat()) / 2,
-      (start.getLng() + end.getLng()) / 2
-    );
   }
 
   function clearHandles(shape) {
@@ -562,22 +616,6 @@
       });
       shape.handles.push(marker);
     });
-    shape.path.forEach((position, index) => {
-      const next = shape.path[(index + 1) % shape.path.length];
-      const marker = new window.kakao.maps.Marker({
-        position: midpoint(position, next),
-        map: session.map,
-        zIndex: 3,
-        ...(session.midImage ? { image: session.midImage } : {})
-      });
-      window.kakao.maps.event.addListener(marker, 'click', () => {
-        const inserted = midpoint(shape.path[index], shape.path[(index + 1) % shape.path.length]);
-        shape.path.splice(index + 1, 0, inserted);
-        shape.polygon.setPath(shape.path);
-        selectShape(session, shape);
-      });
-      shape.mids.push(marker);
-    });
   }
 
   function selectShape(session, shape) {
@@ -587,7 +625,7 @@
     showHandles(session, shape);
     const meta = document.getElementById('outsideRegionMapMeta');
     if (meta) {
-      meta.textContent = `${shape.label} 테두리를 고치는 중입니다. 노란 점을 끌고, 흰 점을 누르면 점이 생기고, 노란 점을 우클릭하면 지워집니다. 테두리 저장을 눌러야 권외 계산에 반영됩니다.`;
+      meta.textContent = `${shape.label} 점 ${shape.path.length}개만 나옵니다. 노란 점만 끌면 되고, 우클릭하면 그 점이 지워집니다. 테두리 저장을 눌러야 권외 계산에 반영됩니다.`;
     }
   }
 
@@ -654,8 +692,7 @@
       drawing: false,
       draft: [],
       draftLine: null,
-      vertexImage: circleImage('#ffd400', 14),
-      midImage: circleImage('#ffffff', 10)
+      vertexImage: circleImage('#ffd400', 16)
     };
     mapSession = session;
     window.kakao.maps.event.addListener(map, 'click', mouse => {
@@ -668,13 +705,15 @@
         const path = ring
           .map(([lat, lng]) => new window.kakao.maps.LatLng(Number(lat), Number(lng)))
           .filter(point => Number.isFinite(point.getLat()) && Number.isFinite(point.getLng()));
-        if (path.length >= 3) addShape(session, `테두리 ${index + 1}`, path);
+        const simple = simplifyPath(path);
+        if (simple.length >= 3) addShape(session, `테두리 ${index + 1}`, simple);
       });
     } else {
       polygons.forEach(item => {
         (item.rings || []).forEach(ring => {
           const path = ring.map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng));
-          if (path.length >= 3) addShape(session, item.emd || '동', path);
+          const simple = simplifyPath(path);
+          if (simple.length >= 3) addShape(session, item.emd || '동', simple);
         });
       });
     }
@@ -817,7 +856,7 @@
         ? `저장된 테두리 ${saved.length}개를 불러왔습니다.`
         : `동 테두리 ${matched.length}곳.`;
       if (meta) {
-        meta.textContent = `${borderText} 도로 핀 ${found.length}곳.${missedText} 동 가운데 핀은 권내입니다. 동을 누르면 테두리를 고칠 수 있고, 저장해야 다음 집계에 반영됩니다.`;
+        meta.textContent = `${borderText} 도로 핀 ${found.length}곳.${missedText} 동 가운데 핀은 권내입니다. 동을 누르면 점 8개 안쪽만 나옵니다. 저장해야 다음 집계에 반영됩니다.`;
       }
     } catch (error) {
       if (meta) meta.textContent = error?.message || '지도를 열지 못했습니다.';
