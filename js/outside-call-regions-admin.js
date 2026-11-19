@@ -11,6 +11,8 @@
   let loadedAreas = [];
   let kakaoMapPromise = null;
   let dongBoundsPromise = null;
+  let mapRegion = null;
+  let mapSession = null;
 
   function store() {
     return window.BremStorage?.outsideCallRegions || null;
@@ -494,38 +496,189 @@
     return { matched, pins };
   }
 
-  function drawRegionMap(pins, polygons) {
+  function circleImage(fill, size) {
+    try {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${(size / 2) - 1}" fill="${fill}" stroke="#111" stroke-width="1"/></svg>`;
+      return new window.kakao.maps.MarkerImage(
+        `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+        new window.kakao.maps.Size(size, size),
+        { offset: new window.kakao.maps.Point(size / 2, size / 2) }
+      );
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function pathCentroid(path) {
+    let lat = 0;
+    let lng = 0;
+    path.forEach(point => {
+      lat += point.getLat();
+      lng += point.getLng();
+    });
+    return new window.kakao.maps.LatLng(lat / path.length, lng / path.length);
+  }
+
+  function midpoint(start, end) {
+    return new window.kakao.maps.LatLng(
+      (start.getLat() + end.getLat()) / 2,
+      (start.getLng() + end.getLng()) / 2
+    );
+  }
+
+  function clearHandles(shape) {
+    (shape.handles || []).forEach(marker => marker.setMap(null));
+    (shape.mids || []).forEach(marker => marker.setMap(null));
+    shape.handles = [];
+    shape.mids = [];
+  }
+
+  function showHandles(session, shape) {
+    clearHandles(shape);
+    shape.path.forEach((position, index) => {
+      const marker = new window.kakao.maps.Marker({
+        position,
+        map: session.map,
+        draggable: true,
+        zIndex: 4,
+        ...(session.vertexImage ? { image: session.vertexImage } : {})
+      });
+      window.kakao.maps.event.addListener(marker, 'drag', () => {
+        shape.path[index] = marker.getPosition();
+        shape.polygon.setPath(shape.path);
+        shape.badge?.setPosition(pathCentroid(shape.path));
+      });
+      window.kakao.maps.event.addListener(marker, 'dragend', () => {
+        shape.path[index] = marker.getPosition();
+        shape.polygon.setPath(shape.path);
+        selectShape(session, shape);
+      });
+      window.kakao.maps.event.addListener(marker, 'rightclick', () => {
+        if (shape.path.length <= 3) return;
+        shape.path.splice(index, 1);
+        shape.polygon.setPath(shape.path);
+        shape.badge?.setPosition(pathCentroid(shape.path));
+        selectShape(session, shape);
+      });
+      shape.handles.push(marker);
+    });
+    shape.path.forEach((position, index) => {
+      const next = shape.path[(index + 1) % shape.path.length];
+      const marker = new window.kakao.maps.Marker({
+        position: midpoint(position, next),
+        map: session.map,
+        zIndex: 3,
+        ...(session.midImage ? { image: session.midImage } : {})
+      });
+      window.kakao.maps.event.addListener(marker, 'click', () => {
+        const inserted = midpoint(shape.path[index], shape.path[(index + 1) % shape.path.length]);
+        shape.path.splice(index + 1, 0, inserted);
+        shape.polygon.setPath(shape.path);
+        selectShape(session, shape);
+      });
+      shape.mids.push(marker);
+    });
+  }
+
+  function selectShape(session, shape) {
+    session.shapes.forEach(clearHandles);
+    session.selected = shape;
+    if (!shape) return;
+    showHandles(session, shape);
+    const meta = document.getElementById('outsideRegionMapMeta');
+    if (meta) {
+      meta.textContent = `${shape.label} 테두리를 고치는 중입니다. 노란 점을 끌고, 흰 점을 누르면 점이 생기고, 노란 점을 우클릭하면 지워집니다. 테두리 저장을 눌러야 권외 계산에 반영됩니다.`;
+    }
+  }
+
+  function addShape(session, label, path) {
+    const polygon = new window.kakao.maps.Polygon({
+      map: session.map,
+      path,
+      strokeWeight: 3,
+      strokeColor: '#ffd400',
+      strokeOpacity: 0.95,
+      fillColor: '#ffd400',
+      fillOpacity: 0.18
+    });
+    const shape = { label, path, polygon, handles: [], mids: [], badge: null };
+    shape.badge = new window.kakao.maps.CustomOverlay({
+      map: session.map,
+      position: pathCentroid(path),
+      content: `<div class="outside-map-pin">${escapeHtml(label)} · 권내</div>`,
+      yAnchor: 1.3,
+      zIndex: 2
+    });
+    window.kakao.maps.event.addListener(polygon, 'click', () => {
+      if (session.drawing) return;
+      selectShape(session, shape);
+    });
+    session.shapes.push(shape);
+    path.forEach(point => session.bounds.extend(point));
+    return shape;
+  }
+
+  function paintDraft(session) {
+    if (session.draftLine) session.draftLine.setMap(null);
+    if (session.draft.length < 2) {
+      session.draftLine = null;
+      return;
+    }
+    session.draftLine = new window.kakao.maps.Polyline({
+      map: session.map,
+      path: session.draft,
+      strokeWeight: 3,
+      strokeColor: '#ffd400',
+      strokeOpacity: 0.95
+    });
+  }
+
+  function drawEditableMap(pins, polygons, savedRings) {
     const canvas = document.getElementById('outsideRegionMapCanvas');
-    if (!canvas || (!pins.length && !polygons.length)) return;
+    const saved = (Array.isArray(savedRings) ? savedRings : []).filter(ring => Array.isArray(ring) && ring.length >= 3);
+    if (!canvas || (!pins.length && !polygons.length && !saved.length)) return;
     canvas.innerHTML = '';
     const bounds = new window.kakao.maps.LatLngBounds();
-    const seed = pins[0]
-      ? new window.kakao.maps.LatLng(Number(pins[0].y), Number(pins[0].x))
-      : new window.kakao.maps.LatLng(polygons[0].rings[0][0][1], polygons[0].rings[0][0][0]);
+    const seedPoint = saved[0]?.[0]
+      ? [saved[0][0][0], saved[0][0][1]]
+      : pins[0]
+        ? [Number(pins[0].y), Number(pins[0].x)]
+        : [polygons[0].rings[0][0][1], polygons[0].rings[0][0][0]];
+    const seed = new window.kakao.maps.LatLng(seedPoint[0], seedPoint[1]);
     const map = new window.kakao.maps.Map(canvas, { center: seed, level: 6 });
-    const info = new window.kakao.maps.InfoWindow({ removable: true });
-    let spotCount = 0;
-    polygons.forEach(item => {
-      (item.rings || []).forEach(ring => {
-        const path = ring.map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng));
-        path.forEach(position => bounds.extend(position));
-        const polygon = new window.kakao.maps.Polygon({
-          map,
-          path,
-          strokeWeight: 2,
-          strokeColor: '#ffd400',
-          strokeOpacity: 0.95,
-          fillColor: '#ffd400',
-          fillOpacity: 0.22
-        });
-        window.kakao.maps.event.addListener(polygon, 'click', () => {
-          info.setContent(`<div style="padding:6px 8px;font-size:13px;">${escapeHtml(item.emd)}</div>`);
-          info.setPosition(path[0]);
-          info.open(map);
-        });
-        spotCount += 1;
-      });
+    const session = {
+      map,
+      bounds,
+      shapes: [],
+      selected: null,
+      drawing: false,
+      draft: [],
+      draftLine: null,
+      vertexImage: circleImage('#ffd400', 14),
+      midImage: circleImage('#ffffff', 10)
+    };
+    mapSession = session;
+    window.kakao.maps.event.addListener(map, 'click', mouse => {
+      if (!session.drawing || !mouse?.latLng) return;
+      session.draft.push(mouse.latLng);
+      paintDraft(session);
     });
+    if (saved.length) {
+      saved.forEach((ring, index) => {
+        const path = ring
+          .map(([lat, lng]) => new window.kakao.maps.LatLng(Number(lat), Number(lng)))
+          .filter(point => Number.isFinite(point.getLat()) && Number.isFinite(point.getLng()));
+        if (path.length >= 3) addShape(session, `테두리 ${index + 1}`, path);
+      });
+    } else {
+      polygons.forEach(item => {
+        (item.rings || []).forEach(ring => {
+          const path = ring.map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng));
+          if (path.length >= 3) addShape(session, item.emd || '동', path);
+        });
+      });
+    }
+    const info = new window.kakao.maps.InfoWindow({ removable: true });
     pins.forEach(item => {
       const position = new window.kakao.maps.LatLng(Number(item.y), Number(item.x));
       bounds.extend(position);
@@ -534,31 +687,114 @@
         info.setContent(`<div style="padding:6px 8px;font-size:13px;">${escapeHtml(item.label)}</div>`);
         info.open(map, marker);
       });
-      spotCount += 1;
     });
-    const fit = () => {
+    window.setTimeout(() => {
       map.relayout();
-      if (spotCount > 1) map.setBounds(bounds);
-      else map.setCenter(seed);
-    };
-    window.setTimeout(fit, 80);
+      try {
+        map.setBounds(bounds);
+      } catch (error) {
+        map.setCenter(seed);
+      }
+    }, 80);
   }
 
   function closeRegionMap() {
+    mapSession = null;
+    mapRegion = null;
+    const drawButton = document.getElementById('outsideRegionMapDraw');
+    if (drawButton) drawButton.textContent = '테두리 추가';
     const dialog = document.getElementById('outsideRegionMapDialog');
     if (dialog) dialog.hidden = true;
+    const canvas = document.getElementById('outsideRegionMapCanvas');
+    if (canvas) canvas.innerHTML = '';
+  }
+
+  function keywordPatch(region, rings) {
+    const entry = store()?.get?.(region.city, region.region) || {};
+    return {
+      large: entry.large || [],
+      gu: entry.gu || [],
+      dong: entry.dong || [],
+      rings
+    };
+  }
+
+  function toggleMapDraw() {
+    const session = mapSession;
+    const button = document.getElementById('outsideRegionMapDraw');
+    if (!session) {
+      showToast('지도를 먼저 여세요.');
+      return;
+    }
+    if (session.drawing) {
+      if (session.draft.length >= 3) {
+        const shape = addShape(session, `테두리 ${session.shapes.length + 1}`, session.draft.slice());
+        selectShape(session, shape);
+      } else if (session.draft.length) {
+        showToast('테두리는 점을 3개 이상 찍어야 닫힙니다.');
+      }
+      session.drawing = false;
+      session.draft = [];
+      if (session.draftLine) session.draftLine.setMap(null);
+      session.draftLine = null;
+      if (button) button.textContent = '테두리 추가';
+      return;
+    }
+    session.shapes.forEach(clearHandles);
+    session.selected = null;
+    session.drawing = true;
+    session.draft = [];
+    if (button) button.textContent = '테두리 닫기';
+    showToast('지도를 눌러 점을 찍고, 테두리 닫기를 누르세요.');
+  }
+
+  function saveMapBorder() {
+    if (!mapRegion || !mapSession?.shapes?.length) {
+      showToast('저장할 테두리가 없습니다.');
+      return;
+    }
+    const rings = mapSession.shapes.map(shape => shape.path.map(point => [
+      Math.round(point.getLat() * 1e5) / 1e5,
+      Math.round(point.getLng() * 1e5) / 1e5
+    ])).filter(ring => ring.length >= 3);
+    try {
+      store()?.save?.(mapRegion.city, mapRegion.region, keywordPatch(mapRegion, rings));
+      showToast(`${mapRegion.label} 테두리를 저장했습니다. 다음 일정산부터 이 테두리로 권외를 셉니다.`);
+    } catch (error) {
+      showToast(error?.message || '테두리를 저장하지 못했습니다.');
+    }
+  }
+
+  function resetMapBorder() {
+    if (!mapRegion) {
+      showToast('지도를 먼저 여세요.');
+      return;
+    }
+    if (!window.confirm('저장한 테두리를 지우고 행정동 테두리로 되돌릴까요?')) return;
+    const region = mapRegion;
+    try {
+      store()?.save?.(region.city, region.region, keywordPatch(region, []));
+      showToast(`${region.label} 테두리를 행정동 경계로 되돌렸습니다.`);
+      openRegionMap(region);
+    } catch (error) {
+      showToast(error?.message || '테두리를 되돌리지 못했습니다.');
+    }
   }
 
   async function openRegionMap(region) {
-    const entry = store()?.get?.(region.city, region.region) || { large: [], gu: [], dong: [] };
+    const entry = store()?.get?.(region.city, region.region) || { large: [], gu: [], dong: [], rings: [] };
     const queries = mapQueries(region, entry);
-    if (!queries.length) {
+    const saved = Array.isArray(entry.rings) ? entry.rings : [];
+    if (!queries.length && !saved.length) {
       showToast('키워드가 없어 지도에 찍을 곳이 없습니다.');
       return;
     }
+    mapRegion = region;
     const dialog = document.getElementById('outsideRegionMapDialog');
     const title = document.getElementById('outsideRegionMapTitle');
     const meta = document.getElementById('outsideRegionMapMeta');
+    const drawButton = document.getElementById('outsideRegionMapDraw');
+    if (drawButton) drawButton.textContent = '테두리 추가';
     if (title) title.textContent = region.label;
     if (meta) meta.textContent = '동 경계와 키워드 위치를 찾는 중입니다.';
     if (dialog) dialog.hidden = false;
@@ -571,14 +807,17 @@
       const { found, missed } = pinQueries.length
         ? await searchMapQueries(pinQueries)
         : { found: [], missed: [] };
-      if (!matched.length && !found.length) {
+      if (!matched.length && !found.length && !saved.length) {
         if (meta) meta.textContent = '키워드 위치를 찾지 못했습니다.';
         return;
       }
-      drawRegionMap(found, matched);
+      drawEditableMap(found, matched, saved);
       const missedText = missed.length ? ` 못 찾은 키워드: ${missed.join(', ')}` : '';
+      const borderText = saved.length
+        ? `저장된 테두리 ${saved.length}개를 불러왔습니다.`
+        : `동 테두리 ${matched.length}곳.`;
       if (meta) {
-        meta.textContent = `동 테두리 ${matched.length}곳, 도로 핀 ${found.length}곳.${missedText} 테두리나 핀을 누르면 이름이 나옵니다.`;
+        meta.textContent = `${borderText} 도로 핀 ${found.length}곳.${missedText} 동 가운데 핀은 권내입니다. 동을 누르면 테두리를 고칠 수 있고, 저장해야 다음 집계에 반영됩니다.`;
       }
     } catch (error) {
       if (meta) meta.textContent = error?.message || '지도를 열지 못했습니다.';
@@ -643,6 +882,9 @@
     document.querySelectorAll('[data-close-outside-region-map]').forEach(button => {
       button.addEventListener('click', closeRegionMap);
     });
+    document.getElementById('outsideRegionMapDraw')?.addEventListener('click', toggleMapDraw);
+    document.getElementById('outsideRegionMapSave')?.addEventListener('click', saveMapBorder);
+    document.getElementById('outsideRegionMapReset')?.addEventListener('click', resetMapBorder);
     document.getElementById('outsideWeeklyAreaForm')?.addEventListener('submit', event => {
       loadWeeklyFile(event);
     });

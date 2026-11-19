@@ -2879,15 +2879,28 @@ textarea {
 .call-fee-setup-dialog__panel.outside-region-map-dialog {
   width: min(1480px, calc(100vw - 28px));
   max-height: calc(100vh - 28px);
+  overflow: auto;
 }
 
 .outside-region-map {
   width: 100%;
-  height: calc(100vh - 168px);
-  min-height: 560px;
+  height: calc(100vh - 236px);
+  min-height: 480px;
   margin-top: 12px;
   border-radius: 12px;
   background: #0f0f0f;
+}
+
+.outside-map-pin {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(18, 48, 28, 0.94);
+  border: 1px solid rgba(74, 222, 128, 0.85);
+  color: #bbf7d0;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .outside-area-registered {

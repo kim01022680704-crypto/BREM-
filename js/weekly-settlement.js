@@ -2582,10 +2582,16 @@ const BremWeeklySettlement = (function () {
     const keywords = region
       ? window.BremStorage?.outsideCallRegions?.get?.(region.city, region.region)
       : null;
-    const summary = window.BremOutsideCall.sumFromSheetRows(rows, {
-      keywordMode: true,
-      keywords
-    });
+    const summary = window.BremOutsideCall.sumFromSheetRowsAsync
+      ? await window.BremOutsideCall.sumFromSheetRowsAsync(rows, {
+        keywordMode: true,
+        keywords,
+        region
+      })
+      : window.BremOutsideCall.sumFromSheetRows(rows, {
+        keywordMode: true,
+        keywords
+      });
     if (!summary?.byName || !summary.ready) return [];
     try {
       await BremStorage.ensureSectionLoaded?.('settlements');

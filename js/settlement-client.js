@@ -917,8 +917,12 @@ const BremSettlementParser = (function () {
         return text.includes('오더별') && text.includes('상세');
       }
     });
+    const opts = options || {};
+    if (opts.border && window.BremOutsideCall?.sumFromSheetRowsAsync) {
+      return window.BremOutsideCall.sumFromSheetRowsAsync(rows, opts);
+    }
     if (!window.BremOutsideCall?.sumFromSheetRows) return null;
-    return window.BremOutsideCall.sumFromSheetRows(rows, options || {});
+    return window.BremOutsideCall.sumFromSheetRows(rows, opts);
   }
 
   function applyOutsideCallChoice(records, summary, enabled) {
@@ -974,7 +978,8 @@ const BremSettlementParser = (function () {
           : null;
         outsideSummary = await readCoupangOutsideCallSums(bytes.slice(), password, {
           keywordMode: true,
-          keywords: outsideCall?.keywords || stored || null
+          keywords: outsideCall?.keywords || stored || null,
+          region
         });
         if (outsideSummary) outsideSummary.region = region;
       } catch (error) {
@@ -1487,6 +1492,7 @@ const BremSettlementParser = (function () {
   return {
     parseSettlementFile,
     applyOutsideCallChoice,
+    readCoupangOutsideCallSums,
     parseBaeminHourlyInsuranceFile,
     parseSettlementDateFromFilename,
     parseRowsWithFormat,

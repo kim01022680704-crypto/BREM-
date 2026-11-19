@@ -35,7 +35,7 @@
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
   <script>try{var t=localStorage.getItem('bremAdminTheme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}</script>
-  <link rel="stylesheet" href="css/admin.css?v=20261119region11">
+  <link rel="stylesheet" href="css/admin.css?v=20261119region12">
   <link rel="stylesheet" href="css/status-analysis.css?v=20261106namgu1">
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261106acct1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
@@ -4436,7 +4436,7 @@
                 <span>동 키워드</span>
                 <textarea id="outsideRegionKeywordDong" rows="4" placeholder="삼산&#10;달동&#10;신정"></textarea>
               </label>
-              <p class="form-help">한 줄에 하나, 또는 쉼표로 여러 개. 무거동은 무거, 신정동은 신정처럼 넣으면 됩니다. 로는 남금로, 문길로처럼 숫자 없이 넣습니다. 시·구·동 세 칸을 모두 넣어야 셉니다. 주소에 남구만 있거나 선암동만 있어도 그 키워드가 맞으면 권내입니다. 다른 시·다른 구, 목록에 없는 동·로는 권외입니다.</p>
+              <p class="form-help">한 줄에 하나, 또는 쉼표로 여러 개. 무거동은 무거, 신정동은 신정처럼 넣으면 됩니다. 시·구·동 세 칸을 모두 넣어야 셉니다. 상세주소 없이 시·구·동만 있으면, 그 동이 등록됐거나 지도 테두리가 그 동을 걸치면 권내입니다. 로·번지까지 있는 주소는 지도 테두리 안이면 권내, 밖이면 권외입니다.</p>
               <div class="call-fee-setup-dialog__actions">
                 <button type="button" class="small-btn" data-close-outside-region-dialog>닫기</button>
                 <button type="submit" class="primary-btn">저장</button>
@@ -4452,6 +4452,9 @@
             <p class="form-help" id="outsideRegionMapMeta"></p>
             <div id="outsideRegionMapCanvas" class="outside-region-map"></div>
             <div class="call-fee-setup-dialog__actions">
+              <button type="button" class="small-btn" id="outsideRegionMapDraw">테두리 추가</button>
+              <button type="button" class="small-btn" id="outsideRegionMapReset">처음 테두리</button>
+              <button type="button" class="primary-btn" id="outsideRegionMapSave">테두리 저장</button>
               <button type="button" class="small-btn" data-close-outside-region-map>닫기</button>
             </div>
           </section>
@@ -10576,7 +10579,7 @@
   <script src="js/storage-supabase-mapper.js?v=20261109collab1"></script>
   <script src="js/storage-guard.js?v=20260830block3"></script>
   <script src="js/storage-supabase-adapter.js?v=20261109collab1"></script>
-  <script src="js/storage.js?v=20261119region3"></script>
+  <script src="js/storage.js?v=20261119region12"></script>
   <script src="js/call-fee-dialog.js?v=20261119region1"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js?v=20261109inq4"></script>
@@ -10584,8 +10587,8 @@
   <script src="js/driver-utils.js?v=20260921off1"></script>
   <script src="js/driver-duplicate-dialog.js?v=20260820c"></script>
   <script src="js/settlement-formats.js?v=20260917ai1"></script>
-  <script src="js/outside-call.js?v=20261119region8"></script>
-  <script src="js/settlement-client.js?v=20261119region1"></script>
+  <script src="js/outside-call.js?v=20261119region12"></script>
+  <script src="js/settlement-client.js?v=20261119region12"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
   <script src="js/promotion-conditions.js?v=20261105outside1"></script>
@@ -10593,9 +10596,9 @@
   <script src="js/promotion-admin.js?v=20261105ladder0"></script>
   <script src="js/friend-invite-admin.js?v=20261030invite3"></script>
   <script src="js/settlement-holiday-calendar.js?v=20260922part4"></script>
-  <script src="js/weekly-settlement.js?v=20261119region1"></script>
+  <script src="js/weekly-settlement.js?v=20261119region12"></script>
   <script src="js/weekly-settlement-admin.js?v=20261113coupang5"></script>
-  <script src="js/outside-call-regions-admin.js?v=20261119region10"></script>
+  <script src="js/outside-call-regions-admin.js?v=20261119region12"></script>
   <script src="js/baemin-delivery-fee.js?v=20260917ai1"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20261104op2"></script>
@@ -10652,7 +10655,7 @@
   <script src="js/table-sort.js"></script>
     <script src="js/admin-work-requests.js?v=20260927req8"></script>
     <script src="js/status-analysis-admin.js?v=20261106namgu1"></script>
-    <script src="js/admin.js?v=20261109collab1"></script>
+    <script src="js/admin.js?v=20261119region12"></script>
     <script src="js/admin-theme.js?v=20261104theme1"></script>
   <script src="js/admin-driver-popups.js?v=20261030kakaoapp1" defer></script>
   <script src="js/admin-sidebar-groups.js?v=20261104hour2" defer></script>

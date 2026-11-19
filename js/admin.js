@@ -7270,7 +7270,29 @@
       let outsideHint = '';
       if (p === 'coupang') {
         const countOutside = window.BremCallFeeDialog?.takeOutsideCount?.() === true;
-        const summary = result.outsideSummary;
+        let summary = result.outsideSummary;
+        if (countOutside && window.BremSettlementParser?.readCoupangOutsideCallSums) {
+          uploadBtn.textContent = '권외 지역 계산 중...';
+          try {
+            const region = summary?.region
+              || window.BremOutsideCall?.parseDailyFileRegion?.(file.name)
+              || null;
+            const stored = region
+              ? window.BremStorage?.outsideCallRegions?.get?.(region.city, region.region)
+              : null;
+            const bordered = await window.BremSettlementParser.readCoupangOutsideCallSums(
+              new Uint8Array(await file.arrayBuffer()),
+              String(passwordInput?.value || '').trim(),
+              { keywordMode: true, keywords: stored, region, border: true }
+            );
+            if (bordered) {
+              bordered.region = region;
+              summary = bordered;
+            }
+          } catch (error) {
+            console.warn('[BREM] 권외 테두리 계산을 넘기고 키워드로 집계했습니다.', error?.message || error);
+          }
+        }
         const ready = !!(countOutside && summary?.ready);
         window.BremSettlementParser?.applyOutsideCallChoice?.(result.matched, summary, ready);
         window.BremSettlementParser?.applyOutsideCallChoice?.(result.unmatched, summary, ready);

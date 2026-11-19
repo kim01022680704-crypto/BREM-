@@ -391,6 +391,368 @@
     return { byName, homeDistrict: home, validCount: valid.length, ready: true, mode: 'auto' };
   }
 
+  const KAKAO_MAP_KEY = '7767a9f4bbb17e3c1c905caecc533cef';
+  const SIDO_ALIAS = {
+    경남: '경상남',
+    경북: '경상북',
+    전남: '전라남',
+    전북: '전라북',
+    충남: '충청남',
+    충북: '충청북'
+  };
+  let kakaoPromise = null;
+  let dongBoundsPromise = null;
+  let geoMemory = null;
+
+  function addressIsDetailed(text) {
+    const raw = compactText(text);
+    if (!raw || raw === 'set') return false;
+    return /(?:로|길)/.test(raw) || /\d/.test(raw);
+  }
+
+  function pointInRing(lat, lng, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const yi = ring[i][0];
+      const xi = ring[i][1];
+      const yj = ring[j][0];
+      const xj = ring[j][1];
+      const denom = yj - yi || 1e-12;
+      const crosses = (yi > lat) !== (yj > lat) && lng < ((xj - xi) * (lat - yi)) / denom + xi;
+      if (crosses) inside = !inside;
+    }
+    return inside;
+  }
+
+  function pointInRings(lat, lng, rings) {
+    return (Array.isArray(rings) ? rings : []).some(ring => Array.isArray(ring) && ring.length >= 3 && pointInRing(lat, lng, ring));
+  }
+
+  function segmentDistance(lat, lng, start, end) {
+    const ay = start[0];
+    const ax = start[1];
+    const by = end[0];
+    const bx = end[1];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    let t = len2 ? ((lng - ax) * dx + (lat - ay) * dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const ex = lng - (ax + dx * t);
+    const ey = lat - (ay + dy * t);
+    return Math.sqrt(ex * ex + ey * ey);
+  }
+
+  function clearlyInside(lat, lng, rings) {
+    if (!pointInRings(lat, lng, rings)) return false;
+    let nearest = Infinity;
+    (rings || []).forEach(ring => {
+      for (let index = 0; index < ring.length; index += 1) {
+        const next = ring[(index + 1) % ring.length];
+        nearest = Math.min(nearest, segmentDistance(lat, lng, ring[index], next));
+      }
+    });
+    return nearest > 0.00015;
+  }
+
+  function ringCentroid(ring) {
+    let lat = 0;
+    let lng = 0;
+    ring.forEach(point => {
+      lat += point[0];
+      lng += point[1];
+    });
+    return [lat / ring.length, lng / ring.length];
+  }
+
+  function savedRings(keywords) {
+    const source = Array.isArray(keywords?.rings) ? keywords.rings : [];
+    return source.filter(ring => Array.isArray(ring) && ring.length >= 3);
+  }
+
+  function sidoMatches(sidonm, cities) {
+    const hay = String(sidonm || '');
+    return (Array.isArray(cities) ? cities : []).some(city => {
+      const raw = String(city || '').trim();
+      if (!raw) return false;
+      if (hay.includes(raw)) return true;
+      const stem = raw.replace(/(특별자치도|특별자치시|특별시|광역시|시|도)$/, '');
+      if (stem && hay.includes(stem)) return true;
+      return SIDO_ALIAS[stem] ? hay.includes(SIDO_ALIAS[stem]) : false;
+    });
+  }
+
+  function emdMatches(emd, keyword) {
+    const name = String(emd || '').replace(/\s+/g, '');
+    const key = String(keyword || '').replace(/\s+/g, '');
+    if (!name || !key || /(?:로|길)$/.test(key)) return false;
+    if (name === key) return true;
+    const full = /(?:동|읍|면)$/.test(key) ? key : `${key}동`;
+    if (name === full) return true;
+    return key.length >= 2 && name.startsWith(key) && /(?:동|읍|면)$/.test(name);
+  }
+
+  function guMatches(sgg, gus) {
+    return (Array.isArray(gus) ? gus : []).some(gu => {
+      const name = String(gu || '').replace(/\s+/g, '');
+      const hay = String(sgg || '').replace(/\s+/g, '');
+      return !!name && (hay === name || hay.includes(name));
+    });
+  }
+
+  function findMatchedDongs(bounds, region, spec) {
+    const cities = [...(spec?.large || []), region?.city];
+    const gus = spec?.gu || [];
+    const keywords = (spec?.dong || []).filter(keyword => !/(?:로|길)$/.test(String(keyword || '').replace(/\s+/g, '')));
+    const matched = [];
+    const seen = new Set();
+    keywords.forEach(keyword => {
+      (bounds?.items || []).forEach(item => {
+        if (!sidoMatches(item.sido, cities)) return;
+        if (gus.length && !guMatches(item.sgg, gus)) return;
+        if (!emdMatches(item.emd, keyword)) return;
+        const id = `${item.sido}\t${item.sgg}\t${item.emd}`;
+        if (seen.has(id)) return;
+        seen.add(id);
+        matched.push(item);
+      });
+    });
+    return matched;
+  }
+
+  function ringsFromDong(item) {
+    return (item?.rings || []).map(ring => (
+      Array.isArray(ring) ? ring.map(([lng, lat]) => [lat, lng]).filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1])) : []
+    )).filter(ring => ring.length >= 3);
+  }
+
+  function officialBorder(bounds, region, spec) {
+    const rings = [];
+    findMatchedDongs(bounds, region, spec).forEach(item => {
+      ringsFromDong(item).forEach(ring => rings.push(ring));
+    });
+    return rings;
+  }
+
+  function dongOverlapsBorder(text, border, bounds, region, spec) {
+    if (!border.length || !bounds?.items) return false;
+    const parts = adminParts(text);
+    const dongs = parts.filter(part => part.kind === 'dong' && !part.name.endsWith('리'));
+    if (!dongs.length) return false;
+    const cities = [...parts.filter(part => part.kind === 'city').map(part => part.name), ...(spec.large || []), region?.city];
+    const addressGus = parts.filter(part => part.kind === 'gu').map(part => part.name);
+    const gus = addressGus.length ? addressGus : (spec.gu || []);
+    return dongs.some(part => bounds.items.some(item => {
+      if (!sidoMatches(item.sido, cities)) return false;
+      if (gus.length && !guMatches(item.sgg, gus)) return false;
+      if (!emdMatches(item.emd, part.name)) return false;
+      const rings = ringsFromDong(item);
+      const samples = [];
+      rings.forEach(ring => {
+        const step = Math.max(1, Math.ceil(ring.length / 24));
+        for (let index = 0; index < ring.length; index += step) samples.push(ring[index]);
+        samples.push(ringCentroid(ring));
+      });
+      const inside = samples.filter(point => clearlyInside(point[0], point[1], border));
+      return inside.length >= 2;
+    }));
+  }
+
+  function loadDongBounds() {
+    if (typeof fetch !== 'function') return Promise.resolve(null);
+    if (!dongBoundsPromise) {
+      dongBoundsPromise = fetch('js/admin-dong-bounds.json?v=20261119region10')
+        .then(response => {
+          if (!response.ok) throw new Error('동 경계를 불러오지 못했습니다.');
+          return response.json();
+        })
+        .catch(error => {
+          dongBoundsPromise = null;
+          throw error;
+        });
+    }
+    return dongBoundsPromise;
+  }
+
+  function loadKakaoMaps() {
+    if (typeof document === 'undefined') return Promise.reject(new Error('지도 없음'));
+    if (window.kakao?.maps?.services && window.kakao.maps.Map) return Promise.resolve();
+    if (!kakaoPromise) {
+      kakaoPromise = new Promise((resolve, reject) => {
+        const ready = () => {
+          if (window.kakao?.maps?.load && !window.kakao.maps.services) {
+            window.kakao.maps.load(() => resolve());
+            return;
+          }
+          resolve();
+        };
+        if (window.kakao?.maps?.load && !window.kakao.maps.services) {
+          ready();
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_MAP_KEY}&autoload=false&libraries=services`;
+        script.onload = ready;
+        script.onerror = () => {
+          kakaoPromise = null;
+          reject(new Error('카카오맵을 불러오지 못했습니다.'));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    return kakaoPromise;
+  }
+
+  function geoCache() {
+    if (geoMemory) return geoMemory;
+    geoMemory = {};
+    try {
+      const raw = window.localStorage?.getItem('brem_kakao_geocode_v1');
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (parsed && typeof parsed === 'object') geoMemory = parsed;
+    } catch (error) {
+      geoMemory = {};
+    }
+    return geoMemory;
+  }
+
+  function rememberGeo(key, point) {
+    const cache = geoCache();
+    cache[key] = point;
+    try {
+      const keys = Object.keys(cache);
+      if (keys.length > 3000) delete cache[keys[0]];
+      window.localStorage?.setItem('brem_kakao_geocode_v1', JSON.stringify(cache));
+    } catch (error) {
+      /* 저장 한도를 넘으면 이번 계산만 메모리에 둔다. */
+    }
+  }
+
+  function searchKakaoAddress(geocoder, places, query) {
+    const ok = window.kakao.maps.services.Status.OK;
+    return new Promise(resolve => {
+      let done = false;
+      const finish = point => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(timer);
+        resolve(point);
+      };
+      const timer = window.setTimeout(() => finish(null), 8000);
+      const take = item => {
+        const lat = Number(item?.y);
+        const lng = Number(item?.x);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        return { lat, lng };
+      };
+      geocoder.addressSearch(query, (result, status) => {
+        if (status === ok && result?.[0]) {
+          finish(take(result[0]));
+          return;
+        }
+        places.keywordSearch(query, (list, placeStatus) => {
+          finish(placeStatus === ok ? take(list?.[0]) : null);
+        }, { size: 1 });
+      });
+    });
+  }
+
+  async function geocodeMany(queries) {
+    await loadKakaoMaps();
+    const cache = geoCache();
+    const result = new Map();
+    const pending = [];
+    (Array.isArray(queries) ? queries : []).forEach(query => {
+      const key = String(query || '').replace(/\s+/g, ' ').trim();
+      if (!key) return;
+      if (cache[key] && Number.isFinite(cache[key].lat) && Number.isFinite(cache[key].lng)) {
+        result.set(key, cache[key]);
+        return;
+      }
+      if (!pending.includes(key)) pending.push(key);
+    });
+    const queue = pending.slice();
+    const workers = Array.from({ length: 4 }, async () => {
+      while (queue.length) {
+        const query = queue.shift();
+        try {
+          const point = await searchKakaoAddress(
+            new window.kakao.maps.services.Geocoder(),
+            new window.kakao.maps.services.Places(),
+            query
+          );
+          result.set(query, point);
+          if (point) rememberGeo(query, point);
+        } catch (error) {
+          result.set(query, null);
+        }
+      }
+    });
+    await Promise.all(workers);
+    return result;
+  }
+
+  function judgeAddress(text, spec, border, bounds, region, points) {
+    if (!addressIsDetailed(text)) {
+      if (isInsideAddress(text, spec)) return true;
+      return dongOverlapsBorder(text, border, bounds, region, spec);
+    }
+    const key = String(text || '').replace(/\s+/g, ' ').trim();
+    const point = points.get(key);
+    if (!point) return true;
+    return pointInRings(point.lat, point.lng, border);
+  }
+
+  async function sumFromSheetRowsAsync(rows, options) {
+    const opts = options || {};
+    if (!opts.keywordMode) return sumFromSheetRows(rows, opts);
+    const keywords = opts.keywords || {};
+    const sync = sumByKeywords(rows, keywords);
+    if (!sync?.ready) return sync;
+    const spec = keywordSpec(keywords);
+    const region = {
+      city: keywords.city || opts.region?.city || '',
+      region: keywords.region || opts.region?.region || ''
+    };
+    let bounds = null;
+    try {
+      bounds = await loadDongBounds();
+    } catch (error) {
+      return sync;
+    }
+    const custom = savedRings(keywords);
+    const border = custom.length ? custom : officialBorder(bounds, region, spec);
+    if (!border.length) return sync;
+    let points = new Map();
+    const valid = collectValidRows(rows) || [];
+    const queries = [];
+    valid.forEach(row => {
+      if (addressIsDetailed(row.pickup)) queries.push(row.pickup);
+      if (addressIsDetailed(row.delivery)) queries.push(row.delivery);
+    });
+    if (queries.length) {
+      try {
+        points = await geocodeMany(queries);
+      } catch (error) {
+        return sync;
+      }
+    }
+    const byName = new Map();
+    valid.forEach(row => {
+      const pickupIn = judgeAddress(row.pickup, spec, border, bounds, region, points);
+      const deliveryIn = judgeAddress(row.delivery, spec, border, bounds, region, points);
+      if (pickupIn && deliveryIn) return;
+      byName.set(row.name, (byName.get(row.name) || 0) + 1);
+    });
+    return {
+      byName,
+      ready: true,
+      validCount: valid.length,
+      homeDistrict: '',
+      mode: custom.length ? 'border' : 'dong-border'
+    };
+  }
+
   function payAmount(count, startCount, amountPerCall) {
     const calls = Math.max(0, Math.round(Number(count) || 0));
     const start = Math.round(Number(startCount) || 0);
@@ -416,6 +778,9 @@
     keywordsFromAddresses,
     addressAlreadyRegistered,
     sumFromSheetRows,
+    sumFromSheetRowsAsync,
+    addressIsDetailed,
+    pointInRings,
     payAmount
   };
 });

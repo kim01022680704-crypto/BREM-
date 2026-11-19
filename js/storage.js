@@ -16447,6 +16447,24 @@ const BremStorage = (function () {
     return out;
   }
 
+  function normalizeOutsideRings(value) {
+    const source = Array.isArray(value) ? value : [];
+    const rings = [];
+    source.slice(0, 40).forEach(ring => {
+      if (!Array.isArray(ring)) return;
+      const points = [];
+      ring.slice(0, 160).forEach(point => {
+        const lat = Number(Array.isArray(point) ? point[0] : point?.lat);
+        const lng = Number(Array.isArray(point) ? point[1] : point?.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
+        points.push([Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5]);
+      });
+      if (points.length >= 3) rings.push(points);
+    });
+    return rings;
+  }
+
   const outsideCallRegions = {
     getAll() {
       const raw = storageAdapter.read(KEYS.outsideCallRegions, {});
@@ -16457,7 +16475,7 @@ const BremStorage = (function () {
       if (key === '\t') return null;
       const entry = outsideCallRegions.getAll()[key];
       if (!entry || typeof entry !== 'object') {
-        return { city: String(city || '').trim(), region: String(region || '').trim(), large: [], gu: [], dong: [] };
+        return { city: String(city || '').trim(), region: String(region || '').trim(), large: [], gu: [], dong: [], rings: [] };
       }
       if (entry.closed === true) {
         return {
@@ -16466,6 +16484,7 @@ const BremStorage = (function () {
           large: [],
           gu: [],
           dong: [],
+          rings: [],
           closed: true,
           updatedAt: entry.updatedAt || ''
         };
@@ -16476,6 +16495,7 @@ const BremStorage = (function () {
         large: normalizeOutsideKeywordList(entry.large),
         gu: normalizeOutsideKeywordList(entry.gu),
         dong: normalizeOutsideKeywordList(entry.dong),
+        rings: normalizeOutsideRings(entry.rings),
         closed: false,
         updatedAt: entry.updatedAt || ''
       };
@@ -16512,12 +16532,14 @@ const BremStorage = (function () {
       if (!cityName || !regionName) return null;
       const key = `${cityName}\t${regionName}`;
       const all = { ...outsideCallRegions.getAll() };
+      const prev = all[key] && typeof all[key] === 'object' ? all[key] : {};
       const next = {
         city: cityName,
         region: regionName,
         large: normalizeOutsideKeywordList(patch.large),
         gu: normalizeOutsideKeywordList(patch.gu),
         dong: normalizeOutsideKeywordList(patch.dong),
+        rings: patch.rings === undefined ? normalizeOutsideRings(prev.rings) : normalizeOutsideRings(patch.rings),
         closed: false,
         updatedAt: new Date().toISOString()
       };
