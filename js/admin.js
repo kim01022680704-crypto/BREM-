@@ -5377,8 +5377,12 @@
       `;
     }
 
+    const outside = record?.outsideCallCount != null && record.outsideCallCount !== ''
+      ? Number(record.outsideCallCount).toLocaleString('ko-KR')
+      : '-';
     return `
       <td>${orderCount.toLocaleString('ko-KR')}</td>
+      <td>${outside}</td>
       <td>${settlementDistanceText(record)}</td>
       <td>${formatMoney(hourlyInsurance)}</td>
       <td>${formatMoney(amount)}</td>
@@ -5579,7 +5583,7 @@
           </td>
         </tr>
       `;
-      }).join('') || `<tr><td colspan="${p === 'coupang' ? 9 : 8}" class="empty">${emptyMessage}</td></tr>`;
+      }).join('') || `<tr><td colspan="${p === 'coupang' ? 10 : 8}" class="empty">${emptyMessage}</td></tr>`;
 
       if (summaryEl) {
         summaryEl.textContent = rows.length
