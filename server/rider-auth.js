@@ -45,7 +45,9 @@ async function attachDeliveryDistanceToCalls(supabase, riderId, calls) {
       .select('period,platform,delivery_distance_m,outside_call_count,applied_at')
       .eq('driver_id', riderId)
       .gte('period', from)
-      .lte('period', to));
+      .lte('period', to)
+      .order('period', { ascending: false })
+      .limit(1000));
     if (error && /outside_call/i.test(error.message || String(error))) {
       includeOutside = false;
       ({ data, error } = await supabase
@@ -53,7 +55,9 @@ async function attachDeliveryDistanceToCalls(supabase, riderId, calls) {
         .select('period,platform,delivery_distance_m,applied_at')
         .eq('driver_id', riderId)
         .gte('period', from)
-        .lte('period', to));
+        .lte('period', to)
+        .order('period', { ascending: false })
+        .limit(1000));
     }
     if (error) {
       const message = error.message || String(error);

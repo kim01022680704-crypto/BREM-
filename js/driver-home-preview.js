@@ -156,6 +156,7 @@
         setTxt('hv2WkCpReject', txt('weeklyRejectionRateCoupang') || '-');
         setTxt('hv2WkCpRejectN', stripUnit(txt('coupangRateReject')));
         setTxt('hv2WkCpCancel', stripUnit(txt('coupangRateCancel')));
+        setTxt('hv2WkCpOutside', stripUnit(txt('coupangWeekOutside')));
 
         // KPI
         const weekCalls = toInt(txt('weekCallsBaemin')) + toInt(txt('weekCallsCoupang'));

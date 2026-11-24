@@ -409,7 +409,7 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 .dc-row__seg { height: 100%; }
 .dc-row__seg--coupang { background: var(--rd-warning); }
 .dc-row__seg--baemin { background: var(--rd-teal); }
-.dc-row__sub { display: flex; gap: 10px; font-size: var(--rd-fs-100); font-weight: 700; font-variant-numeric: tabular-nums; }
+.dc-row__sub { display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: var(--rd-fs-100); font-weight: 700; font-variant-numeric: tabular-nums; }
 .dc-row__sub--coupang { color: var(--rd-warning); }
 .dc-row__sub--baemin { color: var(--rd-teal); }
 .dc-row__sub--distance { color: var(--rd-text-muted); margin-left: auto; }
@@ -1732,6 +1732,9 @@ html.rider-ds .driver-app-nav__item:focus-visible { outline: 2px solid var(--rd-
 }
 .rider-ds .ds-statcard--baemin .ds-stats {
   grid-template-columns: 0.95fr 1.35fr 0.8fr 0.8fr 0.95fr;
+}
+.rider-ds .ds-statcard--coupang .ds-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .rider-ds .ds-stat {
   min-width: 0;

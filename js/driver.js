@@ -1181,8 +1181,8 @@
               <span class="dc-row__sub">
                 <span class="dc-row__sub--coupang">쿠 ${counts.coupang ? number(counts.coupang) : '-'}</span>
                 <span class="dc-row__sub--baemin">배 ${counts.baemin ? number(counts.baemin) : '-'}</span>
-                ${counts.hasDistance ? `<span class="dc-row__sub--distance">${formatDistanceKm(counts.distance)}</span>` : ''}
                 ${counts.hasOutside ? `<span class="dc-row__sub--outside">권외 ${number(counts.outside)}</span>` : ''}
+                ${counts.hasDistance ? `<span class="dc-row__sub--distance">${formatDistanceKm(counts.distance)}</span>` : ''}
               </span>
             </span>
             <span class="dc-row__total">${number(total)}<i>콜</i></span>
