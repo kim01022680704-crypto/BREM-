@@ -12387,8 +12387,14 @@ const BremStorage = (function () {
       deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
       settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
       reason: String(record.reason || ''),
+      ...(record.deliveryDistanceM != null && record.deliveryDistanceM !== ''
+        ? { deliveryDistanceM: Math.max(0, Math.round(Number(record.deliveryDistanceM) || 0)) }
+        : {}),
       ...(record.outsideCallCount != null && record.outsideCallCount !== ''
         ? { outsideCallCount: Math.max(0, Math.round(Number(record.outsideCallCount) || 0)) }
+        : {}),
+      ...(record.shownOutsideCount != null && record.shownOutsideCount !== ''
+        ? { shownOutsideCount: Math.max(0, Math.round(Number(record.shownOutsideCount) || 0)) }
         : {})
     };
   }

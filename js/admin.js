@@ -4950,10 +4950,59 @@
       deliveryAmount: settlementAmountValue(record),
       settlementAmount: settlementAmountValue(record),
       reason: record.reason || '',
+      ...(record.deliveryDistanceM != null && record.deliveryDistanceM !== ''
+        ? { deliveryDistanceM: Math.max(0, Math.round(Number(record.deliveryDistanceM) || 0)) }
+        : {}),
       ...(record.outsideCallCount != null && record.outsideCallCount !== ''
         ? { outsideCallCount: Math.max(0, Math.round(Number(record.outsideCallCount) || 0)) }
+        : {}),
+      ...(record.shownOutsideCount != null && record.shownOutsideCount !== ''
+        ? { shownOutsideCount: Math.max(0, Math.round(Number(record.shownOutsideCount) || 0)) }
         : {})
     }));
+  }
+
+  function stampShownOutsideCounts(records, summary) {
+    const byName = summary?.byName;
+    if (!summary?.ready || !byName || typeof byName.get !== 'function') return;
+    (Array.isArray(records) ? records : []).forEach(record => {
+      const key = previewOutsideLookupKey(record);
+      if (!key) return;
+      record.shownOutsideCount = Math.max(0, Math.round(Number(byName.get(key) || 0)));
+    });
+  }
+
+  function savedSettlementForLogRecord(log, record) {
+    const driverId = String(record?.driverId || '').trim();
+    const period = String(log?.period || '').slice(0, 10);
+    const platform = normalizePlatform(log?.platform);
+    if (!driverId || !period) return null;
+    const list = BremStorage.settlements?.getAll?.() || [];
+    return list.find(item => (
+      String(item.driverId || '') === driverId
+      && String(item.period || '').slice(0, 10) === period
+      && normalizePlatform(item.platform) === platform
+    )) || null;
+  }
+
+  function logDetailOutsideText(record, saved) {
+    if (record?.shownOutsideCount != null && record.shownOutsideCount !== '') {
+      return Number(record.shownOutsideCount).toLocaleString('ko-KR');
+    }
+    if (record?.outsideCallCount != null && record.outsideCallCount !== '') {
+      return Number(record.outsideCallCount).toLocaleString('ko-KR');
+    }
+    const savedCount = Number(saved?.outsideCallCount);
+    if (Number.isFinite(savedCount) && savedCount > 0) {
+      return savedCount.toLocaleString('ko-KR');
+    }
+    return '-';
+  }
+
+  function logDetailDistanceText(record, saved) {
+    if (record?.deliveryDistanceM != null && record.deliveryDistanceM !== '') return settlementDistanceText(record);
+    if (saved?.deliveryDistanceM != null && saved.deliveryDistanceM !== '') return settlementDistanceText(saved);
+    return '-';
   }
 
   function recordDailySettlementUploadLog(platform, payload = {}) {
@@ -5090,6 +5139,8 @@
             <th>기사명</th>
             <th>엑셀 성함</th>
             <th>콜수</th>
+            <th>권외</th>
+            <th>배달거리</th>
             <th>콜수수료 차감</th>
             <th>시간제보험</th>
             <th>정산금액</th>
@@ -5097,6 +5148,7 @@
     }
 
     const appliedRows = (appliedRecords || []).map(record => {
+      const saved = isBaeminSettlementPlatform(p) ? null : savedSettlementForLogRecord(log, record);
       if (isBaeminSettlementPlatform(p)) {
         return `
           <tr>
@@ -5114,6 +5166,8 @@
           <td><strong>${escapeHtml(record.driverName || record.name || '-')}</strong></td>
           <td>${escapeHtml(record.rawName || record.name || '-')}</td>
           <td>${number(record.orderCount)}</td>
+          <td>${logDetailOutsideText(record, saved)}</td>
+          <td>${logDetailDistanceText(record, saved)}</td>
           <td>${callFeeUnit == null ? '확인 불가' : (callFeeUnit === 0 ? '0원 (차감 없음)' : formatMoney(Number(record.orderCount || 0) * callFeeUnit))}</td>
           <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
           <td>${formatMoney(settlementAmountValue(record))}</td>
@@ -5122,7 +5176,7 @@
     }).join('');
 
     $('#settlementUploadLogDetailAppliedRows').innerHTML = appliedRows
-      || `<tr><td colspan="6" class="empty">적용/매칭 내역이 없습니다.</td></tr>`;
+      || `<tr><td colspan="${isBaeminSettlementPlatform(p) ? 6 : 8}" class="empty">적용/매칭 내역이 없습니다.</td></tr>`;
 
     const unmatchedBlock = $('#settlementUploadLogDetailUnmatchedBlock');
     const unmatchedRowsEl = $('#settlementUploadLogDetailUnmatchedRows');
@@ -5145,6 +5199,8 @@
                 <th>엑셀 성함</th>
                 <th>추출 이름</th>
                 <th>오더수</th>
+                <th>권외</th>
+                <th>배달거리</th>
                 <th>시간제보험</th>
                 <th>정산금액</th>
               </tr>`;
@@ -5162,6 +5218,8 @@
             <td>${escapeHtml(record.rawName || record.name || '-')}</td>
             <td>${escapeHtml(record.name || '-')}</td>
             <td>${number(record.orderCount)}</td>
+            <td>${logDetailOutsideText(record, null)}</td>
+            <td>${logDetailDistanceText(record, null)}</td>
             <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
             <td>${formatMoney(settlementAmountValue(record))}</td>
           </tr>
@@ -7329,6 +7387,8 @@
           state.settlementPreviewByPlatform[p].outsideReady = !!summary?.ready;
         }
         const ready = !!(countOutside && summary?.ready);
+        stampShownOutsideCounts(result.matched, summary);
+        stampShownOutsideCounts(result.unmatched, summary);
         window.BremSettlementParser?.applyOutsideCallChoice?.(result.matched, summary, ready);
         window.BremSettlementParser?.applyOutsideCallChoice?.(result.unmatched, summary, ready);
         if (state.settlementPreviewByPlatform[p]) {
