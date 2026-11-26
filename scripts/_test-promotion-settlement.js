@@ -752,6 +752,12 @@ function check(label, actual, expected) {
       platform: 'coupang', channel: 'direct', region: '남구중앙',
       fileName: '쿠팡남구.xlsx', startDate: autoWeek, endDate: '2026-11-24',
       riders: [{ matchedRiderId: 'dAutoC', coupangLoginKey: '쿠팡기사9001', weeklyOrderCount: 80, amounts: {} }]
+    },
+    {
+      id: 'weekly_direct_coupang_dong_20261118',
+      platform: 'coupang', channel: 'direct', region: '동구중앙(Z)',
+      fileName: '쿠팡동구.xlsx', startDate: autoWeek, endDate: '2026-11-24',
+      riders: [{ matchedRiderId: 'dAutoC', coupangLoginKey: '쿠팡기사9001', weeklyOrderCount: 200, amounts: {} }]
     }
   );
   ERP_RESULTS.push({
@@ -760,7 +766,9 @@ function check(label, actual, expected) {
     channel: 'direct',
     startDate: autoWeek,
     region: '남구중앙 / 표준울산남A',
-    settlementId: 'combined-namgu-auto',
+    settlementId: 'weekly_direct_coupang_namgu_20261118|weekly_direct_baemin_namgu_20261118',
+    coupangSettlementId: 'weekly_direct_coupang_namgu_20261118',
+    baeminSettlementId: 'weekly_direct_baemin_namgu_20261118',
     settlementLabel: '쿠팡 남구중앙 + 배민 표준울산남A',
     savedAt: '2026-11-26T10:36:04',
     summary: { riderCount: 2, totalPromotionAmount: 73000, baeminAttachTotal: 10000, coupangAttachTotal: 63000 },
@@ -775,6 +783,10 @@ function check(label, actual, expected) {
   check('쿠팡 63,000', autoPlan.placed.coupang, 63000);
   check('합계가 적용 73,000과 같음', autoPlan.rowTotal, 73000);
   check('1원 차이 없음', autoPlan.balanced, 'true');
+  const namguCoupang = autoPlan.sheets.find(sheet => sheet.settlement.id === 'weekly_direct_coupang_namgu_20261118');
+  const dongCoupang = autoPlan.sheets.find(sheet => sheet.settlement.id === 'weekly_direct_coupang_dong_20261118');
+  check('남구 금액은 남구 정산서', namguCoupang?.total, 63000);
+  check('동구 콜이 더 많아도 동구로 안 옮김', dongCoupang, undefined);
 
   ERP_RESULTS.push({
     id: 'erpAliasOnly',
@@ -782,7 +794,8 @@ function check(label, actual, expected) {
     channel: 'direct',
     startDate: autoWeek,
     region: '남구중앙-아이디',
-    settlementId: 'coupang-alias',
+    settlementId: 'weekly_direct_coupang_namgu_20261118',
+    coupangSettlementId: 'weekly_direct_coupang_namgu_20261118',
     savedAt: '2026-11-26T10:40:00',
     summary: { totalPromotionAmount: 1000 },
     results: [
@@ -804,7 +817,8 @@ function check(label, actual, expected) {
     channel: 'direct',
     startDate: autoWeek,
     region: '중복',
-    settlementId: 'baemin-dup',
+    settlementId: 'weekly_direct_baemin_namgu_20261118',
+    baeminSettlementId: 'weekly_direct_baemin_namgu_20261118',
     savedAt: '2026-11-26T10:41:00',
     summary: { totalPromotionAmount: 500 },
     results: [
@@ -821,7 +835,7 @@ function check(label, actual, expected) {
   const popupBody = () => window.document.getElementById('directErpWeekAutoBody');
   let pending = Adj.registerWeekPromotions();
   check('팝업에 매칭 방법', /이름\+전화 뒤 4자리/.test(popupBody()?.textContent || ''), 'true');
-  check('팝업에 배민ID', /배민ID/.test(popupBody()?.textContent || ''), 'true');
+  check('팝업에 지역 정산서', /그 지역 정산서에만/.test(popupBody()?.textContent || ''), 'true');
   window.document.getElementById('directErpWeekAutoCancelBtn').click();
   await pending;
   check('취소하면 배민 미등록', adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB, undefined);
@@ -832,6 +846,7 @@ function check(label, actual, expected) {
   await pending;
   check('배민 등록 10,000', adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB?.amount, 10000);
   check('쿠팡 등록 63,000', adjustments.promotion['weekly_direct_coupang_namgu_20261118']?.dAutoC?.amount, 63000);
+  check('동구 정산서에는 안 넣음', adjustments.promotion['weekly_direct_coupang_dong_20261118']?.dAutoC, undefined);
 
   pending = Adj.registerWeekPromotions();
   window.document.getElementById('directErpWeekAutoApplyBtn').click();
@@ -845,7 +860,8 @@ function check(label, actual, expected) {
     channel: 'direct',
     startDate: autoWeek,
     region: '표준울산남A-누락',
-    settlementId: 'baemin-gap',
+    settlementId: 'weekly_direct_baemin_namgu_20261118',
+    baeminSettlementId: 'weekly_direct_baemin_namgu_20261118',
     savedAt: '2026-11-26T11:00:00',
     summary: { totalPromotionAmount: 1 },
     results: [

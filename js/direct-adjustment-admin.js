@@ -2012,14 +2012,6 @@ const BremDirectAdjustmentAdmin = (function () {
       : [row?.baeminUserId];
   }
 
-  function sheetRidersOf(records) {
-    const riders = [];
-    records.forEach(record => {
-      (Array.isArray(record?.riders) ? record.riders : []).forEach(rider => riders.push(rider));
-    });
-    return riders;
-  }
-
   // 일괄등록과 같다. 쿠팡은 이름+전화 뒤 4자리, 배민은 배민ID.
   // 정산서에 적힌 같은 ID도 기사로 연결한다.
   function resolveWeekDriver(row, platform, sheetRiders) {
@@ -2068,18 +2060,19 @@ const BremDirectAdjustmentAdmin = (function () {
     return { ok: false, name: shown, conflict: '' };
   }
 
-  function pickHomeSettlement(records, driverId) {
-    let best = null;
-    records.forEach(record => {
-      if (!riderOnSettlement(record, driverId)) return;
-      const cand = { record, calls: riderCallsOnSettlement(record, driverId) };
-      if (!best
-        || cand.calls > best.calls
-        || (cand.calls === best.calls && String(record.id) < String(best.record.id))) {
-        best = cand;
-      }
-    });
-    return best?.record || null;
+  function targetSheetForResult(item, platform, sheets) {
+    const explicit = platform === 'coupang'
+      ? String(item?.coupangSettlementId || '').trim()
+      : String(item?.baeminSettlementId || '').trim();
+    const settlementId = String(item?.settlementId || '').trim();
+    let id = explicit;
+    if (!id && String(item?.platform || '') === platform) id = settlementId;
+    if (!id && item?.platform === 'combined' && settlementId.includes('|')) {
+      const [coupangId, baeminId] = settlementId.split('|');
+      id = platform === 'coupang' ? coupangId : baeminId;
+    }
+    if (!id) return null;
+    return sheets.find(sheet => sheet.id === id && sheet.platform === platform) || null;
   }
 
   // 이번 주 직계약 프로모션 적용(최신 저장본)을 배민·쿠팡 정산서에 1원 단위로 나눈다.
@@ -2103,10 +2096,6 @@ const BremDirectAdjustmentAdmin = (function () {
     let rowTotal = 0;
     let skippedUnmatched = 0;
     const seen = new Set();
-    const sheetRiders = {
-      baemin: sheetRidersOf(byPlat.baemin),
-      coupang: sheetRidersOf(byPlat.coupang)
-    };
 
     results.forEach(item => {
       (Array.isArray(item.results) ? item.results : []).forEach(row => {
@@ -2125,7 +2114,18 @@ const BremDirectAdjustmentAdmin = (function () {
           const amount = parts[plat];
           if (!amount) return;
           expected[plat] += amount;
-          const resolved = resolveWeekDriver(row, plat, sheetRiders[plat]);
+          const home = targetSheetForResult(item, plat, byPlat[plat]);
+          if (!home) {
+            unplaced.push({
+              driverId: '',
+              name: name || '이름없음',
+              platform: plat,
+              amount,
+              reason: '이 지역 정산서 없음'
+            });
+            return;
+          }
+          const resolved = resolveWeekDriver(row, plat, home.riders || []);
           const resolvedName = resolved.name || name || driverName(resolved.driverId);
           if (!resolved.ok || !resolved.driverId) {
             if (resolved.conflict) {
@@ -2141,14 +2141,13 @@ const BremDirectAdjustmentAdmin = (function () {
             });
             return;
           }
-          const home = pickHomeSettlement(byPlat[plat], resolved.driverId);
-          if (!home) {
+          if (!riderOnSettlement(home, resolved.driverId)) {
             unplaced.push({
               driverId: resolved.driverId,
               name: resolvedName,
               platform: plat,
               amount,
-              reason: '이번 주 정산서에 없음'
+              reason: `${home.region || '이 지역'} 정산서에 없음`
             });
             return;
           }
@@ -2256,7 +2255,7 @@ const BremDirectAdjustmentAdmin = (function () {
     lines.push('<li>쿠팡은 일괄등록과 같이 <strong>이름+전화 뒤 4자리</strong>로 기사와 정산서를 맞춥니다.</li>');
     lines.push('<li>배민은 일괄등록과 같이 <strong>배민ID</strong>로 맞춥니다. 앞에 0이 있어도 같은 ID입니다.</li>');
     lines.push('<li>정산서에 적힌 쿠팡ID·배민ID가 같으면 그 정산서 기사에게 넣습니다.</li>');
-    lines.push('<li>같은 주 정산서가 여러 장이면 <strong>콜이 많은 정산서 한 곳</strong>에만 넣습니다.</li>');
+    lines.push('<li>각 지역 적용 결과는 <strong>그 지역 정산서에만</strong> 넣습니다. 다른 지역 콜이 더 많아도 옮기지 않습니다.</li>');
     lines.push('<li>합산 프로모션은 배민 정산서에 넣고, 쿠팡만 있는 금액은 쿠팡 정산서에 넣습니다.</li>');
     lines.push('<li>이미 등록된 ERP 프로모션은 더하지 않고 이 금액으로 바꿉니다.</li>');
     lines.push('</ul>');
