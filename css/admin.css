@@ -3437,12 +3437,22 @@ textarea {
   font-size: 12px;
 }
 
-#directErpWeekAutoDialog {
+#directErpWeekAutoDialog,
+#directOtherWeekDialog {
   width: min(560px, 94vw);
   max-width: min(560px, 94vw);
   max-height: 90vh;
   padding: 0;
   overflow: hidden;
+}
+
+.direct-week-auto-paste {
+  width: 100%;
+  min-height: 180px;
+  margin-top: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  resize: vertical;
 }
 
 .direct-week-auto-dialog {

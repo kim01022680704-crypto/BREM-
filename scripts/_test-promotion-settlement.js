@@ -879,6 +879,31 @@ function check(label, actual, expected) {
   await pending;
   check('불균형이면 기존 금액 유지', adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB?.amount, beforeBaemin);
 
+  console.log('\n[30] 기타지급 · 배민·쿠팡 지역 일괄 등록 (엑셀 붙여넣기)');
+  Adj.onWeekPicked('2026-07-22');
+  const otherPlan = Adj.buildOtherWeekPlan('2026-07-22', [['BC000001', '10,000'], ['CP000003', '5000'], ['ZZZ999', '7000']]);
+  check('배민ID는 배민 정산서로', otherPlan.placed.baemin, 10000);
+  check('쿠팡ID는 쿠팡 정산서로', otherPlan.placed.coupang, 5000);
+  check('매칭 안 된 1건 분리', otherPlan.unmatched.length, 1);
+  check('미매칭 사유에 ID', /ZZZ999/.test(otherPlan.unmatched.map(u => u.id).join(' ')), 'true');
+  check('배민ID 1명 쿠팡ID 1명', `${otherPlan.matchCounts['배민ID']}/${otherPlan.matchCounts['쿠팡ID']}`, '1/1');
+
+  const confirmStage = () => window.document.getElementById('directOtherWeekConfirmStage');
+  window.document.getElementById('directOtherWeekPasteInput').value = 'BC000001\t10,000\nCP000003\t5000\nZZZ999\t7000';
+  await Adj.otherWeekPreview();
+  check('미리보기 등록 합계 15,000', /15,000원/.test(confirmStage()?.textContent || ''), 'true');
+  check('미리보기에 미매칭 안내', /ZZZ999/.test(confirmStage()?.textContent || ''), 'true');
+
+  await Adj.otherWeekApply();
+  check('배민 서울 기타지급 10,000', adjustments.other['weekly_direct_baemin_seoul_20260722']?.d1?.amount, 10000);
+  check('쿠팡 서울 기타지급 5,000', adjustments.other['weekly_direct_coupang_seoul_20260722']?.d3?.amount, 5000);
+  check('출처 excel', adjustments.other['weekly_direct_baemin_seoul_20260722']?.d1?.source, 'excel');
+
+  window.document.getElementById('directOtherWeekPasteInput').value = 'BC000001\t10000\nCP000003\t5000';
+  await Adj.otherWeekPreview();
+  await Adj.otherWeekApply();
+  check('다시 넣어도 배민 10,000 (합산 아님)', adjustments.other['weekly_direct_baemin_seoul_20260722']?.d1?.amount, 10000);
+
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);
 })().catch(e => { console.error('\n예외:', e.stack || e.message); process.exit(2); });

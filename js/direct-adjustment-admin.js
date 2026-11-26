@@ -1916,6 +1916,12 @@ const BremDirectAdjustmentAdmin = (function () {
     $('#directErpSelectAllChk')?.addEventListener('change', event => toggleErpSelectAll(event.target.checked));
     $('#directErpApplyBtn')?.addEventListener('click', applyErp);
     $('#directErpWeekAutoBtn')?.addEventListener('click', () => { void registerWeekPromotions(); });
+    $('#directOtherWeekBulkBtn')?.addEventListener('click', () => openOtherWeekDialog());
+    const otherWeekEls = otherWeekDialogEls();
+    otherWeekEls.next?.addEventListener('click', () => { void otherWeekPreview(); });
+    otherWeekEls.apply?.addEventListener('click', () => { void otherWeekApply(); });
+    otherWeekEls.cancel?.addEventListener('click', () => closeOtherWeekDialog());
+    otherWeekEls.dialog?.addEventListener('cancel', event => { event.preventDefault(); closeOtherWeekDialog(); });
     const weekAutoEls = weekAutoDialogEls();
     weekAutoEls.apply?.addEventListener('click', () => closeWeekAutoDialog(true));
     weekAutoEls.cancel?.addEventListener('click', () => closeWeekAutoDialog(false));
@@ -2394,6 +2400,258 @@ const BremDirectAdjustmentAdmin = (function () {
     await flushAndToast(`이번 주 프로모션 ${formatNumber(total)}원 등록 완료 · 배민 ${formatNumber(plan.placed.baemin)} · 쿠팡 ${formatNumber(plan.placed.coupang)}`);
   }
 
+  // --- 기타지급 · 배민·쿠팡 지역 일괄 등록 (엑셀 붙여넣기) --------------------
+
+  function otherWeekDialogEls() {
+    return {
+      dialog: $('#directOtherWeekDialog'),
+      title: $('#directOtherWeekTitle'),
+      pasteStage: $('#directOtherWeekPasteStage'),
+      confirmStage: $('#directOtherWeekConfirmStage'),
+      input: $('#directOtherWeekPasteInput'),
+      hint: $('#directOtherWeekPasteHint'),
+      next: $('#directOtherWeekNextBtn'),
+      apply: $('#directOtherWeekApplyBtn'),
+      cancel: $('#directOtherWeekCancelBtn')
+    };
+  }
+
+  let otherWeekPlan = null;
+
+  function parseOtherAmount(raw) {
+    const text = String(raw ?? '').replace(/[^\d.\-]/g, '');
+    if (!text) return 0;
+    const num = Number(text);
+    return Number.isFinite(num) ? Math.round(num) : 0;
+  }
+
+  // 붙여넣은 ID·금액을 배민/쿠팡으로 구분해 그 기사가 있는 지역 정산서로 배정한다.
+  function buildOtherWeekPlan(week, rawRows) {
+    const key = weekStartKey(String(week || '').slice(0, 10));
+    const drivers = driversList();
+    const bulk = window.BremDirectAdjustmentBulk;
+    const sheets = weekDirectSettlements(key)
+      .filter(record => record.platform === 'baemin' || record.platform === 'coupang');
+    const ridersByPlat = {
+      baemin: sheets.filter(s => s.platform === 'baemin').flatMap(s => Array.isArray(s.riders) ? s.riders : []),
+      coupang: sheets.filter(s => s.platform === 'coupang').flatMap(s => Array.isArray(s.riders) ? s.riders : [])
+    };
+
+    const buckets = new Map(); // sheetId -> Map(driverId -> { amount, name, platform })
+    const unmatched = [];
+    const matchCounts = { 배민ID: 0, 쿠팡ID: 0 };
+    let matchedTotal = 0;
+    let pastedTotal = 0;
+
+    (Array.isArray(rawRows) ? rawRows : []).forEach((row, index) => {
+      const id = String(row?.[0] ?? '').trim();
+      const amount = parseOtherAmount(row?.[1]);
+      if (!id && !amount) return;
+      const rowNo = index + 1;
+      pastedTotal += amount;
+      if (!amount) { unmatched.push({ id, amount: 0, rowNo, reason: '금액 없음' }); return; }
+      if (!id) { unmatched.push({ id: '(ID 없음)', amount, rowNo, reason: 'ID 없음' }); return; }
+
+      const bm = bulk?.matchRow?.(id, drivers, 'baemin', { settlementRiders: ridersByPlat.baemin });
+      const cp = bulk?.matchRow?.(id, drivers, 'coupang', { settlementRiders: ridersByPlat.coupang });
+      const bmOk = bm?.status === 'matched' && bm.driverId;
+      const cpOk = cp?.status === 'matched' && cp.driverId;
+
+      let platform = null;
+      let found = null;
+      if (bmOk && !cpOk) { platform = 'baemin'; found = bm; }
+      else if (cpOk && !bmOk) { platform = 'coupang'; found = cp; }
+      else if (bmOk && cpOk) {
+        unmatched.push({ id, amount, rowNo, reason: '배민ID·쿠팡ID 둘 다 맞아 어느 쪽인지 알 수 없음' });
+        return;
+      } else {
+        const dup = bm?.status === 'duplicate' || cp?.status === 'duplicate';
+        unmatched.push({ id, amount, rowNo, reason: dup ? '같은 ID의 기사가 여러 명' : '등록된 기사와 매칭 실패' });
+        return;
+      }
+
+      const home = homeSettlementInWeek(key, platform, found.driverId);
+      if (!home) {
+        unmatched.push({ id, amount, rowNo, reason: `${platform === 'coupang' ? '쿠팡' : '배민'} 정산서에 없음` });
+        return;
+      }
+      matchedTotal += amount;
+      matchCounts[platform === 'coupang' ? '쿠팡ID' : '배민ID'] += 1;
+      const name = found.driverName || driverName(found.driverId) || id;
+      if (!buckets.has(home.id)) buckets.set(home.id, new Map());
+      const bag = buckets.get(home.id);
+      const prev = bag.get(found.driverId) || { amount: 0, name, platform };
+      prev.amount += amount;
+      bag.set(found.driverId, prev);
+    });
+
+    const placed = { baemin: 0, coupang: 0 };
+    const sheetPlans = [];
+    sheets.forEach(settlement => {
+      const bag = buckets.get(settlement.id);
+      if (!bag || !bag.size) return;
+      let total = 0;
+      const overwrites = [];
+      const applied = window.BremStorage?.directSettlementAdjustments?.getSettlement?.('other', settlement.id) || {};
+      bag.forEach((info, driverId) => {
+        total += info.amount;
+        const prev = applied[driverId];
+        if (prev && Math.round(Number(prev.amount || 0)) !== info.amount) {
+          overwrites.push({ name: info.name, prevAmount: Math.round(Number(prev.amount || 0)), nextAmount: info.amount });
+        }
+      });
+      placed[settlement.platform] = (placed[settlement.platform] || 0) + total;
+      sheetPlans.push({ settlement, drivers: bag, total, count: bag.size, overwrites });
+    });
+
+    return {
+      week: key,
+      sheets: sheetPlans,
+      placed,
+      matchedTotal,
+      pastedTotal,
+      unmatched,
+      matchCounts,
+      hasMatched: matchedTotal > 0 && sheetPlans.length > 0
+    };
+  }
+
+  function renderOtherWeekConfirm(plan) {
+    const lines = [];
+    lines.push(`<p class="direct-week-auto-section-title">${escapeHtml(formatDate(plan.week))} 주 · 정산서에 넣는 곳</p>`);
+    lines.push('<div class="direct-week-auto-list">');
+    ['coupang', 'baemin'].forEach(plat => {
+      const group = plan.sheets.filter(sheet => sheet.settlement.platform === plat);
+      if (!group.length) return;
+      lines.push(`<div class="dwa-row dwa-group"><span class="dwa-name">${platformLabel(plat)}</span><span class="dwa-amt">${formatNumber(plan.placed[plat] || 0)}원</span></div>`);
+      group.forEach(sheet => {
+        const region = sheet.settlement.region || sheet.settlement.fileName || sheet.settlement.id;
+        lines.push(`<div class="dwa-row"><span class="dwa-name">${escapeHtml(region)} · ${formatNumber(sheet.count)}명</span><span class="dwa-amt">${formatNumber(sheet.total)}원</span></div>`);
+      });
+    });
+    const placedSum = (plan.placed.baemin || 0) + (plan.placed.coupang || 0);
+    lines.push(`<div class="dwa-row dwa-total"><span class="dwa-name">등록 합계</span><span class="dwa-amt">${formatNumber(placedSum)}원</span></div>`);
+    lines.push('</div>');
+
+    const counts = plan.matchCounts || {};
+    lines.push(`<p class="direct-week-auto-note">배민ID ${formatNumber(counts['배민ID'] || 0)}명 · 쿠팡ID ${formatNumber(counts['쿠팡ID'] || 0)}명. 이미 들어간 기타지급이 있으면 이 금액으로 바뀝니다.</p>`);
+
+    const overwriteCount = plan.sheets.reduce((sum, sheet) => sum + sheet.overwrites.length, 0);
+    if (overwriteCount) {
+      lines.push(`<p class="direct-week-auto-note">이미 등록된 다른 금액 ${formatNumber(overwriteCount)}건은 이 금액으로 바뀝니다.</p>`);
+    }
+
+    if (plan.unmatched.length) {
+      const sum = plan.unmatched.reduce((s, u) => s + Number(u.amount || 0), 0);
+      lines.push(`<p class="direct-week-auto-section-title direct-week-auto-block">매칭 안 된 ${formatNumber(plan.unmatched.length)}건 · ${formatNumber(sum)}원은 등록되지 않습니다</p>`);
+      lines.push('<ul class="direct-week-auto-how direct-week-auto-block">');
+      plan.unmatched.slice(0, 20).forEach(item => {
+        lines.push(`<li>${escapeHtml(item.id)} ${formatNumber(item.amount)}원 · ${escapeHtml(item.reason)}</li>`);
+      });
+      if (plan.unmatched.length > 20) lines.push(`<li>외 ${plan.unmatched.length - 20}건</li>`);
+      lines.push('</ul>');
+    }
+    return lines.join('');
+  }
+
+  function openOtherWeekDialog() {
+    const week = String(state.week || '').slice(0, 10);
+    if (!week) {
+      showToast('정산주를 먼저 고르세요. 전체 주에서는 일괄 등록하지 않습니다.');
+      return;
+    }
+    const els = otherWeekDialogEls();
+    if (!els.dialog) {
+      showToast('일괄 등록 창을 열 수 없습니다.');
+      return;
+    }
+    otherWeekPlan = null;
+    if (els.input) els.input.value = '';
+    if (els.hint) els.hint.textContent = '';
+    if (els.confirmStage) { els.confirmStage.hidden = true; els.confirmStage.innerHTML = ''; }
+    if (els.pasteStage) els.pasteStage.hidden = false;
+    if (els.next) els.next.hidden = false;
+    if (els.apply) els.apply.hidden = true;
+    if (els.title) els.title.textContent = `${formatDate(week)} 주 · 기타지급 배민·쿠팡 지역 일괄 등록`;
+    if (typeof els.dialog.showModal === 'function') els.dialog.showModal();
+    else els.dialog.setAttribute('open', '');
+    queueMicrotask(() => els.input?.focus());
+  }
+
+  function closeOtherWeekDialog() {
+    const els = otherWeekDialogEls();
+    if (!els.dialog) return;
+    if (els.dialog.open && typeof els.dialog.close === 'function') els.dialog.close();
+    else els.dialog.removeAttribute('open');
+    otherWeekPlan = null;
+  }
+
+  async function otherWeekPreview() {
+    const week = String(state.week || '').slice(0, 10);
+    if (!week) return;
+    const els = otherWeekDialogEls();
+    const text = String(els.input?.value || '');
+    if (!text.trim()) {
+      if (els.hint) els.hint.textContent = '붙여넣을 내용을 입력하세요.';
+      return;
+    }
+    await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
+    let rows = [];
+    try {
+      rows = window.BremDirectAdjustmentBulk.sheetRowsFromPasteText(text);
+    } catch (error) {
+      if (els.hint) els.hint.textContent = `붙여넣기를 처리하지 못했습니다. (${error.message || '오류'})`;
+      return;
+    }
+    if (!rows.length) {
+      if (els.hint) els.hint.textContent = '행을 인식하지 못했습니다. ID·금액이 보이게 복사했는지 확인하세요.';
+      return;
+    }
+    const plan = buildOtherWeekPlan(week, rows);
+    otherWeekPlan = plan;
+    if (els.confirmStage) {
+      els.confirmStage.innerHTML = renderOtherWeekConfirm(plan);
+      els.confirmStage.hidden = false;
+    }
+    if (els.pasteStage) els.pasteStage.hidden = true;
+    if (els.next) els.next.hidden = true;
+    if (els.apply) els.apply.hidden = !plan.hasMatched;
+  }
+
+  async function otherWeekApply() {
+    const plan = otherWeekPlan;
+    if (!plan || !plan.hasMatched) return;
+    const store = window.BremStorage?.directSettlementAdjustments;
+    if (!store?.applyEntries) {
+      showToast('정산등록 저장소를 찾지 못했습니다.');
+      return;
+    }
+    plan.sheets.forEach(sheet => {
+      const entries = [...sheet.drivers.entries()].map(([driverId, info]) => {
+        const driver = window.BremStorage?.drivers?.getById?.(driverId);
+        const bulk = window.BremDirectAdjustmentBulk;
+        const platformId = bulk?.driverIdForMatch?.(driver, info.platform) || '';
+        return {
+          driverId,
+          amount: info.amount,
+          baeminId: info.platform === 'baemin' ? platformId : '',
+          coupangId: info.platform === 'coupang' ? platformId : '',
+          driverName: info.name || driverName(driverId),
+          source: 'excel'
+        };
+      });
+      store.applyEntries('other', sheet.settlement.id, entries);
+    });
+
+    closeOtherWeekDialog();
+    renderApplied('other');
+    renderPromoTax();
+    renderAppliedSummary();
+    renderRegistry();
+    const placedSum = (plan.placed.baemin || 0) + (plan.placed.coupang || 0);
+    await flushAndToast(`기타지급 ${formatNumber(placedSum)}원 등록 완료 · 배민 ${formatNumber(plan.placed.baemin)} · 쿠팡 ${formatNumber(plan.placed.coupang)}`);
+  }
+
   function init() {
     if (!$('#directAdjustCard')) return;
     bindEvents();
@@ -2402,7 +2660,7 @@ const BremDirectAdjustmentAdmin = (function () {
     });
   }
 
-  return { init, refresh, state, renderAll, renderPreview, renderErpList, onWeekPicked: setWeek, buildErpPlan, commitErp, buildRegionReport, setAdjustView, buildWeekAutoRegisterPlan, registerWeekPromotions };
+  return { init, refresh, state, renderAll, renderPreview, renderErpList, onWeekPicked: setWeek, buildErpPlan, commitErp, buildRegionReport, setAdjustView, buildWeekAutoRegisterPlan, registerWeekPromotions, buildOtherWeekPlan, otherWeekPreview, otherWeekApply };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

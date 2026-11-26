@@ -35,7 +35,7 @@
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
   <script>try{var t=localStorage.getItem('bremAdminTheme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}</script>
-  <link rel="stylesheet" href="css/admin.css?v=20261126weekauto6">
+  <link rel="stylesheet" href="css/admin.css?v=20261126otherweek1">
   <link rel="stylesheet" href="css/status-analysis.css?v=20261106namgu1">
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261106acct1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
@@ -5801,8 +5801,11 @@
 
           <div class="payroll-bulk-grid">
             <section class="card payroll-bulk-card">
-              <div class="card-header"><h3>기타지급 일괄등록</h3></div>
-              <p class="form-help">A열 <span data-direct-id-label>배민ID</span> · B열(또는 금액 열) 금액 · 같은 기사가 여러 줄이거나 이미 적용된 금액이 있으면 합산. 엑셀에서 복사해 「엑셀 붙여넣기」도 가능합니다.</p>
+              <div class="card-header">
+                <h3>기타지급 일괄등록</h3>
+                <button type="button" class="primary-btn" id="directOtherWeekBulkBtn">배민·쿠팡 지역 일괄 등록</button>
+              </div>
+              <p class="form-help"><strong>배민·쿠팡 지역 일괄 등록</strong>은 정산서를 하나하나 고르지 않아도 됩니다. ID·금액을 붙여넣으면 <strong>배민ID는 배민, 쿠팡ID(이름+전화 뒤 4자리)는 쿠팡</strong>으로 자동 구분해, 그 기사가 있는 지역 정산서를 찾아 등록합니다. 아래 개별 등록은 <strong>지금 고른 정산서</strong>에만 들어갑니다. A열 <span data-direct-id-label>배민ID</span> · B열(또는 금액 열) 금액 · 같은 기사가 여러 줄이거나 이미 적용된 금액이 있으면 합산. 엑셀에서 복사해 「엑셀 붙여넣기」도 가능합니다.</p>
               <label>정산서 파일 (.xlsx)
                 <input type="file" id="directOtherBulkFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
               </label>
@@ -6023,6 +6026,25 @@
             <div class="baemin-json-dialog__actions">
               <button type="button" class="primary-btn" id="directErpWeekAutoApplyBtn">이 금액으로 등록</button>
               <button type="button" class="small-btn" id="directErpWeekAutoCancelBtn">취소</button>
+            </div>
+          </form>
+        </dialog>
+
+        <dialog class="baemin-json-dialog" id="directOtherWeekDialog">
+          <form method="dialog" class="baemin-json-dialog__inner direct-week-auto-dialog" onsubmit="return false;">
+            <h3 id="directOtherWeekTitle">기타지급 · 배민·쿠팡 지역 일괄 등록</h3>
+            <div class="direct-week-auto-body" id="directOtherWeekBody">
+              <div id="directOtherWeekPasteStage">
+                <p class="direct-week-auto-note">엑셀에서 <strong>ID 열과 금액 열</strong>을 복사해 붙여넣으세요. 배민ID면 배민 정산서, 쿠팡ID(이름+전화 뒤 4자리)면 쿠팡 정산서로 자동으로 찾아갑니다.</p>
+                <textarea id="directOtherWeekPasteInput" class="direct-week-auto-paste" placeholder="ID &#9; 금액"></textarea>
+                <p class="direct-week-auto-note" id="directOtherWeekPasteHint"></p>
+              </div>
+              <div id="directOtherWeekConfirmStage" hidden></div>
+            </div>
+            <div class="baemin-json-dialog__actions">
+              <button type="button" class="primary-btn" id="directOtherWeekNextBtn">다음 · 미리보기</button>
+              <button type="button" class="primary-btn" id="directOtherWeekApplyBtn" hidden>이 금액으로 등록</button>
+              <button type="button" class="small-btn" id="directOtherWeekCancelBtn">취소</button>
             </div>
           </form>
         </dialog>
@@ -10643,7 +10665,7 @@
   <script src="js/payroll-promotion-bulk.js?v=20260822other1"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260807b"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260905a"></script>
-  <script src="js/direct-adjustment-admin.js?v=20261126weekauto6"></script>
+  <script src="js/direct-adjustment-admin.js?v=20261126otherweek1"></script>
   <script src="js/direct-settlement-calc.js?v=20260929nopaid1"></script>
   <script src="js/settlement-result-direct.js?v=20261004rebase1"></script>
   <script src="js/final-deposit.js?v=20261015regionprepaid1"></script>
