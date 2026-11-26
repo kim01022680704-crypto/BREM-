@@ -1,4 +1,5 @@
 const { getServiceClient } = require('./admin-bootstrap');
+const { normalizeBankName } = require('../js/bank-name');
 const { verifyAdminCaller } = require('./admin-users');
 const { provisionRiderAuthAccount, readRiderSecrets } = require('./rider-auth');
 const {
@@ -391,13 +392,14 @@ function riderToRow(driver) {
     source.password = String(source.password).trim() || '1234';
   }
 
+  source.bankName = normalizeBankName(source.bankName);
   return {
     id: String(source.id || ''),
     auth_user_id: source.authUserId || null,
     name: normalizeRiderName(source.name),
     phone: formatPhoneForStorage(source.phone),
     resident_number: String(source.residentNumber || ''),
-    bank_name: String(source.bankName || '').trim(),
+    bank_name: source.bankName,
     account_holder: String(source.accountHolder || '').trim(),
     account_number: String(source.accountNumber || '').trim(),
     baemin_id: normalizePlatformId(source.baeminId),
@@ -543,7 +545,7 @@ async function preserveLockedAccountOnUpsert(supabase, row, rider) {
     row.raw_data = { ...(row.raw_data || {}), accountEditLocked: false };
     return row;
   }
-  const bank = String(existing.bank_name || stored.bankName || '').trim();
+  const bank = normalizeBankName(existing.bank_name || stored.bankName || '');
   const holder = String(existing.account_holder || stored.accountHolder || '').trim();
   const number = String(existing.account_number || stored.accountNumber || '').trim();
   row.bank_name = bank;
@@ -697,7 +699,7 @@ function dbRowToDriver(row) {
     name: row.name,
     phone: row.phone,
     residentNumber: row.resident_number || raw.residentNumber || '',
-    bankName: row.bank_name || '',
+    bankName: normalizeBankName(row.bank_name || raw.bankName || ''),
     accountHolder: row.account_holder || '',
     accountNumber: row.account_number || '',
     baeminId: row.baemin_id || '',

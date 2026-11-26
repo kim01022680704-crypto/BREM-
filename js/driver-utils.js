@@ -495,7 +495,9 @@ window.BremDriverUtils = (function () {
       name: normalizeBulkName(raw.name),
       phone: normalizeBulkPhone(raw.phone),
       residentNumber: raw.residentNumber,
-      bankName: String(raw.bankName || '').trim(),
+      bankName: (window.BremBankName && window.BremBankName.normalizeBankName
+        ? window.BremBankName.normalizeBankName(raw.bankName)
+        : String(raw.bankName || '').trim()),
       accountHolder: String(raw.accountHolder || '').trim(),
       accountNumber: String(raw.accountNumber || '').trim(),
       baeminId: String(raw.baeminId || '').trim().replace(/\s/g, ''),

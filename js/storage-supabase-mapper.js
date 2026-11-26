@@ -27,14 +27,21 @@ window.BremSupabaseMapper = (function () {
     return `${name}${phone.slice(-4)}`;
   }
 
+  function canonicalBankName(value) {
+    const fn = typeof window !== 'undefined' && window.BremBankName && window.BremBankName.normalizeBankName;
+    return fn ? fn(value) : String(value || '').trim();
+  }
+
   function riderToRow(driver) {
+    const bankName = canonicalBankName(driver && driver.bankName);
+    if (driver && bankName !== String(driver.bankName || '')) driver.bankName = bankName;
     return {
       id: String(driver.id || ''),
       auth_user_id: driver.authUserId || null,
       name: String(driver.name || '').trim(),
       phone: String(driver.phone || '').trim(),
       resident_number: String(driver.residentNumber || ''),
-      bank_name: String(driver.bankName || ''),
+      bank_name: bankName,
       account_holder: String(driver.accountHolder || ''),
       account_number: String(driver.accountNumber || ''),
       baemin_id: String(driver.baeminId || ''),
@@ -107,7 +114,7 @@ window.BremSupabaseMapper = (function () {
       phone: row.phone,
       residentNumber: row.resident_number || raw.residentNumber || '',
       password: String(raw.password ?? '').trim() || '1234',
-      bankName: row.bank_name || raw.bankName || '',
+      bankName: canonicalBankName(row.bank_name || raw.bankName || ''),
       accountHolder: row.account_holder || raw.accountHolder || '',
       accountNumber: row.account_number || raw.accountNumber || '',
       baeminId: String(row.baemin_id || raw.baeminId || raw.baemin_id || '').trim(),

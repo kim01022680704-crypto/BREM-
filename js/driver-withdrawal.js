@@ -692,7 +692,9 @@
     if (accountSaveBtn) accountSaveBtn.disabled = true;
     try {
       await window.BremStorage.drivers.update(driver.id, {
-        bankName: String(accountBankInput?.value || '').trim(),
+        bankName: window.BremBankName?.normalizeBankName
+          ? window.BremBankName.normalizeBankName(accountBankInput?.value || '')
+          : String(accountBankInput?.value || '').trim(),
         accountHolder: String(accountHolderInput?.value || '').trim(),
         accountNumber
       });

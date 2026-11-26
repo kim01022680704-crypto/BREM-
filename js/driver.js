@@ -2303,7 +2303,9 @@
     const accountLocked = Boolean(driver.accountEditLocked);
     const changes = {};
     if (!accountLocked) {
-      changes.bankName = document.getElementById('driverEditBankName').value.trim();
+      changes.bankName = window.BremBankName?.normalizeBankName
+        ? window.BremBankName.normalizeBankName(document.getElementById('driverEditBankName').value)
+        : document.getElementById('driverEditBankName').value.trim();
       changes.accountHolder = document.getElementById('driverEditAccountHolder').value.trim();
     }
 

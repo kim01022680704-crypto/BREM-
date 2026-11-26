@@ -506,7 +506,9 @@
       phone: formatPhoneField(phoneInput.value, phoneKeepAsIs),
       residentNumber: normalizeResidentNumber(residentNumberInput?.value || ''),
       password: normalizeLoginPassword(passwordInput.value) || DEFAULT_DRIVER_PASSWORD,
-      bankName: bankNameInput ? bankNameInput.value.trim() : '',
+      bankName: window.BremBankName?.normalizeBankName
+        ? window.BremBankName.normalizeBankName(bankNameInput ? bankNameInput.value : '')
+        : (bankNameInput ? bankNameInput.value.trim() : ''),
       accountHolder: accountHolderInput ? accountHolderInput.value.trim() : '',
       accountNumber: accountNumberInput ? stripAccountHyphens(accountNumberInput.value) : '',
       baeminId,
@@ -877,7 +879,11 @@
       phoneKeepAsIs = fields.phone.includes('-');
       phoneInput.value = formatPhoneField(fields.phone, phoneKeepAsIs);
     }
-    if (fields.bankName && bankNameInput) bankNameInput.value = fields.bankName;
+    if (fields.bankName && bankNameInput) {
+      bankNameInput.value = window.BremBankName?.normalizeBankName
+        ? window.BremBankName.normalizeBankName(fields.bankName)
+        : fields.bankName;
+    }
     if (fields.accountHolder && accountHolderInput) accountHolderInput.value = fields.accountHolder;
     if (fields.accountNumber && accountNumberInput) accountNumberInput.value = stripAccountHyphens(fields.accountNumber);
     if (fields.residentNumber && residentNumberInput) {

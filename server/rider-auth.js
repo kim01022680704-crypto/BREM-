@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const { normalizeBankName } = require('../js/bank-name');
 const { getServiceClient } = require('./admin-bootstrap');
 const {
   RIDER_LOGIN_LOOKUP_SELECT,
@@ -740,10 +741,10 @@ async function updateRiderProfile(accessToken, body = {}) {
   };
 
   if (raw.accountEditLocked && (bankName !== undefined || accountHolder !== undefined || accountNumber !== undefined)) {
-    const nextBank = bankName === undefined ? String(rider.bank_name || '').trim() : String(bankName || '').trim();
+    const nextBank = bankName === undefined ? normalizeBankName(rider.bank_name) : normalizeBankName(bankName);
     const nextHolder = accountHolder === undefined ? String(rider.account_holder || '').trim() : String(accountHolder || '').trim();
     const nextNumber = accountNumber === undefined ? String(rider.account_number || '').trim() : String(accountNumber || '').trim();
-    const changed = nextBank !== String(rider.bank_name || '').trim()
+    const changed = nextBank !== normalizeBankName(rider.bank_name)
       || nextHolder !== String(rider.account_holder || '').trim()
       || nextNumber !== String(rider.account_number || '').trim();
     if (changed) {
@@ -752,7 +753,7 @@ async function updateRiderProfile(accessToken, body = {}) {
   }
 
   if (bankName !== undefined) {
-    updatePayload.bank_name = String(bankName || '').trim();
+    updatePayload.bank_name = normalizeBankName(bankName);
     raw.bankName = updatePayload.bank_name;
   }
   if (accountHolder !== undefined) {

@@ -3145,7 +3145,7 @@ const BremStorage = (function () {
     }
 
     const body = {};
-    if (changes.bankName !== undefined) body.bankName = changes.bankName;
+    if (changes.bankName !== undefined) body.bankName = canonicalBankName(changes.bankName);
     if (changes.accountHolder !== undefined) body.accountHolder = changes.accountHolder;
     if (changes.accountNumber !== undefined) body.accountNumber = changes.accountNumber;
     if (changes.residentNumber !== undefined) body.residentNumber = changes.residentNumber;
@@ -6404,6 +6404,11 @@ const BremStorage = (function () {
     return { residentNumber, password };
   }
 
+  function canonicalBankName(value) {
+    const fn = window.BremBankName && window.BremBankName.normalizeBankName;
+    return fn ? fn(value) : String(value || '').trim();
+  }
+
   function normalizeDrivers(drivers) {
     let migrated = false;
     const normalizedDrivers = drivers.map(driver => {
@@ -6424,7 +6429,7 @@ const BremStorage = (function () {
         password: authFields.password,
         baeminId: String(next.baeminId || '').trim(),
         accountNumber: String(next.accountNumber || '').trim(),
-        bankName: String(next.bankName || '').trim(),
+        bankName: canonicalBankName(next.bankName),
         accountHolder: String(next.accountHolder || '').trim(),
         regionBaemin: String(next.regionBaemin || '').trim(),
         regionCoupang: String(next.regionCoupang || '').trim(),
@@ -6635,7 +6640,7 @@ const BremStorage = (function () {
         residentNumber: authFields.residentNumber,
         password: authFields.password || '1234',
         accountNumber: String(driver.accountNumber || '').trim(),
-        bankName: String(driver.bankName || '').trim(),
+        bankName: canonicalBankName(driver.bankName),
         accountHolder: String(driver.accountHolder || '').trim(),
         baeminId,
         platformCoupang,
@@ -6805,7 +6810,7 @@ const BremStorage = (function () {
         residentNumber: authFields.residentNumber,
         password: authFields.password || '1234',
         accountNumber: String(driver.accountNumber || '').trim(),
-        bankName: String(driver.bankName || '').trim(),
+        bankName: canonicalBankName(driver.bankName),
         accountHolder: String(driver.accountHolder || '').trim(),
         baeminId,
         platformCoupang,
@@ -6879,6 +6884,9 @@ const BremStorage = (function () {
             if (Object.prototype.hasOwnProperty.call(changes, key)) merged[key] = driver[key];
           });
           merged.accountEditLocked = true;
+        }
+        if (merged.bankName !== undefined && merged.bankName !== null) {
+          merged.bankName = canonicalBankName(merged.bankName);
         }
         return {
           ...merged,
