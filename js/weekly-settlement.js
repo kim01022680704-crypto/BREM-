@@ -2593,56 +2593,86 @@ const BremWeeklySettlement = (function () {
         keywords
       });
     if (!summary?.byName || !summary.ready) return [];
+    const start = String(record.startDate || '').slice(0, 10);
+    const end = String(record.endDate || '').slice(0, 10);
+    if (!start || !end) return [];
+    // 직계약 화면은 일정산 전체를 안 올린다. 전체를 읽으면 타임아웃 나고,
+    // 메모리에 없으면 일정산 권외가 전부 0으로 보여 불일치가 쏟아진다.
+    // 그 주만 읽어 온다.
     try {
-      await BremStorage.ensureSectionLoaded?.('settlements');
+      if (BremStorage.ensureSettlementsSinceDate) {
+        await BremStorage.ensureSettlementsSinceDate(start, { untilDate: end, force: true });
+      } else {
+        await BremStorage.ensureSectionLoaded?.('settlements');
+      }
       await BremStorage.ensureSectionLoaded?.('drivers');
     } catch (error) {
       console.warn('[BREM] 권외콜 대조용 일정산을 읽지 못했습니다.', error?.message || error);
+      return [];
     }
-    const start = String(record.startDate || '').slice(0, 10);
-    const end = String(record.endDate || '').slice(0, 10);
-    const dailyByKey = new Map();
-    const nameByKey = new Map();
-    (BremStorage.settlements?.getAll?.() || []).forEach(item => {
-      if (normalizePlatform(item.platform) !== 'coupang') return;
-      const day = normalizePeriodDay(item.period);
-      if (start && day < start) return;
-      if (end && day > end) return;
-      const count = Math.max(0, Math.round(Number(item.outsideCallCount) || 0));
-      if (!count) return;
-      const driver = BremStorage.drivers?.getById?.(item.driverId);
-      const key = (driver ? makeCoupangNamePhoneKey(driver) : '')
-        || normalizeCoupangLoginKey(driver?.name || '');
-      if (!key) return;
-      dailyByKey.set(key, (dailyByKey.get(key) || 0) + count);
-      if (!nameByKey.has(key)) nameByKey.set(key, driver?.name || key);
-    });
+    const daily = sumCoupangOutsideByLoginKey(start, end);
+    if (!daily) {
+      console.warn('[BREM] 이 주 쿠팡 일정산이 없어 권외콜을 대조하지 않습니다.', start, end);
+      return [];
+    }
     const mismatches = [];
-    const seen = new Set();
     summary.byName.forEach((weekly, key) => {
-      seen.add(key);
-      const daily = dailyByKey.get(key) || 0;
-      if (daily === weekly) return;
+      const count = daily.byKey.get(key) || 0;
+      if (count === weekly) return;
       mismatches.push({
-        name: nameByKey.get(key) || key,
+        name: daily.names.get(key) || key,
         key,
         weekly,
-        daily,
-        delta: weekly - daily
-      });
-    });
-    dailyByKey.forEach((daily, key) => {
-      if (seen.has(key)) return;
-      mismatches.push({
-        name: nameByKey.get(key) || key,
-        key,
-        weekly: 0,
-        daily,
-        delta: -daily
+        daily: count,
+        delta: weekly - count
       });
     });
     mismatches.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.name.localeCompare(b.name, 'ko'));
     return mismatches;
+  }
+
+  // 기사·날짜당 마지막 일정산의 권외만 합친다. 성함칸(이름+전화뒤4, 쿠팡ID)으로 찾는다.
+  function sumCoupangOutsideByLoginKey(start, end) {
+    const latestByDriverDay = new Map();
+    (BremStorage.settlements?.getAll?.() || []).forEach(item => {
+      if (normalizePlatform(item.platform) !== 'coupang') return;
+      const day = normalizePeriodDay(item.period);
+      if (!day || day < start || day > end) return;
+      const driverId = String(item.driverId || '').trim();
+      if (!driverId) return;
+      const applied = String(item.appliedAt || '');
+      const slot = `${driverId}|${day}`;
+      const prev = latestByDriverDay.get(slot);
+      if (prev && applied < prev.applied) return;
+      latestByDriverDay.set(slot, {
+        driverId,
+        applied,
+        count: Math.max(0, Math.round(Number(item.outsideCallCount) || 0))
+      });
+    });
+    if (!latestByDriverDay.size) return null;
+    const totalByDriver = new Map();
+    latestByDriverDay.forEach(slot => {
+      totalByDriver.set(slot.driverId, (totalByDriver.get(slot.driverId) || 0) + slot.count);
+    });
+    const byKey = new Map();
+    const names = new Map();
+    totalByDriver.forEach((count, driverId) => {
+      const driver = BremStorage.drivers?.getById?.(driverId);
+      if (!driver) return;
+      const keys = new Set();
+      const namePhone = makeCoupangNamePhoneKey(driver);
+      const erp = makeCoupangLoginKeyForDriver(driver);
+      if (namePhone) keys.add(namePhone);
+      if (erp) keys.add(erp);
+      keys.forEach(key => {
+        const prev = byKey.get(key);
+        if (prev == null || count > prev) byKey.set(key, count);
+        if (!names.has(key)) names.set(key, driver.name || key);
+      });
+    });
+    if (!byKey.size) return null;
+    return { byKey, names };
   }
 
   async function processWeeklyUpload(options) {

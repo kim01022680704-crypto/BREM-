@@ -570,6 +570,33 @@ check('가져온 실지급으로 남은 금액', M.computeRemain({
   prepaid: 0
 }), 130000 - Math.round(13000 * 0.2) - 100000);
 
+console.log('\n[7c] 합친 남구 정산서에도 (Z) 계산서는 따로 붙는다');
+window.BremDirectSettlementCalc.settlementWeek = () => '2026-08-19';
+window.BremStorage.weeklySettlements.getAll = () => [{
+  id: 'merged-namgu',
+  region: '남구중앙',
+  platform: 'coupang',
+  startDate: '2026-08-19',
+  sourceParts: [
+    { fileName: '배달연합_울산_남구중앙_2026_11-3.xlsx' },
+    { fileName: '119컴퍼니_울산_남구중앙(Z)_2026_11-3.xlsx' }
+  ]
+}];
+M.setWeekStart('2026-08-19');
+const splitNames = M.settlementRegionNames();
+check('합친 정산서에서 일반 지역명', splitNames.includes('남구중앙'), 'true');
+check('합친 정산서에서 Z 지역명', splitNames.includes('남구중앙(Z)'), 'true');
+check('Z 계산서는 Z 정산서', M.matchRegionByLabel('울산_남구중앙(Z)', splitNames, {}), '남구중앙(Z)');
+check('일반 계산서는 일반 정산서', M.matchRegionByLabel('울산_남구중앙', splitNames, {}), '남구중앙');
+const splitInvoice = M.groupInvoiceLines([
+  { kind: 'coupang', label: '울산_남구중앙', supplyPaid: 17397773, vat: 1619193 },
+  { kind: 'coupang', label: '울산_남구중앙(Z)', supplyPaid: 31020971, vat: 2899607 }
+], splitNames);
+const splitPlain = splitInvoice.rows.find(row => row.region === '남구중앙');
+const splitZed = splitInvoice.rows.find(row => row.region === '남구중앙(Z)');
+check('이글스 실지급은 남구중앙만', splitPlain?.supplyPaid, 17397773);
+check('119 실지급은 남구중앙(Z)만', splitZed?.supplyPaid, 31020971);
+
 console.log('\n[8] 소진율 (최종입금+선정산)÷(실지급−부가세)');
 // 실지급 100만, 부가세 10만 → 기준 90만. 최종+선정산 90만 → 정확히 100%
 const u100 = M.usageRatio(1000000, 100000, 850000, 50000);

@@ -1137,6 +1137,12 @@
       if (raw) names.add(raw);
       const label = canonicalRegionLabel(raw);
       if (label) names.add(label);
+      // 남구중앙 + 남구중앙(Z)를 한 정산서로 합쳐도 계산서 줄은 파일 지역으로 나눈다.
+      const parts = Array.isArray(record?.sourceParts) ? record.sourceParts : [];
+      parts.forEach(part => {
+        const region = coupangFileRegion(part?.fileName || part?.label || '');
+        if (region) names.add(region);
+      });
     };
     settlementsForWeek(state.weekStart || weekStartKey()).forEach(addSettlementName);
     (window.BremStorage?.weeklySettlements?.getAll?.('direct') || []).forEach(addSettlementName);
@@ -2458,6 +2464,7 @@
     groupPasteRows,
     baeminUploadGroupKey,
     canonicalRegionLabel,
+    settlementRegionNames,
     groupInvoiceLines,
     aggregateRegions,
     parsePasteRows,
