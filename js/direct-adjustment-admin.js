@@ -1036,22 +1036,7 @@ const BremDirectAdjustmentAdmin = (function () {
   }
 
   function erpRowAttachAmount(row, savedItem) {
-    const savedPlatform = String(savedItem?.platform || '').trim();
-    if (savedPlatform !== 'combined') {
-      return Number(row.totalPromotionAmount || 0);
-    }
-    const resolver = window.BremPromotionApply?.resolveCombinedRowAttachAmount;
-    if (typeof resolver === 'function') {
-      return resolver(row, state.platform);
-    }
-    const source = String(row.assignmentSource || '').trim();
-    const total = Number(row.totalPromotionAmount || 0);
-    if (state.platform === 'coupang') {
-      if (source === '배민' || source === '쿠팡+배민') return 0;
-      return total;
-    }
-    if (source === '쿠팡') return 0;
-    return total;
+    return amountForSettlementPlatform(row, savedItem, state.platform);
   }
 
   function erpSavedResults() {
@@ -1369,11 +1354,12 @@ const BremDirectAdjustmentAdmin = (function () {
       confirmLines.push(`· 같은 주 다른 정산서에 붙일 기사 ${plan.routedToSibling.length}명은 이 정산서에서 빼 이중 등록을 막습니다.`);
     }
 
-    const summaryLine = `기사 ${formatNumber(plan.applicable.size)}명 · 합계 ${formatNumber(plan.total)}원을 적용합니다.`;
-    if (confirmLines.length) {
-      const proceed = window.confirm(`${summaryLine}\n\n확인이 필요한 내용:\n${confirmLines.join('\n')}\n\n그대로 적용할까요?`);
-      if (!proceed) return;
-    }
+    const summaryLine = `기사 ${formatNumber(plan.applicable.size)}명 · 합계 ${formatNumber(plan.total)}원을 이 정산서에 등록합니다.`;
+    const warningBlock = confirmLines.length
+      ? `\n\n확인이 필요한 내용:\n${confirmLines.join('\n')}`
+      : '';
+    const proceed = window.confirm(`${summaryLine}${warningBlock}\n\n이 금액으로 등록할까요?`);
+    if (!proceed) return;
 
     // 정산서에 없는 기사는 한 명씩 넣기/빼기를 고르게 한다.
     // 예) 포항북A 정산서에 없는 기사는 남A 정산서에 넣어야 하므로 여기선 빼둔다.
@@ -1560,7 +1546,7 @@ const BremDirectAdjustmentAdmin = (function () {
     return best?.record || null;
   }
 
-  function attachAmountForPlatform(row, item, platform) {
+  function legacyAttachAmount(row, item, platform) {
     const total = Math.round(Number(row?.totalPromotionAmount || 0));
     if (!total) return 0;
     const itemPlatform = String(item?.platform || '').trim();
@@ -1572,6 +1558,22 @@ const BremDirectAdjustmentAdmin = (function () {
       return (source === '배민' || source === '쿠팡+배민') ? 0 : total;
     }
     return source === '쿠팡' ? 0 : total;
+  }
+
+  // 정산등록에 넣는 금액. 합산은 배민 1순위·쿠팡 2순위와 같은 함수를 쓴다.
+  function amountForSettlementPlatform(row, item, platform) {
+    const total = Math.round(Number(row?.totalPromotionAmount || 0));
+    if (!total) return 0;
+    const target = String(platform || '').trim();
+    const itemPlatform = String(item?.platform || '').trim();
+    if (itemPlatform !== 'combined') return itemPlatform === target ? total : 0;
+    const resolver = window.BremPromotionApply?.resolveCombinedRowAttachAmount;
+    if (typeof resolver === 'function') return Math.round(Number(resolver(row, target) || 0));
+    return legacyAttachAmount(row, item, target);
+  }
+
+  function attachAmountForPlatform(row, item, platform) {
+    return amountForSettlementPlatform(row, item, platform);
   }
 
   function compactRegionLabel(item) {
@@ -1913,6 +1915,7 @@ const BremDirectAdjustmentAdmin = (function () {
     $('#directErpSelectAllBtn')?.addEventListener('click', () => toggleErpSelectAll(true));
     $('#directErpSelectAllChk')?.addEventListener('change', event => toggleErpSelectAll(event.target.checked));
     $('#directErpApplyBtn')?.addEventListener('click', applyErp);
+    $('#directErpWeekAutoBtn')?.addEventListener('click', () => { void registerWeekPromotions(); });
 
     const notInEls = erpNotInDialogEls();
     notInEls.apply?.addEventListener('click', () => confirmErpNotInDialog());
@@ -1996,6 +1999,264 @@ const BremDirectAdjustmentAdmin = (function () {
     }
   }
 
+  function pickHomeSettlement(records, driverId) {
+    let best = null;
+    records.forEach(record => {
+      if (!riderOnSettlement(record, driverId)) return;
+      const cand = { record, calls: riderCallsOnSettlement(record, driverId) };
+      if (!best
+        || cand.calls > best.calls
+        || (cand.calls === best.calls && String(record.id) < String(best.record.id))) {
+        best = cand;
+      }
+    });
+    return best?.record || null;
+  }
+
+  // 이번 주 직계약 프로모션 적용(최신 저장본)을 배민·쿠팡 정산서에 1원 단위로 나눈다.
+  function buildWeekAutoRegisterPlan(week) {
+    const key = weekStartKey(String(week || '').slice(0, 10));
+    const results = latestDirectApplyResults(key);
+    const settlements = weekDirectSettlements(key)
+      .filter(record => record.platform === 'baemin' || record.platform === 'coupang');
+    const byPlat = { baemin: [], coupang: [] };
+    settlements.forEach(record => {
+      if (byPlat[record.platform]) byPlat[record.platform].push(record);
+    });
+
+    const buckets = new Map();
+    const unplaced = [];
+    const splitGaps = [];
+    const overlap = [];
+    const expected = { baemin: 0, coupang: 0 };
+    let rowTotal = 0;
+    let skippedUnmatched = 0;
+    const seen = new Set();
+
+    results.forEach(item => {
+      (Array.isArray(item.results) ? item.results : []).forEach(row => {
+        const rowSum = Math.round(Number(row.totalPromotionAmount || 0));
+        if (!rowSum) return;
+        rowTotal += rowSum;
+        const driverId = String(row.matchedRiderId || '').trim();
+        if (!driverId) {
+          skippedUnmatched += rowSum;
+          return;
+        }
+        const name = row.driverName || row.displayName || driverName(driverId);
+        const parts = {
+          baemin: amountForSettlementPlatform(row, item, 'baemin'),
+          coupang: amountForSettlementPlatform(row, item, 'coupang')
+        };
+        if (parts.baemin + parts.coupang !== rowSum) {
+          splitGaps.push({ name, rowSum, baemin: parts.baemin, coupang: parts.coupang });
+        }
+        ['baemin', 'coupang'].forEach(plat => {
+          const amount = parts[plat];
+          if (!amount) return;
+          expected[plat] += amount;
+          const home = pickHomeSettlement(byPlat[plat], driverId);
+          if (!home) {
+            unplaced.push({ driverId, name, platform: plat, amount });
+            return;
+          }
+          const mark = `${home.id}|${driverId}`;
+          if (seen.has(mark)) overlap.push({ name, platform: plat, amount });
+          seen.add(mark);
+          if (!buckets.has(home.id)) buckets.set(home.id, new Map());
+          const bag = buckets.get(home.id);
+          const prev = bag.get(driverId) || { amount: 0, name };
+          prev.amount += amount;
+          bag.set(driverId, prev);
+        });
+      });
+    });
+
+    const placed = { baemin: 0, coupang: 0 };
+    const sheets = [];
+    settlements.forEach(settlement => {
+      const bag = buckets.get(settlement.id);
+      if (!bag || !bag.size) return;
+      let total = 0;
+      const overwrites = [];
+      const applied = window.BremStorage?.directSettlementAdjustments?.getSettlement?.('promotion', settlement.id) || {};
+      bag.forEach((info, driverId) => {
+        total += info.amount;
+        const prev = applied[driverId];
+        if (prev && prev.source !== 'erp' && Math.round(Number(prev.amount || 0)) !== info.amount) {
+          overwrites.push({
+            name: info.name,
+            prevAmount: Math.round(Number(prev.amount || 0)),
+            nextAmount: info.amount
+          });
+        }
+      });
+      placed[settlement.platform] = (placed[settlement.platform] || 0) + total;
+      sheets.push({
+        settlement,
+        drivers: bag,
+        total,
+        count: bag.size,
+        overwrites
+      });
+    });
+
+    const unplacedAmount = unplaced.reduce((sum, item) => sum + item.amount, 0);
+    const balanced = skippedUnmatched === 0
+      && splitGaps.length === 0
+      && unplacedAmount === 0
+      && placed.baemin === expected.baemin
+      && placed.coupang === expected.coupang
+      && placed.baemin + placed.coupang === rowTotal;
+
+    return {
+      week: key,
+      results,
+      sheets,
+      expected,
+      placed,
+      rowTotal,
+      unplaced,
+      unplacedAmount,
+      splitGaps,
+      overlap,
+      skippedUnmatched,
+      balanced
+    };
+  }
+
+  function weekAutoConfirmText(plan) {
+    const lines = [`${formatDate(plan.week)} 주 프로모션 적용분을 배민·쿠팡 정산서에 등록합니다.`];
+    lines.push('');
+    lines.push('적용 결과');
+    plan.results.forEach(item => {
+      const total = Math.round(Number(item.summary?.totalPromotionAmount || 0));
+      lines.push(`· ${item.region || item.settlementLabel || platformLabel(item.platform)} ${formatNumber(total)}원`);
+    });
+    lines.push(`적용 합계 ${formatNumber(plan.rowTotal)}원`);
+    lines.push('');
+    ['coupang', 'baemin'].forEach(plat => {
+      const group = plan.sheets.filter(sheet => sheet.settlement.platform === plat);
+      lines.push(platformLabel(plat));
+      if (!group.length) {
+        lines.push('· 등록할 정산서 없음');
+      } else {
+        group.forEach(sheet => {
+          const region = sheet.settlement.region || sheet.settlement.fileName || sheet.settlement.id;
+          lines.push(`· ${region} ${formatNumber(sheet.count)}명 ${formatNumber(sheet.total)}원`);
+        });
+      }
+      lines.push(`소계 ${formatNumber(plan.placed[plat] || 0)}원`);
+      lines.push('');
+    });
+    lines.push(`등록 합계 ${formatNumber((plan.placed.baemin || 0) + (plan.placed.coupang || 0))}원`);
+    if (plan.overlap.length) {
+      lines.push(`여러 적용 결과에 겹친 기사 ${plan.overlap.length}명은 금액을 더합니다.`);
+    }
+    const overwriteCount = plan.sheets.reduce((sum, sheet) => sum + sheet.overwrites.length, 0);
+    if (overwriteCount) {
+      lines.push(`엑셀·수기로 넣은 다른 금액 ${overwriteCount}건은 이 적용 금액으로 바뀝니다.`);
+    }
+    lines.push('이전에 등록한 ERP 프로모션은 이 금액으로 다시 씁니다.');
+    lines.push('');
+    lines.push('이 금액으로 등록할까요?');
+    return lines.join('\n');
+  }
+
+  function weekAutoBlockText(plan) {
+    const lines = ['금액이 1원이라도 다르면 등록하지 않습니다.'];
+    if (plan.skippedUnmatched) {
+      lines.push(`· 기사 매칭이 안 된 금액 ${formatNumber(plan.skippedUnmatched)}원`);
+    }
+    plan.splitGaps.slice(0, 8).forEach(item => {
+      lines.push(`· ${item.name} 적용 ${formatNumber(item.rowSum)}원 / 배민 ${formatNumber(item.baemin)} + 쿠팡 ${formatNumber(item.coupang)}`);
+    });
+    plan.unplaced.slice(0, 12).forEach(item => {
+      lines.push(`· ${item.name} ${platformLabel(item.platform)} ${formatNumber(item.amount)}원 · 정산서 없음`);
+    });
+    if (plan.unplaced.length > 12) lines.push(`· 외 ${plan.unplaced.length - 12}명`);
+    if (plan.placed.baemin !== plan.expected.baemin || plan.placed.coupang !== plan.expected.coupang) {
+      lines.push(`· 배민 배치 ${formatNumber(plan.placed.baemin)} / 적용 ${formatNumber(plan.expected.baemin)}`);
+      lines.push(`· 쿠팡 배치 ${formatNumber(plan.placed.coupang)} / 적용 ${formatNumber(plan.expected.coupang)}`);
+    }
+    const placedSum = (plan.placed.baemin || 0) + (plan.placed.coupang || 0);
+    if (placedSum !== plan.rowTotal) {
+      lines.push(`· 등록 합계 ${formatNumber(placedSum)}원 / 적용 합계 ${formatNumber(plan.rowTotal)}원`);
+    }
+    return lines.join('\n');
+  }
+
+  function promotionEntry(driverId, info) {
+    const driver = window.BremStorage?.drivers?.getById?.(driverId);
+    const bulk = window.BremDirectAdjustmentBulk;
+    return {
+      driverId,
+      amount: info.amount,
+      baeminId: bulk?.driverIdForMatch?.(driver, 'baemin') || driver?.baeminId || '',
+      coupangId: bulk?.driverIdForMatch?.(driver, 'coupang') || driver?.coupangId || '',
+      driverName: info.name || driverName(driverId),
+      source: 'erp'
+    };
+  }
+
+  async function registerWeekPromotions() {
+    const week = String(state.week || '').slice(0, 10);
+    if (!week) {
+      showToast('정산주를 먼저 고르세요. 전체 주에서는 일괄 등록하지 않습니다.');
+      return;
+    }
+    const plan = buildWeekAutoRegisterPlan(week);
+    if (!plan.results.length) {
+      showToast(`${formatDate(week)} 주 직계약 프로모션 적용 결과가 없습니다.`);
+      return;
+    }
+    if (!plan.balanced) {
+      window.alert(weekAutoBlockText(plan));
+      return;
+    }
+    if (!window.confirm(weekAutoConfirmText(plan))) return;
+
+    const store = window.BremStorage?.directSettlementAdjustments;
+    if (!store?.applyEntries) {
+      showToast('정산등록 저장소를 찾지 못했습니다.');
+      return;
+    }
+    const plannedIds = new Set(plan.sheets.map(sheet => sheet.settlement.id));
+    weekDirectSettlements(plan.week).forEach(settlement => {
+      if (settlement.platform !== 'baemin' && settlement.platform !== 'coupang') return;
+      const existing = store.getSettlement?.('promotion', settlement.id) || {};
+      const hasErp = Object.values(existing).some(item => item?.source === 'erp');
+      if (!plannedIds.has(settlement.id) && !hasErp) return;
+      const entries = plannedIds.has(settlement.id)
+        ? [...plan.sheets.find(sheet => sheet.settlement.id === settlement.id).drivers.entries()]
+          .map(([driverId, info]) => promotionEntry(driverId, info))
+        : [];
+      store.applyEntries('promotion', settlement.id, entries, {
+        dropWhere: item => item?.source === 'erp'
+      });
+    });
+
+    let mismatch = 0;
+    plan.sheets.forEach(sheet => {
+      const saved = store.getSettlement('promotion', sheet.settlement.id) || {};
+      sheet.drivers.forEach((info, driverId) => {
+        if (Math.round(Number(saved[driverId]?.amount || 0)) !== info.amount) mismatch += 1;
+      });
+    });
+    if (mismatch) {
+      showToast(`등록 후 ${mismatch}명의 금액이 적용 금액과 다릅니다. 다시 확인하세요.`);
+      return;
+    }
+
+    renderApplied('promotion');
+    renderPromoTax();
+    renderAppliedSummary();
+    renderErpPreview();
+    renderRegistry();
+    const total = plan.rowTotal;
+    await flushAndToast(`이번 주 프로모션 ${formatNumber(total)}원 등록 완료 · 배민 ${formatNumber(plan.placed.baemin)} · 쿠팡 ${formatNumber(plan.placed.coupang)}`);
+  }
+
   function init() {
     if (!$('#directAdjustCard')) return;
     bindEvents();
@@ -2004,7 +2265,7 @@ const BremDirectAdjustmentAdmin = (function () {
     });
   }
 
-  return { init, refresh, state, renderAll, renderPreview, renderErpList, onWeekPicked: setWeek, buildErpPlan, commitErp, buildRegionReport, setAdjustView };
+  return { init, refresh, state, renderAll, renderPreview, renderErpList, onWeekPicked: setWeek, buildErpPlan, commitErp, buildRegionReport, setAdjustView, buildWeekAutoRegisterPlan, registerWeekPromotions };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

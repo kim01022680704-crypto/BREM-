@@ -231,7 +231,7 @@ function check(label, actual, expected) {
   Result.init();
   await Result.refresh('baemin');
   const resultSelect = window.document.getElementById('settlementResultSettlementSelect');
-  check('정산결과 기본 주 정산서 1건', resultSelect.options.length, 1);
+  check('정산결과 기본 주 정산서 1건', resultSelect.options.length, 2);
   const rows = window.document.querySelectorAll('#settlementResultRows tr');
   check('라이더 2명 표시', rows.length, 2);
   const firstRow = [...rows].find(tr => tr.textContent.includes('김배민'));
@@ -263,6 +263,7 @@ function check(label, actual, expected) {
   check('ERP 저장결과가 같은 주로 노출', !!erpRow, 'true');
   erpRow.checked = true;
   erpRow.dispatchEvent(new window.Event('change', { bubbles: true }));
+  window.confirm = () => true;
   window.document.getElementById('directErpApplyBtn').click();
   check('ERP 금액이 정산서에 적용(d2 = 70,000)',
     adjustments.promotion['weekly_direct_baemin_seoul_20260722']?.d2?.amount, 70000);
@@ -334,7 +335,7 @@ function check(label, actual, expected) {
   const preview = window.document.getElementById('directErpPreview');
   check('미리보기 노출', preview.hidden, 'false');
   check('여러 결과에 걸친 기사 경고', /여러 곳에 들어 있어/.test(preview.textContent), 'true');
-  check('정산서에 없는 기사 경고', /이 정산서에 없어 제외됩니다/.test(preview.textContent), 'true');
+  check('정산서에 없는 기사 경고', /프로모션만 들어갑니다/.test(preview.textContent), 'true');
   check('엑셀 덮어쓰기 경고', /엑셀로 넣은 금액/.test(preview.textContent), 'true');
 
   console.log('\n[13] 적용 결과 — 겹치는 기사는 합산, 없는 기사는 무시');
@@ -403,7 +404,7 @@ function check(label, actual, expected) {
   Result.state.settlementId = '';
   await Result.refresh('baemin');
   check('정산결과 기본 주', Result.state.week, '2026-07-22');
-  check('그 주 정산서 1건', window.document.getElementById('settlementResultSettlementSelect').options.length, 1);
+  check('그 주 정산서 1건', window.document.getElementById('settlementResultSettlementSelect').options.length, 2);
   Result.onWeekPicked('2026-07-15');
   await new Promise(resolve => setTimeout(resolve, 0));
   check('7/15 주로 이동', Result.state.week, '2026-07-15');
@@ -732,6 +733,85 @@ function check(label, actual, expected) {
   Adj.setAdjustView('region');
   check('지역 카드 보임', window.document.getElementById('directRegionReportCard').hidden, false);
   check('등록 카드 숨김', window.document.getElementById('directAdjustCard').hidden, true);
+
+  console.log('\n[29] 이번 주 배민·쿠팡 일괄 등록은 확인 후에만, 1원도 다르지 않게');
+  const autoWeek = '2026-11-18';
+  DRIVERS.push(
+    { id: 'dAutoB', name: '배민기사', baeminId: 'BC009001', coupangId: '' },
+    { id: 'dAutoC', name: '쿠팡기사', baeminId: '', coupangId: 'CP009001' }
+  );
+  SETTLEMENTS.push(
+    {
+      id: 'weekly_direct_baemin_namgu_20261118',
+      platform: 'baemin', channel: 'direct', region: '표준울산남A',
+      fileName: '배민남A.xlsx', startDate: autoWeek, endDate: '2026-11-24',
+      riders: [{ matchedRiderId: 'dAutoB', baeminUserId: 'BC009001', weeklyOrderCount: 40, amounts: {} }]
+    },
+    {
+      id: 'weekly_direct_coupang_namgu_20261118',
+      platform: 'coupang', channel: 'direct', region: '남구중앙',
+      fileName: '쿠팡남구.xlsx', startDate: autoWeek, endDate: '2026-11-24',
+      riders: [{ matchedRiderId: 'dAutoC', coupangLoginKey: '쿠팡기사9001', weeklyOrderCount: 80, amounts: {} }]
+    }
+  );
+  ERP_RESULTS.push({
+    id: 'erpNamguAuto',
+    platform: 'combined',
+    channel: 'direct',
+    startDate: autoWeek,
+    region: '남구중앙 / 표준울산남A',
+    settlementId: 'combined-namgu-auto',
+    settlementLabel: '쿠팡 남구중앙 + 배민 표준울산남A',
+    savedAt: '2026-11-26T10:36:04',
+    summary: { riderCount: 2, totalPromotionAmount: 73000, baeminAttachTotal: 10000, coupangAttachTotal: 63000 },
+    results: [
+      { matchedRiderId: 'dAutoB', driverName: '배민기사', totalPromotionAmount: 10000, assignmentSource: '배민', appliedPlatform: 'baemin', ruleName: '100건 천원' },
+      { matchedRiderId: 'dAutoC', driverName: '쿠팡기사', totalPromotionAmount: 63000, assignmentSource: '쿠팡', appliedPlatform: 'coupang', ruleName: '100건 1200원' }
+    ]
+  });
+  Adj.onWeekPicked(autoWeek);
+  const autoPlan = Adj.buildWeekAutoRegisterPlan(autoWeek);
+  check('배민 10,000', autoPlan.placed.baemin, 10000);
+  check('쿠팡 63,000', autoPlan.placed.coupang, 63000);
+  check('합계가 적용 73,000과 같음', autoPlan.rowTotal, 73000);
+  check('1원 차이 없음', autoPlan.balanced, 'true');
+
+  window.confirm = () => false;
+  await Adj.registerWeekPromotions();
+  check('취소하면 배민 미등록', adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB, undefined);
+  check('취소하면 쿠팡 미등록', adjustments.promotion['weekly_direct_coupang_namgu_20261118']?.dAutoC, undefined);
+
+  window.confirm = () => true;
+  await Adj.registerWeekPromotions();
+  check('배민 등록 10,000', adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB?.amount, 10000);
+  check('쿠팡 등록 63,000', adjustments.promotion['weekly_direct_coupang_namgu_20261118']?.dAutoC?.amount, 63000);
+
+  await Adj.registerWeekPromotions();
+  check('다시 눌러도 배민 10,000', adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB?.amount, 10000);
+  check('다시 눌러도 쿠팡 63,000', adjustments.promotion['weekly_direct_coupang_namgu_20261118']?.dAutoC?.amount, 63000);
+
+  ERP_RESULTS.push({
+    id: 'erpNamguGap',
+    platform: 'baemin',
+    channel: 'direct',
+    startDate: autoWeek,
+    region: '표준울산남A-누락',
+    settlementId: 'baemin-gap',
+    savedAt: '2026-11-26T11:00:00',
+    summary: { totalPromotionAmount: 1 },
+    results: [
+      { matchedRiderId: 'dMissing', driverName: '없는기사', totalPromotionAmount: 1, appliedPlatform: 'baemin' }
+    ]
+  });
+  const gapPlan = Adj.buildWeekAutoRegisterPlan(autoWeek);
+  check('정산서 없는 1원도 불균형', gapPlan.balanced, 'false');
+  check('빠진 금액 1원', gapPlan.unplacedAmount, 1);
+  let alertText = '';
+  window.alert = message => { alertText = message; };
+  const beforeBaemin = adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB?.amount;
+  await Adj.registerWeekPromotions();
+  check('불균형이면 경고', /1원/.test(alertText), 'true');
+  check('불균형이면 기존 금액 유지', adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB?.amount, beforeBaemin);
 
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);
