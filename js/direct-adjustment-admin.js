@@ -2250,15 +2250,14 @@ const BremDirectAdjustmentAdmin = (function () {
 
   function renderWeekAutoDialog(plan) {
     const lines = [];
-    lines.push('<p class="direct-week-auto-section-title">이렇게 넣습니다</p>');
+    lines.push('<details class="direct-week-auto-how-box" open>');
+    lines.push('<summary>이렇게 넣습니다</summary>');
     lines.push('<ul class="direct-week-auto-how">');
-    lines.push('<li>쿠팡은 일괄등록과 같이 <strong>이름+전화 뒤 4자리</strong>로 기사와 정산서를 맞춥니다.</li>');
-    lines.push('<li>배민은 일괄등록과 같이 <strong>배민ID</strong>로 맞춥니다. 앞에 0이 있어도 같은 ID입니다.</li>');
-    lines.push('<li>정산서에 적힌 쿠팡ID·배민ID가 같으면 그 정산서 기사에게 넣습니다.</li>');
-    lines.push('<li>각 지역 적용 결과는 <strong>그 지역 정산서에만</strong> 넣습니다. 다른 지역 콜이 더 많아도 옮기지 않습니다.</li>');
-    lines.push('<li>합산 프로모션은 배민 정산서에 넣고, 쿠팡만 있는 금액은 쿠팡 정산서에 넣습니다.</li>');
-    lines.push('<li>이미 등록된 ERP 프로모션은 더하지 않고 이 금액으로 바꿉니다.</li>');
+    lines.push('<li>쿠팡은 <strong>이름+전화 뒤 4자리</strong>, 배민은 <strong>배민ID</strong>로 일괄등록과 똑같이 맞춥니다.</li>');
+    lines.push('<li>각 지역 적용분은 <strong>그 지역 정산서에만</strong> 넣고, 다른 지역으로 옮기지 않습니다.</li>');
+    lines.push('<li>합산은 배민 정산서·쿠팡만은 쿠팡 정산서로 나누고, 기존 ERP 금액은 이 금액으로 바꿉니다.</li>');
     lines.push('</ul>');
+    lines.push('</details>');
 
     lines.push('<p class="direct-week-auto-section-title">정산서에 넣는 곳</p>');
     lines.push('<table><tbody>');

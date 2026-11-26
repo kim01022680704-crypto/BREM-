@@ -3437,9 +3437,16 @@ textarea {
   font-size: 12px;
 }
 
+#directErpWeekAutoDialog {
+  width: min(560px, 94vw);
+  max-width: min(560px, 94vw);
+  max-height: 90vh;
+  padding: 0;
+  overflow: hidden;
+}
+
 .direct-week-auto-dialog {
-  width: min(720px, 94vw);
-  max-height: 88vh;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -3449,8 +3456,9 @@ textarea {
 
 .direct-week-auto-dialog > h3 {
   margin: 0;
-  padding: 18px 22px 14px;
-  font-size: 1.1rem;
+  padding: 16px 20px 13px;
+  font-size: 1.05rem;
+  flex: 0 0 auto;
   border-bottom: 1px solid var(--line, #2a2a2a);
 }
 
@@ -3459,10 +3467,10 @@ textarea {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 16px 22px;
+  padding: 14px 20px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -3474,7 +3482,21 @@ textarea {
 .direct-week-auto-section-title {
   font-weight: 700;
   font-size: 0.95rem;
-  margin: 2px 0 -4px;
+  margin: 0;
+}
+
+.direct-week-auto-how-box {
+  border: 1px solid var(--line, #2a2a2a);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.direct-week-auto-how-box > summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+  list-style: revert;
 }
 
 .direct-week-auto-body table {
@@ -3484,8 +3506,8 @@ textarea {
 }
 
 .direct-week-auto-body td {
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--line, #262626);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line, #242424);
   word-break: break-word;
   vertical-align: top;
 }
@@ -3493,26 +3515,26 @@ textarea {
 .direct-week-auto-body td.num {
   text-align: right;
   white-space: nowrap;
-  width: 42%;
+  width: 44%;
   font-variant-numeric: tabular-nums;
 }
 
 .direct-week-auto-body tr.group td {
   font-weight: 700;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.05);
   border-bottom: none;
-  padding-top: 11px;
+  padding-top: 10px;
 }
 
 .direct-week-auto-body tr.total td {
   font-weight: 700;
-  border-top: 2px solid var(--line, #333);
+  border-top: 2px solid var(--line, #3a3a3a);
   border-bottom: none;
 }
 
 .direct-week-auto-how {
-  margin: 0;
-  padding-left: 20px;
+  margin: 8px 0 0;
+  padding-left: 18px;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -3534,7 +3556,8 @@ textarea {
 }
 
 .direct-week-auto-dialog .baemin-json-dialog__actions {
-  padding: 14px 22px;
+  flex: 0 0 auto;
+  padding: 13px 20px;
   border-top: 1px solid var(--line, #2a2a2a);
   background: var(--panel, #111);
 }
