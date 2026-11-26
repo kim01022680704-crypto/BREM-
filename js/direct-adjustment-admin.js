@@ -2250,7 +2250,7 @@ const BremDirectAdjustmentAdmin = (function () {
 
   function renderWeekAutoDialog(plan) {
     const lines = [];
-    lines.push('<p>이렇게 넣습니다.</p>');
+    lines.push('<p class="direct-week-auto-section-title">이렇게 넣습니다</p>');
     lines.push('<ul class="direct-week-auto-how">');
     lines.push('<li>쿠팡은 일괄등록과 같이 <strong>이름+전화 뒤 4자리</strong>로 기사와 정산서를 맞춥니다.</li>');
     lines.push('<li>배민은 일괄등록과 같이 <strong>배민ID</strong>로 맞춥니다. 앞에 0이 있어도 같은 ID입니다.</li>');
@@ -2260,44 +2260,33 @@ const BremDirectAdjustmentAdmin = (function () {
     lines.push('<li>이미 등록된 ERP 프로모션은 더하지 않고 이 금액으로 바꿉니다.</li>');
     lines.push('</ul>');
 
-    lines.push('<p><strong>적용 결과</strong></p>');
-    lines.push('<table><tbody>');
-    plan.results.forEach(item => {
-      const total = Math.round(Number(item.summary?.totalPromotionAmount || 0));
-      const label = item.region || item.settlementLabel || platformLabel(item.platform);
-      lines.push(`<tr><td>${escapeHtml(label)}</td><td class="num">${formatNumber(total)}원</td></tr>`);
-    });
-    lines.push(`<tr><td>적용 합계</td><td class="num">${formatNumber(plan.rowTotal)}원</td></tr>`);
-    lines.push('</tbody></table>');
-
-    lines.push('<p><strong>정산서에 넣는 곳</strong></p>');
+    lines.push('<p class="direct-week-auto-section-title">정산서에 넣는 곳</p>');
     lines.push('<table><tbody>');
     ['coupang', 'baemin'].forEach(plat => {
       const group = plan.sheets.filter(sheet => sheet.settlement.platform === plat);
-      lines.push(`<tr><td colspan="2">${platformLabel(plat)}</td></tr>`);
+      lines.push(`<tr class="group"><td>${platformLabel(plat)}</td><td class="num">${formatNumber(plan.placed[plat] || 0)}원</td></tr>`);
       if (!group.length) {
-        lines.push('<tr><td colspan="2">등록할 정산서 없음</td></tr>');
+        lines.push('<tr><td>등록할 정산서 없음</td><td class="num">-</td></tr>');
       } else {
         group.forEach(sheet => {
           const region = sheet.settlement.region || sheet.settlement.fileName || sheet.settlement.id;
-          lines.push(`<tr><td>${escapeHtml(region)}</td><td class="num">${formatNumber(sheet.count)}명 ${formatNumber(sheet.total)}원</td></tr>`);
+          lines.push(`<tr><td>${escapeHtml(region)} · ${formatNumber(sheet.count)}명</td><td class="num">${formatNumber(sheet.total)}원</td></tr>`);
         });
       }
-      lines.push(`<tr><td>소계</td><td class="num">${formatNumber(plan.placed[plat] || 0)}원</td></tr>`);
     });
     const placedSum = (plan.placed.baemin || 0) + (plan.placed.coupang || 0);
-    lines.push(`<tr><td>등록 합계</td><td class="num">${formatNumber(placedSum)}원</td></tr>`);
+    lines.push(`<tr class="total"><td>등록 합계</td><td class="num">${formatNumber(placedSum)}원</td></tr>`);
     lines.push('</tbody></table>');
 
     const counts = plan.matchCounts || {};
-    lines.push(`<p>매칭 ${formatNumber(counts['쿠팡ID'] || 0)}명은 쿠팡ID, ${formatNumber(counts['배민ID'] || 0)}명은 배민ID, ${formatNumber(counts['적용기사'] || 0)}명은 적용 때 붙은 기사입니다.</p>`);
+    lines.push(`<p class="direct-week-auto-note">매칭 ${formatNumber(counts['쿠팡ID'] || 0)}명은 쿠팡ID, ${formatNumber(counts['배민ID'] || 0)}명은 배민ID, ${formatNumber(counts['적용기사'] || 0)}명은 적용 때 붙은 기사입니다.</p>`);
 
     if (plan.overlap.length) {
-      lines.push(`<p>여러 적용 결과에 겹친 기사 ${formatNumber(plan.overlap.length)}명은 금액을 더합니다.</p>`);
+      lines.push(`<p class="direct-week-auto-note">여러 적용 결과에 겹친 기사 ${formatNumber(plan.overlap.length)}명은 금액을 더합니다.</p>`);
     }
     const overwriteCount = plan.sheets.reduce((sum, sheet) => sum + sheet.overwrites.length, 0);
     if (overwriteCount) {
-      lines.push(`<p>엑셀·수기로 넣은 다른 금액 ${formatNumber(overwriteCount)}건은 이 적용 금액으로 바뀝니다.</p>`);
+      lines.push(`<p class="direct-week-auto-note">엑셀·수기로 넣은 다른 금액 ${formatNumber(overwriteCount)}건은 이 적용 금액으로 바뀝니다.</p>`);
     }
 
     if (!plan.balanced) {

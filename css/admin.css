@@ -3438,35 +3438,105 @@ textarea {
 }
 
 .direct-week-auto-dialog {
-  width: min(760px, 92vw);
+  width: min(720px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.direct-week-auto-dialog > h3 {
+  margin: 0;
+  padding: 18px 22px 14px;
+  font-size: 1.1rem;
+  border-bottom: 1px solid var(--line, #2a2a2a);
 }
 
 .direct-week-auto-body {
-  max-height: min(62vh, 560px);
-  overflow: auto;
-  display: grid;
-  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
+}
+
+.direct-week-auto-body p {
+  margin: 0;
+}
+
+.direct-week-auto-section-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin: 2px 0 -4px;
 }
 
 .direct-week-auto-body table {
   width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.direct-week-auto-body td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line, #262626);
+  word-break: break-word;
+  vertical-align: top;
+}
+
+.direct-week-auto-body td.num {
+  text-align: right;
+  white-space: nowrap;
+  width: 42%;
+  font-variant-numeric: tabular-nums;
+}
+
+.direct-week-auto-body tr.group td {
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: none;
+  padding-top: 11px;
+}
+
+.direct-week-auto-body tr.total td {
+  font-weight: 700;
+  border-top: 2px solid var(--line, #333);
+  border-bottom: none;
 }
 
 .direct-week-auto-how {
   margin: 0;
-  padding-left: 18px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 
 .direct-week-auto-block {
   color: #fbbf24;
 }
 
+.direct-week-auto-note {
+  color: var(--muted, #9aa);
+  font-size: 12px;
+}
+
 .baemin-json-dialog__actions {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.direct-week-auto-dialog .baemin-json-dialog__actions {
+  padding: 14px 22px;
+  border-top: 1px solid var(--line, #2a2a2a);
+  background: var(--panel, #111);
 }
 
 .baemin-session-status {
