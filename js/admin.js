@@ -7361,7 +7361,7 @@
       renderSettlements();
       const selectedCallFeeUnit = await requestSettlementPreviewCallFeeUnit(p);
       let outsideHint = '';
-      if (p === 'coupang') {
+      if (p === 'coupang' && window.BremOutsideCall?.outsideCallTargetFile?.(file.name) === true) {
         const countOutside = window.BremCallFeeDialog?.takeOutsideCount?.() === true;
         let summary = result.outsideSummary;
         if (window.BremSettlementParser?.readCoupangOutsideCallSums) {

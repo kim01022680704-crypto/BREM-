@@ -62,6 +62,17 @@
     };
   }
 
+  // 권외는 울산 남구 쿠팡만 센다. 파일은 119컴퍼니, 배달연합(이글스)이다.
+  function outsideCallTargetFile(fileName) {
+    const region = parseDailyFileRegion(fileName);
+    if (!region) return false;
+    const city = String(region.city || '').replace(/\s+/g, '');
+    const area = String(region.region || '').replace(/\s+/g, '');
+    if (city !== '울산' || !area.includes('남구')) return false;
+    const head = String(fileName || '').split('_')[0].replace(/\s+/g, '');
+    return head.includes('119') || head.includes('배달연합') || head.includes('이글스');
+  }
+
   function normalizeKeywordList(value) {
     const source = Array.isArray(value)
       ? value
@@ -950,6 +961,7 @@
     nameKey,
     findHeader,
     parseDailyFileRegion,
+    outsideCallTargetFile,
     normalizeKeywordList,
     keywordSpec,
     keywordsReady,

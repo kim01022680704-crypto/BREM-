@@ -2565,6 +2565,9 @@ const BremWeeklySettlement = (function () {
 
   async function auditCoupangOutsideCalls(file, password, record) {
     if (!file || !window.BremOutsideCall?.sumFromSheetRows || !record) return [];
+    const outsideFileName = file?.name || record.fileName || '';
+    if (window.BremOutsideCall.outsideCallTargetFile
+      && !window.BremOutsideCall.outsideCallTargetFile(outsideFileName)) return [];
     let rows;
     try {
       rows = await readWeeklyRows(file, password, {

@@ -89,7 +89,8 @@
     const outsideHelp = $('#callFeeSetupOutsideHelp');
     const outsideBox = $('#callFeeSetupOutsideCount');
     const showOutside = options.kind !== 'weekly'
-      && String(options.platform || '').toLowerCase() === 'coupang';
+      && String(options.platform || '').toLowerCase() === 'coupang'
+      && window.BremOutsideCall?.outsideCallTargetFile?.(options.fileName) === true;
     outsideCount = false;
     if (outsideWrap) outsideWrap.hidden = !showOutside;
     if (outsideHelp) outsideHelp.hidden = !showOutside;
