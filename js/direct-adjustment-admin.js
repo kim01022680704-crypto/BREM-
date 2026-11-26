@@ -2432,9 +2432,15 @@ const BremDirectAdjustmentAdmin = (function () {
     const bulk = window.BremDirectAdjustmentBulk;
     const sheets = weekDirectSettlements(key)
       .filter(record => record.platform === 'baemin' || record.platform === 'coupang');
+    // 배민 매칭에는 쿠팡 로그인키를, 쿠팡 매칭에는 배민ID를 쓰지 않는다.
+    // 안 그러면 쿠팡 로그인키가 배민 정산서에도 걸려 "둘 다 맞음"으로 빠진다.
     const ridersByPlat = {
-      baemin: sheets.filter(s => s.platform === 'baemin').flatMap(s => Array.isArray(s.riders) ? s.riders : []),
-      coupang: sheets.filter(s => s.platform === 'coupang').flatMap(s => Array.isArray(s.riders) ? s.riders : [])
+      baemin: sheets.filter(s => s.platform === 'baemin')
+        .flatMap(s => Array.isArray(s.riders) ? s.riders : [])
+        .map(rider => ({ ...rider, coupangLoginKey: '' })),
+      coupang: sheets.filter(s => s.platform === 'coupang')
+        .flatMap(s => Array.isArray(s.riders) ? s.riders : [])
+        .map(rider => ({ ...rider, baeminUserId: '' }))
     };
 
     const buckets = new Map(); // sheetId -> Map(driverId -> { amount, name, platform })
