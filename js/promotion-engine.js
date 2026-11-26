@@ -973,11 +973,14 @@ const BremPromotionEngine = (function () {
     });
 
     if (!block.passed) {
+      // 거절율·수락률로 기본 지급이 막혀도 권외콜 가산은 건수대로 준다.
+      const outsideResult = calculateOutsideCallPay(rule, riderData);
+      const outsideCallBonus = outsideResult.amount || 0;
       return {
         ruleId: rule.id,
         ruleName: rule.name,
-        eligible: false,
-        status: '미지급',
+        eligible: outsideCallBonus > 0,
+        status: outsideCallBonus > 0 ? '지급' : '미지급',
         failureReasons: block.reasons,
         blockReasons: block.reasons,
         reason: block.reasons.join(', '),
@@ -991,8 +994,11 @@ const BremPromotionEngine = (function () {
         perCallBonus: 0,
         guaranteeBonus: 0,
         distanceBonus: 0,
-        totalBonus: 0,
+        outsideCallBonus,
+        outsideCallCount: outsideResult.count || 0,
+        totalBonus: outsideCallBonus,
         paidCallCount: 0,
+        appliedBlockConditions: (outsideResult.labels || []).map(name => ({ name })),
         appliedBonusConditions: [],
         failedBonusConditions: (rule.bonusConditions || []).map(item => ({
           name: BremPromotionConditions?.formatConditionLabel

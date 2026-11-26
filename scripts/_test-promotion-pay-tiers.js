@@ -379,5 +379,58 @@ console.log('\n[10] 건당 미션 없이 총콜 가산만 있어도 구간 금�
   check('29콜은 가산 0원', run(29).totalBonus, 0);
 }
 
+console.log('\n[11] 권외콜 21건부터 건당 1,000원. 거절율로 기본이 막혀도 가산은 남긴다');
+{
+  const outsideEnv = loadModules(
+    ['js/outside-call.js', 'js/promotion-conditions.js', 'js/promotion-engine.js'],
+    {},
+    ['BremOutsideCall', 'BremPromotionConditions', 'BremPromotionEngine']
+  );
+  const outsideEngine = outsideEnv.BremPromotionEngine;
+  const rule = makeRule({
+    platform: 'coupang',
+    base: {
+      payStartCallCount: 101,
+      payPerCall: 1200,
+      outsideCallAddon: { startCount: 21, amountPerCall: 1000 }
+    },
+    blockConditions: [{
+      id: 'reject',
+      conditionType: 'reject_rate_over',
+      processingMode: 'block',
+      rateThreshold: 15
+    }]
+  });
+  const run = (totalOrders, outsideCallCount, platformRate) => outsideEngine.calculatePromotionForRider(rule, {
+    driverId: 'd1',
+    platform: 'coupang',
+    totalOrders,
+    outsideCallCount,
+    platformRate,
+    dailyOrders: [],
+    weekStart: '2026-11-18',
+    weekEnd: '2026-11-24',
+    selectedPromotionRuleId: rule.id
+  }, SETTINGS);
+  const paid = run(380, 83, 8);
+  check('83건은 63,000원', paid.outsideCallBonus, 63000);
+  check('기본과 권외가 총액에 같이 있다', paid.totalBonus, (380 - 101 + 1) * 1200 + 63000);
+  check('20건은 가산 0원', run(200, 20, 8).outsideCallBonus, 0);
+  const blocked = run(109, 25, 18.8);
+  check('거절율 초과여도 기본은 0원', blocked.basePay, 0);
+  check('거절율 초과여도 권외 25건은 5,000원', blocked.outsideCallBonus, 5000);
+  check('거절율 초과여도 총액은 권외 금액', blocked.totalBonus, 5000);
+  check('배민은 권외 가산 없음', run(200, 40, 95) && outsideEngine.calculatePromotionForRider(rule, {
+    driverId: 'd1',
+    platform: 'baemin',
+    totalOrders: 200,
+    outsideCallCount: 40,
+    platformRate: 95,
+    dailyOrders: [],
+    weekStart: '2026-11-18',
+    weekEnd: '2026-11-24'
+  }, SETTINGS).outsideCallBonus, 0);
+}
+
 console.log(`\n결과: ${pass}건 통과, ${fail}건 실패`);
 process.exit(fail ? 1 : 0);

@@ -1006,6 +1006,12 @@ const BremPromotionApply = (function () {
     });
   }
 
+  function extraPayFromEngine(result) {
+    return Number(result?.bonusPay || 0)
+      + Number(result?.distanceBonus || 0)
+      + Number(result?.outsideCallBonus || 0);
+  }
+
   function mergeAppliedConditionNames(result) {
     const names = [
       ...(result?.appliedBlockConditions || []).map(item => item.name),
@@ -1191,7 +1197,7 @@ const BremPromotionApply = (function () {
       ruleId: rule.id,
       ruleName: rule.name,
       basePromotionAmount: Number(result.basePay || result.perCallBonus || 0),
-      extraPromotionAmount: Number(result.bonusPay || 0) + Number(result.distanceBonus || 0),
+      extraPromotionAmount: extraPayFromEngine(result),
       distancePromotionAmount: Number(result.distanceBonus || 0),
       totalPromotionAmount: Number(result.totalBonus || 0),
       appliedConditions: mergeAppliedConditionNames(result),
@@ -1557,7 +1563,7 @@ const BremPromotionApply = (function () {
       ruleId: rule.id,
       ruleName: rule.name,
       basePromotionAmount: Number(result.basePay || result.perCallBonus || 0),
-      extraPromotionAmount: Number(result.bonusPay || 0) + Number(result.distanceBonus || 0),
+      extraPromotionAmount: extraPayFromEngine(result),
       distancePromotionAmount: Number(result.distanceBonus || 0),
       totalPromotionAmount,
       appliedConditions: mergeAppliedConditionNames(result),
@@ -1897,7 +1903,7 @@ const BremPromotionApply = (function () {
     const engineTotal = Number(result.totalBonus || 0);
     const distancePromotionAmount = Number(result.distanceBonus || 0);
     const basePromotionAmount = Number(result.basePay || result.perCallBonus || 0);
-    const extraPromotionAmount = Number(result.bonusPay || 0) + distancePromotionAmount;
+    const extraPromotionAmount = extraPayFromEngine(result);
     const totalPromotionAmount = Math.max(0, engineTotal - engineGuarantee + finalGuarantee);
 
     return {

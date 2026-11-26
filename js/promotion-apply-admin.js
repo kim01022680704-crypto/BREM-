@@ -1826,6 +1826,17 @@ const BremPromotionApplyAdmin = (function () {
     }
   }
 
+  async function ensureWeekSettlementsForPromotion(startDate, endDate) {
+    const start = String(startDate || '').slice(0, 10);
+    const end = String(endDate || startDate || '').slice(0, 10);
+    if (!start || !BremStorage.ensureSettlementsSinceDate) return;
+    // 권외 가산은 일정산 건수를 본다. 화면을 연 뒤 건수가 바뀌어도 적용 때 그 주를 다시 읽는다.
+    await BremStorage.ensureSettlementsSinceDate(start, {
+      untilDate: end || start,
+      force: true
+    });
+  }
+
   async function runCalculation(options = {}) {
     const platform = getActivePlatform();
     const assignmentMode = readApplyMode(platform);
@@ -1946,6 +1957,11 @@ const BremPromotionApplyAdmin = (function () {
           }
           coupangForCalc = BremPromotionApply.mergePartSettlementsList([coupangSettlement, second], coupangSettlement);
         }
+        const outsideDates = [coupangForCalc.startDate, coupangForCalc.endDate, baeminForCalc.startDate, baeminForCalc.endDate]
+          .map(value => String(value || '').slice(0, 10))
+          .filter(Boolean)
+          .sort();
+        await ensureWeekSettlementsForPromotion(outsideDates[0], outsideDates[outsideDates.length - 1]);
         state.lastResult = BremPromotionApply.applyPromotionToCombinedSettlements(
           coupangForCalc,
           baeminForCalc,
@@ -2020,6 +2036,7 @@ const BremPromotionApplyAdmin = (function () {
           }
           settlementForCalc = BremPromotionApply.mergePartSettlementsList([settlement, second], settlement);
         }
+        await ensureWeekSettlementsForPromotion(settlementForCalc.startDate, settlementForCalc.endDate);
         state.lastResult = BremPromotionApply.applyPromotionToSettlement(
           settlementForCalc,
           ruleIds,
