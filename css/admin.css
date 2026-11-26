@@ -3499,37 +3499,47 @@ textarea {
   list-style: revert;
 }
 
-.direct-week-auto-body table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
+.direct-week-auto-list {
+  display: flex;
+  flex-direction: column;
 }
 
-.direct-week-auto-body td {
-  padding: 6px 10px;
+.dwa-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 6px 2px;
   border-bottom: 1px solid var(--line, #242424);
-  word-break: break-word;
-  vertical-align: top;
 }
 
-.direct-week-auto-body td.num {
+.dwa-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.dwa-amt {
+  flex: 0 0 auto;
   text-align: right;
   white-space: nowrap;
-  width: 44%;
   font-variant-numeric: tabular-nums;
 }
 
-.direct-week-auto-body tr.group td {
+.dwa-group {
   font-weight: 700;
   background: rgba(255, 255, 255, 0.05);
   border-bottom: none;
-  padding-top: 10px;
+  margin-top: 4px;
+  padding: 8px;
+  border-radius: 6px;
 }
 
-.direct-week-auto-body tr.total td {
+.dwa-total {
   font-weight: 700;
   border-top: 2px solid var(--line, #3a3a3a);
   border-bottom: none;
+  padding-top: 9px;
 }
 
 .direct-week-auto-how {

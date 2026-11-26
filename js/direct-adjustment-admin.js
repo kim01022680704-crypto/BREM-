@@ -2260,22 +2260,22 @@ const BremDirectAdjustmentAdmin = (function () {
     lines.push('</details>');
 
     lines.push('<p class="direct-week-auto-section-title">정산서에 넣는 곳</p>');
-    lines.push('<table><tbody>');
+    lines.push('<div class="direct-week-auto-list">');
     ['coupang', 'baemin'].forEach(plat => {
       const group = plan.sheets.filter(sheet => sheet.settlement.platform === plat);
-      lines.push(`<tr class="group"><td>${platformLabel(plat)}</td><td class="num">${formatNumber(plan.placed[plat] || 0)}원</td></tr>`);
+      lines.push(`<div class="dwa-row dwa-group"><span class="dwa-name">${platformLabel(plat)}</span><span class="dwa-amt">${formatNumber(plan.placed[plat] || 0)}원</span></div>`);
       if (!group.length) {
-        lines.push('<tr><td>등록할 정산서 없음</td><td class="num">-</td></tr>');
+        lines.push('<div class="dwa-row"><span class="dwa-name">등록할 정산서 없음</span><span class="dwa-amt">-</span></div>');
       } else {
         group.forEach(sheet => {
           const region = sheet.settlement.region || sheet.settlement.fileName || sheet.settlement.id;
-          lines.push(`<tr><td>${escapeHtml(region)} · ${formatNumber(sheet.count)}명</td><td class="num">${formatNumber(sheet.total)}원</td></tr>`);
+          lines.push(`<div class="dwa-row"><span class="dwa-name">${escapeHtml(region)} · ${formatNumber(sheet.count)}명</span><span class="dwa-amt">${formatNumber(sheet.total)}원</span></div>`);
         });
       }
     });
     const placedSum = (plan.placed.baemin || 0) + (plan.placed.coupang || 0);
-    lines.push(`<tr class="total"><td>등록 합계</td><td class="num">${formatNumber(placedSum)}원</td></tr>`);
-    lines.push('</tbody></table>');
+    lines.push(`<div class="dwa-row dwa-total"><span class="dwa-name">등록 합계</span><span class="dwa-amt">${formatNumber(placedSum)}원</span></div>`);
+    lines.push('</div>');
 
     const counts = plan.matchCounts || {};
     lines.push(`<p class="direct-week-auto-note">매칭 ${formatNumber(counts['쿠팡ID'] || 0)}명은 쿠팡ID, ${formatNumber(counts['배민ID'] || 0)}명은 배민ID, ${formatNumber(counts['적용기사'] || 0)}명은 적용 때 붙은 기사입니다.</p>`);
