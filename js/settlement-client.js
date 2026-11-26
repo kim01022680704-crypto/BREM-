@@ -931,7 +931,7 @@ const BremSettlementParser = (function () {
       : null;
     (Array.isArray(records) ? records : []).forEach(row => {
       if (!byName) {
-        row.outsideCallCount = 0;
+        delete row.outsideCallCount;
         return;
       }
       const key = coupangDistanceKey(row.rawName || row.name);

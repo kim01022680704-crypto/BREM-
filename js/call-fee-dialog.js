@@ -95,7 +95,7 @@
     if (outsideHelp) outsideHelp.hidden = !showOutside;
     if (outsideBox) {
       outsideBox.hidden = !showOutside;
-      outsideBox.checked = false;
+      outsideBox.checked = true;
     }
     input.removeAttribute('aria-invalid');
     input.value = initial == null ? '' : String(initial);

@@ -878,7 +878,8 @@
     }
     const key = String(text || '').replace(/\s+/g, ' ').trim();
     const point = points.get(key);
-    if (!point) return true;
+    // 좌표가 없으면 권역 키워드로 판단한다. 안으로 두면 나중에 좌표가 생겼을 때 주정산만 권외로 바뀐다.
+    if (!point) return isInsideAddress(text, spec);
     return pointInRings(point.lat, point.lng, border);
   }
 
