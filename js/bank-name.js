@@ -64,6 +64,10 @@
     return ALIAS[key] || raw;
   }
 
+  function normalizeAccountNumber(value) {
+    return String(value || '').replace(/\D/g, '');
+  }
+
   const INPUT_IDS = [
     'driverBankName',
     'driverEditBankName',
@@ -72,23 +76,49 @@
     'driverRegionBulkCreateBankName'
   ];
 
+  const ACCOUNT_INPUT_IDS = [
+    'driverAccountNumber',
+    'driverEditAccountNumber',
+    'driverWithdrawalAccountNumber',
+    'settlementMatchAccountNumber',
+    'driverRegionBulkCreateAccountNumber'
+  ];
+
   function applyInput(input) {
     if (!input) return;
     const next = normalizeBankName(input.value);
     if (next !== input.value) input.value = next;
   }
 
+  function applyAccountInput(input) {
+    if (!input) return;
+    const next = normalizeAccountNumber(input.value);
+    if (next === input.value) return;
+    const atEnd = input.selectionStart === input.value.length;
+    input.value = next;
+    if (atEnd && input.setSelectionRange) input.setSelectionRange(next.length, next.length);
+  }
+
   function bindBankNameInputs() {
     if (typeof document === 'undefined' || document.documentElement?.dataset?.bremBankBound === '1') return;
     document.documentElement.dataset.bremBankBound = '1';
-    const applyKnown = () => INPUT_IDS.forEach(id => applyInput(document.getElementById(id)));
+    const applyKnown = () => {
+      INPUT_IDS.forEach(id => applyInput(document.getElementById(id)));
+      ACCOUNT_INPUT_IDS.forEach(id => applyAccountInput(document.getElementById(id)));
+    };
+    document.addEventListener('input', event => {
+      const id = event.target && event.target.id;
+      if (ACCOUNT_INPUT_IDS.includes(id)) applyAccountInput(event.target);
+    }, true);
     document.addEventListener('blur', event => {
       const id = event.target && event.target.id;
       if (INPUT_IDS.includes(id)) applyInput(event.target);
+      if (ACCOUNT_INPUT_IDS.includes(id)) applyAccountInput(event.target);
     }, true);
     document.addEventListener('change', event => {
       const id = event.target && event.target.id;
       if (INPUT_IDS.includes(id)) applyInput(event.target);
+      if (ACCOUNT_INPUT_IDS.includes(id)) applyAccountInput(event.target);
     }, true);
     document.addEventListener('submit', applyKnown, true);
     applyKnown();
@@ -102,5 +132,5 @@
     }
   }
 
-  return { normalizeBankName, bindBankNameInputs };
+  return { normalizeBankName, normalizeAccountNumber, bindBankNameInputs };
 });

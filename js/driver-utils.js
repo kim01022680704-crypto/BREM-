@@ -499,7 +499,9 @@ window.BremDriverUtils = (function () {
         ? window.BremBankName.normalizeBankName(raw.bankName)
         : String(raw.bankName || '').trim()),
       accountHolder: String(raw.accountHolder || '').trim(),
-      accountNumber: String(raw.accountNumber || '').trim(),
+      accountNumber: (window.BremBankName && window.BremBankName.normalizeAccountNumber
+        ? window.BremBankName.normalizeAccountNumber(raw.accountNumber)
+        : String(raw.accountNumber || '').replace(/\D/g, '')),
       baeminId: String(raw.baeminId || '').trim().replace(/\s/g, ''),
       platformCoupangRaw: raw.platformCoupangRaw,
       platformBaeminRaw: raw.platformBaeminRaw,

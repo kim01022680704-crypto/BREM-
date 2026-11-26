@@ -1,5 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
-const { normalizeBankName } = require('../js/bank-name');
+const { normalizeBankName, normalizeAccountNumber } = require('../js/bank-name');
 const { getServiceClient } = require('./admin-bootstrap');
 const {
   RIDER_LOGIN_LOOKUP_SELECT,
@@ -743,10 +743,10 @@ async function updateRiderProfile(accessToken, body = {}) {
   if (raw.accountEditLocked && (bankName !== undefined || accountHolder !== undefined || accountNumber !== undefined)) {
     const nextBank = bankName === undefined ? normalizeBankName(rider.bank_name) : normalizeBankName(bankName);
     const nextHolder = accountHolder === undefined ? String(rider.account_holder || '').trim() : String(accountHolder || '').trim();
-    const nextNumber = accountNumber === undefined ? String(rider.account_number || '').trim() : String(accountNumber || '').trim();
+    const nextNumber = accountNumber === undefined ? normalizeAccountNumber(rider.account_number) : normalizeAccountNumber(accountNumber);
     const changed = nextBank !== normalizeBankName(rider.bank_name)
       || nextHolder !== String(rider.account_holder || '').trim()
-      || nextNumber !== String(rider.account_number || '').trim();
+      || nextNumber !== normalizeAccountNumber(rider.account_number);
     if (changed) {
       return { ok: false, status: 400, error: '계좌 수정이 잠겨 있습니다. 관리자에게 잠금 해제를 요청하세요.' };
     }
@@ -761,7 +761,7 @@ async function updateRiderProfile(accessToken, body = {}) {
     raw.accountHolder = updatePayload.account_holder;
   }
   if (accountNumber !== undefined) {
-    updatePayload.account_number = String(accountNumber || '').trim();
+    updatePayload.account_number = normalizeAccountNumber(accountNumber);
     raw.accountNumber = updatePayload.account_number;
   }
   if (residentNumber !== undefined) {

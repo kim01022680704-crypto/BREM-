@@ -1,5 +1,5 @@
 const { getServiceClient } = require('./admin-bootstrap');
-const { normalizeBankName } = require('../js/bank-name');
+const { normalizeBankName, normalizeAccountNumber } = require('../js/bank-name');
 const { verifyAdminCaller } = require('./admin-users');
 const { provisionRiderAuthAccount, readRiderSecrets } = require('./rider-auth');
 const {
@@ -393,6 +393,7 @@ function riderToRow(driver) {
   }
 
   source.bankName = normalizeBankName(source.bankName);
+  source.accountNumber = normalizeAccountNumber(source.accountNumber);
   return {
     id: String(source.id || ''),
     auth_user_id: source.authUserId || null,
@@ -401,7 +402,7 @@ function riderToRow(driver) {
     resident_number: String(source.residentNumber || ''),
     bank_name: source.bankName,
     account_holder: String(source.accountHolder || '').trim(),
-    account_number: String(source.accountNumber || '').trim(),
+    account_number: source.accountNumber,
     baemin_id: normalizePlatformId(source.baeminId),
     platform_coupang: source.platformCoupang !== false,
     platform_baemin: Boolean(source.platformBaemin),
@@ -547,7 +548,7 @@ async function preserveLockedAccountOnUpsert(supabase, row, rider) {
   }
   const bank = normalizeBankName(existing.bank_name || stored.bankName || '');
   const holder = String(existing.account_holder || stored.accountHolder || '').trim();
-  const number = String(existing.account_number || stored.accountNumber || '').trim();
+  const number = normalizeAccountNumber(existing.account_number || stored.accountNumber || '');
   row.bank_name = bank;
   row.account_holder = holder;
   row.account_number = number;
@@ -701,7 +702,7 @@ function dbRowToDriver(row) {
     residentNumber: row.resident_number || raw.residentNumber || '',
     bankName: normalizeBankName(row.bank_name || raw.bankName || ''),
     accountHolder: row.account_holder || '',
-    accountNumber: row.account_number || '',
+    accountNumber: normalizeAccountNumber(row.account_number || raw.accountNumber || ''),
     baeminId: row.baemin_id || '',
     platformCoupang: row.platform_coupang !== false,
     platformBaemin: Boolean(row.platform_baemin),

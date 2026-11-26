@@ -124,7 +124,7 @@ function fakeSupabase({ rows = [], failRead = false } = {}) {
     { id: 'd-1', bulkFillPatch: true, accountNumber: '123-456-789' }
   ]);
   const row2 = T.riderToRow(expanded[0]);
-  check('계좌번호 채워짐', row2.account_number, '123-456-789');
+  check('계좌번호 채워짐', row2.account_number, '123456789');
   check('이름 보존', row2.name, '홍길동');
   check('배민ID 보존', row2.baemin_id, 'hong123');
   const [kept2] = await T.preserveProtectedFieldsOnBulkUpsert(fakeSupabase({ rows: [existingRow()] }), [row2]);

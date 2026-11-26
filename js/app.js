@@ -271,7 +271,8 @@
   }
 
   function stripAccountHyphens(value) {
-    return String(value || '').replace(/[-\s]/g, '');
+    if (window.BremBankName?.normalizeAccountNumber) return window.BremBankName.normalizeAccountNumber(value);
+    return String(value || '').replace(/\D/g, '');
   }
 
   function updateLoginIdPreview() {

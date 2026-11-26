@@ -208,7 +208,7 @@
     const joinDate = today();
     const status = '근무중';
     const memo = String(raw.memo || '').trim();
-    const accountNumber = String(raw.accountNumber || '').trim();
+    const accountNumber = String(raw.accountNumber || '').replace(/\D/g, '');
     const bankName = String(raw.bankName || '').trim();
     const accountHolder = String(raw.accountHolder || '').trim();
     const longEventStartDate = parseExcelDate(raw.longEventStartDate);

@@ -32,9 +32,16 @@ window.BremSupabaseMapper = (function () {
     return fn ? fn(value) : String(value || '').trim();
   }
 
+  function canonicalAccountNumber(value) {
+    const fn = typeof window !== 'undefined' && window.BremBankName && window.BremBankName.normalizeAccountNumber;
+    return fn ? fn(value) : String(value || '').replace(/\D/g, '');
+  }
+
   function riderToRow(driver) {
     const bankName = canonicalBankName(driver && driver.bankName);
+    const accountNumber = canonicalAccountNumber(driver && driver.accountNumber);
     if (driver && bankName !== String(driver.bankName || '')) driver.bankName = bankName;
+    if (driver && accountNumber !== String(driver.accountNumber || '')) driver.accountNumber = accountNumber;
     return {
       id: String(driver.id || ''),
       auth_user_id: driver.authUserId || null,
@@ -43,7 +50,7 @@ window.BremSupabaseMapper = (function () {
       resident_number: String(driver.residentNumber || ''),
       bank_name: bankName,
       account_holder: String(driver.accountHolder || ''),
-      account_number: String(driver.accountNumber || ''),
+      account_number: accountNumber,
       baemin_id: String(driver.baeminId || ''),
       platform_coupang: driver.platformCoupang !== false,
       platform_baemin: Boolean(driver.platformBaemin),
@@ -116,7 +123,7 @@ window.BremSupabaseMapper = (function () {
       password: String(raw.password ?? '').trim() || '1234',
       bankName: canonicalBankName(row.bank_name || raw.bankName || ''),
       accountHolder: row.account_holder || raw.accountHolder || '',
-      accountNumber: row.account_number || raw.accountNumber || '',
+      accountNumber: canonicalAccountNumber(row.account_number || raw.accountNumber || ''),
       baeminId: String(row.baemin_id || raw.baeminId || raw.baemin_id || '').trim(),
       platformCoupang: row.platform_coupang !== false,
       platformBaemin: Boolean(row.platform_baemin),

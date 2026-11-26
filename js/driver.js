@@ -2320,7 +2320,9 @@
     }
 
     if (!accountHidden && !accountLocked) {
-      changes.accountNumber = document.getElementById('driverEditAccountNumber').value.trim();
+      changes.accountNumber = window.BremBankName?.normalizeAccountNumber
+        ? window.BremBankName.normalizeAccountNumber(document.getElementById('driverEditAccountNumber').value)
+        : String(document.getElementById('driverEditAccountNumber').value || '').replace(/\D/g, '');
     }
 
     const currentPassword = normalizePassword(document.getElementById('driverEditCurrentPassword').value);

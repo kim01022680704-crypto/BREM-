@@ -683,7 +683,9 @@
       showToast('기사 정보를 찾을 수 없습니다. 다시 로그인해 주세요.');
       return;
     }
-    const accountNumber = String(accountNumberInput?.value || '').trim();
+    const accountNumber = window.BremBankName?.normalizeAccountNumber
+      ? window.BremBankName.normalizeAccountNumber(accountNumberInput?.value || '')
+      : String(accountNumberInput?.value || '').replace(/\D/g, '');
     if (!accountNumber) {
       showToast('계좌번호를 입력하세요.');
       accountNumberInput?.focus();
