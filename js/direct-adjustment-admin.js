@@ -1916,6 +1916,13 @@ const BremDirectAdjustmentAdmin = (function () {
     $('#directErpSelectAllChk')?.addEventListener('change', event => toggleErpSelectAll(event.target.checked));
     $('#directErpApplyBtn')?.addEventListener('click', applyErp);
     $('#directErpWeekAutoBtn')?.addEventListener('click', () => { void registerWeekPromotions(); });
+    const weekAutoEls = weekAutoDialogEls();
+    weekAutoEls.apply?.addEventListener('click', () => closeWeekAutoDialog(true));
+    weekAutoEls.cancel?.addEventListener('click', () => closeWeekAutoDialog(false));
+    weekAutoEls.dialog?.addEventListener('cancel', event => {
+      event.preventDefault();
+      closeWeekAutoDialog(false);
+    });
 
     const notInEls = erpNotInDialogEls();
     notInEls.apply?.addEventListener('click', () => confirmErpNotInDialog());
@@ -1999,6 +2006,68 @@ const BremDirectAdjustmentAdmin = (function () {
     }
   }
 
+  function promoIdentityValues(row, platform) {
+    return platform === 'coupang'
+      ? [row?.coupangLoginKey, row?.displayName, row?.originalName]
+      : [row?.baeminUserId];
+  }
+
+  function sheetRidersOf(records) {
+    const riders = [];
+    records.forEach(record => {
+      (Array.isArray(record?.riders) ? record.riders : []).forEach(rider => riders.push(rider));
+    });
+    return riders;
+  }
+
+  // 일괄등록과 같다. 쿠팡은 이름+전화 뒤 4자리, 배민은 배민ID.
+  // 정산서에 적힌 같은 ID도 기사로 연결한다.
+  function resolveWeekDriver(row, platform, sheetRiders) {
+    const drivers = driversList();
+    const bulk = window.BremDirectAdjustmentBulk;
+    const storedId = String(row?.matchedRiderId || '').trim();
+    const stored = drivers.find(item => item.id === storedId) || null;
+    const label = platform === 'coupang' ? '쿠팡ID' : '배민ID';
+    const nameOf = row?.displayName || row?.driverName || '';
+    const dedicated = platform === 'coupang' ? [row?.coupangLoginKey] : [row?.baeminUserId];
+    const extra = stored ? [] : (platform === 'coupang' ? [row?.displayName, row?.originalName] : []);
+    let idMatch = null;
+    if (typeof bulk?.matchRow === 'function') {
+      for (const raw of [...dedicated, ...extra]) {
+        const text = String(raw || '').trim();
+        if (!text) continue;
+        const found = bulk.matchRow(text, drivers, platform, { settlementRiders: sheetRiders });
+        if (found?.status === 'duplicate') {
+          return { ok: false, name: nameOf || text, conflict: `${text} 와 같은 ID의 기사가 여러 명입니다` };
+        }
+        if (found?.status === 'matched' && found.driverId) {
+          idMatch = found;
+          break;
+        }
+      }
+    }
+    if (stored && idMatch && stored.id !== idMatch.driverId) {
+      return {
+        ok: false,
+        name: nameOf || stored.name || idMatch.driverName || '',
+        conflict: `적용 기사 ${stored.name || storedId} 와 ${label} ${idMatch.driverName || idMatch.driverId} 가 다릅니다`
+      };
+    }
+    if (idMatch) {
+      return {
+        ok: true,
+        driverId: idMatch.driverId,
+        name: idMatch.driverName || stored?.name || nameOf,
+        how: label
+      };
+    }
+    if (stored) {
+      return { ok: true, driverId: stored.id, name: stored.name || nameOf, how: '적용기사' };
+    }
+    const shown = promoIdentityValues(row, platform).map(value => String(value || '').trim()).find(Boolean) || nameOf || '이름없음';
+    return { ok: false, name: shown, conflict: '' };
+  }
+
   function pickHomeSettlement(records, driverId) {
     let best = null;
     records.forEach(record => {
@@ -2026,48 +2095,72 @@ const BremDirectAdjustmentAdmin = (function () {
 
     const buckets = new Map();
     const unplaced = [];
+    const conflicts = [];
     const splitGaps = [];
     const overlap = [];
     const expected = { baemin: 0, coupang: 0 };
+    const matchCounts = { 쿠팡ID: 0, 배민ID: 0, 적용기사: 0 };
     let rowTotal = 0;
     let skippedUnmatched = 0;
     const seen = new Set();
+    const sheetRiders = {
+      baemin: sheetRidersOf(byPlat.baemin),
+      coupang: sheetRidersOf(byPlat.coupang)
+    };
 
     results.forEach(item => {
       (Array.isArray(item.results) ? item.results : []).forEach(row => {
         const rowSum = Math.round(Number(row.totalPromotionAmount || 0));
         if (!rowSum) return;
         rowTotal += rowSum;
-        const driverId = String(row.matchedRiderId || '').trim();
-        if (!driverId) {
-          skippedUnmatched += rowSum;
-          return;
-        }
-        const name = row.driverName || row.displayName || driverName(driverId);
+        const name = row.driverName || row.displayName || '';
         const parts = {
           baemin: amountForSettlementPlatform(row, item, 'baemin'),
           coupang: amountForSettlementPlatform(row, item, 'coupang')
         };
         if (parts.baemin + parts.coupang !== rowSum) {
-          splitGaps.push({ name, rowSum, baemin: parts.baemin, coupang: parts.coupang });
+          splitGaps.push({ name: name || '이름없음', rowSum, baemin: parts.baemin, coupang: parts.coupang });
         }
         ['baemin', 'coupang'].forEach(plat => {
           const amount = parts[plat];
           if (!amount) return;
           expected[plat] += amount;
-          const home = pickHomeSettlement(byPlat[plat], driverId);
-          if (!home) {
-            unplaced.push({ driverId, name, platform: plat, amount });
+          const resolved = resolveWeekDriver(row, plat, sheetRiders[plat]);
+          const resolvedName = resolved.name || name || driverName(resolved.driverId);
+          if (!resolved.ok || !resolved.driverId) {
+            if (resolved.conflict) {
+              conflicts.push({ name: resolvedName, platform: plat, amount, reason: resolved.conflict });
+            }
+            skippedUnmatched += amount;
+            unplaced.push({
+              driverId: '',
+              name: resolvedName,
+              platform: plat,
+              amount,
+              reason: resolved.conflict || `${plat === 'coupang' ? '쿠팡ID' : '배민ID'} 매칭 없음`
+            });
             return;
           }
-          const mark = `${home.id}|${driverId}`;
-          if (seen.has(mark)) overlap.push({ name, platform: plat, amount });
+          const home = pickHomeSettlement(byPlat[plat], resolved.driverId);
+          if (!home) {
+            unplaced.push({
+              driverId: resolved.driverId,
+              name: resolvedName,
+              platform: plat,
+              amount,
+              reason: '이번 주 정산서에 없음'
+            });
+            return;
+          }
+          matchCounts[resolved.how] = (matchCounts[resolved.how] || 0) + 1;
+          const mark = `${home.id}|${resolved.driverId}`;
+          if (seen.has(mark)) overlap.push({ name: resolvedName, platform: plat, amount });
           seen.add(mark);
           if (!buckets.has(home.id)) buckets.set(home.id, new Map());
           const bag = buckets.get(home.id);
-          const prev = bag.get(driverId) || { amount: 0, name };
+          const prev = bag.get(resolved.driverId) || { amount: 0, name: resolvedName, how: resolved.how };
           prev.amount += amount;
-          bag.set(driverId, prev);
+          bag.set(resolved.driverId, prev);
         });
       });
     });
@@ -2103,6 +2196,7 @@ const BremDirectAdjustmentAdmin = (function () {
 
     const unplacedAmount = unplaced.reduce((sum, item) => sum + item.amount, 0);
     const balanced = skippedUnmatched === 0
+      && conflicts.length === 0
       && splitGaps.length === 0
       && unplacedAmount === 0
       && placed.baemin === expected.baemin
@@ -2120,70 +2214,129 @@ const BremDirectAdjustmentAdmin = (function () {
       unplacedAmount,
       splitGaps,
       overlap,
+      conflicts,
+      matchCounts,
       skippedUnmatched,
       balanced
     };
   }
 
-  function weekAutoConfirmText(plan) {
-    const lines = [`${formatDate(plan.week)} 주 프로모션 적용분을 배민·쿠팡 정산서에 등록합니다.`];
-    lines.push('');
-    lines.push('적용 결과');
+  function weekAutoDialogEls() {
+    return {
+      dialog: $('#directErpWeekAutoDialog'),
+      body: $('#directErpWeekAutoBody'),
+      apply: $('#directErpWeekAutoApplyBtn'),
+      cancel: $('#directErpWeekAutoCancelBtn')
+    };
+  }
+
+  let weekAutoResolver = null;
+
+  function closeWeekAutoDialog(accepted) {
+    const dialog = weekAutoDialogEls().dialog;
+    if (dialog?.open && typeof dialog.close === 'function') dialog.close();
+    else dialog?.removeAttribute('open');
+    const resolve = weekAutoResolver;
+    weekAutoResolver = null;
+    resolve?.(accepted === true);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function renderWeekAutoDialog(plan) {
+    const lines = [];
+    lines.push('<p>이렇게 넣습니다.</p>');
+    lines.push('<ul class="direct-week-auto-how">');
+    lines.push('<li>쿠팡은 일괄등록과 같이 <strong>이름+전화 뒤 4자리</strong>로 기사와 정산서를 맞춥니다.</li>');
+    lines.push('<li>배민은 일괄등록과 같이 <strong>배민ID</strong>로 맞춥니다. 앞에 0이 있어도 같은 ID입니다.</li>');
+    lines.push('<li>정산서에 적힌 쿠팡ID·배민ID가 같으면 그 정산서 기사에게 넣습니다.</li>');
+    lines.push('<li>같은 주 정산서가 여러 장이면 <strong>콜이 많은 정산서 한 곳</strong>에만 넣습니다.</li>');
+    lines.push('<li>합산 프로모션은 배민 정산서에 넣고, 쿠팡만 있는 금액은 쿠팡 정산서에 넣습니다.</li>');
+    lines.push('<li>이미 등록된 ERP 프로모션은 더하지 않고 이 금액으로 바꿉니다.</li>');
+    lines.push('</ul>');
+
+    lines.push('<p><strong>적용 결과</strong></p>');
+    lines.push('<table><tbody>');
     plan.results.forEach(item => {
       const total = Math.round(Number(item.summary?.totalPromotionAmount || 0));
-      lines.push(`· ${item.region || item.settlementLabel || platformLabel(item.platform)} ${formatNumber(total)}원`);
+      const label = item.region || item.settlementLabel || platformLabel(item.platform);
+      lines.push(`<tr><td>${escapeHtml(label)}</td><td class="num">${formatNumber(total)}원</td></tr>`);
     });
-    lines.push(`적용 합계 ${formatNumber(plan.rowTotal)}원`);
-    lines.push('');
+    lines.push(`<tr><td>적용 합계</td><td class="num">${formatNumber(plan.rowTotal)}원</td></tr>`);
+    lines.push('</tbody></table>');
+
+    lines.push('<p><strong>정산서에 넣는 곳</strong></p>');
+    lines.push('<table><tbody>');
     ['coupang', 'baemin'].forEach(plat => {
       const group = plan.sheets.filter(sheet => sheet.settlement.platform === plat);
-      lines.push(platformLabel(plat));
+      lines.push(`<tr><td colspan="2">${platformLabel(plat)}</td></tr>`);
       if (!group.length) {
-        lines.push('· 등록할 정산서 없음');
+        lines.push('<tr><td colspan="2">등록할 정산서 없음</td></tr>');
       } else {
         group.forEach(sheet => {
           const region = sheet.settlement.region || sheet.settlement.fileName || sheet.settlement.id;
-          lines.push(`· ${region} ${formatNumber(sheet.count)}명 ${formatNumber(sheet.total)}원`);
+          lines.push(`<tr><td>${escapeHtml(region)}</td><td class="num">${formatNumber(sheet.count)}명 ${formatNumber(sheet.total)}원</td></tr>`);
         });
       }
-      lines.push(`소계 ${formatNumber(plan.placed[plat] || 0)}원`);
-      lines.push('');
+      lines.push(`<tr><td>소계</td><td class="num">${formatNumber(plan.placed[plat] || 0)}원</td></tr>`);
     });
-    lines.push(`등록 합계 ${formatNumber((plan.placed.baemin || 0) + (plan.placed.coupang || 0))}원`);
+    const placedSum = (plan.placed.baemin || 0) + (plan.placed.coupang || 0);
+    lines.push(`<tr><td>등록 합계</td><td class="num">${formatNumber(placedSum)}원</td></tr>`);
+    lines.push('</tbody></table>');
+
+    const counts = plan.matchCounts || {};
+    lines.push(`<p>매칭 ${formatNumber(counts['쿠팡ID'] || 0)}명은 쿠팡ID, ${formatNumber(counts['배민ID'] || 0)}명은 배민ID, ${formatNumber(counts['적용기사'] || 0)}명은 적용 때 붙은 기사입니다.</p>`);
+
     if (plan.overlap.length) {
-      lines.push(`여러 적용 결과에 겹친 기사 ${plan.overlap.length}명은 금액을 더합니다.`);
+      lines.push(`<p>여러 적용 결과에 겹친 기사 ${formatNumber(plan.overlap.length)}명은 금액을 더합니다.</p>`);
     }
     const overwriteCount = plan.sheets.reduce((sum, sheet) => sum + sheet.overwrites.length, 0);
     if (overwriteCount) {
-      lines.push(`엑셀·수기로 넣은 다른 금액 ${overwriteCount}건은 이 적용 금액으로 바뀝니다.`);
+      lines.push(`<p>엑셀·수기로 넣은 다른 금액 ${formatNumber(overwriteCount)}건은 이 적용 금액으로 바뀝니다.</p>`);
     }
-    lines.push('이전에 등록한 ERP 프로모션은 이 금액으로 다시 씁니다.');
-    lines.push('');
-    lines.push('이 금액으로 등록할까요?');
-    return lines.join('\n');
+
+    if (!plan.balanced) {
+      lines.push('<p class="direct-week-auto-block"><strong>금액이 1원이라도 다르면 등록하지 않습니다.</strong></p>');
+      lines.push('<ul class="direct-week-auto-how direct-week-auto-block">');
+      plan.unplaced.slice(0, 12).forEach(item => {
+        lines.push(`<li>${escapeHtml(item.name)} ${platformLabel(item.platform)} ${formatNumber(item.amount)}원 · ${escapeHtml(item.reason || '정산서 없음')}</li>`);
+      });
+      if (plan.unplaced.length > 12) lines.push(`<li>외 ${plan.unplaced.length - 12}명</li>`);
+      plan.splitGaps.slice(0, 8).forEach(item => {
+        lines.push(`<li>${escapeHtml(item.name)} 적용 ${formatNumber(item.rowSum)}원 / 배민 ${formatNumber(item.baemin)} + 쿠팡 ${formatNumber(item.coupang)}</li>`);
+      });
+      if (plan.placed.baemin !== plan.expected.baemin || plan.placed.coupang !== plan.expected.coupang) {
+        lines.push(`<li>배민 배치 ${formatNumber(plan.placed.baemin)} / 적용 ${formatNumber(plan.expected.baemin)}</li>`);
+        lines.push(`<li>쿠팡 배치 ${formatNumber(plan.placed.coupang)} / 적용 ${formatNumber(plan.expected.coupang)}</li>`);
+      }
+      if (placedSum !== plan.rowTotal) {
+        lines.push(`<li>등록 합계 ${formatNumber(placedSum)}원 / 적용 합계 ${formatNumber(plan.rowTotal)}원</li>`);
+      }
+      lines.push('</ul>');
+    }
+    return lines.join('');
   }
 
-  function weekAutoBlockText(plan) {
-    const lines = ['금액이 1원이라도 다르면 등록하지 않습니다.'];
-    if (plan.skippedUnmatched) {
-      lines.push(`· 기사 매칭이 안 된 금액 ${formatNumber(plan.skippedUnmatched)}원`);
-    }
-    plan.splitGaps.slice(0, 8).forEach(item => {
-      lines.push(`· ${item.name} 적용 ${formatNumber(item.rowSum)}원 / 배민 ${formatNumber(item.baemin)} + 쿠팡 ${formatNumber(item.coupang)}`);
+  function openWeekAutoDialog(plan) {
+    const els = weekAutoDialogEls();
+    if (!els.dialog || !els.body) return Promise.resolve(false);
+    els.body.innerHTML = renderWeekAutoDialog(plan);
+    if (els.apply) els.apply.hidden = !plan.balanced;
+    return new Promise(resolve => {
+      weekAutoResolver = resolve;
+      try {
+        if (typeof els.dialog.showModal === 'function') els.dialog.showModal();
+        else els.dialog.setAttribute('open', '');
+      } catch (error) {
+        els.dialog.setAttribute('open', '');
+      }
     });
-    plan.unplaced.slice(0, 12).forEach(item => {
-      lines.push(`· ${item.name} ${platformLabel(item.platform)} ${formatNumber(item.amount)}원 · 정산서 없음`);
-    });
-    if (plan.unplaced.length > 12) lines.push(`· 외 ${plan.unplaced.length - 12}명`);
-    if (plan.placed.baemin !== plan.expected.baemin || plan.placed.coupang !== plan.expected.coupang) {
-      lines.push(`· 배민 배치 ${formatNumber(plan.placed.baemin)} / 적용 ${formatNumber(plan.expected.baemin)}`);
-      lines.push(`· 쿠팡 배치 ${formatNumber(plan.placed.coupang)} / 적용 ${formatNumber(plan.expected.coupang)}`);
-    }
-    const placedSum = (plan.placed.baemin || 0) + (plan.placed.coupang || 0);
-    if (placedSum !== plan.rowTotal) {
-      lines.push(`· 등록 합계 ${formatNumber(placedSum)}원 / 적용 합계 ${formatNumber(plan.rowTotal)}원`);
-    }
-    return lines.join('\n');
   }
 
   function promotionEntry(driverId, info) {
@@ -2210,11 +2363,8 @@ const BremDirectAdjustmentAdmin = (function () {
       showToast(`${formatDate(week)} 주 직계약 프로모션 적용 결과가 없습니다.`);
       return;
     }
-    if (!plan.balanced) {
-      window.alert(weekAutoBlockText(plan));
-      return;
-    }
-    if (!window.confirm(weekAutoConfirmText(plan))) return;
+    const accepted = await openWeekAutoDialog(plan);
+    if (!accepted || !plan.balanced) return;
 
     const store = window.BremStorage?.directSettlementAdjustments;
     if (!store?.applyEntries) {

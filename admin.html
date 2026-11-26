@@ -35,7 +35,7 @@
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
   <link rel="stylesheet" href="css/login.css">
   <script>try{var t=localStorage.getItem('bremAdminTheme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}</script>
-  <link rel="stylesheet" href="css/admin.css?v=20261119region12">
+  <link rel="stylesheet" href="css/admin.css?v=20261126weekauto2">
   <link rel="stylesheet" href="css/status-analysis.css?v=20261106namgu1">
   <link rel="stylesheet" href="css/driver-detail-search.css?v=20261106acct1">
   <link rel="stylesheet" href="css/admin-work-requests.css?v=20260927req8">
@@ -6016,6 +6016,17 @@
           </div>
         </article>
 
+        <dialog class="baemin-json-dialog" id="directErpWeekAutoDialog">
+          <form method="dialog" class="baemin-json-dialog__inner direct-week-auto-dialog" onsubmit="return false;">
+            <h3 id="directErpWeekAutoTitle">이번 주 배민·쿠팡 일괄 등록</h3>
+            <div class="direct-week-auto-body" id="directErpWeekAutoBody"></div>
+            <div class="baemin-json-dialog__actions">
+              <button type="button" class="primary-btn" id="directErpWeekAutoApplyBtn">이 금액으로 등록</button>
+              <button type="button" class="small-btn" id="directErpWeekAutoCancelBtn">취소</button>
+            </div>
+          </form>
+        </dialog>
+
         <dialog class="baemin-json-dialog" id="directAdjustPasteDialog">
           <form method="dialog" class="baemin-json-dialog__inner" onsubmit="return false;">
             <h3 id="directAdjustPasteTitle">엑셀 붙여넣기</h3>
@@ -10632,7 +10643,7 @@
   <script src="js/payroll-promotion-bulk.js?v=20260822other1"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260807b"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260905a"></script>
-  <script src="js/direct-adjustment-admin.js?v=20261126weekauto1"></script>
+  <script src="js/direct-adjustment-admin.js?v=20261126weekauto2"></script>
   <script src="js/direct-settlement-calc.js?v=20260929nopaid1"></script>
   <script src="js/settlement-result-direct.js?v=20261004rebase1"></script>
   <script src="js/final-deposit.js?v=20261015regionprepaid1"></script>

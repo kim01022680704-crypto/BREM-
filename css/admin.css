@@ -3437,6 +3437,32 @@ textarea {
   font-size: 12px;
 }
 
+.direct-week-auto-dialog {
+  width: min(760px, 92vw);
+}
+
+.direct-week-auto-body {
+  max-height: min(62vh, 560px);
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.direct-week-auto-body table {
+  width: 100%;
+}
+
+.direct-week-auto-how {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.direct-week-auto-block {
+  color: #fbbf24;
+}
+
 .baemin-json-dialog__actions {
   display: flex;
   gap: 10px;

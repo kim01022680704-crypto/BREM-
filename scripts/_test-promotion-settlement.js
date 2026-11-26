@@ -776,17 +776,66 @@ function check(label, actual, expected) {
   check('합계가 적용 73,000과 같음', autoPlan.rowTotal, 73000);
   check('1원 차이 없음', autoPlan.balanced, 'true');
 
-  window.confirm = () => false;
-  await Adj.registerWeekPromotions();
+  ERP_RESULTS.push({
+    id: 'erpAliasOnly',
+    platform: 'coupang',
+    channel: 'direct',
+    startDate: autoWeek,
+    region: '남구중앙-아이디',
+    settlementId: 'coupang-alias',
+    savedAt: '2026-11-26T10:40:00',
+    summary: { totalPromotionAmount: 1000 },
+    results: [
+      { displayName: '쿠팡기사9001', coupangLoginKey: '쿠팡기사9001', totalPromotionAmount: 1000, assignmentSource: '쿠팡', appliedPlatform: 'coupang' }
+    ]
+  });
+  const aliasPlan = Adj.buildWeekAutoRegisterPlan(autoWeek);
+  check('쿠팡ID만 있어도 정산서 기사에 붙음', aliasPlan.placed.coupang, 64000);
+  check('쿠팡ID 매칭', aliasPlan.matchCounts['쿠팡ID'] > 0, 'true');
+  ERP_RESULTS.pop();
+
+  DRIVERS.push(
+    { id: 'dup1', name: '중복1', baeminId: 'SAMEID', coupangId: '' },
+    { id: 'dup2', name: '중복2', baeminId: 'SAMEID', coupangId: '' }
+  );
+  ERP_RESULTS.push({
+    id: 'erpDup',
+    platform: 'baemin',
+    channel: 'direct',
+    startDate: autoWeek,
+    region: '중복',
+    settlementId: 'baemin-dup',
+    savedAt: '2026-11-26T10:41:00',
+    summary: { totalPromotionAmount: 500 },
+    results: [
+      { baeminUserId: 'SAMEID', driverName: '중복', totalPromotionAmount: 500, assignmentSource: '배민', appliedPlatform: 'baemin' }
+    ]
+  });
+  const dupPlan = Adj.buildWeekAutoRegisterPlan(autoWeek);
+  check('같은 ID가 여러 명이면 맞추지 않음', dupPlan.balanced, 'false');
+  check('중복은 이유로 보여 줌', /여러 명/.test(dupPlan.unplaced.map(item => item.reason).join(' ')), 'true');
+  ERP_RESULTS.pop();
+  DRIVERS.pop();
+  DRIVERS.pop();
+
+  const popupBody = () => window.document.getElementById('directErpWeekAutoBody');
+  let pending = Adj.registerWeekPromotions();
+  check('팝업에 매칭 방법', /이름\+전화 뒤 4자리/.test(popupBody()?.textContent || ''), 'true');
+  check('팝업에 배민ID', /배민ID/.test(popupBody()?.textContent || ''), 'true');
+  window.document.getElementById('directErpWeekAutoCancelBtn').click();
+  await pending;
   check('취소하면 배민 미등록', adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB, undefined);
   check('취소하면 쿠팡 미등록', adjustments.promotion['weekly_direct_coupang_namgu_20261118']?.dAutoC, undefined);
 
-  window.confirm = () => true;
-  await Adj.registerWeekPromotions();
+  pending = Adj.registerWeekPromotions();
+  window.document.getElementById('directErpWeekAutoApplyBtn').click();
+  await pending;
   check('배민 등록 10,000', adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB?.amount, 10000);
   check('쿠팡 등록 63,000', adjustments.promotion['weekly_direct_coupang_namgu_20261118']?.dAutoC?.amount, 63000);
 
-  await Adj.registerWeekPromotions();
+  pending = Adj.registerWeekPromotions();
+  window.document.getElementById('directErpWeekAutoApplyBtn').click();
+  await pending;
   check('다시 눌러도 배민 10,000', adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB?.amount, 10000);
   check('다시 눌러도 쿠팡 63,000', adjustments.promotion['weekly_direct_coupang_namgu_20261118']?.dAutoC?.amount, 63000);
 
@@ -806,11 +855,12 @@ function check(label, actual, expected) {
   const gapPlan = Adj.buildWeekAutoRegisterPlan(autoWeek);
   check('정산서 없는 1원도 불균형', gapPlan.balanced, 'false');
   check('빠진 금액 1원', gapPlan.unplacedAmount, 1);
-  let alertText = '';
-  window.alert = message => { alertText = message; };
   const beforeBaemin = adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB?.amount;
-  await Adj.registerWeekPromotions();
-  check('불균형이면 경고', /1원/.test(alertText), 'true');
+  pending = Adj.registerWeekPromotions();
+  check('불균형이면 경고', /1원/.test(popupBody()?.textContent || ''), 'true');
+  check('불균형이면 등록 버튼 없음', window.document.getElementById('directErpWeekAutoApplyBtn').hidden, true);
+  window.document.getElementById('directErpWeekAutoCancelBtn').click();
+  await pending;
   check('불균형이면 기존 금액 유지', adjustments.promotion['weekly_direct_baemin_namgu_20261118']?.dAutoB?.amount, beforeBaemin);
 
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
